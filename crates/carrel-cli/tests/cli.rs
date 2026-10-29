@@ -99,7 +99,12 @@ fn init_creates_an_archive_with_history_recorded_by_this_device() {
     assert_eq!(status["writer"], Value::Null);
 
     let again = sandbox.run_in(sandbox.dir.path(), &["init", "Notes"]);
-    assert_eq!(again.status.code(), Some(1), "already an archive");
+    assert_eq!(
+        again.status.code(),
+        Some(1),
+        "already an archive with history"
+    );
+    assert!(String::from_utf8_lossy(&again.stderr).contains("history has started"));
 }
 
 #[test]
@@ -231,4 +236,29 @@ fn usage_mistakes_exit_with_status_2() {
     assert_eq!(out.status.code(), Some(2));
     let version = sandbox.ok(sandbox.dir.path(), &["--version"]);
     assert!(version.starts_with("carrel 0."), "{version}");
+}
+
+#[test]
+fn init_starts_history_for_an_archive_made_without_it() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    let out = sandbox.run_in(&root, &["log"]);
+    assert_eq!(out.status.code(), Some(1), "no history yet");
+
+    let named = sandbox.run_in(&root, &["init", "--name", "Other"]);
+    assert_eq!(named.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&named.stderr).contains("already named “Sample archive”"));
+
+    let started = sandbox.json(&root, &["init"]);
+    assert_eq!(started["history"], "started");
+    assert_eq!(started["archive"]["name"], "Sample archive");
+    let log = sandbox.json(&root, &["log"]);
+    assert_eq!(log.as_array().unwrap().len(), 1);
+    assert_eq!(log[0]["summary"], "Start history of “Sample archive”");
+    assert_eq!(log[0]["operation"], "create");
+    assert!(!root.join("_System/writer.lock").exists(), "lock released");
+
+    let report = sandbox.ok(&root, &["status"]);
+    assert!(report.contains("1 change recorded"), "{report}");
+    assert_eq!(sandbox.run_in(&root, &["init"]).status.code(), Some(1));
 }

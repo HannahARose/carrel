@@ -368,3 +368,28 @@ fn archives_opened_by_a_relative_path_record_history() {
     let history = History::init(&archive, &lease).unwrap();
     assert_eq!(history.log().unwrap().len(), 1);
 }
+
+#[test]
+fn history_can_start_for_an_archive_made_without_it() {
+    let dir = tempfile::tempdir().unwrap();
+    copy_dir(&sample_archive(), dir.path());
+    let archive = Archive::open(dir.path()).unwrap();
+    assert!(matches!(
+        History::open(&archive),
+        Err(HistoryError::NotInitialized)
+    ));
+    let (lease, person, _) = writer(&archive);
+    let history = History::start(&archive, &lease).unwrap();
+    let log = history.log().unwrap();
+    assert_eq!(log.len(), 1);
+    assert_eq!(log[0].summary, "Start history of “Sample archive”");
+    assert_eq!(log[0].operation, Some(Operation::Create));
+    assert_eq!(log[0].person, Some(person));
+    assert!(
+        committed_files(dir.path()).contains(&"Reading/On the Origin of Species.md".to_owned())
+    );
+    assert!(matches!(
+        History::start(&archive, &lease),
+        Err(HistoryError::AlreadyInitialized)
+    ));
+}

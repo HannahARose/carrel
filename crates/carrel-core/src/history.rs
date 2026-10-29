@@ -322,6 +322,27 @@ impl History {
     /// [`HistoryError::AlreadyInitialized`] if the repository exists, [`HistoryError::Writer`]
     /// if `lease` is no longer valid, or any Git, archive or file error.
     pub fn init(archive: &Archive, lease: &WriterLease) -> Result<Self, HistoryError> {
+        let summary = format!("Create archive “{}”", archive.doc().name);
+        Self::create(archive, lease, summary)
+    }
+
+    /// Starts history for an archive that already has content but no history repository,
+    /// such as one made by hand or by another program. Records its current metadata as the
+    /// first commit, with operation `create` and a summary saying history started here.
+    ///
+    /// # Errors
+    ///
+    /// As for [`History::init`].
+    pub fn start(archive: &Archive, lease: &WriterLease) -> Result<Self, HistoryError> {
+        let summary = format!("Start history of “{}”", archive.doc().name);
+        Self::create(archive, lease, summary)
+    }
+
+    fn create(
+        archive: &Archive,
+        lease: &WriterLease,
+        summary: String,
+    ) -> Result<Self, HistoryError> {
         lease.check()?;
         let root = archive.root().to_path_buf();
         let git_dir = root.join(HISTORY_DIR);
@@ -351,7 +372,7 @@ impl History {
         let history = Self { repo, root };
         let change = Change::new(
             Operation::Create,
-            format!("Create archive “{}”", archive.doc().name),
+            summary,
             lease.info().person,
             lease.info().device,
         );
