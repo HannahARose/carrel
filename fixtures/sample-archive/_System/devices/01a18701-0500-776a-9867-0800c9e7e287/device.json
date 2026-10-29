@@ -1,0 +1,15 @@
+{
+  "id": "01a18701-0500-776a-9867-0800c9e7e287",
+  "name": "Sample MacBook Pro",
+  "type": "mac",
+  "capabilities": {
+    "memory_gb": 36,
+    "models": [
+      "apple/afm-3-core-advanced"
+    ],
+    "tools": [
+      "git",
+      "kopia"
+    ]
+  }
+}

@@ -1,0 +1,8 @@
+rules:
+  - name: "KiCad projects"
+    match: { marker: "*.kicad_pro" }
+    collection: 01a18701-0500-776a-9867-0804857e5ab6
+  - name: "Standards and RFCs"
+    match: { name: "^RFC [0-9]+" }
+    collection: 01a18701-0500-776a-9867-0802f3a80e26
+    auto_file: true
