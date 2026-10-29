@@ -7,4 +7,6 @@ This folder is a Carrel archive: an ordinary folder you can read with Finder and
 - `Active/` shows what is checked out, `Journal/` logs work sessions, and `Holding/` has items waiting to be filed.
 - `_System/` holds data for programs, including a copy of the format specification (`_System/FORMAT.md`).
 
+Start browsing at [ARCHIVE.md](ARCHIVE.md), which links every collection.
+
 All content in this sample is invented or public.
