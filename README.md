@@ -54,4 +54,7 @@ Details are on the [wiki's Roadmap page](https://github.com/HannahARose/carrel/w
 
 ## License
 
-To be decided.
+- **Code:** [Mozilla Public License 2.0](LICENSE). You can use Carrel's code in other projects, including closed-source ones; changes to Carrel's own files must be shared under the same license.
+- **Archive format specification** (`FORMAT.md` and anything under `docs/format/`): [Creative Commons Attribution 4.0](LICENSES/CC-BY-4.0.txt), so other tools are free to read and write Carrel archives.
+
+"Carrel" is a working name and is not covered by either license.
