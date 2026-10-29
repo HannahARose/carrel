@@ -4,6 +4,7 @@ members = [
     "crates/carrel-cli",
     "crates/carrel-ffi",
     "crates/uniffi-bindgen",
+    "crates/carrel-provider-llama",
 ]
 resolver = "3"
 

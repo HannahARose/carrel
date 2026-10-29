@@ -319,3 +319,54 @@ fn the_built_in_extractor_reads_plain_text() {
         "invalid UTF-8 is replaced, not fatal"
     );
 }
+
+#[test]
+fn serve_offers_a_rust_provider_over_the_protocol() {
+    use carrel_core::providers::serve::{About, serve};
+
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("note.txt");
+    std::fs::write(&file, "Hello.\n").unwrap();
+    let requests = [
+        r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocol":1}}"#.to_owned(),
+        serde_json::json!({"jsonrpc": "2.0", "id": 2, "method": "text/extract", "params": {
+            "offer": "plain-text", "path": file, "media_type": "text/plain"}})
+        .to_string(),
+        r#"{"jsonrpc":"2.0","id":3,"method":"text/complete","params":{"offer":"x","prompt":"hi"}}"#
+            .to_owned(),
+        r#"{"jsonrpc":"2.0","id":4,"method":"text/extract","params":{}}"#.to_owned(),
+        r#"{"jsonrpc":"2.0","id":5,"method":"bogus"}"#.to_owned(),
+        r#"{"jsonrpc":"2.0","method":"initialize"}"#.to_owned(),
+        "not json".to_owned(),
+        r#"{"jsonrpc":"2.0","id":6,"method":"shutdown"}"#.to_owned(),
+    ];
+    let input = requests.join("\n") + "\n";
+    let mut output = Vec::new();
+    let about = About {
+        label: "Test",
+        version: "1",
+    };
+    serve(&PlainText::new(), about, input.as_bytes(), &mut output).unwrap();
+    let replies: Vec<serde_json::Value> = String::from_utf8(output)
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    assert_eq!(
+        replies.len(),
+        6,
+        "no replies to the notification or non-JSON"
+    );
+    assert_eq!(replies[0]["result"]["protocol"], 1);
+    assert_eq!(replies[0]["result"]["name"], "Test");
+    assert_eq!(replies[0]["result"]["offers"][0]["id"], "plain-text");
+    assert_eq!(replies[1]["result"]["text"], "Hello.\n");
+    assert_eq!(
+        replies[2]["error"]["code"], 2,
+        "the built-in has no text models"
+    );
+    assert_eq!(replies[3]["error"]["code"], -32602);
+    assert_eq!(replies[4]["error"]["code"], -32601);
+    assert_eq!(replies[5]["id"], 6);
+    assert_eq!(replies[5]["result"], serde_json::Value::Null);
+}

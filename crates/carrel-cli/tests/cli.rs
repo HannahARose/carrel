@@ -310,16 +310,13 @@ fn providers_lists_what_this_device_has_and_what_is_used() {
         String::from_utf8_lossy(&out.stderr)
     );
     let report: Value = serde_json::from_slice(&out.stdout).unwrap();
-    let names: Vec<&str> = report["providers"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|p| p["name"].as_str().unwrap())
-        .collect();
-    assert_eq!(names, ["built-in", "echo", "echo-old"]);
-    assert_eq!(report["providers"][1]["label"], "Echo");
+    // Other providers built beside `carrel` (in target/) may be listed too.
+    let providers = report["providers"].as_array().unwrap();
+    let named = |name: &str| providers.iter().find(|p| p["name"] == name).unwrap();
+    assert_eq!(providers[0]["name"], "built-in");
+    assert_eq!(named("echo")["label"], "Echo");
     assert!(
-        report["providers"][2]["error"]
+        named("echo-old")["error"]
             .as_str()
             .unwrap()
             .contains("protocol 0")

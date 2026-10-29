@@ -1,0 +1,31 @@
+[package]
+name = "carrel-provider-llama"
+description = "Carrel's portable text-model provider: local open models through llama.cpp."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "carrel-provider-llama"
+path = "src/main.rs"
+
+[features]
+# GPU backends for Linux and Windows; Macs always use Metal.
+vulkan = ["llama-cpp-2/vulkan"]
+cuda = ["llama-cpp-2/cuda"]
+
+[dependencies]
+carrel-core.workspace = true
+llama-cpp-2 = { version = "0.1.160", default-features = false, features = ["common"] }
+serde_json = { version = "1.0.154", features = ["preserve_order"] }
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "std"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+llama-cpp-2 = { version = "0.1.160", default-features = false, features = ["common", "metal"] }
+
+[lints]
+workspace = true
