@@ -154,6 +154,25 @@ impl Provider for LlamaProvider {
         offer: &str,
         request: &CompletionRequest,
     ) -> Result<Completion, ProviderError> {
+        self.with_model(offer, |backend, model| {
+            generate(backend, model, offer, self.context, request)
+        })
+    }
+
+    fn count_tokens(&self, offer: &str, text: &str) -> Result<u64, ProviderError> {
+        self.with_model(offer, |_, model| {
+            Ok(model.vocab().tokenize(text.as_bytes(), false, true).len() as u64)
+        })
+    }
+}
+
+impl LlamaProvider {
+    /// Runs `f` with the model `offer`, loading it first unless it's the one already loaded.
+    fn with_model<T>(
+        &self,
+        offer: &str,
+        f: impl FnOnce(&LlamaBackend, &LlamaModel) -> Result<T, ProviderError>,
+    ) -> Result<T, ProviderError> {
         let backend = self
             .backend
             .ok_or_else(|| ProviderError::Unavailable("llama.cpp couldn't start".into()))?;
@@ -176,7 +195,7 @@ impl Provider for LlamaProvider {
             *loaded = Some((offer.to_owned(), model));
         }
         let (_, model) = loaded.as_ref().expect("loaded above");
-        generate(backend, model, offer, self.context, request)
+        f(backend, model)
     }
 }
 
@@ -391,6 +410,23 @@ mod tests {
             "{json}"
         );
         assert!(json["sealed"].is_boolean(), "{json}");
+    }
+
+    #[test]
+    fn the_model_counts_tokens() {
+        let Some(dir) = models() else { return };
+        let provider = LlamaProvider::with_context(Some(&dir), 512);
+        let model = first_model(&provider);
+        let short = provider.count_tokens(&model, "Hello").unwrap();
+        let long = provider
+            .count_tokens(&model, &"Hello there, oscillators. ".repeat(20))
+            .unwrap();
+        assert!(short >= 1);
+        assert!(long > short * 10, "{short} vs {long}");
+        assert!(matches!(
+            provider.count_tokens("no-such-model", "x"),
+            Err(ProviderError::Unsupported(_))
+        ));
     }
 
     #[test]

@@ -298,6 +298,16 @@ impl Provider for ProcessProvider {
         params["offer"] = Value::from(offer);
         self.request("text/extract", params)
     }
+
+    fn count_tokens(&self, offer: &str, text: &str) -> Result<u64, ProviderError> {
+        #[derive(Deserialize)]
+        struct Counted {
+            tokens: u64,
+        }
+        let counted: Counted =
+            self.request("text/count-tokens", json!({"offer": offer, "text": text}))?;
+        Ok(counted.tokens)
+    }
 }
 
 impl Drop for ProcessProvider {

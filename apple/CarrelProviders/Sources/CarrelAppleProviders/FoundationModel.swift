@@ -45,6 +45,19 @@ public struct FoundationModel: TextModel {
         throw .unavailable("Apple's on-device model needs macOS 26 or later")
     }
 
+    public func countTokens(_ text: String) async throws(ProviderError) -> Int {
+        #if canImport(FoundationModels)
+        if #available(macOS 26.4, *) {
+            do {
+                return try await SystemLanguageModel.default.tokenCount(for: text)
+            } catch {
+                throw Self.map(any: error)
+            }
+        }
+        #endif
+        throw .unsupported("counting tokens needs macOS 26.4 or later")
+    }
+
     #if canImport(FoundationModels)
     @available(macOS 26.0, *)
     static func describe(_ reason: SystemLanguageModel.Availability.UnavailableReason) -> String {
