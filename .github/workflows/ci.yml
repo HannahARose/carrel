@@ -1,0 +1,160 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [dev, main]
+  push:
+    branches: [dev, main]
+  workflow_dispatch:
+  # Weekly, so new security advisories against existing dependencies show up even when
+  # nothing changes.
+  schedule:
+    - cron: "17 6 * * 1"
+
+permissions:
+  contents: read # check out the code
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  fmt:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: cargo fmt --all --check
+
+  clippy:
+    name: Clippy
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+  test:
+    name: Test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        # macOS is the main platform; Linux keeps the core and CLI portable.
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - run: cargo test --workspace --all-targets --locked
+      - run: cargo test --workspace --doc --locked
+      - name: CLI reports its version
+        run: cargo run --locked --bin carrel -- --version
+
+  docs:
+    name: Docs
+    runs-on: ubuntu-latest
+    env:
+      # Broken intra-doc links and other rustdoc warnings fail the build, including links in
+      # private items' docs.
+      RUSTDOCFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - run: cargo doc --workspace --no-deps --document-private-items --locked
+
+  swift:
+    # The Swift side: build the XCFramework and bindings, test them from Swift, and check the
+    # package also builds for iOS.
+    name: Swift package
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - run: rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+      - name: Build the XCFramework and Swift bindings
+        run: PROFILE=dev scripts/build-xcframework.sh
+      - name: Swift tests
+        working-directory: apple/CarrelKit
+        run: swift test
+      - name: Build for the iOS Simulator
+        working-directory: apple/CarrelKit
+        run: xcodebuild -scheme CarrelKit -destination 'generic/platform=iOS Simulator' -derivedDataPath .build/xcode build
+
+  deny:
+    # Known vulnerabilities, unmaintained or yanked crates, licenses, duplicate versions and
+    # crate sources, as set in deny.toml.
+    name: Dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        with:
+          command: check
+
+  zizmor:
+    # Security problems in the workflows themselves, such as injection or broad permissions.
+    name: Workflow audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: zizmorcore/zizmor-action@53290badfa369cb0bf7ad16342cb62c2fa47ac7b # v0.8.0
+        with:
+          # Print findings and fail, rather than uploading them to code scanning.
+          advanced-security: false
+
+  hygiene:
+    # Spelling (_typos.toml), Markdown style (.markdownlint-cli2.yaml) and links in the
+    # project's documents.
+    name: Docs hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: crate-ci/typos@7f9d0819ca1c008ade73f4b41fa9d258d48f605b # v1.51.1
+      - uses: DavidAnson/markdownlint-cli2-action@696eb3f2509270d7b882d2aa68347bc676e7af34 # v25.0.0
+      - name: Check links
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          # Pull requests check links within the repository only, so another site being
+          # down can't fail them; the weekly run checks every link.
+          args: >-
+            --no-progress --include-fragments
+            ${{ github.event_name != 'schedule' && '--offline' || '' }}
+            README.md CONTRIBUTING.md FORMAT.md fixtures/README.md 'apple/**/*.md'
+          jobSummary: false
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+  ok:
+    # The single required check for branch protection. It passes only if every job above passed.
+    name: CI passed
+    if: always()
+    needs: [fmt, clippy, test, docs, swift, deny, zizmor, hygiene]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check job results
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+          FAILED: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped') }}
+        run: |
+          echo "$NEEDS"
+          [ "$FAILED" = "false" ]

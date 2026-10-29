@@ -1,0 +1,18 @@
+{
+  "outside_edits": "flag",
+  "checkout": {
+    "destination": "desktop",
+    "after_return": "ask"
+  },
+  "sessions": {
+    "idle_minutes": 45
+  },
+  "reminders": [
+    "idle",
+    "weekly",
+    "menu-bar"
+  ],
+  "embedding": {
+    "model": "sample/embedding-model-v1"
+  }
+}

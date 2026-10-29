@@ -1,0 +1,57 @@
+name: Docs site
+
+# Publishes the code documentation for every crate to GitHub Pages whenever dev changes.
+# Private items are included so internal helpers can be browsed too.
+
+on:
+  push:
+    branches: [dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read # check out the code
+
+# One deployment at a time; a newer push waits rather than cancelling a deploy in progress.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build docs
+    runs-on: ubuntu-latest
+    env:
+      RUSTDOCFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - run: cargo doc --workspace --no-deps --document-private-items --locked
+      - name: Add a landing page that opens the core crate
+        run: |
+          cat > target/doc/index.html <<'EOF'
+          <!doctype html>
+          <meta charset="utf-8">
+          <title>Carrel code documentation</title>
+          <meta http-equiv="refresh" content="0; url=carrel_core/index.html">
+          <p><a href="carrel_core/index.html">Carrel code documentation</a></p>
+          EOF
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: target/doc
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write # publish to GitHub Pages
+      id-token: write # prove the deployment comes from this workflow
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

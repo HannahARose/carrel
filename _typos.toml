@@ -1,0 +1,10 @@
+# Spell check (CI: "Docs hygiene"). Run locally with `typos`.
+
+[default.extend-words]
+# "Universally Unique IDentifiers", as RFC 9562's title spells it.
+dentifiers = "dentifiers"
+# A glob pattern in a test.
+ba = "ba"
+
+[files]
+extend-exclude = ["Cargo.lock", "schemas/*.json"]

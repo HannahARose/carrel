@@ -1,0 +1,8 @@
+{
+  "trashOption": "system",
+  "userIgnoreFilters": [
+    "_System/",
+    "Projects/oscillator-sim/",
+    "Projects/field-notes-2025/"
+  ]
+}

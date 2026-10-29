@@ -1,0 +1,42 @@
+name: Pull request checks
+
+on:
+  pull_request:
+    branches: [dev]
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  pull-requests: read # read the pull request's linked issues
+
+concurrency:
+  group: pr-checks-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  linked-issue:
+    # Every change is tracked by an issue (see the wiki's Development Workflow page). Accepts
+    # "Closes #12" and the other closing keywords, "Part of #12" or "Refs #12" in the
+    # description, or an issue linked from the pull request's sidebar. Bots are exempt.
+    name: Linked issue
+    if: github.event.pull_request.user.type != 'Bot'
+    runs-on: ubuntu-latest
+    env:
+      BODY: ${{ github.event.pull_request.body }}
+      NUMBER: ${{ github.event.pull_request.number }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Check the description or sidebar links an issue
+        run: |
+          pattern='(^|[^[:alnum:]])(close[sd]?|fix(e[sd])?|resolve[sd]?|part of|refs?)[[:space:]]+([[:alnum:]_.-]+/[[:alnum:]_.-]+)?#[0-9]+'
+          if printf '%s' "$BODY" | grep -Eiq "$pattern"; then
+            echo "The description links an issue."
+            exit 0
+          fi
+          linked=$(gh pr view "$NUMBER" --json closingIssuesReferences --jq '.closingIssuesReferences | length')
+          if [ "$linked" -gt 0 ]; then
+            echo "The pull request is linked to $linked issue(s)."
+            exit 0
+          fi
+          echo "::error::Link the issue this pull request is for: write \"Closes #123\" (or \"Part of #123\") in the description."
+          exit 1

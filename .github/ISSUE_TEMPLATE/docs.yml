@@ -1,0 +1,17 @@
+name: Documentation
+description: Missing, wrong or unclear docs, wiki pages or FORMAT.md
+labels: ["type: docs"]
+body:
+  - type: input
+    id: where
+    attributes:
+      label: Where
+      description: Wiki page, file path or command help.
+    validations:
+      required: true
+  - type: textarea
+    id: change
+    attributes:
+      label: What should change
+    validations:
+      required: true

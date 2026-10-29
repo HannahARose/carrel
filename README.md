@@ -6,7 +6,7 @@ Carrel is a native app for macOS, iPadOS and iOS that ingests, catalogs, organiz
 
 Every document is analyzed on your own devices. Nothing is sent anywhere unless you explicitly opt in.
 
-> **Status:** design phase. No code yet.
+> **Status:** early development (v0.1): the archive format, Rust core and first `carrel` commands. There is no app yet.
 
 ## Principles
 
@@ -26,7 +26,7 @@ Every document is analyzed on your own devices. Nothing is sent anywhere unless 
 - **Check out and return:** take an item out to work on it. Carrel locks the archive copy, logs each work session as a short entry, and shows what changed when you return it.
 - **History and backups:** every change is recorded in a Git history of the archive's metadata and can be undone. File contents are versioned with [Kopia](https://kopia.io).
 - **Obsidian-compatible:** the archive root opens as an Obsidian vault.
-- **Command-line tool:** `carrel` does everything the app does, with JSON output for scripts.
+- **Command-line tool:** `carrel` does everything the app does, with JSON output for scripts. See the [wiki's Command-Line Tool page](https://github.com/HannahARose/carrel/wiki/Command-Line-Tool).
 
 ## Architecture (planned)
 
@@ -37,13 +37,30 @@ Every document is analyzed on your own devices. Nothing is sent anywhere unless 
 
 ## Roadmap
 
-1. Archive format and core, plus the `carrel` CLI
-2. Ingest on Mac
-3. Check out, desk items and edit cards
-4. Explorer, search, librarian and restructuring
-5. iCloud sync and the iPad and iPhone apps
-6. Offline collections, sharing between archives, optional remote models
+| Version | Contents |
+| --- | --- |
+| 0.1 | Archive format, Rust core and the `carrel` CLI |
+| 0.2 | Ingest on Mac |
+| 0.3 | Check out, desk items and edit cards |
+| 0.4 | Explorer and search |
+| **1.0** | **First working release:** one Mac plus the CLI, fully on-device |
+| 1.1 – 1.3 | Librarian and discovery, restructure proposals, macOS system integration |
+| **2.0** | **iCloud, iPad and iPhone** |
+| 2.1 | Optional remote models through a privacy filter |
+| **3.0** | **Offline collections and sharing between archives** |
+| 3.1 | Encryption, web snapshots, Linux CLI |
+
+Details are on the [wiki's Roadmap page](https://github.com/HannahARose/carrel/wiki/Roadmap).
+
+## Documentation
+
+- **[Wiki](https://github.com/HannahARose/carrel/wiki):** design, archive format overview, roadmap, development setup and workflow.
+- **[Code documentation](https://hrose.me/carrel/):** every module, type and function, built from the `dev` branch on each change.
+- **[FORMAT.md](FORMAT.md):** the archive format specification.
 
 ## License
 
-To be decided.
+- **Code:** [Mozilla Public License 2.0](LICENSE). You can use Carrel's code in other projects, including closed-source ones; changes to Carrel's own files must be shared under the same license.
+- **Archive format specification** (`FORMAT.md` and anything under `docs/format/`): [Creative Commons Attribution 4.0](LICENSES/CC-BY-4.0.txt), so other tools are free to read and write Carrel archives.
+
+"Carrel" is a working name and is not covered by either license.

@@ -1,0 +1,49 @@
+name: Project board
+
+# Keeps the project board's Status in step with issues and pull requests; the rules are in
+# .github/scripts/project-status.sh. The repository's own token can't edit a user's project,
+# so this needs a PROJECT_TOKEN secret: a classic personal access token with the `project`
+# scope. Without it the job does nothing.
+#
+# Pull requests from forks get no secrets, so they don't move on the board; move those by
+# hand. (pull_request_target would allow it, but runs with secrets alongside untrusted input.)
+
+on:
+  issues:
+    types: [opened, reopened, closed]
+  pull_request:
+    types: [opened, reopened, ready_for_review, converted_to_draft, closed]
+
+permissions:
+  contents: read # check out the board script; the project is edited with PROJECT_TOKEN
+
+concurrency:
+  group: project-${{ github.event.issue.number || github.event.pull_request.number }}
+
+jobs:
+  move:
+    name: Update the board
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+      - name: Move the item
+        env:
+          # A token with only the project scope; an environment would add setup for no gain.
+          GH_TOKEN: ${{ secrets.PROJECT_TOKEN }} # zizmor: ignore[secrets-outside-env]
+          PROJECT_OWNER: ${{ github.repository_owner }}
+          PROJECT_NUMBER: 2
+          EVENT: ${{ github.event_name }}
+          ACTION: ${{ github.event.action }}
+          NODE_ID: ${{ github.event.issue.node_id || github.event.pull_request.node_id }}
+          DRAFT: ${{ github.event.pull_request.draft }}
+          MERGED: ${{ github.event.pull_request.merged }}
+          STATE_REASON: ${{ github.event.issue.state_reason }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::notice::PROJECT_TOKEN isn't set, so the board wasn't updated."
+            exit 0
+          fi
+          .github/scripts/project-status.sh
