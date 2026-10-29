@@ -6,9 +6,13 @@ on:
   push:
     branches: [dev, main]
   workflow_dispatch:
+  # Weekly, so new security advisories against existing dependencies show up even when
+  # nothing changes.
+  schedule:
+    - cron: "17 6 * * 1"
 
 permissions:
-  contents: read
+  contents: read # check out the code
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -90,14 +94,43 @@ jobs:
         working-directory: apple/CarrelKit
         run: xcodebuild -scheme CarrelKit -destination 'generic/platform=iOS Simulator' -derivedDataPath .build/xcode build
 
+  deny:
+    # Known vulnerabilities, unmaintained or yanked crates, licenses, duplicate versions and
+    # crate sources, as set in deny.toml.
+    name: Dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        with:
+          command: check
+
+  zizmor:
+    # Security problems in the workflows themselves, such as injection or broad permissions.
+    name: Workflow audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: zizmorcore/zizmor-action@53290badfa369cb0bf7ad16342cb62c2fa47ac7b # v0.8.0
+        with:
+          # Print findings and fail, rather than uploading them to code scanning.
+          advanced-security: false
+
   ok:
     # The single required check for branch protection. It passes only if every job above passed.
     name: CI passed
     if: always()
-    needs: [fmt, clippy, test, docs, swift]
+    needs: [fmt, clippy, test, docs, swift, deny, zizmor]
     runs-on: ubuntu-latest
     steps:
       - name: Check job results
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+          FAILED: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped') }}
         run: |
-          echo '${{ toJSON(needs) }}'
-          [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped') }}" = "false" ]
+          echo "$NEEDS"
+          [ "$FAILED" = "false" ]

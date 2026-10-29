@@ -1,0 +1,54 @@
+# cargo-deny: what dependencies Carrel accepts. Checked in CI (.github/workflows/ci.yml) and
+# locally with `cargo deny check`.
+
+[graph]
+# Every platform Carrel builds for, so platform-specific dependencies are checked too.
+targets = [
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+    "aarch64-apple-ios",
+    "aarch64-apple-ios-sim",
+    "x86_64-unknown-linux-gnu",
+]
+all-features = true
+
+[advisories]
+# Known vulnerabilities, and crates marked unmaintained or yanked, fail the check.
+yanked = "deny"
+ignore = [
+    # basic-toml is unmaintained. It's used only by uniffi_bindgen, inside our uniffi-bindgen
+    # build tool, to read uniffi.toml; it never reaches the apps or the CLI. Revisit when
+    # UniFFI replaces it.
+    { id = "RUSTSEC-2026-0374", reason = "build-time tool only (uniffi_bindgen)" },
+]
+
+[licenses]
+# Permissive licenses compatible with distributing Carrel under MPL-2.0, including in the
+# App Store. Copyleft licenses (GPL, LGPL, AGPL) are not accepted unless the crate offers an
+# alternative from this list.
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-3-Clause",
+    "MIT",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+confidence-threshold = 0.9
+
+[licenses.private]
+# Carrel's own crates aren't published.
+ignore = true
+
+[bans]
+# Two versions of one crate are worth knowing about but not worth failing over.
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+# Only crates.io; no git dependencies or other registries.
+unknown-registry = "deny"
+unknown-git = "deny"
