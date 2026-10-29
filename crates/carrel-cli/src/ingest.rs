@@ -6,6 +6,7 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use carrel_core::card::Kind;
+use carrel_core::ingest::card::{Context, Draft, Glossary, Vocabulary, draft};
 use carrel_core::ingest::text::{ItemText, read};
 use carrel_core::ingest::{Candidate, IntakeOptions, plan};
 use serde_json::{Value, json};
@@ -24,13 +25,66 @@ pub fn ingest(
     let (registry, _) = crate::providers::registry();
     let rules = archive.rules()?;
     // Duplicates won't be filed by default, so their text isn't needed yet.
+    let identity = crate::config::Identity::load_or_create()?;
+    let collections = archive.collections()?;
+    let vocabulary = Vocabulary::of(&archive, &collections);
+    let glossary = Glossary::of(&archive);
+    let context = Context {
+        archive_name: &archive.doc().name,
+        vocabulary: &vocabulary,
+        glossary: &glossary,
+        device: identity.device,
+    };
     let texts: Vec<Option<ItemText>> = candidates
         .iter()
         .map(|c| {
             (c.duplicate_of.is_none() && c.same_as.is_none()).then(|| read(&registry, &rules, c))
         })
         .collect();
+    let drafts: Vec<Option<Draft>> = candidates
+        .iter()
+        .zip(&texts)
+        .map(|(c, t)| t.as_ref().map(|t| draft(&registry, &context, c, t)))
+        .collect();
 
+    let out = render(&candidates, &texts, &drafts, &skipped);
+
+    let items: Vec<Value> = candidates
+        .iter()
+        .zip(&texts)
+        .zip(&drafts)
+        .map(|((c, t), d)| {
+            json!({
+                "path": c.path,
+                "kind": c.kind,
+                "sealed": c.sealed,
+                "markers": c.markers,
+                "checksum": c.checksum,
+                "size": c.size,
+                "duplicate_of": c.duplicate_of.as_ref().map(|d| json!({"id": d.id, "card": d.card})),
+                "same_as": c.same_as.map(|i| &candidates[i].path),
+                "text": t.as_ref().map(text_json),
+                "card": d.as_ref().map(draft_json),
+            })
+        })
+        .collect();
+    let skipped: Vec<Value> = skipped
+        .iter()
+        .map(|s| json!({"path": s.path, "reason": s.reason}))
+        .collect();
+    Ok(Report::new(
+        out,
+        json!({ "items": items, "skipped": skipped }),
+    ))
+}
+
+/// The plan as a report for people.
+fn render(
+    candidates: &[Candidate],
+    texts: &[Option<ItemText>],
+    drafts: &[Option<Draft>],
+    skipped: &[carrel_core::ingest::Skipped],
+) -> String {
     let name = |c: &Candidate| {
         c.path.file_name().map_or_else(
             || c.path.display().to_string(),
@@ -48,7 +102,7 @@ pub fn ingest(
         .map(|c| name(c).chars().count())
         .max()
         .unwrap_or(0);
-    for (candidate, item_text) in candidates.iter().zip(&texts) {
+    for ((candidate, item_text), card) in candidates.iter().zip(texts).zip(drafts) {
         let mut notes = Vec::new();
         if let Some(duplicate) = &candidate.duplicate_of {
             notes.push(format!("duplicate of {}", duplicate.card));
@@ -75,10 +129,15 @@ pub fn ingest(
         if let Some(item_text) = item_text {
             writeln!(out, "  {:<width$}  {}", "", describe_text(item_text)).unwrap();
         }
+        if let Some(card) = card {
+            for line in describe_draft(card) {
+                writeln!(out, "  {:<width$}  {line}", "").unwrap();
+            }
+        }
     }
     if !skipped.is_empty() {
         out.push_str("Skipped:\n");
-        for skip in &skipped {
+        for skip in skipped {
             let name = skip.path.file_name().map_or_else(
                 || skip.path.display().to_string(),
                 |n| n.to_string_lossy().into_owned(),
@@ -87,34 +146,44 @@ pub fn ingest(
         }
     }
     if !candidates.is_empty() {
-        out.push_str("\nNothing has been changed. Drafting cards and destinations comes next.\n");
+        out.push_str("\nNothing has been changed. Choosing destinations, and saving these as proposals, comes next.\n");
     }
+    out
+}
 
-    let items: Vec<Value> = candidates
-        .iter()
-        .zip(&texts)
-        .map(|(c, t)| {
-            json!({
-                "path": c.path,
-                "kind": c.kind,
-                "sealed": c.sealed,
-                "markers": c.markers,
-                "checksum": c.checksum,
-                "size": c.size,
-                "duplicate_of": c.duplicate_of.as_ref().map(|d| json!({"id": d.id, "card": d.card})),
-                "same_as": c.same_as.map(|i| &candidates[i].path),
-                "text": t.as_ref().map(text_json),
-            })
-        })
-        .collect();
-    let skipped: Vec<Value> = skipped
-        .iter()
-        .map(|s| json!({"path": s.path, "reason": s.reason}))
-        .collect();
-    Ok(Report::new(
-        out,
-        json!({ "items": items, "skipped": skipped }),
-    ))
+/// The drafted card, a few lines for people.
+fn describe_draft(draft: &Draft) -> Vec<String> {
+    let mut lines = vec![format!("card: \u{201c}{}\u{201d}", draft.title)];
+    if let Some(summary) = &draft.summary {
+        lines.push(format!("      {summary}"));
+    }
+    let mut tags: Vec<String> = draft.tags.iter().map(|t| t.0.clone()).collect();
+    if let Some(new_tag) = &draft.new_tag {
+        tags.push(format!("{} (new)", new_tag.0));
+    }
+    if !tags.is_empty() {
+        lines.push(format!("      tags: {}", tags.join(", ")));
+    }
+    if let Some(model) = draft.generated.as_ref().and_then(|g| g.model.as_ref()) {
+        lines.push(format!("      drafted by {model}"));
+    }
+    for problem in &draft.problems {
+        lines.push(format!("      to settle: {problem}"));
+    }
+    lines
+}
+
+fn draft_json(draft: &Draft) -> Value {
+    json!({
+        "title": draft.title,
+        "summary": draft.summary,
+        "tags": draft.tags,
+        "new_tag": draft.new_tag,
+        "created": draft.created,
+        "generated": draft.generated,
+        "problems": draft.problems,
+        "attempts": draft.attempts,
+    })
 }
 
 /// The provider and offer that read the text, if one did.

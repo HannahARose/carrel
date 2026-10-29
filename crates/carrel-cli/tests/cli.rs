@@ -403,6 +403,13 @@ fn ingest_reports_kinds_sizes_and_duplicates_without_changing_anything() {
         serde_json::Value::Null,
         "duplicates aren't read"
     );
+    // Which model drafts depends on the providers this machine has; there is always a card.
+    assert!(new["card"]["title"].is_string());
+    assert_eq!(
+        csv["card"],
+        serde_json::Value::Null,
+        "duplicates aren't drafted"
+    );
 
     assert!(downloads.join("new.txt").exists(), "nothing is moved");
     assert_eq!(
