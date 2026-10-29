@@ -62,8 +62,8 @@ let server = Server(name: "Apple", version: "0.1.0", extractors: [PDFText()])
 @Test func scansWithoutTextAreLeftForOCR() async throws {
     let url = try makePDF(nil)
     defer { try? FileManager.default.removeItem(at: url) }
-    #expect(throws: ProviderError.self) {
-        try PDFText().extract(url, mediaType: "application/pdf")
+    await #expect(throws: ProviderError.self) {
+        try await PDFText().extract(url, mediaType: "application/pdf")
     }
     let reply = try await send(server, ["jsonrpc": "2.0", "id": 3, "method": "text/extract", "params": [
         "offer": "pdfkit", "path": url.path(percentEncoded: false), "media_type": "application/pdf",
@@ -107,6 +107,6 @@ let server = Server(name: "Apple", version: "0.1.0", extractors: [PDFText()])
         .deletingLastPathComponent()
         .appending(path: "../../../../fixtures/sample-archive/Reading/Coupled oscillators note.pdf")
         .standardizedFileURL
-    let extraction = try PDFText().extract(pdf, mediaType: "application/pdf")
+    let extraction = try await PDFText().extract(pdf, mediaType: "application/pdf")
     #expect(!extraction.text.isEmpty)
 }

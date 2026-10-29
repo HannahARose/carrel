@@ -14,7 +14,7 @@ public struct PDFText: TextExtractor {
             mediaTypes: ["application/pdf"])
     }
 
-    public func extract(_ url: URL, mediaType: String) throws(ProviderError) -> Extraction {
+    public func extract(_ url: URL, mediaType: String) async throws(ProviderError) -> Extraction {
         guard let document = PDFDocument(url: url) else {
             throw .failed("\(url.path(percentEncoded: false)) isn't a readable PDF")
         }
