@@ -63,7 +63,7 @@ Each **offer** is one thing the provider can do:
 | `capability` | `text-model` or `extract-text` |
 | `id` | Identifies the offer within the provider, for example a model name |
 | `label` | Optional; a name for people |
-| `priority` | Which offer Carrel prefers when several can do the same thing; higher wins. Native tools use 100, portable providers 50, built-in fallbacks 10. A choice in settings overrides it. |
+| `priority` | Which offer Carrel prefers when several can do the same thing; higher wins. Native tools use 100, portable providers 50, built-in fallbacks 10. A choice in settings overrides it. Offers of equal priority from one provider are tried in the order it lists them, so list the most exact first (a PDF's text layer before OCR). |
 | `available` | Whether it can be used now. An offer that's unavailable says why in `reason`, such as "Apple Intelligence is turned off", so Carrel can tell the owner. |
 | `media_types` | For `extract-text`: the media types it reads. Missing means any. |
 | `context_tokens`, `structured_output` | For `text-model`: the context size, and whether it can return JSON that follows a schema |

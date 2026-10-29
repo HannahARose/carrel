@@ -313,7 +313,8 @@ impl Registry {
     }
 
     /// The available offers for `capability`, best first: the preferred one, then by
-    /// priority, with later-added providers winning ties.
+    /// priority, with later-added providers winning ties. Within one provider, offers of equal
+    /// priority keep the order the provider listed them in.
     #[must_use]
     pub fn ranked(&self, capability: Capability) -> Vec<(&dyn Provider, &Offer)> {
         let preferred = self.preferred.get(&capability);

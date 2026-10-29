@@ -8,11 +8,13 @@ Carrel providers built on Apple's frameworks, following the [provider protocol](
 | Offer | Capability | Reads | Status |
 | --- | --- | --- | --- |
 | `pdfkit` | `extract-text` | PDFs with a text layer | Done |
-| Vision OCR | `extract-text` | Scans and images | [#22](https://github.com/HannahARose/carrel/issues/22) |
+| `vision` (Vision OCR) | `extract-text` | Images, and PDFs without a text layer | Done |
 | `afm` (Foundation Models) | `text-model` | Prompts, with JSON Schema answers through guided generation | Done |
 | MLX | `text-model` | | [#24](https://github.com/HannahARose/carrel/issues/24) |
 
-PDFs without a text layer are reported as unsupported, so Carrel moves on to OCR.
+PDFs without a text layer are reported as unsupported, so Carrel moves on to OCR: `pdfkit` is listed before `vision`, and a provider's offers of equal priority are tried in the order it lists them. Vision renders each PDF page at twice its size and reads lines top to bottom; pages are separated by a form feed.
+
+The first OCR after building or installing a new copy of the provider can take about 40 seconds while macOS prepares Vision's models for it; after that, a page takes a fraction of a second.
 
 `afm` is Apple's on-device model, never Private Cloud Compute. It needs macOS 26 or later with Apple Intelligence turned on; otherwise its offer is unavailable and says why. Prompts that are too long for its context, blocked by its guardrails, or in an unsupported language, and schemas guided generation can't express, are reported as unsupported, so Carrel falls back to another model. The schema subset it understands:
 
