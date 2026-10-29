@@ -75,8 +75,8 @@ jobs:
       - run: cargo doc --workspace --no-deps --document-private-items --locked
 
   swift:
-    # The Swift side: build the XCFramework and bindings, test them from Swift, and check the
-    # package also builds for iOS.
+    # The Swift side: build the XCFramework and bindings, test them from Swift, check the
+    # package also builds for iOS, and test the Apple provider on its own and through Carrel.
     name: Swift package
     runs-on: macos-latest
     steps:
@@ -93,6 +93,15 @@ jobs:
       - name: Build for the iOS Simulator
         working-directory: apple/CarrelKit
         run: xcodebuild -scheme CarrelKit -destination 'generic/platform=iOS Simulator' -derivedDataPath .build/xcode build
+      - name: Apple provider tests
+        working-directory: apple/CarrelProviders
+        run: swift test
+      - name: Apple provider through the provider protocol
+        run: |
+          bin="$(swift build --package-path apple/CarrelProviders --show-bin-path)"
+          swift build --package-path apple/CarrelProviders --product carrel-provider-apple
+          CARREL_TEST_APPLE_PROVIDER="$bin/carrel-provider-apple" cargo test --locked -p carrel-core --test apple_provider
+          PATH="$bin:$PATH" cargo run --locked --bin carrel -- providers
 
   deny:
     # Known vulnerabilities, unmaintained or yanked crates, licenses, duplicate versions and
