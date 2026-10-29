@@ -4,3 +4,13 @@ fixtures/sample-archive/.obsidian/*
 
 # Rust build output
 /target/
+
+# Built by scripts/build-xcframework.sh
+/apple/CarrelKit/CarrelFFI.xcframework/
+/apple/CarrelKit/Sources/CarrelKit/Generated/
+
+# Swift Package Manager and Xcode
+.build/
+.swiftpm/
+*.xcuserstate
+xcuserdata/

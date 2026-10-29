@@ -70,11 +70,31 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - run: cargo doc --workspace --no-deps --document-private-items --locked
 
+  swift:
+    # The Swift side: build the XCFramework and bindings, test them from Swift, and check the
+    # package also builds for iOS.
+    name: Swift package
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - run: rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+      - name: Build the XCFramework and Swift bindings
+        run: PROFILE=dev scripts/build-xcframework.sh
+      - name: Swift tests
+        working-directory: apple/CarrelKit
+        run: swift test
+      - name: Build for the iOS Simulator
+        working-directory: apple/CarrelKit
+        run: xcodebuild -scheme CarrelKit -destination 'generic/platform=iOS Simulator' -derivedDataPath .build/xcode build
+
   ok:
     # The single required check for branch protection. It passes only if every job above passed.
     name: CI passed
     if: always()
-    needs: [fmt, clippy, test, docs]
+    needs: [fmt, clippy, test, docs, swift]
     runs-on: ubuntu-latest
     steps:
       - name: Check job results
