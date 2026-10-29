@@ -11,6 +11,7 @@ publish.workspace = true
 
 [dependencies]
 indexmap = { version = "2.14.2", features = ["serde"] }
+jiff = "0.2.38"
 schemars = { version = "1", features = ["indexmap2", "preserve_order", "uuid1"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde-saphyr = "2"
@@ -22,3 +23,4 @@ workspace = true
 
 [dev-dependencies]
 proptest = "1"
+tempfile = "3.27.0"
