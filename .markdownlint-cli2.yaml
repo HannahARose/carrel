@@ -1,0 +1,17 @@
+# Markdown lint for the project's own documents (CI: "Docs hygiene"). Run locally with
+# `markdownlint-cli2`. The sample archive is left out: it stands in for a person's own notes.
+config:
+  default: true
+  # Paragraphs are one line each, however long.
+  MD013: false
+  # GitHub's issue and pull request templates start below a title GitHub provides.
+  MD041: false
+  # Manifest examples are tab-separated.
+  MD010:
+    code_blocks: false
+globs:
+  - "**/*.md"
+ignores:
+  - "fixtures/sample-archive/**"
+  - "target/**"
+  - "**/.build/**"

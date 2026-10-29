@@ -73,7 +73,7 @@ Programs ignore, and never treat as items: `.DS_Store`, files starting with `._`
 
 ## 3. Layout
 
-```
+```text
 Archive/                              archive root (also an Obsidian vault)
   ARCHIVE.md                          archive design document (§6.2)
   README.md                           how to read this archive without Carrel
@@ -406,7 +406,7 @@ A subcollection is a collection inside another collection. It follows every rule
 
 `_System` holds data for programs. People can read it, but should not need to.
 
-```
+```text
 _System/
   archive.json          identity and format version (§7.1)
   settings.json         archive-level settings (§7.2)
@@ -506,7 +506,7 @@ Patterns use `*` for any run of characters within a name and match whole names, 
 
 A manifest records the files in a folder or bundle, one per line, as tab-separated values:
 
-```
+```text
 # carrel manifest 1.0	id=01928f3a-7c41-7d2e-9b6a-3f0c5e2a1b44
 README.md	sha256:9f86d081…	512	2026-09-09T18:30:00.25-07:00
 src/main.rs	sha256:e3b0c442…	2048	2026-09-14T10:02:11.137401922-07:00
@@ -580,7 +580,7 @@ git --git-dir=_System/history.git --work-tree=. log
 - Only the current **writer** commits. How a device becomes the writer depends on where the archive is stored and is outside this format, except for the lock file used on local and external disks (§8.4).
 - Commit messages have a one-line summary, an optional body, and these trailers:
 
-```
+```text
 Carrel-Operation: ingest
 Carrel-Person: 01928f39-eeee-7fff-8000-000000000005
 Carrel-Device: 01928f3a-0000-7000-8000-00000000d001
