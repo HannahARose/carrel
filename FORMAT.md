@@ -57,6 +57,7 @@ Dates are ISO 8601 calendar dates (`2026-10-29`). Times are RFC 3339 timestamps 
 - Paths inside the archive are relative to the archive root, use `/` as the separator, and never start with `/` or contain `.` or `..` segments.
 - Names are compared case-insensitively, because the default file systems on Apple platforms are case-insensitive. Two siblings **must not** differ only by case.
 - Names **must not** contain `/`, `:`, control characters, or leading or trailing spaces, and **should** stay under 200 bytes.
+- In **Markdown link destinations**, paths are percent-encoded so they work in every Markdown reader: at least space as `%20`, `(` as `%28`, `)` as `%29`, `%` as `%25`, `#` as `%23`, `?` as `%3F`, `<` as `%3C` and `>` as `%3E`. For example, `[RFC 9562](RFC%209562.md)`. Paths in frontmatter and JSON (such as `links[].path` or `manifest.path`) are plain, unencoded paths.
 
 ### 2.6 Checksums
 
@@ -192,6 +193,7 @@ The body is the owner's. Programs may only write inside **managed sections**, de
 - A program **must not** change anything outside managed sections, including whitespace.
 - If a managed section's markers are missing or unbalanced, a program **must not** guess; it leaves the body alone and reports the problem.
 - Version 1.0 defines one managed section, `history` (§5.5). New cards place it at the end of the body.
+- Markdown editors such as Obsidian realign tables by padding cells with spaces. Programs **must** treat differences in table cell padding and delimiter-row dash counts as insignificant, both inside managed sections and when detecting outside edits.
 
 ### 5.4 Links
 

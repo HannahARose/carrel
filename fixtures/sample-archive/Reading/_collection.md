@@ -35,8 +35,8 @@ A published paper (PDF), a physical book, a standards document (URL).
 
 | Item | Kind | Added |
 | --- | --- | --- |
-| [Coupled oscillators note.pdf](Coupled oscillators note.pdf.md) | file | 2026-10-20 |
-| [On the Origin of Species](On the Origin of Species.md) | physical | 2026-10-21 |
-| [RFC 9562 UUIDs](RFC 9562 UUIDs.md) | url | 2026-10-22 |
-| [Coupled oscillators note (preprint).pdf](Coupled oscillators note (preprint).pdf.md) | tombstone | 2026-10-23 |
+| [Coupled oscillators note.pdf](Coupled%20oscillators%20note.pdf.md) | file | 2026-10-20 |
+| [On the Origin of Species](On%20the%20Origin%20of%20Species.md) | physical | 2026-10-21 |
+| [RFC 9562 UUIDs](RFC%209562%20UUIDs.md) | url | 2026-10-22 |
+| [Coupled oscillators note (preprint).pdf](Coupled%20oscillators%20note%20%28preprint%29.pdf.md) | tombstone | 2026-10-23 |
 <!-- /carrel:listing -->

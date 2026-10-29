@@ -1,0 +1,3 @@
+# Obsidian's per-device state in the sample archive; only app.json is shared
+fixtures/sample-archive/.obsidian/*
+!fixtures/sample-archive/.obsidian/app.json
