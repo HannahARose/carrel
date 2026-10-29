@@ -173,14 +173,15 @@ pub enum ProviderError {
 }
 
 impl ProviderError {
-    /// The error for a JSON-RPC error `code` and `message`.
+    /// The error for a JSON-RPC error `code` and `message`. A provider that answers with an
+    /// error is still following the protocol, so none of these is a protocol failure: an
+    /// unknown method (`-32601`), as from a provider older than the method, is unsupported.
     #[must_use]
     pub fn from_code(code: i64, message: String) -> Self {
         match code {
             1 => Self::Unavailable(message),
-            2 => Self::Unsupported(message),
-            3 => Self::Failed(message),
-            _ => Self::Protocol(format!("error {code}: {message}")),
+            2 | -32601 => Self::Unsupported(message),
+            _ => Self::Failed(message),
         }
     }
 }
@@ -224,6 +225,21 @@ pub trait Provider: Send + Sync {
         )))
     }
 
+    /// The number of tokens `text` takes in the text model `offer`, for fitting text into its
+    /// context.
+    ///
+    /// # Errors
+    ///
+    /// A [`ProviderError`]; [`ProviderError::Unsupported`] if the provider can't count, in which
+    /// case [`estimate_tokens`] is the fallback.
+    fn count_tokens(&self, offer: &str, text: &str) -> Result<u64, ProviderError> {
+        let _ = (offer, text);
+        Err(ProviderError::Unsupported(format!(
+            "{} doesn't count tokens",
+            self.name()
+        )))
+    }
+
     /// Reads the text of a file with the extractor `offer`.
     ///
     /// # Errors
@@ -240,6 +256,15 @@ pub trait Provider: Send + Sync {
             self.name()
         )))
     }
+}
+
+/// A conservative estimate of how many tokens `text` takes in any model, for when the model
+/// can't say: one token for every three bytes of UTF-8. Real tokenizers average about four
+/// bytes of English per token, and about one CJK character, which is three bytes, so this
+/// overestimates rather than under.
+#[must_use]
+pub fn estimate_tokens(text: &str) -> u64 {
+    (text.len() as u64).div_ceil(3)
 }
 
 /// Which provider and offer produced a result, for provenance (FORMAT.md §5.6).
@@ -359,6 +384,17 @@ impl Registry {
         try_in_turn(Capability::TextModel, &candidates, |p, o| {
             p.complete(&o.id, request)
         })
+    }
+
+    /// How many tokens `text` takes in the model `source` names: the model's own count when it
+    /// can give one, otherwise [`estimate_tokens`]. Returns the count and whether it's exact.
+    #[must_use]
+    pub fn count_tokens(&self, source: &Source, text: &str) -> (u64, bool) {
+        self.providers
+            .iter()
+            .find(|p| p.name() == source.provider)
+            .and_then(|p| p.count_tokens(&source.offer, text).ok())
+            .map_or_else(|| (estimate_tokens(text), false), |n| (n, true))
     }
 
     /// Reads a file's text with the best extractor for its media type that succeeds, trying

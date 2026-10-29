@@ -78,8 +78,21 @@ fn answer(
             let (offer, request) = parse::<ExtractionRequest>(params)?;
             to_result(provider.extract(&offer, &request))
         }
+        "text/count-tokens" => {
+            let (offer, counted) = parse::<CountRequest>(params)?;
+            to_result(
+                provider
+                    .count_tokens(&offer, &counted.text)
+                    .map(|tokens| json!({ "tokens": tokens })),
+            )
+        }
         _ => Err((-32601, format!("unknown method {method}"))),
     }
+}
+
+#[derive(serde::Deserialize)]
+struct CountRequest {
+    text: String,
 }
 
 /// The `offer` parameter and the rest of the parameters as a request.
