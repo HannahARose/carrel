@@ -296,10 +296,12 @@ impl DateOrTime {
     }
 }
 
+/// Parses `s` as an unsigned number if it is exactly `len` ASCII digits.
 fn digits(s: &str, len: usize) -> Option<u32> {
     (s.len() == len && s.bytes().all(|b| b.is_ascii_digit())).then(|| s.parse().ok())?
 }
 
+/// Whether `s` is a real calendar date written `YYYY-MM-DD`, accounting for leap years.
 fn valid_date(s: &str) -> bool {
     let mut parts = s.split('-');
     let (Some(y), Some(m), Some(d), None) =
@@ -321,6 +323,9 @@ fn valid_date(s: &str) -> bool {
     (1..=days).contains(&d)
 }
 
+/// Whether `s` (the part after `T`) is `HH:MM:SS`, optionally with fractional seconds, followed
+/// by `Z` or a `±HH:MM` offset. A time without an offset is invalid, as FORMAT.md §2.4 requires.
+/// Seconds may be 60, for leap seconds.
 fn valid_time_with_offset(s: &str) -> bool {
     let (clock, offset) = if let Some(c) = s.strip_suffix('Z') {
         (c, None)
@@ -497,6 +502,18 @@ impl std::error::Error for CardError {}
 impl Card {
     /// Reads card frontmatter (the YAML between the `---` lines, without them).
     ///
+    /// ```
+    /// use carrel_core::card::{Card, Kind};
+    ///
+    /// let card = Card::from_yaml(
+    ///     "carrel: card\nformat: \"1.0\"\nid: 01a18701-0500-776a-9867-0802f3a80e26\n\
+    ///      kind: physical\ntitle: \"A book\"\nlocation: \"Shelf\"\nsensitivity: public\n",
+    /// )?;
+    /// assert_eq!(card.kind, Kind::Physical);
+    /// assert!(card.problems().is_empty());
+    /// # Ok::<(), carrel_core::card::CardError>(())
+    /// ```
+    ///
     /// # Errors
     ///
     /// [`CardError::NotACard`] if the first key isn't `carrel: card`, and
@@ -526,6 +543,19 @@ impl Card {
     /// Everything about this card that doesn't conform to FORMAT.md §5, using only the card
     /// itself. Checks that need the archive (tag vocabularies, link targets, checksums against
     /// files) live elsewhere.
+    ///
+    /// ```
+    /// use carrel_core::card::Card;
+    ///
+    /// // A bundle must say how it is sealed, and needs a manifest, size and item name.
+    /// let card = Card::from_yaml(
+    ///     "carrel: card\nformat: \"1.0\"\nid: 01a18701-0500-776a-9867-0802f3a80e26\n\
+    ///      kind: bundle\ntitle: \"A repo\"\nsensitivity: personal\n",
+    /// )?;
+    /// let fields: Vec<_> = card.problems().into_iter().map(|p| p.field).collect();
+    /// assert_eq!(fields, ["item", "sealed", "size", "manifest"]);
+    /// # Ok::<(), carrel_core::card::CardError>(())
+    /// ```
     #[must_use]
     pub fn problems(&self) -> Vec<Problem> {
         let mut out = Vec::new();

@@ -152,6 +152,7 @@ pub struct Settings {
     pub extra: Extra,
 }
 
+/// Reminders on by default (FORMAT.md §7.2).
 fn default_reminders() -> Vec<String> {
     ["idle", "weekly", "menu-bar"].map(String::from).to_vec()
 }
@@ -193,10 +194,12 @@ impl Default for CheckoutSettings {
     }
 }
 
+/// Checkout destination by default (FORMAT.md §7.2).
 fn default_destination() -> String {
     "desktop".into()
 }
 
+/// What happens to a working copy after return by default (FORMAT.md §7.2).
 fn default_after_return() -> String {
     "ask".into()
 }
@@ -221,6 +224,7 @@ impl Default for SessionSettings {
     }
 }
 
+/// Minutes without changes that end a work session by default (FORMAT.md §7.2).
 fn default_idle_minutes() -> u32 {
     45
 }

@@ -43,6 +43,16 @@ impl std::error::Error for SplitError {}
 /// The frontmatter ends at the first line, after the opening one, that contains exactly
 /// `---`. That line may be the last in the file, with or without a trailing newline.
 ///
+/// ```
+/// use carrel_core::frontmatter;
+///
+/// let split = frontmatter::split("---\ntitle: x\n---\nBody\n---\nstill body\n")?;
+/// assert_eq!(split.yaml, "title: x\n");
+/// assert_eq!(split.body, "Body\n---\nstill body\n");
+/// assert_eq!(frontmatter::join(split.yaml, split.body), "---\ntitle: x\n---\nBody\n---\nstill body\n");
+/// # Ok::<(), frontmatter::SplitError>(())
+/// ```
+///
 /// # Errors
 ///
 /// See [`SplitError`].

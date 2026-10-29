@@ -65,6 +65,7 @@ pub struct Section {
     pub whole: Range<usize>,
 }
 
+/// Whether `name` is a valid section name: lowercase letters, digits and `-`, not empty.
 fn valid_name(name: &str) -> bool {
     !name.is_empty()
         && name
@@ -72,11 +73,13 @@ fn valid_name(name: &str) -> bool {
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
 }
 
+/// A managed-section marker line, with the section name it opens or closes.
 enum Marker<'a> {
     Start(&'a str),
     End(&'a str),
 }
 
+/// The marker on `line`, if the line is only a marker (surrounding spaces allowed).
 fn marker(line: &str) -> Option<Marker<'_>> {
     let inner = line
         .trim()
@@ -197,6 +200,15 @@ pub fn get<'a>(body: &'a str, name: &str) -> Result<Option<&'a str>, SectionErro
 /// Replaces the content of an existing section. Only the bytes between its markers change.
 /// `content` gets a trailing newline if it is non-empty and lacks one.
 ///
+/// ```
+/// use carrel_core::sections;
+///
+/// let body = "Notes.\n<!-- carrel:history -->\nold\n<!-- /carrel:history -->\nMore.\n";
+/// let updated = sections::replace(body, "history", "new")?;
+/// assert_eq!(updated, "Notes.\n<!-- carrel:history -->\nnew\n<!-- /carrel:history -->\nMore.\n");
+/// # Ok::<(), sections::SectionError>(())
+/// ```
+///
 /// # Errors
 ///
 /// [`SectionError::Missing`] if the section doesn't exist, or a structural error.
@@ -246,6 +258,8 @@ pub fn append_section(body: &str, name: &str, content: &str) -> Result<String, S
     Ok(out)
 }
 
+/// Appends section content, adding a final newline if it is non-empty and lacks one, so the
+/// end marker always starts its own line.
 fn push_content(out: &mut String, content: &str) {
     out.push_str(content);
     if !content.is_empty() && !content.ends_with('\n') {
@@ -285,6 +299,8 @@ pub fn equivalent(a: &str, b: &str) -> bool {
     a == b || normalize_tables(a) == normalize_tables(b)
 }
 
+/// Splits the inside of a table row at `|`, except where the `|` is escaped (`\|`) or inside a
+/// code span, which are both part of the cell's text in GitHub Flavored Markdown.
 fn split_cells(inner: &str) -> Vec<&str> {
     let mut cells = Vec::new();
     let (mut start, mut escaped, mut in_code) = (0, false, false);
@@ -304,6 +320,8 @@ fn split_cells(inner: &str) -> Vec<&str> {
     cells
 }
 
+/// A cell with canonical padding. Delimiter cells (only `-` and `:`) become `---`, keeping any
+/// `:` that sets the column's alignment; other cells are returned trimmed, unchanged.
 fn canonical_cell(cell: &str) -> String {
     let is_delimiter =
         !cell.is_empty() && cell.contains('-') && cell.bytes().all(|b| b == b'-' || b == b':');

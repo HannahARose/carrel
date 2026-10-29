@@ -34,6 +34,14 @@ pub const DEFAULT_REGENERABLE: [&str; 9] = [
 ];
 
 /// A name pattern where `*` matches any run of characters within a name (FORMAT.md §7.5).
+///
+/// ```
+/// use carrel_core::detect::NamePattern;
+///
+/// let pattern = NamePattern("*.kicad_pro".into());
+/// assert!(pattern.matches("Lamp.KICAD_PRO"));
+/// assert!(!pattern.matches("Lamp.kicad_pro.bak"));
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct NamePattern(pub String);
@@ -47,6 +55,9 @@ impl NamePattern {
     }
 }
 
+/// Matches `name` against `pattern`, where each `*` matches any run of characters (possibly
+/// none). The text before the first `*` must start the name, the text after the last must end
+/// it, and the pieces in between must appear in order without overlapping.
 fn glob(pattern: &str, name: &str) -> bool {
     let mut parts = pattern.split('*');
     let first = parts.next().unwrap_or_default();
@@ -171,6 +182,20 @@ impl Rules {
     /// hard-sealed [`Kind::Bundle`] if any entry at its top level matches a marker, and an
     /// open [`Kind::Folder`] otherwise. Soft sealing is the owner's choice, never detected.
     ///
+    /// ```
+    /// use carrel_core::card::{Kind, Sealing};
+    /// use carrel_core::detect::Rules;
+    ///
+    /// let dir = tempfile::tempdir()?;
+    /// std::fs::create_dir(dir.path().join("app"))?;
+    /// std::fs::write(dir.path().join("app/Cargo.toml"), "")?;
+    ///
+    /// let found = Rules::default().detect(&dir.path().join("app"))?;
+    /// assert_eq!((found.kind, found.sealed), (Kind::Bundle, Some(Sealing::Hard)));
+    /// assert_eq!(found.markers, ["Cargo.toml"]);
+    /// # Ok::<(), std::io::Error>(())
+    /// ```
+    ///
     /// # Errors
     ///
     /// Any error reading `path` or listing the folder.
@@ -255,6 +280,7 @@ pub fn is_ignored(name: &str) -> bool {
     name == ".DS_Store" || name.starts_with("._") || name == "Icon\r"
 }
 
+/// Reads and parses a YAML file, or returns `None` if it doesn't exist.
 fn read_yaml<T: serde::de::DeserializeOwned>(path: &Path) -> Result<Option<T>, RulesError> {
     let text = match std::fs::read_to_string(path) {
         Ok(text) => text,
@@ -274,6 +300,7 @@ fn read_yaml<T: serde::de::DeserializeOwned>(path: &Path) -> Result<Option<T>, R
         })
 }
 
+/// A one-line YAML flow list, such as `markers: [".git", "Cargo.toml"]`.
 fn flow_list(key: &str, patterns: &[NamePattern]) -> String {
     let items: Vec<String> = patterns
         .iter()

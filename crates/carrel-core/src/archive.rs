@@ -131,6 +131,7 @@ impl std::error::Error for ArchiveError {
     }
 }
 
+/// Wraps an I/O error with the path it happened on.
 fn io(path: &Path) -> impl FnOnce(std::io::Error) -> ArchiveError + '_ {
     move |source| ArchiveError::Io {
         path: path.to_owned(),
@@ -138,6 +139,7 @@ fn io(path: &Path) -> impl FnOnce(std::io::Error) -> ArchiveError + '_ {
     }
 }
 
+/// An [`ArchiveError::Invalid`] for `path`.
 fn invalid(path: &Path, message: impl std::fmt::Display) -> ArchiveError {
     ArchiveError::Invalid {
         path: path.to_owned(),
@@ -158,12 +160,14 @@ fn create_file(path: &Path, contents: &str) -> Result<(), ArchiveError> {
     file.write_all(contents.as_bytes()).map_err(io(path))
 }
 
+/// Pretty-printed JSON with a trailing newline, as archive JSON files are written.
 fn json(value: &impl serde::Serialize) -> String {
     let mut text = serde_json::to_string_pretty(value).expect("archive documents always serialize");
     text.push('\n');
     text
 }
 
+/// The current time in the system time zone, as an RFC 3339 timestamp with offset.
 fn now_local() -> DateOrTime {
     DateOrTime(
         jiff::Zoned::now()
@@ -270,6 +274,18 @@ impl Archive {
     ///
     /// An archive written with a newer major format version opens read-only (FORMAT.md §12).
     /// A missing `settings.json` means FORMAT.md's defaults.
+    ///
+    /// ```
+    /// use carrel_core::Access;
+    /// use carrel_core::archive::{Archive, InitOptions};
+    ///
+    /// let dir = tempfile::tempdir()?;
+    /// let created = Archive::init(dir.path(), &InitOptions::new("Notes"))?;
+    /// let opened = Archive::open(dir.path())?;
+    /// assert_eq!(opened.info().id, created.info().id);
+    /// assert_eq!(opened.access(), Access::ReadWrite);
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     ///
     /// # Errors
     ///
@@ -415,6 +431,8 @@ impl Archive {
     }
 }
 
+/// A folder's entries, sorted by path, leaving out hidden entries (names starting with `.`,
+/// such as `.obsidian` or `.DS_Store`). Collection discovery never looks inside those.
 fn read_dir_sorted(dir: &Path) -> Result<Vec<PathBuf>, ArchiveError> {
     let mut entries: Vec<PathBuf> = std::fs::read_dir(dir)
         .map_err(io(dir))?
@@ -452,6 +470,9 @@ fn described_items(dir: &Path) -> Result<HashSet<String>, ArchiveError> {
     Ok(items)
 }
 
+/// Records `dir` as a collection if it has a `_collection.md`, then searches its subfolders,
+/// skipping any folder that a card in `dir` describes as an item: item folders (bundles, open
+/// folders) can't contain collections.
 fn walk_collections(
     root: &Path,
     dir: &Path,
@@ -493,16 +514,21 @@ fn to_frontmatter(value: &impl serde::Serialize) -> Result<String, ArchiveError>
     })
 }
 
+/// A new archive's `Active/_index.md`.
 const ACTIVE_INDEX: &str = "# Active\n\nNothing is checked out or on the desk.\n";
+/// A new archive's `.obsidian/app.json`: use the system trash, and skip `_System/`.
 const OBSIDIAN_APP: &str =
     "{\n  \"trashOption\": \"system\",\n  \"userIgnoreFilters\": [\"_System/\"]\n}\n";
 
+/// The body of a new `ARCHIVE.md`: a placeholder purpose, conventions, and a managed
+/// `collections` section linking the Holding collection.
 fn archive_body(name: &str) -> String {
     format!(
         "\n# {name}\n\nWhat this archive is for, in a sentence or two.\n\n## Conventions\n\nCollection and file names are plain words. Dates in file names are written `YYYY-MM-DD`.\n\n<!-- carrel:collections -->\n## Collections\n\n| Collection | Items | Description |\n| --- | --- | --- |\n| [Holding](Holding/_collection.md) | 0 | Items waiting for a better home |\n<!-- /carrel:collections -->\n"
     )
 }
 
+/// The body of a new `Holding/_collection.md`, linking back to `ARCHIVE.md`.
 fn holding_body(name: &str) -> String {
     format!(
         "\n# Holding\n\n## Purpose and scope\n\nItems ingest could not place with confidence. Each waits here until it is filed or a restructure gives it a home.\n\n<!-- carrel:listing -->\n## Contents\n\nPart of [{name}](../ARCHIVE.md)\n<!-- /carrel:listing -->\n",
@@ -524,6 +550,7 @@ pub fn escape_link_text(text: &str) -> String {
     out
 }
 
+/// A new archive's `README.md`, explaining the layout to someone without Carrel.
 fn readme(name: &str) -> String {
     format!(
         "# {name}\n\nThis folder is a Carrel archive: an ordinary folder you can read with Finder and any Markdown reader.\n\n- Start at [ARCHIVE.md](ARCHIVE.md), which links every collection.\n- Each **collection** is a folder with a `_collection.md` explaining what belongs in it.\n- Each **item** has a **card** beside it: `Paper.pdf` is described by `Paper.pdf.md`.\n- `Active/` shows what is checked out, `Journal/` logs work sessions, and `Holding/` has items waiting to be filed.\n- `_System/` holds data for programs, including the format specification (`_System/FORMAT.md`).\n"
