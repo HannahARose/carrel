@@ -37,12 +37,20 @@ Every document is analyzed on your own devices. Nothing is sent anywhere unless 
 
 ## Roadmap
 
-1. Archive format and core, plus the `carrel` CLI
-2. Ingest on Mac
-3. Check out, desk items and edit cards
-4. Explorer, search, librarian and restructuring
-5. iCloud sync and the iPad and iPhone apps
-6. Offline collections, sharing between archives, optional remote models
+| Version | Contents |
+| --- | --- |
+| 0.1 | Archive format, Rust core and the `carrel` CLI |
+| 0.2 | Ingest on Mac |
+| 0.3 | Check out, desk items and edit cards |
+| 0.4 | Explorer and search |
+| **1.0** | **First working release:** one Mac plus the CLI, fully on-device |
+| 1.1 – 1.3 | Librarian and discovery, restructure proposals, macOS system integration |
+| **2.0** | **iCloud, iPad and iPhone** |
+| 2.1 | Optional remote models through a privacy filter |
+| **3.0** | **Offline collections and sharing between archives** |
+| 3.1 | Encryption, web snapshots, Linux CLI |
+
+Details are on the [wiki's Roadmap page](https://github.com/HannahARose/carrel/wiki/Roadmap).
 
 ## License
 
