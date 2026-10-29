@@ -190,6 +190,7 @@ The body is the owner's. Programs may only write inside **managed sections**, de
 <!-- /carrel:history -->
 ```
 
+- A marker counts only when it is alone on its line (surrounding spaces allowed) and outside fenced code blocks, so documentation can show markers without creating sections. Section names use lowercase letters, digits and `-`. A section appears at most once per document, and sections never nest.
 - A program **must not** change anything outside managed sections, including whitespace.
 - If a managed section's markers are missing or unbalanced, a program **must not** guess; it leaves the body alone and reports the problem.
 - Version 1.0 defines one managed section, `history` (§5.5). New cards place it at the end of the body.
