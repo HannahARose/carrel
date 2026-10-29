@@ -117,6 +117,8 @@ Archive/                              archive root (also an Obsidian vault)
 
 Items of kind `physical`, `url`, `external` and `tombstone` are **card-only**: the card exists without a file or folder beside it.
 
+A symbolic link is a `file` item in its own right; programs never follow it to decide an item's kind.
+
 The contents of a folder or bundle are part of that one item: they are recorded in its manifest (§7.7) and have no cards of their own. If the files inside a folder need cards of their own, the folder should become a collection instead. Programs reorganize an open folder's contents only through a change the owner approves.
 
 ### 4.2 Sealing
@@ -493,7 +495,7 @@ markers: [".git", "Cargo.toml", "package.json", "pyproject.toml", "go.mod", "Pac
 regenerable: ["node_modules", ".venv", "venv", "target", "build", "dist", "__pycache__", ".ipynb_checkpoints", "DerivedData"]
 ```
 
-Patterns use `*` for any run of characters within a name.
+Patterns use `*` for any run of characters within a name and match whole names, ignoring case (§2.5). Only entries at a folder's top level are checked for markers, a marker may be a file or a folder (a Git worktree's `.git` is a file), and ignored files (§2.8) never count. A missing rules file means the defaults shown above. When looking for regenerable folders, programs don't search inside a regenerable folder or a `.git` folder.
 
 ### 7.6 Card templates
 
