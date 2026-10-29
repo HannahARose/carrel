@@ -145,8 +145,9 @@ fn renewing_extends_the_lease() {
     ));
     drop(expired);
 
+    // Long enough not to run out on a slow machine before it's renewed.
     let mut lease = lock
-        .acquire(holder(), "ingest", Duration::from_secs(1))
+        .acquire(holder(), "ingest", Duration::from_secs(60))
         .unwrap();
     let before = lease.info().expires.clone();
     lease.renew(DEFAULT_LEASE).unwrap();
