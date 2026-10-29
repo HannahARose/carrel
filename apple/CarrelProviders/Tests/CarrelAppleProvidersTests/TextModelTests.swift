@@ -144,3 +144,20 @@ func promptsTooLongForTheModelAreUnsupported() async {
         #expect(why.contains("too long"), "\(why)")
     }
 }
+
+@Test func tokenCountingIsOptional() async throws {
+    let server = Server(name: "Test", version: "1", models: [FakeModel()])
+    let reply = try await send(server, ["jsonrpc": "2.0", "id": 1, "method": "text/count-tokens",
+                                        "params": ["offer": "fake", "text": "hello"]])
+    #expect((reply["error"] as? [String: Any])?["code"] as? Int == 2, "the fake model can't count")
+}
+
+@Test(.enabled(if: appleModelAvailable, "Apple's on-device model isn't available here"))
+func appleModelCountsTokens() async throws {
+    let reply = try await send(
+        Server(name: "Apple", version: "1", models: [FoundationModel()]),
+        ["jsonrpc": "2.0", "id": 1, "method": "text/count-tokens",
+         "params": ["offer": "afm", "text": String(repeating: "The oscillators drift. ", count: 50)]])
+    let tokens = try #require((reply["result"] as? [String: Any])?["tokens"] as? Int, "\(reply)")
+    #expect(tokens > 50 && tokens < 1000, "\(tokens)")
+}

@@ -212,6 +212,16 @@ public protocol TextModel: Sendable {
 
     /// Answers `request`.
     func complete(_ request: CompletionRequest) async throws(ProviderError) -> Completion
+
+    /// The number of tokens `text` takes, for fitting text into the context. Optional: models
+    /// that can't count report unsupported, and Carrel estimates instead.
+    func countTokens(_ text: String) async throws(ProviderError) -> Int
+}
+
+extension TextModel {
+    public func countTokens(_ text: String) async throws(ProviderError) -> Int {
+        throw .unsupported("\(offer.id) doesn't count tokens")
+    }
 }
 
 /// Answers provider protocol messages for a set of models and extractors.
@@ -288,6 +298,17 @@ public struct Server: Sendable {
                 json["pages"] = pages
             }
             return json
+        case "text/count-tokens":
+            guard let offerID = params["offer"] as? String, let text = params["text"] as? String else {
+                throw .invalidParams("text/count-tokens needs offer and text")
+            }
+            guard let model = models.first(where: { $0.offer.id == offerID }) else {
+                throw .unsupported("\(name) has no text model \(offerID)")
+            }
+            guard model.offer.available else {
+                throw .unavailable(model.offer.reason ?? "\(offerID) is unavailable")
+            }
+            return ["tokens": try await model.countTokens(text)]
         case "text/complete":
             guard let offerID = params["offer"] as? String,
                 let prompt = params["prompt"] as? String

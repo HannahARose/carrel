@@ -99,6 +99,20 @@ Request `{"jsonrpc": "2.0", "id": 9, "method": "shutdown"}`; the result is `null
 
 `model` names the exact model and version, recorded in the card's provenance. `json` is present only when a schema was given, and `usage` is optional.
 
+### Counting tokens: `text/count-tokens`
+
+Optional. Carrel uses it to split long documents into pieces that fit a model's context.
+
+```json
+{"jsonrpc": "2.0", "id": 4, "method": "text/count-tokens", "params": {"offer": "afm", "text": "..."}}
+```
+
+```json
+{"jsonrpc": "2.0", "id": 4, "result": {"tokens": 812}}
+```
+
+A provider that can't count answers with code 2 or `-32601`, and Carrel estimates instead, conservatively: one token for every three bytes of UTF-8.
+
 ## Text extraction: `text/extract`
 
 ```json
@@ -126,6 +140,7 @@ Providers report failures as JSON-RPC errors. Besides the standard codes (such a
 | `1` | **Unavailable:** the offer can't be used right now | Tries the next provider |
 | `2` | **Unsupported:** this input isn't one the offer handles | Tries the next provider |
 | `3` | **Failed:** the offer tried and couldn't | Tries the next provider, and reports the error if none succeeds |
+| `-32601` | **Method not found:** the provider is older than the method, or doesn't offer it | Treats it as unsupported; the provider stays in use |
 
 `message` says what went wrong, in plain words.
 

@@ -370,3 +370,53 @@ fn serve_offers_a_rust_provider_over_the_protocol() {
     assert_eq!(replies[5]["id"], 6);
     assert_eq!(replies[5]["result"], serde_json::Value::Null);
 }
+
+#[test]
+fn providers_without_token_counting_fall_back_to_an_estimate() {
+    use carrel_core::providers::{Source, estimate_tokens};
+
+    let dir = tempfile::tempdir().unwrap();
+    // The example provider predates text/count-tokens, so it answers "unknown method".
+    let echo = start(dir.path(), "echo");
+    assert!(matches!(
+        echo.count_tokens("echo", "some text"),
+        Err(ProviderError::Unsupported(_))
+    ));
+    let still_works = echo
+        .complete(
+            "echo",
+            &CompletionRequest {
+                prompt: "hi".into(),
+                ..CompletionRequest::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        still_works.text, "echo: hi",
+        "an unknown method doesn't break the provider"
+    );
+
+    let mut registry = Registry::new();
+    registry.add(Box::new(echo));
+    let source = Source {
+        provider: "echo".into(),
+        offer: "echo".into(),
+        priority: 1,
+    };
+    let text = "The oscillators drift in and out of phase.";
+    assert_eq!(
+        registry.count_tokens(&source, text),
+        (estimate_tokens(text), false)
+    );
+}
+
+#[test]
+fn the_estimate_errs_high() {
+    use carrel_core::providers::estimate_tokens;
+    assert_eq!(estimate_tokens(""), 0);
+    assert_eq!(estimate_tokens("a"), 1);
+    // English averages about four bytes a token, so twelve bytes estimate four tokens, not three.
+    assert_eq!(estimate_tokens("twelve bytes"), 4);
+    // CJK characters are three bytes each and about a token each.
+    assert_eq!(estimate_tokens("日本語"), 3);
+}
