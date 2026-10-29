@@ -90,6 +90,27 @@ fn provider_name(path: &Path) -> Option<String> {
     (!name.is_empty() && !name.contains('.')).then(|| name.to_owned())
 }
 
+/// Starts `path` with piped standard streams. On Linux, a program that was written a moment
+/// ago can be briefly "busy" while another newly started process still holds it open, so that
+/// error is retried for a short while.
+fn spawn(path: &Path) -> std::io::Result<Child> {
+    let mut attempts = 0;
+    loop {
+        let result = Command::new(path)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn();
+        match result {
+            Err(e) if e.kind() == std::io::ErrorKind::ExecutableFileBusy && attempts < 50 => {
+                attempts += 1;
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            other => return other,
+        }
+    }
+}
+
 #[cfg(unix)]
 fn is_executable(path: &Path) -> bool {
     use std::os::unix::fs::PermissionsExt as _;
@@ -149,14 +170,9 @@ impl ProcessProvider {
     /// [`ProviderError::Protocol`] if it can't be started, doesn't answer `initialize` within
     /// [`INITIALIZE_TIMEOUT`], or speaks another protocol version.
     pub fn start(found: &Found) -> Result<Self, ProviderError> {
-        let mut child = Command::new(&found.path)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|e| {
-                ProviderError::Protocol(format!("can't start {}: {e}", found.path.display()))
-            })?;
+        let mut child = spawn(&found.path).map_err(|e| {
+            ProviderError::Protocol(format!("can't start {}: {e}", found.path.display()))
+        })?;
         let stdin = child.stdin.take();
         let (Some(stdout), Some(stderr)) = (child.stdout.take(), child.stderr.take()) else {
             return Err(ProviderError::Protocol(format!(
