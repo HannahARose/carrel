@@ -58,10 +58,11 @@ Details are on the [wiki's Roadmap page](https://github.com/HannahARose/carrel/w
 - **[Wiki](https://github.com/HannahARose/carrel/wiki):** design, archive format overview, roadmap, development setup and workflow.
 - **[Code documentation](https://hrose.me/carrel/):** every module, type and function, built from the `dev` branch on each change.
 - **[FORMAT.md](FORMAT.md):** the archive format specification.
+- **[docs/providers.md](docs/providers.md):** the protocol for providers, the programs that give Carrel its text models and text extraction.
 
 ## License
 
 - **Code:** [Mozilla Public License 2.0](LICENSE). You can use Carrel's code in other projects, including closed-source ones; changes to Carrel's own files must be shared under the same license.
-- **Archive format specification** (`FORMAT.md` and anything under `docs/format/`): [Creative Commons Attribution 4.0](LICENSES/CC-BY-4.0.txt), so other tools are free to read and write Carrel archives.
+- **Archive format and provider protocol specifications** (`FORMAT.md`, `docs/providers.md` and anything under `docs/format/`): [Creative Commons Attribution 4.0](LICENSES/CC-BY-4.0.txt), so other tools are free to read and write Carrel archives and to provide models and text extraction to Carrel.
 
 "Carrel" is a working name and is not covered by either license.

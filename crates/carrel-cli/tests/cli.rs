@@ -262,3 +262,68 @@ fn init_starts_history_for_an_archive_made_without_it() {
     assert!(report.contains("1 change recorded"), "{report}");
     assert_eq!(sandbox.run_in(&root, &["init"]).status.code(), Some(1));
 }
+
+/// The core's example provider, built if needed.
+fn echo_provider() -> PathBuf {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let status = std::process::Command::new(env!("CARGO"))
+        .args([
+            "build",
+            "--quiet",
+            "-p",
+            "carrel-core",
+            "--example",
+            "echo_provider",
+        ])
+        .current_dir(&root)
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let exe = std::env::current_exe().unwrap();
+    exe.parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("examples")
+        .join(format!("echo_provider{}", std::env::consts::EXE_SUFFIX))
+}
+
+#[test]
+fn providers_lists_what_this_device_has_and_what_is_used() {
+    let sandbox = Sandbox::new();
+    let bin = sandbox.path("bin");
+    std::fs::create_dir(&bin).unwrap();
+    let suffix = std::env::consts::EXE_SUFFIX;
+    let echo = echo_provider();
+    std::fs::copy(&echo, bin.join(format!("carrel-provider-echo{suffix}"))).unwrap();
+    std::fs::copy(&echo, bin.join(format!("carrel-provider-echo-old{suffix}"))).unwrap();
+
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_carrel"))
+        .args(["providers", "--json"])
+        .env("PATH", &bin)
+        .env("CARREL_CONFIG_DIR", sandbox.path("config"))
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let report: Value = serde_json::from_slice(&out.stdout).unwrap();
+    let names: Vec<&str> = report["providers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["built-in", "echo", "echo-old"]);
+    assert_eq!(report["providers"][1]["label"], "Echo");
+    assert!(
+        report["providers"][2]["error"]
+            .as_str()
+            .unwrap()
+            .contains("protocol 0")
+    );
+    assert_eq!(report["chosen"]["text-model"]["provider"], "echo");
+    assert_eq!(report["chosen"]["extract-text"]["provider"], "built-in");
+}

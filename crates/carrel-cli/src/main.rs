@@ -6,6 +6,7 @@
 
 mod commands;
 mod config;
+mod providers;
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -61,6 +62,8 @@ enum Command {
         #[arg(short = 'n', long, value_name = "COUNT")]
         max_count: Option<usize>,
     },
+    /// List the providers on this device (text models, text extraction) and which are used.
+    Providers,
 }
 
 /// The version line, including the archive format this build writes.
@@ -123,6 +126,7 @@ fn main() -> ExitCode {
         Command::Status => commands::status(cli.archive.as_deref()),
         Command::Show { item } => commands::show(cli.archive.as_deref(), &item),
         Command::Log { max_count } => commands::log(cli.archive.as_deref(), max_count),
+        Command::Providers => Ok(providers::list()),
     };
     match result {
         Ok(report) => {
