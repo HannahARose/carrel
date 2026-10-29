@@ -2,11 +2,11 @@
 
 A private, on-device archivist for your files.
 
-Carrel is a native app for macOS, iPadOS and iOS that ingests, catalogs, organizes and versions a personal archive. It works the way a librarian does: each collection has a written policy for what belongs in it, every item gets a catalog card, items are checked out for work and returned, and the structure changes only when the benefit outweighs the cost of moving things around.
+Carrel is a personal archivist with native apps for macOS, iPadOS and iOS and a command-line tool for macOS, Linux and Windows. It ingests, catalogs, organizes and versions a personal archive. It works the way a librarian does: each collection has a written policy for what belongs in it, every item gets a catalog card, items are checked out for work and returned, and the structure changes only when the benefit outweighs the cost of moving things around.
 
 Every document is analyzed on your own devices. Nothing is sent anywhere unless you explicitly opt in.
 
-> **Status:** early development (v0.1): the archive format, Rust core and first `carrel` commands. There is no app yet.
+> **Status:** [v0.1.0](https://github.com/HannahARose/carrel/releases/tag/v0.1.0) is out: the archive format, Rust core and first `carrel` commands. Next: ingest from the CLI (v0.2). The Mac app follows in v0.5.
 
 ## Principles
 
@@ -16,7 +16,7 @@ Every document is analyzed on your own devices. Nothing is sent anywhere unless 
 4. **Private by default.** On-device models do the reading and filing. Remote models are opt-in, never see file contents, and only get minimized information.
 5. **Organization comes from the material.** Collections are proposed from what is actually in the archive and reorganized only when that clearly helps.
 6. **You are the expert.** Carrel asks good questions and remembers the answers.
-7. **Native to Apple platforms.** It should feel like part of the operating system.
+7. **Portable core, native where it runs.** The core and CLI run on macOS, Linux and Windows; each platform's own tools are used where they exist, and portable ones fill in.
 8. **Scales with the device.** Every device can do everything; stronger devices do it better.
 
 ## What it does
@@ -30,9 +30,9 @@ Every document is analyzed on your own devices. Nothing is sent anywhere unless 
 
 ## Architecture (planned)
 
-- **Core:** Rust, shared by the apps and the CLI.
+- **Core:** Rust, shared by the apps and the CLI; builds on macOS, Linux and Windows.
 - **Apps:** SwiftUI for macOS, iPadOS and iOS, using the core through generated Swift bindings (UniFFI).
-- **Models:** Apple's Foundation Models on-device, plus larger local open models via MLX on Macs that can run them.
+- **Providers:** models and text extraction come from separate provider programs: Apple's Foundation Models, MLX, PDFKit and Vision on Apple devices, and portable ones (llama.cpp, a Rust PDF reader, Tesseract) elsewhere.
 - **Sync:** iCloud Drive, with a CloudKit lock so only one device writes history at a time.
 
 ## Roadmap
@@ -40,15 +40,16 @@ Every document is analyzed on your own devices. Nothing is sent anywhere unless 
 | Version | Contents |
 | --- | --- |
 | 0.1 | Archive format, Rust core and the `carrel` CLI |
-| 0.2 | Ingest on Mac |
-| 0.3 | Check out, desk items and edit cards |
-| 0.4 | Explorer and search |
-| **1.0** | **First working release:** one Mac plus the CLI, fully on-device |
+| 0.2 | Ingest from the CLI on macOS, Linux and Windows, with an interactive terminal mode |
+| 0.3 | Check out, desk items and edit cards, in the CLI |
+| 0.4 | Explorer and search, in the CLI |
+| 0.5 | The Mac app |
+| **1.0** | **First working release:** the Mac app plus the CLI, fully on-device |
 | 1.1 – 1.3 | Librarian and discovery, restructure proposals, macOS system integration |
 | **2.0** | **iCloud, iPad and iPhone** |
 | 2.1 | Optional remote models through a privacy filter |
 | **3.0** | **Offline collections and sharing between archives** |
-| 3.1 | Encryption, web snapshots, Linux CLI |
+| 3.1 | Encryption, web snapshots |
 
 Details are on the [wiki's Roadmap page](https://github.com/HannahARose/carrel/wiki/Roadmap).
 
