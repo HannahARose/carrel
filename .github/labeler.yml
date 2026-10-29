@@ -1,0 +1,33 @@
+# area: labels for pull requests, by the files they change (.github/workflows/labeler.yml).
+
+'area: format':
+  - changed-files:
+      - any-glob-to-any-file: [FORMAT.md, 'schemas/**', 'fixtures/**', 'docs/format/**']
+
+'area: core':
+  - changed-files:
+      - any-glob-to-any-file: 'crates/carrel-core/**'
+
+'area: history':
+  - changed-files:
+      - any-glob-to-any-file:
+          - crates/carrel-core/src/history.rs
+          - crates/carrel-core/src/coordinator.rs
+          - crates/carrel-core/tests/history.rs
+          - crates/carrel-core/tests/coordinator.rs
+
+'area: cli':
+  - changed-files:
+      - any-glob-to-any-file: 'crates/carrel-cli/**'
+
+'area: apple-apps':
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'apple/**'
+          - 'crates/carrel-ffi/**'
+          - 'crates/uniffi-bindgen/**'
+          - scripts/build-xcframework.sh
+
+'area: ci':
+  - changed-files:
+      - any-glob-to-any-file: '.github/**'
