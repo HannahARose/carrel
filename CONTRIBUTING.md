@@ -21,12 +21,24 @@ Carrel is in early development. This page explains how work is organized.
 
 Each roadmap phase has an epic issue that lists its work as sub-issues.
 
+## Branches
+
+| Branch | Purpose | How changes land |
+| --- | --- | --- |
+| `main` | Released versions only; every commit is a release | Merge-commit pull requests from `dev` (releases) or `hotfix/*` |
+| `dev` | Integration branch and the repository default | Squash-merged pull requests from work branches |
+| `feat/*`, `fix/*`, `docs/*`, `chore/*`, `research/*` | One issue or change each, short-lived | Branched from `dev`, deleted after merge |
+| `hotfix/*` | Urgent fix to a release | Branched from `main`, merged into `main`, then `main` merged back into `dev` |
+
+Both `main` and `dev` are protected: changes arrive only through pull requests, force-pushes and deletion are blocked, and review threads must be resolved before merging. Required CI checks will be added once CI exists.
+
 ## Workflow
 
 1. Pick or open an issue; discuss design first if it carries `status: needs design`.
-2. Work on a branch named `type/short-description` (for example `feat/card-parser`, `fix/manifest-rename`).
-3. Open a pull request using the template and link the issue (`Closes #123`).
+2. Branch from `dev` with a name like `feat/card-parser` or `fix/manifest-rename`.
+3. Open a pull request into `dev` using the template and link the issue (`Closes #123`). It is squash-merged, so the pull request title becomes the commit message.
 4. Changes to the archive format update `FORMAT.md` in the same pull request.
+5. To release, open a pull request from `dev` into `main` titled with the version, merge it, and tag the merge commit (`v1.0.0`).
 
 ## Privacy
 
