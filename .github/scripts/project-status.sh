@@ -64,17 +64,17 @@ case "$EVENT:$ACTION" in
   issues:closed)
     if [ "${STATE_REASON:-}" = completed ]; then move "$NODE_ID" Done; fi
     ;;
-  pull_request_target:opened | pull_request_target:reopened | pull_request_target:ready_for_review)
+  pull_request:opened | pull_request:reopened | pull_request:ready_for_review)
     if [ "$DRAFT" = true ]; then
       move_with_issues "$NODE_ID" "In progress"
     else
       move_with_issues "$NODE_ID" "In review"
     fi
     ;;
-  pull_request_target:converted_to_draft)
+  pull_request:converted_to_draft)
     move_with_issues "$NODE_ID" "In progress"
     ;;
-  pull_request_target:closed)
+  pull_request:closed)
     if [ "$MERGED" = true ]; then move_with_issues "$NODE_ID" Done; fi
     ;;
 esac

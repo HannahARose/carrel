@@ -6,8 +6,11 @@ on:
     types: [opened, edited, reopened, synchronize]
 
 permissions:
-  contents: read
-  pull-requests: read
+  pull-requests: read # read the pull request's linked issues
+
+concurrency:
+  group: pr-checks-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   linked-issue:

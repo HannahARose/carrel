@@ -5,17 +5,17 @@ name: Project board
 # so this needs a PROJECT_TOKEN secret: a classic personal access token with the `project`
 # scope. Without it the job does nothing.
 #
-# pull_request_target so it also runs for pull requests from forks. It checks out only the
-# base branch's script, never the pull request's code.
+# Pull requests from forks get no secrets, so they don't move on the board; move those by
+# hand. (pull_request_target would allow it, but runs with secrets alongside untrusted input.)
 
 on:
   issues:
     types: [opened, reopened, closed]
-  pull_request_target:
+  pull_request:
     types: [opened, reopened, ready_for_review, converted_to_draft, closed]
 
 permissions:
-  contents: read
+  contents: read # check out the board script; the project is edited with PROJECT_TOKEN
 
 concurrency:
   group: project-${{ github.event.issue.number || github.event.pull_request.number }}
@@ -31,7 +31,8 @@ jobs:
           sparse-checkout: .github/scripts
       - name: Move the item
         env:
-          GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
+          # A token with only the project scope; an environment would add setup for no gain.
+          GH_TOKEN: ${{ secrets.PROJECT_TOKEN }} # zizmor: ignore[secrets-outside-env]
           PROJECT_OWNER: ${{ github.repository_owner }}
           PROJECT_NUMBER: 2
           EVENT: ${{ github.event_name }}
