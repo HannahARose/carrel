@@ -7,6 +7,7 @@
 mod commands;
 mod config;
 mod providers;
+mod review;
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -64,6 +65,35 @@ enum Command {
     },
     /// List the providers on this device (text models, text extraction) and which are used.
     Providers,
+    /// Review proposals to file items: list them, show one, or reject them.
+    Review {
+        /// Include proposals already decided (with no subcommand).
+        #[arg(long)]
+        all: bool,
+        #[command(subcommand)]
+        action: Option<ReviewAction>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum ReviewAction {
+    /// List proposals waiting for review, by destination.
+    List {
+        /// Include proposals already decided.
+        #[arg(long)]
+        all: bool,
+    },
+    /// Show a proposal: the card it would write, where it would go and why.
+    Show {
+        /// The proposal's identifier, or its start or end.
+        id: String,
+    },
+    /// Reject proposals; their items stay where they are.
+    Reject {
+        /// The proposals' identifiers, or their starts or ends.
+        #[arg(required = true)]
+        ids: Vec<String>,
+    },
 }
 
 /// The version line, including the archive format this build writes.
@@ -127,6 +157,11 @@ fn main() -> ExitCode {
         Command::Show { item } => commands::show(cli.archive.as_deref(), &item),
         Command::Log { max_count } => commands::log(cli.archive.as_deref(), max_count),
         Command::Providers => Ok(providers::list()),
+        Command::Review { all, action } => match action.unwrap_or(ReviewAction::List { all }) {
+            ReviewAction::List { all } => review::list(cli.archive.as_deref(), all),
+            ReviewAction::Show { id } => review::show(cli.archive.as_deref(), &id),
+            ReviewAction::Reject { ids } => review::reject(cli.archive.as_deref(), &ids),
+        },
     };
     match result {
         Ok(report) => {

@@ -181,6 +181,7 @@ fn check(root: &Path) -> Vec<String> {
     check_markdown_links(root, &mut problems);
     check_navigation(root, &collections, &items, &mut problems);
     check_system_files(root, &mut problems);
+    check_review_entries(&archive, &collections, &mut problems);
     problems.0
 }
 
@@ -597,6 +598,64 @@ fn check_system_files(root: &Path, problems: &mut Problems) {
     let spec = std::fs::read(repo_root().join("FORMAT.md")).unwrap();
     if std::fs::read(root.join("_System/FORMAT.md")).ok().as_ref() != Some(&spec) {
         problems.add("_System/FORMAT.md isn't an exact copy of FORMAT.md");
+    }
+}
+
+fn check_review_entries(
+    archive: &Archive,
+    collections: &[carrel_core::archive::Collection],
+    problems: &mut Problems,
+) {
+    let queue = carrel_core::review::ReviewQueue::of(archive);
+    let (entries, bad) = queue.list().unwrap();
+    for error in bad {
+        problems.add(format!("review entry: {error}"));
+    }
+    for entry in entries {
+        let name = format!("{}/{}.json", carrel_core::review::REVIEW_DIR, entry.id);
+        let Some(collection) = collections
+            .iter()
+            .find(|c| c.doc.id == entry.destination.collection)
+        else {
+            problems.add(format!(
+                "{name}: destination {} isn't a collection",
+                entry.destination.collection
+            ));
+            continue;
+        };
+        if collection.path != entry.destination.path {
+            problems.add(format!(
+                "{name}: destination path {} doesn't match {}",
+                entry.destination.path, collection.path
+            ));
+        }
+        let mut vocabulary: BTreeSet<&str> = archive
+            .doc()
+            .tags
+            .iter()
+            .map(|t| t.name.0.as_str())
+            .collect();
+        for c in collections {
+            if collection.path == c.path || collection.path.starts_with(&format!("{}/", c.path)) {
+                vocabulary.extend(c.doc.tags.iter().map(|t| t.name.0.as_str()));
+            }
+        }
+        for tag in &entry.card.tags {
+            if !vocabulary.contains(tag.0.as_str()) && !entry.proposed_tags.contains(tag) {
+                problems.add(format!(
+                    "{name}: tag {} is neither in the vocabulary nor proposed",
+                    tag.0
+                ));
+            }
+        }
+        for tag in &entry.proposed_tags {
+            if vocabulary.contains(tag.0.as_str()) {
+                problems.add(format!(
+                    "{name}: proposed tag {} is already in the vocabulary",
+                    tag.0
+                ));
+            }
+        }
     }
 }
 
