@@ -36,7 +36,7 @@ Both `main` and `dev` are protected: changes arrive only through pull requests, 
 
 1. Pick or open an issue; discuss design first if it carries `status: needs design`.
 2. Branch from `dev` with a name like `feat/card-parser` or `fix/manifest-rename`.
-3. Open a pull request into `dev` using the template and link the issue (`Closes #123`). It is squash-merged, so the pull request title becomes the commit message.
+3. Open a pull request into `dev` using the template and link the issue (`Closes #123`). It is squash-merged, so the pull request title becomes the commit message: write it as a short imperative sentence saying what changes, such as "Add a writer lock and require a lease for history commits", with no type prefix or issue number.
 4. Changes to the archive format update `FORMAT.md` in the same pull request.
 5. To release, open a pull request from `dev` into `main` titled with the version, merge it, tag the merge commit (`v0.1.0`) and publish GitHub release notes.
 
