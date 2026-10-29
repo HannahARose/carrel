@@ -324,3 +324,38 @@ fn providers_lists_what_this_device_has_and_what_is_used() {
     assert_eq!(report["chosen"]["text-model"]["provider"], "echo");
     assert_eq!(report["chosen"]["extract-text"]["provider"], "built-in");
 }
+
+#[test]
+fn review_lists_shows_and_rejects_proposals() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    let listed = sandbox.json(&root, &["review"]);
+    let entries = listed["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["destination"]["path"], "Projects/Hardware");
+
+    let shown = sandbox.json(&root, &["review", "show", "00000001"]);
+    assert_eq!(shown["card"]["title"], "Desk lamp diffuser (print file)");
+    let report = sandbox.ok(&root, &["review", "show", "00000001"]);
+    assert!(report.contains("new tag      lighting"), "{report}");
+
+    let missing = sandbox.run_in(&root, &["review", "reject", "00000001", "nope"]);
+    assert_eq!(missing.status.code(), Some(1), "a typo rejects nothing");
+    assert_eq!(
+        sandbox.json(&root, &["review"])["entries"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+
+    sandbox.ok(&root, &["review", "reject", "00000001"]);
+    assert_eq!(
+        sandbox.json(&root, &["review"])["entries"],
+        serde_json::json!([])
+    );
+    let all = sandbox.json(&root, &["review", "--all"]);
+    assert_eq!(all["entries"][0]["state"], "rejected");
+    let again = sandbox.run_in(&root, &["review", "reject", "00000001"]);
+    assert!(String::from_utf8_lossy(&again.stderr).contains("already rejected"));
+}

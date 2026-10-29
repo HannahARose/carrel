@@ -18,6 +18,7 @@
 //! | [`manifest`] | Checksums, folder manifests and their diffs | §2.6, §7.7 |
 //! | [`history`] | The Git history of metadata, and undo | §8.1–§8.3 |
 //! | [`coordinator`] | Which writer may change an archive: leases and the disk lock | §8.4 |
+//! | [`review`] | The review queue: proposals to file items, waiting for the owner | §7.9 |
 //! | [`local`] | Where this device keeps its own data: configuration and models | none |
 //! | [`providers`] | Text models and text extraction from providers, native or portable | `docs/providers.md` |
 //!
@@ -49,6 +50,7 @@ pub mod history;
 pub mod local;
 pub mod manifest;
 pub mod providers;
+pub mod review;
 pub mod sections;
 
 /// The version of the archive format this build reads and writes (`FORMAT.md`).

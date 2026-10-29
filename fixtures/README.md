@@ -23,12 +23,13 @@ A small, hand-built archive that follows [FORMAT.md](../FORMAT.md) v1.0 (draft).
 | Archive-wide and per-collection tag vocabularies | `ARCHIVE.md`, each `_collection.md` |
 | Active section and Journal | `Active/`, `Journal/2026/2026-10.md` |
 | `_System`: identity, settings, glossary, rules, manifests, device profile, an inbox entry, a copy of FORMAT.md | `_System/` |
+| A review entry: a proposal to file a print file into Projects/Hardware, with a proposed new tag | `_System/queue/review/` |
 
 ### Not included, and why
 
 - **`_System/history.git`** and a **`.git` marker** inside a bundle: Git can't store a repository's internal files inside another repository cleanly. Tests create the history repository at runtime, and `oscillator-sim` is sealed by `Cargo.toml` instead.
 - **Desk items:** they live outside the archive by definition.
-- **Queue entries:** their schemas are defined with the features that use them.
+- **Questions, tasks and restructure proposals** in `_System/queue/`: their schemas are defined with the features that use them.
 
 ### Changing the fixture
 

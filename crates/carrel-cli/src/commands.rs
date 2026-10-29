@@ -20,7 +20,7 @@ const SYNCED_WARNING: &str = "this archive is in a synced folder; until iCloud s
 
 /// Finds the archive to work on: `--archive`, else the one containing the current folder,
 /// else the one chosen with `carrel open`.
-fn locate(archive: Option<&Path>) -> Result<Archive, Failure> {
+pub fn locate(archive: Option<&Path>) -> Result<Archive, Failure> {
     if let Some(path) = archive {
         return Ok(Archive::find(path)?);
     }
