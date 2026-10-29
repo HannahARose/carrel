@@ -1,6 +1,6 @@
 # Design: ingest (v0.2)
 
-**Status: draft for review.** Covers #26, the pipeline. It also fixes the shape of #25 (routing rules), #27 (review queue), #28 (Holding), #29 (questions), #30 (sensitivity) and #31 (duplicates), which the pipeline calls. Decisions marked **Open** need the owner's answer before building; each has a recommendation.
+**Status: accepted (2026-10-29).** Covers #26, the pipeline. It also fixes the shape of #25 (routing rules), #27 (review queue), #28 (Holding), #29 (questions), #30 (sensitivity) and #31 (duplicates), which the pipeline calls. The owner accepted all five decisions listed at the end.
 
 ## What ingest does
 
@@ -43,7 +43,7 @@ A Kopia snapshot per batch comes with #32.
 
 `carrel ingest PATH...` creates a batch. Each argument is one item.
 
-- **Open: a plain folder argument.** A folder that isn't sealed could be one item (an open folder) or a pile of separate items, as with `~/Downloads`. **Recommendation:** treat it as one item unless `--each` is given, in which case each entry inside is its own item. A folder named `Downloads`, `Desktop` or `Inbox` prompts the choice instead of guessing.
+- **A plain folder argument** (decided): a folder that isn't sealed is one item, an open folder, unless `--each` is given, in which case each entry inside is its own item. A folder named `Downloads`, `Desktop` or `Inbox` prompts the choice instead of guessing.
 - Items inside the archive (in collections) aren't ingested. Uncataloged files already sitting in the archive are offered as an ingest batch by `carrel status` later.
 
 ### 4. Duplicates
@@ -82,7 +82,7 @@ One model call with a schema:
 
 The prompt includes the glossary (§7.3), so facts the owner has taught are used.
 
-- **New tags:** the vocabulary is fixed per collection (§6.5). **Open:** let the model *propose* a new tag. **Recommendation:** yes, up to one per item, marked as a proposal in review. Approving it adds it to the collection's vocabulary in the same commit.
+- **New tags** (decided): the vocabulary is fixed per collection (§6.5), but the model may *propose* up to one new tag per item, marked as a proposal in review. Approving it adds it to the collection's vocabulary in the same commit.
 - **Provenance** goes in `generated` (§5.6). `level` is `below-preferred` when the model came from a lower-priority provider than the device's best, so a stronger device can redraft it later.
 
 ### 8. Route
@@ -124,7 +124,7 @@ v0.2 asks only two kinds of question: what a recurring unknown term is, and whic
 
 ### 11. Proposals and review
 
-Each item's proposal is a JSON file, `_System/queue/review/<proposal-id>.json` (§7.9). The schema goes into FORMAT.md when this design is accepted:
+Each item's proposal is a JSON file, `_System/queue/review/<proposal-id>.json`, specified in FORMAT.md §7.9:
 
 ```json
 {
@@ -159,9 +159,7 @@ Each item's proposal is a JSON file, `_System/queue/review/<proposal-id>.json` (
 
 ### 12. Archive
 
-- **Open: moving the original.**
-  - **Recommendation:** on approval, **move** the item into the archive. A move within one volume is an atomic rename. Across volumes it's copy, verify the checksum, then remove the original, and the approval counts as the owner's consent.
-  - **Alternative:** a setting, `ingest.originals: move | keep`, defaulting to `move`. `keep` leaves the original and lists it in the batch summary for the owner to delete. I'd add the setting with `move` as the default.
+- **Moving the original** (decided): on approval, the item is **moved** into the archive. A move within one volume is an atomic rename. Across volumes it's copy, verify the checksum, then remove the original, and the approval counts as the owner's consent. The setting `ingest.originals: move | keep` (§7.2) defaults to `move`; `keep` leaves the original and lists it in the batch summary for the owner to delete.
 - Items go into the collection's folder under their own name. On a clash, Carrel adds a number, as in `notes (2).md`,, and the card notes the original name.
 
 ## Where it runs
@@ -202,10 +200,10 @@ In order, each a PR:
 
 The gate for v0.2 stays as it is: a sample of a real Downloads backlog is filed end to end and approved.
 
-## Decisions for the owner
+## Decisions (accepted 2026-10-29)
 
-1. **A plain folder argument:** one item, with `--each` to split it. *Recommended.*
-2. **New tags:** the model may propose one per item, approved in review. *Recommended.*
-3. **Originals:** moved on approval, with a `keep` setting. *Recommended.*
-4. **Auto-filing:** only through rules with `auto_file: true`. Never on model confidence alone in v0.2, and never for sensitive items. *Recommended;* model-only auto-filing could come later, once results earn trust (Foundational Rules: autonomy limit).
-5. **Commits:** one history commit per approval batch, not per item. *Recommended.*
+1. **A plain folder argument:** one item, with `--each` to split it.
+2. **New tags:** the model may propose one per item, approved in review.
+3. **Originals:** moved on approval, with a `keep` setting.
+4. **Auto-filing:** only through rules with `auto_file: true`. Never on model confidence alone in v0.2, and never for sensitive items. Model-only auto-filing could come later, once results earn trust (Foundational Rules: autonomy limit).
+5. **Commits:** one history commit per approval batch, not per item.
