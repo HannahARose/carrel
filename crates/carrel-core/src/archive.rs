@@ -5,6 +5,7 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
 use crate::card::{DateOrTime, Id};
+use crate::detect::{Detected, Rules, RulesError};
 use crate::documents::{
     ArchiveDoc, ArchiveInfo, ArchiveMarker, CollectionDoc, CollectionMarker, Settings,
 };
@@ -239,8 +240,15 @@ impl Archive {
         create_file(&root.join("_System/FORMAT.md"), FORMAT_SPEC)?;
         create_file(&root.join("_System/glossary.md"), "# Glossary\n")?;
         create_file(&root.join("_System/rules/routing.yaml"), "rules: []\n")?;
-        create_file(&root.join("_System/rules/markers.yaml"), MARKERS)?;
-        create_file(&root.join("_System/rules/regenerable.yaml"), REGENERABLE)?;
+        let rules = Rules::default();
+        create_file(
+            &root.join("_System/rules/markers.yaml"),
+            &rules.markers_yaml(),
+        )?;
+        create_file(
+            &root.join("_System/rules/regenerable.yaml"),
+            &rules.regenerable_yaml(),
+        )?;
         create_file(
             &root.join("ARCHIVE.md"),
             &frontmatter::join(&to_frontmatter(&doc)?, &archive_body(name)),
@@ -362,6 +370,26 @@ impl Archive {
         self.access
     }
 
+    /// The archive's detection rules from `_System/rules/`, with defaults for missing files.
+    ///
+    /// # Errors
+    ///
+    /// [`RulesError`] if a rules file exists but is malformed.
+    pub fn rules(&self) -> Result<Rules, RulesError> {
+        Rules::load(&self.root)
+    }
+
+    /// What kind of item `path` would be, using this archive's rules.
+    ///
+    /// # Errors
+    ///
+    /// [`ArchiveError::Invalid`] for malformed rules, or [`ArchiveError::Io`] if `path` can't
+    /// be read.
+    pub fn detect(&self, path: &Path) -> Result<Detected, ArchiveError> {
+        let rules = self.rules().map_err(|e| invalid(&e.path, e.message))?;
+        rules.detect(path).map_err(io(path))
+    }
+
     /// Every collection in the archive, sorted by path. Folders that are items (described by a
     /// card beside them) are never searched, so a `_collection.md` inside a bundle doesn't
     /// count.
@@ -465,8 +493,6 @@ fn to_frontmatter(value: &impl serde::Serialize) -> Result<String, ArchiveError>
     })
 }
 
-const MARKERS: &str = "markers: [\".git\", \"Cargo.toml\", \"package.json\", \"pyproject.toml\", \"go.mod\", \"Package.swift\", \"*.xcodeproj\", \"*.xcworkspace\", \"*.kicad_pro\"]\n";
-const REGENERABLE: &str = "regenerable: [\"node_modules\", \".venv\", \"venv\", \"target\", \"build\", \"dist\", \"__pycache__\", \".ipynb_checkpoints\", \"DerivedData\"]\n";
 const ACTIVE_INDEX: &str = "# Active\n\nNothing is checked out or on the desk.\n";
 const OBSIDIAN_APP: &str =
     "{\n  \"trashOption\": \"system\",\n  \"userIgnoreFilters\": [\"_System/\"]\n}\n";
