@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::archive::{Archive, ArchiveError};
 use crate::card::Id;
+use crate::coordinator::{CoordinatorError, WriterLease};
 
 /// Where the history repository lives, relative to the archive root.
 pub const HISTORY_DIR: &str = "_System/history.git";
@@ -235,6 +236,8 @@ pub enum HistoryError {
     UndoConflict(Vec<String>),
     /// An item can't be moved back because its old location is taken or it is missing.
     UndoBlocked(String),
+    /// The writer lease is missing, lost or expired; only the current writer may record history.
+    Writer(CoordinatorError),
 }
 
 impl std::fmt::Display for HistoryError {
@@ -254,6 +257,7 @@ impl std::fmt::Display for HistoryError {
                 )
             }
             Self::UndoBlocked(why) => write!(f, "can't undo: {why}"),
+            Self::Writer(e) => write!(f, "history: {e}"),
         }
     }
 }
@@ -264,8 +268,15 @@ impl std::error::Error for HistoryError {
             Self::Git(e) => Some(e),
             Self::Archive(e) => Some(e),
             Self::Io { source, .. } => Some(source),
+            Self::Writer(e) => Some(e),
             _ => None,
         }
+    }
+}
+
+impl From<CoordinatorError> for HistoryError {
+    fn from(e: CoordinatorError) -> Self {
+        Self::Writer(e)
     }
 }
 
@@ -304,13 +315,14 @@ impl std::fmt::Debug for History {
 
 impl History {
     /// Creates the history repository for `archive` and records its current metadata as the
-    /// first commit, with operation `create`.
+    /// first commit, with operation `create`, made by the lease's holder.
     ///
     /// # Errors
     ///
-    /// [`HistoryError::AlreadyInitialized`] if the repository exists, or any Git, archive or
-    /// file error.
-    pub fn init(archive: &Archive, person: Id, device: Id) -> Result<Self, HistoryError> {
+    /// [`HistoryError::AlreadyInitialized`] if the repository exists, [`HistoryError::Writer`]
+    /// if `lease` is no longer valid, or any Git, archive or file error.
+    pub fn init(archive: &Archive, lease: &WriterLease) -> Result<Self, HistoryError> {
+        lease.check()?;
         let root = archive.root().to_path_buf();
         let git_dir = root.join(HISTORY_DIR);
         if git_dir.exists() {
@@ -340,10 +352,10 @@ impl History {
         let change = Change::new(
             Operation::Create,
             format!("Create archive “{}”", archive.doc().name),
-            person,
-            device,
+            lease.info().person,
+            lease.info().device,
         );
-        history.commit(archive, &change)?;
+        history.commit(archive, &change, lease)?;
         Ok(history)
     }
 
@@ -394,16 +406,19 @@ impl History {
     }
 
     /// Records the archive's current metadata as one commit describing `change`.
-    /// Returns `None`, without committing, if no metadata changed.
+    /// Returns `None`, without committing, if no metadata changed. Only the holder of a valid
+    /// writer lease may commit (FORMAT.md §8.4).
     ///
     /// # Errors
     ///
-    /// Any Git or archive error.
+    /// [`HistoryError::Writer`] if `lease` is no longer valid, or any Git or archive error.
     pub fn commit(
         &self,
         archive: &Archive,
         change: &Change,
+        lease: &WriterLease,
     ) -> Result<Option<String>, HistoryError> {
+        lease.check()?;
         self.commit_with(archive, change, None)
     }
 
@@ -484,14 +499,15 @@ impl History {
     /// # Errors
     ///
     /// [`HistoryError::UnknownCommit`], [`HistoryError::UndoConflict`],
-    /// [`HistoryError::UndoBlocked`], or any Git, archive or file error.
+    /// [`HistoryError::UndoBlocked`], [`HistoryError::Writer`] if `lease` is no longer valid,
+    /// or any Git, archive or file error.
     pub fn undo(
         &self,
         archive: &Archive,
         id: &str,
-        person: Id,
-        device: Id,
+        lease: &WriterLease,
     ) -> Result<String, HistoryError> {
+        lease.check()?;
         let oid = Oid::from_str(id).map_err(|_| HistoryError::UnknownCommit(id.to_owned()))?;
         let target = self
             .repo
@@ -543,8 +559,8 @@ impl History {
         let mut change = Change::new(
             original.operation.unwrap_or(Operation::Edit),
             format!("Undo: {}", original.summary),
-            person,
-            device,
+            lease.info().person,
+            lease.info().device,
         );
         change.items.clone_from(&original.items);
         change.moves = original
@@ -591,12 +607,19 @@ fn collect_files(root: &Path, dir: &Path, out: &mut Vec<String>) -> Result<(), H
                 if !untracked {
                     stack.push(path);
                 }
-            } else if file_type.is_file() {
+            } else if file_type.is_file() && !is_lock_file(&relative) {
                 out.push(relative);
             }
         }
     }
     Ok(())
+}
+
+/// The writer lock and its temporary files change on every lease, so history never tracks them.
+fn is_lock_file(relative: &str) -> bool {
+    relative
+        .strip_prefix(crate::coordinator::LOCK_FILE)
+        .is_some_and(|rest| rest.is_empty() || rest.starts_with('.'))
 }
 
 fn entry_from(commit: &git2::Commit<'_>) -> Entry {

@@ -16,6 +16,8 @@
 //! | [`sections`] | Managed sections, and comparing text while ignoring table padding | §5.3 |
 //! | [`detect`] | Item kinds, sealing, and regenerable folders | §4, §7.5 |
 //! | [`manifest`] | Checksums, folder manifests and their diffs | §2.6, §7.7 |
+//! | [`history`] | The Git history of metadata, and undo | §8.1–§8.3 |
+//! | [`coordinator`] | Which writer may change an archive: leases and the disk lock | §8.4 |
 //!
 //! Two promises run through every module: owner text outside managed sections is never
 //! changed, and fields this version doesn't recognize are always preserved.
@@ -37,6 +39,7 @@
 pub mod archive;
 pub mod card;
 pub mod card_file;
+pub mod coordinator;
 pub mod detect;
 pub mod documents;
 pub mod frontmatter;
