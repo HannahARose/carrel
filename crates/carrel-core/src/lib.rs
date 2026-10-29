@@ -4,8 +4,10 @@
 //! It has no platform-specific code; anything that needs the operating system (models,
 //! text extraction, sync) is supplied by the caller.
 
+pub mod archive;
 pub mod card;
 pub mod card_file;
+pub mod documents;
 pub mod frontmatter;
 pub mod sections;
 
