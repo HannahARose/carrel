@@ -5,6 +5,7 @@
 //! and in [`text`] the item's text for the models. Nothing here changes the archive or the
 //! items.
 
+pub mod card;
 pub mod text;
 
 use std::collections::HashMap;
