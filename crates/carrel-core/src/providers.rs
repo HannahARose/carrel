@@ -200,10 +200,26 @@ impl std::fmt::Display for ProviderError {
 
 impl std::error::Error for ProviderError {}
 
+/// What a provider program says about itself.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Program {
+    /// Where the program is.
+    pub path: PathBuf,
+    /// The name it gives itself, such as "Apple".
+    pub label: Option<String>,
+    /// Its version.
+    pub version: Option<String>,
+}
+
 /// A source of capabilities: a provider program, or one built into Carrel or the app.
 pub trait Provider: Send + Sync {
     /// The provider's name, as in `carrel-provider-<name>`.
     fn name(&self) -> &str;
+
+    /// For a provider program, where it is and what it says about itself.
+    fn program(&self) -> Option<Program> {
+        None
+    }
 
     /// What it offers.
     fn offers(&self) -> &[Offer];

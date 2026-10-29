@@ -1,8 +1,11 @@
 //! Ingest: putting new files and folders into the archive (`docs/design/ingest.md`).
 //!
 //! This module has the stages that need no model: intake (which paths become items), kind
-//! (file, open folder or sealed bundle), fingerprint (checksum and size) and exact
-//! duplicates. Nothing here changes the archive or the items.
+//! (file, open folder or sealed bundle), fingerprint (checksum and size), exact duplicates,
+//! and in [`text`] the item's text for the models. Nothing here changes the archive or the
+//! items.
+
+pub mod text;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
