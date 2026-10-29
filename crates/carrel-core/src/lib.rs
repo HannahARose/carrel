@@ -40,6 +40,7 @@ pub mod card_file;
 pub mod detect;
 pub mod documents;
 pub mod frontmatter;
+pub mod history;
 pub mod manifest;
 pub mod sections;
 

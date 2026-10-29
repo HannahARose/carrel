@@ -429,6 +429,74 @@ impl Archive {
         found.sort_by(|a, b| a.path.cmp(&b.path));
         Ok(found)
     }
+
+    /// Every card in every collection, with the item it describes, sorted by card path.
+    /// Cards that can't be parsed are skipped; checking cards is a separate job.
+    ///
+    /// # Errors
+    ///
+    /// [`ArchiveError::Io`] if a folder or card can't be read, and [`ArchiveError::Invalid`] if
+    /// a `_collection.md` is malformed.
+    pub fn items(&self) -> Result<Vec<ItemRef>, ArchiveError> {
+        let mut items = Vec::new();
+        for collection in self.collections()? {
+            let dir = self.root.join(&collection.path);
+            for (card_path, card) in cards_in(&dir)? {
+                let card_name = card_path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                items.push(ItemRef {
+                    card: format!("{}/{card_name}", collection.path),
+                    item: card
+                        .item
+                        .as_ref()
+                        .map(|name| format!("{}/{name}", collection.path)),
+                    id: card.id,
+                    kind: card.kind,
+                });
+            }
+        }
+        items.sort_by(|a, b| a.card.cmp(&b.card));
+        Ok(items)
+    }
+}
+
+/// A card found in an archive, and the item it describes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ItemRef {
+    /// The card's path relative to the archive root, with `/` separators.
+    pub card: String,
+    /// The item's path relative to the archive root, for files, folders and bundles. Card-only
+    /// items have none.
+    pub item: Option<String>,
+    /// The item's identifier.
+    pub id: crate::card::Id,
+    /// The item's kind.
+    pub kind: crate::card::Kind,
+}
+
+/// The cards directly in `dir` (files whose frontmatter starts with `carrel: card`), with
+/// their parsed fields. Files that look like cards but don't parse are skipped.
+fn cards_in(dir: &Path) -> Result<Vec<(PathBuf, crate::card::Card)>, ArchiveError> {
+    let mut cards = Vec::new();
+    for path in read_dir_sorted(dir)? {
+        if !path.is_file()
+            || !path
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("md"))
+        {
+            continue;
+        }
+        let text = std::fs::read_to_string(&path).map_err(io(&path))?;
+        if let Ok(split) = frontmatter::split(&text)
+            && split.yaml.starts_with("carrel: card\n")
+            && let Ok(card) = crate::card::Card::from_yaml(split.yaml)
+        {
+            cards.push((path, card));
+        }
+    }
+    Ok(cards)
 }
 
 /// A folder's entries, sorted by path, leaving out hidden entries (names starting with `.`,
@@ -449,25 +517,10 @@ fn read_dir_sorted(dir: &Path) -> Result<Vec<PathBuf>, ArchiveError> {
 
 /// The names of items described by cards directly in `dir`.
 fn described_items(dir: &Path) -> Result<HashSet<String>, ArchiveError> {
-    let mut items = HashSet::new();
-    for path in read_dir_sorted(dir)? {
-        if !path.is_file()
-            || !path
-                .extension()
-                .is_some_and(|e| e.eq_ignore_ascii_case("md"))
-        {
-            continue;
-        }
-        let text = std::fs::read_to_string(&path).map_err(io(&path))?;
-        if let Ok(split) = frontmatter::split(&text)
-            && split.yaml.starts_with("carrel: card\n")
-            && let Ok(card) = crate::card::Card::from_yaml(split.yaml)
-            && let Some(item) = card.item
-        {
-            items.insert(item);
-        }
-    }
-    Ok(items)
+    Ok(cards_in(dir)?
+        .into_iter()
+        .filter_map(|(_, card)| card.item)
+        .collect())
 }
 
 /// Records `dir` as a collection if it has a `_collection.md`, then searches its subfolders,

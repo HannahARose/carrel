@@ -561,7 +561,11 @@ Rebuildable, device-specific data. The `.nosync` suffix keeps iCloud Drive from 
 
 The archive's metadata history is a Git repository whose Git directory is `_System/history.git` and whose work tree is the archive root. Keeping the Git directory under `_System` leaves no `.git` folder at the root, so the root never looks like a code repository and never interferes with sealed bundles that are repositories themselves.
 
-The repository tracks **only metadata**: cards, design documents, `CHANGELOG.md` files, `README.md`, the Journal, `Active/`, and `_System/` files other than `history.git/`, `manifests/`, `index/` and `cache.nosync/`. Its `info/exclude` file ignores everything else, and in particular the contents of every item and every sealed bundle. Item contents are versioned by the backup system, not by Git. Manifests are left out because a manifest of a large bundle can reach hundreds of megabytes and is fully determined by the item's contents; history keeps each manifest's content checksum in the card instead (§7.7).
+The repository tracks **only metadata**: `ARCHIVE.md`, the root `README.md`, every collection's `_collection.md` and `CHANGELOG.md`, every card, everything under `Active/` and `Journal/`, and `_System/` files other than `history.git/`, `manifests/`, `index/` and `cache.nosync/`. Nothing else is tracked: not the contents of any item or sealed bundle, not uncataloged files, and not other tools' folders such as `.obsidian/`. Item contents are versioned by the backup system, not by Git. Manifests are left out because a manifest of a large bundle can reach hundreds of megabytes and is fully determined by the item's contents; history keeps each manifest's content checksum in the card instead (§7.7).
+
+- **Staging:** programs compute that set of files and stage exactly it for each commit, rather than relying on ignore patterns. The repository's `info/exclude` contains `*`, so Git tools never add item contents by accident.
+- **Work tree:** the repository's `core.worktree` is the relative path `../..`, so it stays valid when the archive is moved or synced to another device.
+- **Branch:** history is a single branch, `main`.
 
 Anyone with Git can read the history:
 
@@ -585,9 +589,18 @@ Carrel-Items: 01928f3a-7c41-7d2e-9b6a-3f0c5e2a1b44
 
 `Carrel-Operation` is one of `create`, `ingest`, `approve`, `edit`, `move`, `checkout`, `return`, `session`, `restructure`, `deaccession`, `purge`, `outside-edit`, `migrate`, `inbox`. `Carrel-Snapshot` names the content backup taken with the change, when there is one. `Carrel-Items` may repeat.
 
+- **Moves:** each item a change moves is recorded, in the order it was moved, as a `Carrel-Move` trailer whose value is a one-line JSON object: `Carrel-Move: {"item":"01928f3a-…","from":"Research/Code/sim","to":"Research/Projects/sim"}`. Paths are the item's (not the card's), relative to the archive root. Git sees card moves itself; these trailers let undo move item contents, which history doesn't track.
+- **Empty changes** that leave every tracked file unchanged are not committed.
+- The commit author and committer are `Carrel <carrel@localhost>`; who made the change is in the trailers.
+
 ### 8.3 Undo
 
 Undoing a change creates a new commit that restores the previous state, with `Carrel-Operation` set to the original operation and a `Carrel-Reverts:` trailer naming the reverted commit. History is never rewritten, except by purge (§10.2).
+
+- Items the change moved are moved back first, in reverse order. If any item is no longer where the change put it, or its old location is taken, nothing is changed.
+- Tracked files are then restored to their state before the change, merged with any later changes. If a later change touched the same lines, nothing is changed and the conflicting files are reported.
+- The undo commit carries reversed `Carrel-Move` trailers, so it can itself be undone.
+- Undo restores metadata and item locations, not item contents; restoring contents is the backup system's job.
 
 ## 9. Active items and the Journal
 
