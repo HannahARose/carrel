@@ -14,6 +14,7 @@ With no model there, `carrel providers` says where to put one. A command to down
 - **Context:** 8,192 tokens unless `CARREL_LLAMA_CONTEXT` says otherwise. Prompts that don't fit, with room for the answer, are reported as unsupported, so Carrel can try another model.
 - **Structured output:** answers that must follow a JSON Schema are constrained by a grammar, so they're always valid JSON.
 - **Provenance:** answers are recorded as `llama.cpp/<file name>`.
+- **Token counts** use the model's own tokenizer.
 
 ## Building
 

@@ -88,6 +88,9 @@ fn the_apple_model_answers_or_says_why_it_cant() {
         ("apple", "afm")
     );
     assert!(answer.model.starts_with("apple/"), "{}", answer.model);
+    let (tokens, exact) = registry.count_tokens(&source, "A bill of materials for a desk lamp.");
+    assert!(exact, "Apple's model counts its own tokens");
+    assert!(tokens > 0);
     let title = answer
         .json
         .as_ref()
