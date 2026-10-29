@@ -139,7 +139,7 @@ jobs:
           args: >-
             --no-progress --include-fragments
             ${{ github.event_name != 'schedule' && '--offline' || '' }}
-            README.md CONTRIBUTING.md FORMAT.md fixtures/README.md 'apple/**/*.md'
+            README.md CONTRIBUTING.md FORMAT.md fixtures/README.md 'docs/**/*.md' 'apple/**/*.md'
           jobSummary: false
         env:
           GITHUB_TOKEN: ${{ github.token }}
