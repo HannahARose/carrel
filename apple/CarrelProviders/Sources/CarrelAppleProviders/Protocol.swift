@@ -107,7 +107,7 @@ public protocol TextExtractor: Sendable {
     var offer: Offer { get }
 
     /// Reads the text of the file at `url`, of media type `mediaType`. Never changes the file.
-    func extract(_ url: URL, mediaType: String) throws(ProviderError) -> Extraction
+    func extract(_ url: URL, mediaType: String) async throws(ProviderError) -> Extraction
 }
 
 /// A JSON value, so requests and answers can cross concurrency boundaries.
@@ -282,7 +282,7 @@ public struct Server: Sendable {
             guard extractor.offer.available else {
                 throw .unavailable(extractor.offer.reason ?? "\(offerID) is unavailable")
             }
-            let result = try extractor.extract(URL(filePath: path), mediaType: mediaType)
+            let result = try await extractor.extract(URL(filePath: path), mediaType: mediaType)
             var json: [String: Any] = ["text": result.text, "method": result.method]
             if let pages = result.pages {
                 json["pages"] = pages

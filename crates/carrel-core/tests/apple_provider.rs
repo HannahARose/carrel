@@ -95,3 +95,36 @@ fn the_apple_model_answers_or_says_why_it_cant() {
         .unwrap_or_default();
     assert_ne!(title, "", "{}", answer.text);
 }
+
+#[test]
+fn scanned_pdfs_fall_back_from_pdfkit_to_vision() {
+    let Some(apple) = start() else { return };
+    let mut registry = Registry::with_built_ins();
+    registry.add(Box::new(apple));
+    let scan = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/data/scanned.pdf")
+        .canonicalize()
+        .unwrap();
+    let (extraction, source, attempts) = registry
+        .extract(&ExtractionRequest {
+            path: scan,
+            media_type: "application/pdf".into(),
+        })
+        .unwrap();
+    assert_eq!(
+        (source.provider.as_str(), source.offer.as_str()),
+        ("apple", "vision")
+    );
+    assert_eq!(extraction.method, "ocr");
+    assert!(
+        extraction.text.to_lowercase().contains("scanned receipt"),
+        "{}",
+        extraction.text
+    );
+    assert_eq!(attempts.len(), 1, "PDFKit was tried first");
+    assert_eq!(attempts[0].source.offer, "pdfkit");
+    assert!(matches!(
+        attempts[0].error,
+        carrel_core::providers::ProviderError::Unsupported(_)
+    ));
+}
