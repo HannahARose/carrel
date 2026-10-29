@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use carrel_core::archive::{Archive, InitOptions};
 use carrel_core::card::Id;
 use carrel_core::card_file::CardFile;
+use carrel_core::coordinator::{Coordinator, DEFAULT_LEASE, DiskLock, Holder, WriterLease};
 use carrel_core::history::{Change, History, HistoryError, Move, Operation};
 
 fn sample_archive() -> PathBuf {
@@ -24,8 +25,16 @@ fn copy_dir(from: &Path, to: &Path) {
     }
 }
 
-fn ids() -> (Id, Id) {
-    (Id::new_v7(), Id::new_v7())
+/// Takes the writer lock as a new person and device, returning the lease and who holds it.
+fn writer(archive: &Archive) -> (WriterLease, Id, Id) {
+    let holder = Holder {
+        person: Id::new_v7(),
+        device: Id::new_v7(),
+    };
+    let lease = DiskLock::for_archive(archive)
+        .acquire(holder, "test", DEFAULT_LEASE)
+        .unwrap();
+    (lease, holder.person, holder.device)
 }
 
 /// Files in the HEAD commit, via Git itself.
@@ -48,8 +57,8 @@ fn committed_files(root: &Path) -> Vec<String> {
 fn a_new_archive_starts_with_one_create_commit() {
     let dir = tempfile::tempdir().unwrap();
     let archive = Archive::init(dir.path(), &InitOptions::new("History test")).unwrap();
-    let (person, device) = ids();
-    let history = History::init(&archive, person, device).unwrap();
+    let (lease, person, device) = writer(&archive);
+    let history = History::init(&archive, &lease).unwrap();
 
     let log = history.log().unwrap();
     assert_eq!(log.len(), 1);
@@ -75,13 +84,11 @@ fn a_new_archive_starts_with_one_create_commit() {
             "{expected} not committed: {files:?}"
         );
     }
-    assert!(
-        !files
-            .iter()
-            .any(|f| f.starts_with(".obsidian") || f.starts_with("_System/history.git"))
-    );
+    assert!(!files.iter().any(|f| f.starts_with(".obsidian")
+        || f.starts_with("_System/history.git")
+        || f.starts_with("_System/writer.lock")));
     assert!(matches!(
-        History::init(&archive, person, device),
+        History::init(&archive, &lease),
         Err(HistoryError::AlreadyInitialized)
     ));
 }
@@ -92,8 +99,8 @@ fn only_metadata_is_tracked_never_item_contents() {
     copy_dir(&sample_archive(), dir.path());
     std::fs::write(dir.path().join("Reading/uncataloged notes.md"), "# Mine\n").unwrap();
     let archive = Archive::open(dir.path()).unwrap();
-    let (person, device) = ids();
-    History::init(&archive, person, device).unwrap();
+    let (lease, _, _) = writer(&archive);
+    History::init(&archive, &lease).unwrap();
 
     let files = committed_files(dir.path());
     for card in [
@@ -136,11 +143,11 @@ fn commits_record_trailers_and_skip_empty_changes() {
     let dir = tempfile::tempdir().unwrap();
     copy_dir(&sample_archive(), dir.path());
     let archive = Archive::open(dir.path()).unwrap();
-    let (person, device) = ids();
-    let history = History::init(&archive, person, device).unwrap();
+    let (lease, person, device) = writer(&archive);
+    let history = History::init(&archive, &lease).unwrap();
 
     let nothing = Change::new(Operation::Edit, "No-op", person, device);
-    assert_eq!(history.commit(&archive, &nothing).unwrap(), None);
+    assert_eq!(history.commit(&archive, &nothing, &lease).unwrap(), None);
 
     let card_path = dir.path().join("Reading/On the Origin of Species.md");
     let mut file = CardFile::parse(&std::fs::read_to_string(&card_path).unwrap()).unwrap();
@@ -152,7 +159,7 @@ fn commits_record_trailers_and_skip_empty_changes() {
     change.snapshot = Some("kopia:k123".into());
     change.items = vec![file.card().id];
     let id = history
-        .commit(&archive, &change)
+        .commit(&archive, &change, &lease)
         .unwrap()
         .expect("a change");
 
@@ -173,8 +180,8 @@ fn undo_moves_items_back_and_records_what_it_reverted() {
     let root = dir.path();
     copy_dir(&sample_archive(), root);
     let archive = Archive::open(root).unwrap();
-    let (person, device) = ids();
-    let history = History::init(&archive, person, device).unwrap();
+    let (lease, person, device) = writer(&archive);
+    let history = History::init(&archive, &lease).unwrap();
 
     // Move the parts list (item and card) from Hardware up to Projects.
     let card_text =
@@ -203,13 +210,13 @@ fn undo_moves_items_back_and_records_what_it_reverted() {
         to: "Projects/parts-list.csv".into(),
     }];
     let moved = history
-        .commit(&Archive::open(root).unwrap(), &change)
+        .commit(&Archive::open(root).unwrap(), &change, &lease)
         .unwrap()
         .unwrap();
     assert!(committed_files(root).contains(&"Projects/parts-list.csv.md".to_owned()));
 
     let undo = history
-        .undo(&Archive::open(root).unwrap(), &moved, person, device)
+        .undo(&Archive::open(root).unwrap(), &moved, &lease)
         .unwrap();
     assert!(
         root.join("Projects/Hardware/parts-list.csv").is_file(),
@@ -244,8 +251,8 @@ fn undo_refuses_rather_than_overwriting_later_work() {
     let root = dir.path();
     copy_dir(&sample_archive(), root);
     let archive = Archive::open(root).unwrap();
-    let (person, device) = ids();
-    let history = History::init(&archive, person, device).unwrap();
+    let (lease, person, device) = writer(&archive);
+    let history = History::init(&archive, &lease).unwrap();
     let card_path = root.join("Reading/On the Origin of Species.md");
     let set_title = |title: &str| {
         let mut file = CardFile::parse(&std::fs::read_to_string(&card_path).unwrap()).unwrap();
@@ -258,6 +265,7 @@ fn undo_refuses_rather_than_overwriting_later_work() {
         .commit(
             &archive,
             &Change::new(Operation::Edit, "First", person, device),
+            &lease,
         )
         .unwrap()
         .unwrap();
@@ -266,12 +274,13 @@ fn undo_refuses_rather_than_overwriting_later_work() {
         .commit(
             &archive,
             &Change::new(Operation::Edit, "Second", person, device),
+            &lease,
         )
         .unwrap()
         .unwrap();
     let before = std::fs::read_to_string(&card_path).unwrap();
 
-    let err = history.undo(&archive, &first, person, device).unwrap_err();
+    let err = history.undo(&archive, &first, &lease).unwrap_err();
     assert!(
         matches!(err, HistoryError::UndoConflict(ref paths) if paths == &["Reading/On the Origin of Species.md"]),
         "{err}"
@@ -284,7 +293,7 @@ fn undo_refuses_rather_than_overwriting_later_work() {
     assert_eq!(history.log().unwrap().len(), 3);
 
     assert!(matches!(
-        history.undo(&archive, "deadbeef", person, device),
+        history.undo(&archive, "deadbeef", &lease),
         Err(HistoryError::UnknownCommit(_))
     ));
 }
@@ -300,8 +309,8 @@ fn plain_git_can_read_the_history() {
     }
     let dir = tempfile::tempdir().unwrap();
     let archive = Archive::init(dir.path(), &InitOptions::new("Readable")).unwrap();
-    let (person, device) = ids();
-    History::init(&archive, person, device).unwrap();
+    let (lease, _, _) = writer(&archive);
+    History::init(&archive, &lease).unwrap();
     let run = |args: &[&str]| {
         let out = std::process::Command::new("git")
             .args(["--git-dir=_System/history.git", "--work-tree=."])

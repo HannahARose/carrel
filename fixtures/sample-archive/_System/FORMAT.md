@@ -415,6 +415,7 @@ _System/
   rules/                routing, sealing and regenerable rules (§7.4–7.5)
   manifests/            folder and bundle manifests (§7.7)
   history.git/          the history repository (§8)
+  writer.lock           which device may write, on local and external disks (§8.4)
   inbox/<device-id>/    quick actions from devices that aren't the writer (§7.8)
   queue/                pending proposals, questions and tasks (§7.9)
   devices/<device-id>/  device profiles and desk-item registries (§7.10)
@@ -561,7 +562,7 @@ Rebuildable, device-specific data. The `.nosync` suffix keeps iCloud Drive from 
 
 The archive's metadata history is a Git repository whose Git directory is `_System/history.git` and whose work tree is the archive root. Keeping the Git directory under `_System` leaves no `.git` folder at the root, so the root never looks like a code repository and never interferes with sealed bundles that are repositories themselves.
 
-The repository tracks **only metadata**: `ARCHIVE.md`, the root `README.md`, every collection's `_collection.md` and `CHANGELOG.md`, every card, everything under `Active/` and `Journal/`, and `_System/` files other than `history.git/`, `manifests/`, `index/` and `cache.nosync/`. Nothing else is tracked: not the contents of any item or sealed bundle, not uncataloged files, and not other tools' folders such as `.obsidian/`. Item contents are versioned by the backup system, not by Git. Manifests are left out because a manifest of a large bundle can reach hundreds of megabytes and is fully determined by the item's contents; history keeps each manifest's content checksum in the card instead (§7.7).
+The repository tracks **only metadata**: `ARCHIVE.md`, the root `README.md`, every collection's `_collection.md` and `CHANGELOG.md`, every card, everything under `Active/` and `Journal/`, and `_System/` files other than `history.git/`, `manifests/`, `index/`, `cache.nosync/` and the writer lock (`writer.lock` and files named `writer.lock.*`, §8.4). Nothing else is tracked: not the contents of any item or sealed bundle, not uncataloged files, and not other tools' folders such as `.obsidian/`. Item contents are versioned by the backup system, not by Git. Manifests are left out because a manifest of a large bundle can reach hundreds of megabytes and is fully determined by the item's contents; history keeps each manifest's content checksum in the card instead (§7.7).
 
 - **Staging:** programs compute that set of files and stage exactly it for each commit, rather than relying on ignore patterns. The repository's `info/exclude` contains `*`, so Git tools never add item contents by accident.
 - **Work tree:** the repository's `core.worktree` is the relative path `../..`, so it stays valid when the archive is moved or synced to another device.
@@ -576,7 +577,7 @@ git --git-dir=_System/history.git --work-tree=. log
 ### 8.2 Commits
 
 - Each logical change (an ingest batch, a checkout, a return, a restructure, a set of approvals) is one commit.
-- Only the current **writer** commits. How a device becomes the writer depends on where the archive is stored and is outside this format, except that a lock file for local and external disks lives at `_System/writer.lock`.
+- Only the current **writer** commits. How a device becomes the writer depends on where the archive is stored and is outside this format, except for the lock file used on local and external disks (§8.4).
 - Commit messages have a one-line summary, an optional body, and these trailers:
 
 ```
@@ -601,6 +602,29 @@ Undoing a change creates a new commit that restores the previous state, with `Ca
 - Tracked files are then restored to their state before the change, merged with any later changes. If a later change touched the same lines, nothing is changed and the conflicting files are reported.
 - The undo commit carries reversed `Carrel-Move` trailers, so it can itself be undone.
 - Undo restores metadata and item locations, not item contents; restoring contents is the backup system's job.
+
+### 8.4 The writer lock
+
+On a local or external disk, the writer is whoever holds `_System/writer.lock`, a JSON file:
+
+```json
+{
+  "token": "019a2b3c-4d5e-7f60-8a1b-2c3d4e5f6a7b",
+  "person": "01928f39-eeee-7fff-8000-000000000005",
+  "device": "01928f3a-0000-7000-8000-00000000d001",
+  "purpose": "ingest",
+  "program": "carrel 0.1.0",
+  "acquired": "2026-10-29T14:02:11.137-07:00",
+  "expires": "2026-10-29T14:07:11.137-07:00"
+}
+```
+
+- **Taking the lock:** a program writes the complete lock to `writer.lock.new-<token>`, hard-links it to `writer.lock` and deletes the temporary file. Linking fails if the lock exists, so of several programs trying at once exactly one succeeds, and no reader sees a half-written lock. On file systems without hard links, the program creates `writer.lock` exclusively instead and readers allow a moment for it to be written. `token` is a new UUID for each lease.
+- **Leases:** the lock is a lease that ends at `expires` (RFC 3339). A writer doing a long operation renews it before then by writing a new `expires`, replacing the file atomically (write a temporary file `writer.lock.renew-<token>` beside it, then rename it over the lock). The default lease is five minutes.
+- **Before each commit** the writer re-reads the lock and commits only if it still holds its own `token` and has not expired. A writer whose lease was lost stops and does not commit.
+- **Expired locks** may be taken over: rename the lock to `writer.lock.expired-<token>` (only one program's rename succeeds), delete it, and take the lock as usual. A lock that is not valid JSON is never taken over automatically; a person must confirm no writer is running before it is removed.
+- **Releasing:** the writer deletes the lock when it finishes, but only while it still holds its own `token`.
+- **Synced folders:** a lock file is only safe while a single device uses the archive. Sync services such as iCloud Drive can let two devices each create the file before either sees the other's, so archives shared between devices use a coordinator the sync service supports instead (to be specified with iCloud support). Programs should warn when the lock is used inside a synced folder.
 
 ## 9. Active items and the Journal
 
