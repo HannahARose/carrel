@@ -450,6 +450,7 @@ Archive-level settings that every device follows. Version 1.0 defines:
 | `reminders` | list of `idle`, `weekly`, `menu-bar`, `due-date` | `["idle", "weekly", "menu-bar"]` |
 | `embedding.model` | model identifier | chosen at creation |
 | `backups` | map describing the backup repository (location and type, never the password) | none |
+| `ingest.originals` | `move` (the original is moved into the archive on approval) or `keep` (it's copied, and the original is left for the owner to delete) | `move` |
 
 Programs **must** preserve unknown keys.
 
@@ -542,7 +543,61 @@ A device only ever writes to its own inbox folder. The writer applies inbox file
 
 ### 7.9 Queues
 
-`_System/queue/` holds pending work as one JSON file per entry, in subfolders `review/` (ingest and change proposals), `questions/` (questions for the owner), `tasks/` (work for a more capable device) and `proposals/` (restructure proposals). Entry schemas are defined alongside the features that use them and are versioned with this specification.
+`_System/queue/` holds pending work as one JSON file per entry, in subfolders `review/` (ingest and change proposals), `questions/` (questions for the owner), `tasks/` (work for a more capable device) and `proposals/` (restructure proposals). Entry schemas are defined alongside the features that use them and are versioned with this specification. Programs **must** preserve unknown keys in entries.
+
+#### Review entries
+
+`review/<id>.json` proposes filing one item. Nothing is moved or written into a collection until the owner approves it.
+
+```json
+{
+  "carrel": "review",
+  "format": "1.0",
+  "id": "019a2c1e-0000-7000-8000-000000000001",
+  "batch": "019a2c1e-0000-7000-8000-0000000000b1",
+  "created": "2026-11-02T10:15:00-08:00",
+  "state": "proposed",
+  "source": {
+    "path": "/Users/me/Downloads/parts-list.csv",
+    "device": "01928f3a-0000-7000-8000-00000000d001",
+    "checksum": "sha256:9f2c…",
+    "size": 1294
+  },
+  "kind": "file",
+  "duplicate_of": null,
+  "card": {
+    "title": "Desk lamp parts list",
+    "summary": "Bill of materials for the desk lamp build.",
+    "tags": ["electronics"],
+    "sensitivity": "personal",
+    "generated": {"fields": ["title", "summary", "tags"], "by": "carrel 0.2.0", "model": "apple/afm-3-core-advanced", "at": "2026-11-02T10:15:04-08:00", "level": "preferred"}
+  },
+  "proposed_tags": [],
+  "destination": {
+    "collection": "01a18701-0500-776a-9867-0804857e5ab6",
+    "path": "Projects/Hardware",
+    "confidence": "medium",
+    "reasons": ["A bill of materials for a hardware build"]
+  },
+  "problems": [],
+  "attempts": [{"stage": "card", "provider": "apple", "offer": "afm", "result": "ok"}]
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `id`, `batch` | The entry's identifier, and the ingest batch it came from (UUIDv7) |
+| `state` | `proposed`, `needs-owner` (something couldn't be settled; see `problems`), `approved`, `held` (to go to Holding), `rejected` (to stay where it is) or `archived` |
+| `source` | Where the item is now: an absolute path on the device `device`, with its checksum (§2.6) and size, or the manifest's content checksum and total size for a folder or bundle |
+| `kind` | `file`, `folder` or `bundle`; a bundle also has `sealed` |
+| `duplicate_of` | The identifier of an archived item with the same checksum, if any |
+| `card` | The card fields to write (§5), except those programs fill in when archiving (`id`, `item`, `checksum`, `size`, `manifest`) |
+| `proposed_tags` | At most one tag outside the destination's vocabulary (§6.5); approving the entry adds it to the destination collection's `tags` |
+| `destination` | The collection proposed, its path when proposed, `confidence` (`high`, `medium` or `low`), the `reasons`, and `rule` when a routing rule (§7.4) decided |
+| `problems` | What validation or the owner needs to settle, as `{"stage", "message"}` objects |
+| `attempts` | Every provider call made for the entry: `stage`, `provider`, `offer`, `result` (`ok`, `unsupported`, `unavailable` or `failed`) and an optional `message` |
+
+When an approved or held entry has been archived, programs remove the entry; the history commit (§8.2) records what was filed. A rejected entry is removed once the owner has seen the batch summary. Entries whose `source.device` is another device can't be archived there; they wait for that device.
 
 ### 7.10 Devices
 
