@@ -1,11 +1,12 @@
 //! `carrel ingest`: putting new files and folders into the archive. For now it examines them
-//! and reports the plan (kind, size, duplicates) without changing anything; drafting cards
-//! and destinations follows (`docs/design/ingest.md`).
+//! and reports the plan (kind, size, duplicates, and how each item's text was read) without
+//! changing anything; drafting cards and destinations follows (`docs/design/ingest.md`).
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use carrel_core::card::Kind;
+use carrel_core::ingest::text::{ItemText, read};
 use carrel_core::ingest::{Candidate, IntakeOptions, plan};
 use serde_json::{Value, json};
 
@@ -20,6 +21,15 @@ pub fn ingest(
 ) -> Result<Report, Failure> {
     let archive = locate(archive)?;
     let (candidates, skipped) = plan(&archive, paths, options)?;
+    let (registry, _) = crate::providers::registry();
+    let rules = archive.rules()?;
+    // Duplicates won't be filed by default, so their text isn't needed yet.
+    let texts: Vec<Option<ItemText>> = candidates
+        .iter()
+        .map(|c| {
+            (c.duplicate_of.is_none() && c.same_as.is_none()).then(|| read(&registry, &rules, c))
+        })
+        .collect();
 
     let name = |c: &Candidate| {
         c.path.file_name().map_or_else(
@@ -27,18 +37,18 @@ pub fn ingest(
             |n| n.to_string_lossy().into_owned(),
         )
     };
-    let mut text = String::new();
+    let mut out = String::new();
     match candidates.len() {
-        0 => text.push_str("Nothing to ingest\n"),
-        1 => text.push_str("1 item to ingest:\n"),
-        n => writeln!(text, "{n} items to ingest:").unwrap(),
+        0 => out.push_str("Nothing to ingest\n"),
+        1 => out.push_str("1 item to ingest:\n"),
+        n => writeln!(out, "{n} items to ingest:").unwrap(),
     }
     let width = candidates
         .iter()
         .map(|c| name(c).chars().count())
         .max()
         .unwrap_or(0);
-    for candidate in &candidates {
+    for (candidate, item_text) in candidates.iter().zip(&texts) {
         let mut notes = Vec::new();
         if let Some(duplicate) = &candidate.duplicate_of {
             notes.push(format!("duplicate of {}", duplicate.card));
@@ -50,7 +60,7 @@ pub fn ingest(
             ));
         }
         writeln!(
-            text,
+            out,
             "  {:<width$}  {}, {}{}",
             name(candidate),
             describe_kind(candidate),
@@ -62,24 +72,28 @@ pub fn ingest(
             }
         )
         .unwrap();
+        if let Some(item_text) = item_text {
+            writeln!(out, "  {:<width$}  {}", "", describe_text(item_text)).unwrap();
+        }
     }
     if !skipped.is_empty() {
-        text.push_str("Skipped:\n");
+        out.push_str("Skipped:\n");
         for skip in &skipped {
             let name = skip.path.file_name().map_or_else(
                 || skip.path.display().to_string(),
                 |n| n.to_string_lossy().into_owned(),
             );
-            writeln!(text, "  {name}: {}", skip.reason).unwrap();
+            writeln!(out, "  {name}: {}", skip.reason).unwrap();
         }
     }
     if !candidates.is_empty() {
-        text.push_str("\nNothing has been changed. Drafting cards and destinations comes next.\n");
+        out.push_str("\nNothing has been changed. Drafting cards and destinations comes next.\n");
     }
 
     let items: Vec<Value> = candidates
         .iter()
-        .map(|c| {
+        .zip(&texts)
+        .map(|(c, t)| {
             json!({
                 "path": c.path,
                 "kind": c.kind,
@@ -89,6 +103,7 @@ pub fn ingest(
                 "size": c.size,
                 "duplicate_of": c.duplicate_of.as_ref().map(|d| json!({"id": d.id, "card": d.card})),
                 "same_as": c.same_as.map(|i| &candidates[i].path),
+                "text": t.as_ref().map(text_json),
             })
         })
         .collect();
@@ -97,9 +112,50 @@ pub fn ingest(
         .map(|s| json!({"path": s.path, "reason": s.reason}))
         .collect();
     Ok(Report::new(
-        text,
+        out,
         json!({ "items": items, "skipped": skipped }),
     ))
+}
+
+/// The provider and offer that read the text, if one did.
+fn reader(text: &ItemText) -> Option<String> {
+    text.attempts
+        .iter()
+        .rfind(|a| a.result == "ok")
+        .map(|a| format!("{}/{}", a.provider, a.offer))
+}
+
+/// `text: 3200 characters, embedded, from apple/pdfkit (12 pages)`.
+fn describe_text(text: &ItemText) -> String {
+    if text.method == "none" {
+        return format!(
+            "no text: {}",
+            text.note.as_deref().unwrap_or("nothing could read it")
+        );
+    }
+    let mut line = format!(
+        "text: {} characters, {}",
+        text.text.chars().count(),
+        text.method
+    );
+    if let Some(reader) = reader(text) {
+        write!(line, ", from {reader}").unwrap();
+    }
+    if let Some(pages) = text.pages {
+        write!(line, " ({pages} page{})", if pages == 1 { "" } else { "s" }).unwrap();
+    }
+    line
+}
+
+fn text_json(text: &ItemText) -> Value {
+    json!({
+        "method": text.method,
+        "media_type": text.media_type,
+        "characters": text.text.chars().count(),
+        "pages": text.pages,
+        "read_by": reader(text),
+        "note": text.note,
+    })
 }
 
 fn describe_kind(candidate: &Candidate) -> String {

@@ -125,6 +125,7 @@ fn is_executable(path: &Path) -> bool {
 /// A running provider program.
 pub struct ProcessProvider {
     name: String,
+    path: PathBuf,
     label: Option<String>,
     version: Option<String>,
     offers: Vec<Offer>,
@@ -229,6 +230,7 @@ impl ProcessProvider {
         }
         Ok(Self {
             name: found.name.clone(),
+            path: found.path.clone(),
             label: initialized.name,
             version: initialized.version,
             offers: initialized.offers,
@@ -273,6 +275,14 @@ impl ProcessProvider {
 impl Provider for ProcessProvider {
     fn name(&self) -> &str {
         &self.name
+    }
+
+    fn program(&self) -> Option<super::Program> {
+        Some(super::Program {
+            path: self.path.clone(),
+            label: self.label.clone(),
+            version: self.version.clone(),
+        })
     }
 
     fn offers(&self) -> &[Offer] {

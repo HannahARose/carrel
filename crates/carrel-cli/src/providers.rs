@@ -2,48 +2,65 @@
 
 use std::fmt::Write as _;
 
-use carrel_core::providers::process::{ProcessProvider, default_folders, discover};
-use carrel_core::providers::{Capability, Offer, Provider, Registry};
+use carrel_core::providers::process::{Found, ProcessProvider, default_folders, discover};
+use carrel_core::providers::{Capability, Offer, ProviderError, Registry};
 use serde_json::{Value, json};
 
 use crate::Report;
 
 const CAPABILITIES: [Capability; 2] = [Capability::TextModel, Capability::ExtractText];
 
+/// A provider program that couldn't start, and why.
+pub struct Failed {
+    /// What was found.
+    pub found: Found,
+    /// Why it didn't start.
+    pub error: ProviderError,
+}
+
+/// The registry for this device: the built-in providers and every provider program found
+/// beside `carrel` or on `PATH`, with those that couldn't start.
+pub fn registry() -> (Registry, Vec<Failed>) {
+    let mut registry = Registry::with_built_ins();
+    let mut failed = Vec::new();
+    for found in discover(&default_folders()) {
+        match ProcessProvider::start(&found) {
+            Ok(provider) => registry.add(Box::new(provider)),
+            Err(error) => failed.push(Failed { found, error }),
+        }
+    }
+    (registry, failed)
+}
+
 /// `carrel providers`. It always succeeds: a provider that fails to start is listed with its
 /// error.
 pub fn list() -> Report {
-    let mut registry = Registry::with_built_ins();
-    let mut entries = vec![json!({
-        "name": "built-in",
-        "path": null,
-        "offers": offers_json(registry.providers().next().map_or(&[], |p| p.offers())),
-    })];
+    let (registry, failed) = registry();
     let mut text = String::new();
-    let mut failed = Vec::new();
-
-    for found in discover(&default_folders()) {
-        match ProcessProvider::start(&found) {
-            Ok(provider) => {
-                entries.push(json!({
-                    "name": found.name,
-                    "path": found.path,
-                    "label": provider.label(),
-                    "version": provider.version(),
-                    "offers": offers_json(provider.offers()),
-                }));
-                registry.add(Box::new(provider));
+    let mut entries: Vec<Value> = registry
+        .providers()
+        .map(|provider| {
+            let mut entry = json!({
+                "name": provider.name(),
+                "offers": offers_json(provider.offers()),
+            });
+            if let Some(program) = provider.program() {
+                entry["path"] = json!(program.path);
+                entry["label"] = json!(program.label);
+                entry["version"] = json!(program.version);
+            } else {
+                entry["path"] = Value::Null;
             }
-            Err(e) => {
-                entries.push(json!({
-                    "name": found.name,
-                    "path": found.path,
-                    "error": e.to_string(),
-                }));
-                failed.push((found, e));
-            }
-        }
-    }
+            entry
+        })
+        .collect();
+    entries.extend(failed.iter().map(|f| {
+        json!({
+            "name": f.found.name,
+            "path": f.found.path,
+            "error": f.error.to_string(),
+        })
+    }));
 
     for provider in registry.providers() {
         writeln!(text, "{}", provider.name()).unwrap();
@@ -70,7 +87,7 @@ pub fn list() -> Report {
             .unwrap();
         }
     }
-    for (found, error) in &failed {
+    for Failed { found, error } in &failed {
         writeln!(
             text,
             "{} ({}) couldn't start: {error}",

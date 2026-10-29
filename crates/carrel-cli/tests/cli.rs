@@ -396,6 +396,13 @@ fn ingest_reports_kinds_sizes_and_duplicates_without_changing_anything() {
     assert_eq!(new["kind"], "file");
     assert_eq!(new["size"], 3);
     assert_eq!(new["duplicate_of"], serde_json::Value::Null);
+    assert_eq!(new["text"]["read_by"], "built-in/plain-text");
+    assert_eq!(new["text"]["characters"], 3);
+    assert_eq!(
+        csv["text"],
+        serde_json::Value::Null,
+        "duplicates aren't read"
+    );
 
     assert!(downloads.join("new.txt").exists(), "nothing is moved");
     assert_eq!(
