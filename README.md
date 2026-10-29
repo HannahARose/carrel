@@ -6,7 +6,7 @@ Carrel is a native app for macOS, iPadOS and iOS that ingests, catalogs, organiz
 
 Every document is analyzed on your own devices. Nothing is sent anywhere unless you explicitly opt in.
 
-> **Status:** design phase. No code yet.
+> **Status:** early development (v0.1): the archive format, Rust core and first `carrel` commands. There is no app yet.
 
 ## Principles
 
@@ -26,7 +26,7 @@ Every document is analyzed on your own devices. Nothing is sent anywhere unless 
 - **Check out and return:** take an item out to work on it. Carrel locks the archive copy, logs each work session as a short entry, and shows what changed when you return it.
 - **History and backups:** every change is recorded in a Git history of the archive's metadata and can be undone. File contents are versioned with [Kopia](https://kopia.io).
 - **Obsidian-compatible:** the archive root opens as an Obsidian vault.
-- **Command-line tool:** `carrel` does everything the app does, with JSON output for scripts.
+- **Command-line tool:** `carrel` does everything the app does, with JSON output for scripts. See the [wiki's Command-Line Tool page](https://github.com/HannahARose/carrel/wiki/Command-Line-Tool).
 
 ## Architecture (planned)
 

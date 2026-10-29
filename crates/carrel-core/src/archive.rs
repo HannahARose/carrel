@@ -332,7 +332,9 @@ impl Archive {
         };
 
         Ok(Self {
-            root: root.to_owned(),
+            // Absolute, so paths built from it stay right if the current folder changes and
+            // Git, which resolves the work tree itself, finds the same files.
+            root: std::path::absolute(root).map_err(io(root))?,
             info,
             doc,
             settings,
@@ -356,7 +358,7 @@ impl Archive {
         Self::open(root)
     }
 
-    /// The archive's root folder.
+    /// The archive's root folder, as an absolute path.
     #[must_use]
     pub fn root(&self) -> &Path {
         &self.root
