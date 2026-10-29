@@ -56,11 +56,25 @@ jobs:
       - name: CLI reports its version
         run: cargo run --locked --bin carrel -- --version
 
+  docs:
+    name: Docs
+    runs-on: ubuntu-latest
+    env:
+      # Broken intra-doc links and other rustdoc warnings fail the build, including links in
+      # private items' docs.
+      RUSTDOCFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - run: cargo doc --workspace --no-deps --document-private-items --locked
+
   ok:
     # The single required check for branch protection. It passes only if every job above passed.
     name: CI passed
     if: always()
-    needs: [fmt, clippy, test]
+    needs: [fmt, clippy, test, docs]
     runs-on: ubuntu-latest
     steps:
       - name: Check job results

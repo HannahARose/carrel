@@ -12,6 +12,27 @@ use crate::sections::{self, SectionError};
 pub const HISTORY: &str = "history";
 
 /// A card file, parsed but with its original text kept.
+///
+/// ```
+/// use carrel_core::card::Tag;
+/// use carrel_core::card_file::{CardFile, HISTORY};
+///
+/// let text = "---\ncarrel: card\nformat: \"1.0\"\nid: 01a18701-0500-776a-9867-0802f3a80e26\n\
+///             kind: physical\ntitle: \"A book\"\nlocation: \"Shelf\"\nsensitivity: public\n---\n\
+///             My notes.\n\n<!-- carrel:history -->\n## History\n<!-- /carrel:history -->\n";
+/// let mut file = CardFile::parse(text)?;
+///
+/// // Unchanged, the file is written back byte for byte.
+/// assert_eq!(file.to_text()?, text);
+///
+/// // Editing fields and a managed section never touches the owner's text.
+/// file.card_mut().tags.push(Tag("biology".into()));
+/// file.set_section(HISTORY, "## History\n### 2026-10-29 · 1h\nRead chapter 4.")?;
+/// let written = file.to_text()?;
+/// assert!(written.contains("tags:"));
+/// assert!(written.contains("---\nMy notes.\n\n<!-- carrel:history -->"));
+/// # Ok::<(), carrel_core::card_file::CardFileError>(())
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct CardFile {
     card: Card,

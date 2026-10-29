@@ -117,6 +117,7 @@ impl std::error::Error for ManifestError {
     }
 }
 
+/// Wraps an I/O error with the path it happened on.
 fn io(path: &Path) -> impl FnOnce(std::io::Error) -> ManifestError + '_ {
     move |source| ManifestError::Io {
         path: path.to_owned(),
@@ -140,6 +141,23 @@ impl Manifest {
     /// Symbolic links are recorded, never followed. When `previous` is given, files whose size
     /// and modification time match its entry keep that entry's checksum instead of being read
     /// again.
+    ///
+    /// ```
+    /// use carrel_core::card::Id;
+    /// use carrel_core::detect::Rules;
+    /// use carrel_core::manifest::Manifest;
+    ///
+    /// let dir = tempfile::tempdir()?;
+    /// std::fs::write(dir.path().join("a.txt"), "hello")?;
+    /// std::fs::create_dir_all(dir.path().join("target/debug"))?; // regenerable: left out
+    /// std::fs::write(dir.path().join("target/debug/app"), "binary")?;
+    ///
+    /// let manifest = Manifest::build(dir.path(), Id::new_v7(), &Rules::default(), None)?;
+    /// let paths: Vec<_> = manifest.entries.iter().map(|e| e.path.as_str()).collect();
+    /// assert_eq!(paths, ["a.txt"]);
+    /// assert_eq!(manifest.total_size(), 5);
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     ///
     /// # Errors
     ///
@@ -303,6 +321,25 @@ impl Manifest {
 
     /// The differences from `self` (older) to `newer`. Modification times are ignored: only
     /// paths and contents count.
+    ///
+    /// ```
+    /// use carrel_core::card::Id;
+    /// use carrel_core::detect::Rules;
+    /// use carrel_core::manifest::Manifest;
+    ///
+    /// let dir = tempfile::tempdir()?;
+    /// let (rules, id) = (Rules::default(), Id::new_v7());
+    /// std::fs::write(dir.path().join("draft.md"), "text")?;
+    /// let before = Manifest::build(dir.path(), id, &rules, None)?;
+    ///
+    /// std::fs::rename(dir.path().join("draft.md"), dir.path().join("final.md"))?;
+    /// let after = Manifest::build(dir.path(), id, &rules, Some(&before))?;
+    ///
+    /// let diff = before.diff(&after);
+    /// assert_eq!(diff.renamed, [("draft.md".to_owned(), "final.md".to_owned())]);
+    /// assert!(diff.added.is_empty() && diff.removed.is_empty());
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     #[must_use]
     pub fn diff(&self, newer: &Manifest) -> Diff {
         let old: BTreeMap<&str, &Entry> =

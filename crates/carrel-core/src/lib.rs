@@ -3,6 +3,36 @@
 //! This crate is shared by the `carrel` CLI and, through `carrel-ffi`, the Apple apps.
 //! It has no platform-specific code; anything that needs the operating system (models,
 //! text extraction, sync) is supplied by the caller.
+//!
+//! # Modules
+//!
+//! | Module | What it handles | FORMAT.md |
+//! | --- | --- | --- |
+//! | [`archive`] | Creating, opening and finding archives; listing collections | §3, §7.1, §12 |
+//! | [`documents`] | `ARCHIVE.md`, `_collection.md`, `archive.json` and `settings.json` | §6.2, §6.3, §7.1, §7.2 |
+//! | [`card`] | Card frontmatter as typed fields, and checking it conforms | §5 |
+//! | [`card_file`] | Whole card files: edit fields without touching the owner's text | §5.3 |
+//! | [`frontmatter`] | Splitting any Markdown document into frontmatter and body | §2.2 |
+//! | [`sections`] | Managed sections, and comparing text while ignoring table padding | §5.3 |
+//! | [`detect`] | Item kinds, sealing, and regenerable folders | §4, §7.5 |
+//! | [`manifest`] | Checksums, folder manifests and their diffs | §2.6, §7.7 |
+//!
+//! Two promises run through every module: owner text outside managed sections is never
+//! changed, and fields this version doesn't recognize are always preserved.
+//!
+//! # Example
+//!
+//! ```
+//! use carrel_core::archive::{Archive, InitOptions};
+//!
+//! let dir = tempfile::tempdir()?;
+//! let archive = Archive::init(&dir.path().join("Archive"), &InitOptions::new("My archive"))?;
+//! assert_eq!(archive.doc().name, "My archive");
+//!
+//! let collections = archive.collections()?;
+//! assert_eq!(collections[0].path, "Holding");
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
 
 pub mod archive;
 pub mod card;
@@ -30,6 +60,15 @@ pub struct FormatVersion {
 
 impl FormatVersion {
     /// Parses a version written as `"MAJOR.MINOR"`, such as `"1.0"`.
+    ///
+    /// ```
+    /// use carrel_core::{Access, FormatVersion};
+    ///
+    /// let v = FormatVersion::parse("2.3").unwrap();
+    /// assert_eq!((v.major, v.minor), (2, 3));
+    /// assert_eq!(v.access(), Access::ReadOnly, "a newer major version is read-only");
+    /// assert_eq!(FormatVersion::parse("1.0.0"), None);
+    /// ```
     #[must_use]
     pub fn parse(text: &str) -> Option<Self> {
         let (major, minor) = text.split_once('.')?;
