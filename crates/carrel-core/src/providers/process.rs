@@ -148,6 +148,8 @@ struct Connection {
     stdin: Option<ChildStdin>,
     lines: Receiver<String>,
     log: Arc<Mutex<VecDeque<String>>>,
+    /// Disconnects when the provider's standard error has been read to the end.
+    log_done: Receiver<()>,
     next_id: u64,
     broken: Option<String>,
 }
@@ -193,7 +195,10 @@ impl ProcessProvider {
         });
         let log = Arc::new(Mutex::new(VecDeque::new()));
         let log_writer = Arc::clone(&log);
+        let (log_finished, log_done) = channel::<()>();
         std::thread::spawn(move || {
+            // Dropped when the log ends, which tells `failure` the log is complete.
+            let _finished = log_finished;
             for line in BufReader::new(stderr).lines() {
                 let Ok(line) = line else { break };
                 let mut log = log_writer
@@ -211,6 +216,7 @@ impl ProcessProvider {
             stdin,
             lines,
             log,
+            log_done,
             next_id: 1,
             broken: None,
         };
@@ -422,8 +428,10 @@ impl Connection {
         }
     }
 
-    /// A protocol failure, with the provider's last log lines.
+    /// A protocol failure, with the provider's last log lines. A provider that has exited may
+    /// still have log lines on their way, so this waits briefly for its log to end.
     fn failure(&self, what: &str) -> ProviderError {
+        let _ = self.log_done.recv_timeout(Duration::from_millis(200));
         let log = self
             .log
             .lock()
