@@ -69,7 +69,7 @@ At the archive root: `ARCHIVE.md`, `README.md`, `Active/`, `Holding/`, `Journal/
 
 ### 2.8 Ignored files
 
-Programs ignore, and never treat as items: `.DS_Store`, files starting with `._`, `Icon\r`, and folders created by other tools such as `.obsidian/` and `.trash/`. (Obsidian's own trash folder should be turned off in favor of the system trash, so deletions made in Obsidian are visible as outside edits.)
+Programs ignore, and never treat as items: `.DS_Store`, files starting with `._`, `Icon\r`, and the folders other tools create, `.obsidian/` and `.trash/`. Later versions of this format may add names to this list. (Obsidian's own trash folder should be turned off in favor of the system trash, so deletions made in Obsidian are visible as outside edits.)
 
 ## 3. Layout
 

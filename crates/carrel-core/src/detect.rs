@@ -277,7 +277,7 @@ pub struct Detected {
 /// Files programs never treat as items (FORMAT.md §2.8).
 #[must_use]
 pub fn is_ignored(name: &str) -> bool {
-    name == ".DS_Store" || name.starts_with("._") || name == "Icon\r"
+    matches!(name, ".DS_Store" | "Icon\r" | ".obsidian" | ".trash") || name.starts_with("._")
 }
 
 /// Reads and parses a YAML file, or returns `None` if it doesn't exist.

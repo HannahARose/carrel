@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use carrel_core::archive::{Archive, InitOptions};
 use carrel_core::card::{Kind, Sealing};
-use carrel_core::detect::Rules;
+use carrel_core::detect::{Rules, is_ignored};
 
 fn sample_archive() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/sample-archive")
@@ -155,4 +155,14 @@ fn archives_use_their_own_rules() {
     .unwrap();
     let err = archive.rules().unwrap_err();
     assert!(err.path.ends_with("markers.yaml"), "{err}");
+}
+
+#[test]
+fn system_and_tool_files_are_ignored() {
+    for name in [".DS_Store", "._notes.md", "Icon\r", ".obsidian", ".trash"] {
+        assert!(is_ignored(name), "{name:?}");
+    }
+    for name in [".git", ".gitignore", "obsidian", "trash", "Icon"] {
+        assert!(!is_ignored(name), "{name:?}");
+    }
 }
