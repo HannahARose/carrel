@@ -60,7 +60,8 @@ fn archive_json(archive: &Archive) -> Value {
     })
 }
 
-/// `carrel init`.
+/// `carrel init`: creates an archive, or starts history for an existing archive that has
+/// none (one made by hand or by another program).
 pub fn init(
     path: Option<&Path>,
     name: Option<String>,
@@ -70,37 +71,75 @@ pub fn init(
         Some(path) => path.to_owned(),
         None => std::env::current_dir().map_err(|e| Failure::io(Path::new("."), &e))?,
     };
-    let name = match name {
-        Some(name) => name,
-        None => std::path::absolute(&root)
-            .ok()
-            .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
-            .ok_or_else(|| Failure::new("give the archive a name with --name"))?,
-    };
     let identity = Identity::load_or_create()?;
-    let mut options = InitOptions::new(name);
-    options.allow_existing_files = allow_existing_files;
-    let archive = Archive::init(&root, &options)?;
+    let existing = root.join("_System/archive.json").exists();
+    let archive = if existing {
+        let archive = Archive::open(&root)?;
+        match History::open(&archive) {
+            Ok(_) => {
+                return Err(Failure::new(format!(
+                    "{} is already an archive, and its history has started",
+                    archive.root().display()
+                )));
+            }
+            Err(HistoryError::NotInitialized) => {}
+            Err(e) => return Err(e.into()),
+        }
+        if name.is_some() {
+            return Err(Failure::new(format!(
+                "this archive is already named “{}”; leave out --name to start its history",
+                archive.doc().name
+            )));
+        }
+        archive
+    } else {
+        let name = match name {
+            Some(name) => name,
+            None => std::path::absolute(&root)
+                .ok()
+                .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+                .ok_or_else(|| Failure::new("give the archive a name with --name"))?,
+        };
+        let mut options = InitOptions::new(name);
+        options.allow_existing_files = allow_existing_files;
+        Archive::init(&root, &options)?
+    };
     let lease =
         DiskLock::for_archive(&archive).acquire(holder(&identity), "create", DEFAULT_LEASE)?;
-    History::init(&archive, &lease)?;
+    if existing {
+        History::start(&archive, &lease)?;
+    } else {
+        History::init(&archive, &lease)?;
+    }
     lease.release()?;
 
     let mut warnings = Vec::new();
-    if DiskLock::is_synced_folder(&std::path::absolute(&root).unwrap_or(root.clone())) {
+    if DiskLock::is_synced_folder(archive.root()) {
         warnings.push(SYNCED_WARNING);
     }
-    let mut text = format!(
-        "Created archive “{}” in {}\n",
-        archive.doc().name,
-        archive.root().display()
-    );
+    let mut text = if existing {
+        format!(
+            "Started history for archive “{}” in {}\n",
+            archive.doc().name,
+            archive.root().display()
+        )
+    } else {
+        format!(
+            "Created archive “{}” in {}\n",
+            archive.doc().name,
+            archive.root().display()
+        )
+    };
     for warning in &warnings {
         writeln!(text, "warning: {warning}").unwrap();
     }
     Ok(Report::new(
         text,
-        json!({ "archive": archive_json(&archive), "warnings": warnings }),
+        json!({
+            "archive": archive_json(&archive),
+            "history": if existing { "started" } else { "created" },
+            "warnings": warnings,
+        }),
     ))
 }
 
@@ -272,7 +311,7 @@ pub fn status(archive: Option<&Path>) -> Result<Report, Failure> {
 
 fn history_line(history: Option<&[Entry]>) -> String {
     match history {
-        None => "No history yet\n".to_owned(),
+        None => "No history yet (run `carrel init` to start it)\n".to_owned(),
         Some([]) => "No changes recorded\n".to_owned(),
         Some(log) => format!(
             "{} recorded; last: {} ({})\n",
@@ -463,7 +502,9 @@ pub fn log(archive: Option<&Path>, max_count: Option<usize>) -> Result<Report, F
     let history = match History::open(&archive) {
         Ok(history) => history,
         Err(HistoryError::NotInitialized) => {
-            return Err(Failure::new("this archive has no history yet"));
+            return Err(Failure::new(
+                "this archive has no history yet; run `carrel init` in it to start one",
+            ));
         }
         Err(e) => return Err(e.into()),
     };

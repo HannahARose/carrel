@@ -31,7 +31,8 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Create an archive and start its history.
+    /// Create an archive and start its history, or start history for an existing archive
+    /// that has none.
     Init {
         /// The folder to create it in; created if missing. Defaults to the current folder.
         path: Option<PathBuf>,
