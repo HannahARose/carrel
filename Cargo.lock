@@ -345,7 +345,7 @@ dependencies = [
 
 [[package]]
 name = "carrel-cli"
-version = "0.1.0-alpha.0"
+version = "0.1.0"
 dependencies = [
  "carrel-core",
  "clap",
@@ -358,7 +358,7 @@ dependencies = [
 
 [[package]]
 name = "carrel-core"
-version = "0.1.0-alpha.0"
+version = "0.1.0"
 dependencies = [
  "git2",
  "indexmap",
@@ -376,7 +376,7 @@ dependencies = [
 
 [[package]]
 name = "carrel-ffi"
-version = "0.1.0-alpha.0"
+version = "0.1.0"
 dependencies = [
  "carrel-core",
  "thiserror",
@@ -2531,7 +2531,7 @@ dependencies = [
 
 [[package]]
 name = "uniffi-bindgen"
-version = "0.1.0-alpha.0"
+version = "0.1.0"
 dependencies = [
  "uniffi",
 ]
