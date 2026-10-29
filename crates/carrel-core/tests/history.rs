@@ -347,3 +347,24 @@ fn plain_git_can_read_the_history() {
         .unwrap();
     assert!(String::from_utf8_lossy(&out.stdout).contains("ARCHIVE.md"));
 }
+
+#[test]
+fn archives_opened_by_a_relative_path_record_history() {
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().canonicalize().unwrap();
+    let cwd = std::env::current_dir().unwrap();
+    // Relative to the current folder, however deep the temporary folder is.
+    let relative: PathBuf = cwd
+        .components()
+        .skip(1)
+        .map(|_| "..")
+        .collect::<PathBuf>()
+        .join(parent.strip_prefix("/").unwrap())
+        .join("Relative");
+    assert!(relative.is_relative());
+    let archive = Archive::init(&relative, &InitOptions::new("Relative")).unwrap();
+    assert!(archive.root().is_absolute());
+    let (lease, _, _) = writer(&archive);
+    let history = History::init(&archive, &lease).unwrap();
+    assert_eq!(history.log().unwrap().len(), 1);
+}
