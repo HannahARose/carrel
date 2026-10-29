@@ -1,82 +1,19 @@
 //! Ingest's card stage: prompts, schema, validation, retries and fallback, with scripted
 //! models.
 
-use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use carrel_core::archive::Archive;
 use carrel_core::card::{Checksum, Id, Kind, QualityLevel, Tag};
 use carrel_core::ingest::Candidate;
 use carrel_core::ingest::card::{Context, Glossary, Vocabulary, draft, schema, system_prompt};
 use carrel_core::ingest::text::ItemText;
-use carrel_core::providers::{
-    Capability, Completion, CompletionRequest, Offer, Provider, ProviderError, Registry,
-};
+use carrel_core::providers::{ProviderError, Registry};
 use serde_json::json;
 
-/// A model that gives queued answers and remembers what it was asked.
-struct Scripted {
-    name: &'static str,
-    offers: Vec<Offer>,
-    answers: Mutex<VecDeque<Result<serde_json::Value, ProviderError>>>,
-    asked: Arc<Mutex<Vec<CompletionRequest>>>,
-}
-
-impl Scripted {
-    fn new(
-        name: &'static str,
-        priority: i32,
-        context: u64,
-        answers: Vec<Result<serde_json::Value, ProviderError>>,
-    ) -> Self {
-        let mut extra = serde_json::Map::new();
-        extra.insert("context_tokens".into(), json!(context));
-        Self {
-            name,
-            offers: vec![Offer {
-                capability: Capability::TextModel,
-                id: "m".into(),
-                label: None,
-                priority,
-                available: true,
-                reason: None,
-                media_types: Vec::new(),
-                extra,
-            }],
-            answers: Mutex::new(answers.into()),
-            asked: Arc::new(Mutex::new(Vec::new())),
-        }
-    }
-}
-
-impl Provider for Scripted {
-    fn name(&self) -> &str {
-        self.name
-    }
-    fn offers(&self) -> &[Offer] {
-        &self.offers
-    }
-    fn complete(
-        &self,
-        _offer: &str,
-        request: &CompletionRequest,
-    ) -> Result<Completion, ProviderError> {
-        self.asked.lock().unwrap().push(request.clone());
-        let answer = self
-            .answers
-            .lock()
-            .unwrap()
-            .pop_front()
-            .unwrap_or_else(|| Err(ProviderError::Failed("out of answers".into())))?;
-        Ok(Completion {
-            text: answer.to_string(),
-            json: Some(answer),
-            model: format!("{}/m", self.name),
-            usage: None,
-        })
-    }
-}
+mod common;
+use common::Scripted;
 
 fn sample() -> Archive {
     Archive::open(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/sample-archive"))

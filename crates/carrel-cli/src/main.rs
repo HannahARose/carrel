@@ -66,8 +66,8 @@ enum Command {
     },
     /// List the providers on this device (text models, text extraction) and which are used.
     Providers,
-    /// Examine files and folders to ingest: their kind, size and duplicates. Nothing is
-    /// changed yet; drafting cards and destinations comes next.
+    /// Propose filing files and folders: each gets a drafted card and a destination, saved
+    /// as a proposal for `carrel review`. Nothing is moved until a proposal is approved.
     Ingest {
         /// The files and folders. Each is one item.
         #[arg(required = true)]
@@ -78,6 +78,9 @@ enum Command {
         /// Ingest a folder as one item even when its name suggests a pile, such as Downloads.
         #[arg(long)]
         whole: bool,
+        /// Show what would be proposed without saving anything.
+        #[arg(long)]
+        dry_run: bool,
     },
     /// Review proposals to file items: list them, show one, or reject them.
     Review {
@@ -171,10 +174,16 @@ fn main() -> ExitCode {
         Command::Show { item } => commands::show(cli.archive.as_deref(), &item),
         Command::Log { max_count } => commands::log(cli.archive.as_deref(), max_count),
         Command::Providers => Ok(providers::list()),
-        Command::Ingest { paths, each, whole } => ingest::ingest(
+        Command::Ingest {
+            paths,
+            each,
+            whole,
+            dry_run,
+        } => ingest::ingest(
             cli.archive.as_deref(),
             &paths,
             carrel_core::ingest::IntakeOptions { each, whole },
+            dry_run,
         ),
         Command::Review { all, action } => match action.unwrap_or(ReviewAction::List { all }) {
             ReviewAction::List { all } => review::list(cli.archive.as_deref(), all),

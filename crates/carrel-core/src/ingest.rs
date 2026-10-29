@@ -6,6 +6,7 @@
 //! items.
 
 pub mod card;
+pub mod route;
 pub mod text;
 
 use std::collections::HashMap;
@@ -16,6 +17,7 @@ use crate::card::{Checksum, Id, Kind, Sealing};
 use crate::card_file::CardFile;
 use crate::detect::is_ignored;
 use crate::manifest::{Manifest, ManifestError};
+use crate::review::{CardDraft, Destination, Problem, ReviewEntry, ReviewMarker, Source, State};
 
 /// Folder names that usually hold a pile of unrelated things rather than one item, so ingest
 /// asks instead of guessing.
@@ -337,4 +339,124 @@ pub fn plan(
     let index = ChecksumIndex::build(archive)?;
     mark_duplicates(&index, &mut candidates);
     Ok((candidates, skipped))
+}
+
+/// An ingest batch: where its proposals go and who is making them.
+#[derive(Debug, Clone, Copy)]
+pub struct Batch<'a> {
+    /// The archive.
+    pub archive: &'a Archive,
+    /// Its collections.
+    pub collections: &'a [crate::archive::Collection],
+    /// The batch's identifier.
+    pub id: Id,
+    /// The device drafting.
+    pub device: Id,
+}
+
+impl Batch<'_> {
+    /// The review entry proposing to file `candidate` as `draft`, where `route` says (stage
+    /// 11). Tags are narrowed to those that apply at the destination, the model's new tag (if
+    /// any) is proposed, and the entry needs the owner when the card couldn't be settled.
+    /// `None` when the route has no collection, as in an archive without Holding.
+    #[must_use]
+    pub fn propose(
+        &self,
+        candidate: &Candidate,
+        draft: &card::Draft,
+        route: &route::Route,
+        earlier_attempts: &[crate::review::Attempt],
+    ) -> Option<ReviewEntry> {
+        let (archive, collections, batch, device) =
+            (self.archive, self.collections, self.id, self.device);
+
+        let collection = route.collection?;
+        let mut problems: Vec<Problem> = draft
+            .problems
+            .iter()
+            .map(|message| Problem {
+                stage: "card".into(),
+                message: message.clone(),
+            })
+            .collect();
+        let tags = route::tags_for(archive, collections, &route.path, &draft.tags);
+        let dropped: Vec<&str> = draft
+            .tags
+            .iter()
+            .filter(|t| !tags.contains(t))
+            .map(|t| t.0.as_str())
+            .collect();
+        if !dropped.is_empty() {
+            problems.push(Problem {
+                stage: "route".into(),
+                message: format!(
+                    "tags {} don't apply in {}, so they were left off",
+                    dropped.join(", "),
+                    route.path
+                ),
+            });
+        }
+        let sensitivity = collections
+            .iter()
+            .find(|c| c.doc.id == collection)
+            .and_then(|c| c.doc.extra.get("sensitivity_default"))
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .or(archive.doc().sensitivity_default)
+            .unwrap_or(crate::card::Sensitivity::Personal);
+        let mut attempts = earlier_attempts.to_vec();
+        attempts.extend(draft.attempts.iter().cloned());
+        attempts.extend(route.attempts.iter().cloned());
+        let state = if draft.problems.is_empty() {
+            State::Proposed
+        } else {
+            State::NeedsOwner
+        };
+        Some(ReviewEntry {
+            carrel: ReviewMarker::Review,
+            format: crate::FORMAT_VERSION,
+            id: Id::new_v7(),
+            batch,
+            created: crate::card::DateOrTime(
+                jiff::Timestamp::now()
+                    .to_zoned(jiff::tz::TimeZone::system())
+                    .strftime("%Y-%m-%dT%H:%M:%S%:z")
+                    .to_string(),
+            ),
+            state,
+            source: Source {
+                path: candidate.path.clone(),
+                device,
+                checksum: candidate.checksum.clone(),
+                size: candidate.size,
+                extra: crate::card::Extra::new(),
+            },
+            kind: candidate.kind,
+            sealed: candidate.sealed,
+            duplicate_of: candidate.duplicate_of.as_ref().map(|d| d.id),
+            card: CardDraft {
+                title: draft.title.clone(),
+                summary: draft.summary.clone(),
+                tags: tags.clone(),
+                dates: draft.created.clone().map(|created| crate::card::Dates {
+                    created: Some(created),
+                    ..crate::card::Dates::default()
+                }),
+                sensitivity,
+                generated: draft.generated.clone(),
+                extra: crate::card::Extra::new(),
+            },
+            proposed_tags: draft.new_tag.clone().into_iter().collect(),
+            destination: Destination {
+                collection,
+                path: route.path.clone(),
+                confidence: route.confidence,
+                reasons: route.reasons.clone(),
+                rule: route.rule.clone(),
+                extra: crate::card::Extra::new(),
+            },
+            problems,
+            attempts,
+            extra: crate::card::Extra::new(),
+        })
+    }
 }
