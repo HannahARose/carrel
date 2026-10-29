@@ -349,7 +349,9 @@ fn valid_time_with_offset(s: &str) -> bool {
 }
 
 /// A checksum written as `algorithm:hex` (FORMAT.md §2.6). Version 1.0 uses SHA-256.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
 #[serde(transparent)]
 pub struct Checksum(#[schemars(pattern(r"^sha256:[0-9a-f]{64}$"))] pub String);
 

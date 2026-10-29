@@ -10,6 +10,7 @@ pub mod card_file;
 pub mod detect;
 pub mod documents;
 pub mod frontmatter;
+pub mod manifest;
 pub mod sections;
 
 /// The version of the archive format this build reads and writes (`FORMAT.md`).

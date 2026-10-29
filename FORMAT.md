@@ -503,15 +503,22 @@ Patterns use `*` for any run of characters within a name and match whole names, 
 
 ### 7.7 Manifests
 
-A manifest records every file in a folder or bundle, one per line, as tab-separated values sorted by path:
+A manifest records the files in a folder or bundle, one per line, as tab-separated values:
 
 ```
 # carrel manifest 1.0	id=01928f3a-7c41-7d2e-9b6a-3f0c5e2a1b44
-src/main.rs	sha256:e3b0c442…	2048	2026-09-14T10:02:11-07:00
-README.md	sha256:9f86d081…	512	2026-09-09T18:30:00-07:00
+README.md	sha256:9f86d081…	512	2026-09-09T18:30:00.25-07:00
+src/main.rs	sha256:e3b0c442…	2048	2026-09-14T10:02:11.137401922-07:00
 ```
 
-Columns: path relative to the folder, checksum, size in bytes, modification time. Manifests are stored at `_System/manifests/<item-id>.tsv`, and the card's `manifest.checksum` is the checksum of that file. Paths containing tabs or newlines are percent-encoded.
+- **Header:** the first line is `# carrel manifest 1.0` followed by tab-separated `key=value` fields, including the item's `id`. Readers ignore fields they don't know.
+- **Columns:** path relative to the folder with `/` separators, checksum, size in bytes, modification time. Modification times keep the file system's full precision (fractional seconds).
+- **Order:** rows are sorted by path in byte order (UTF-8), and a path appears at most once.
+- **Encoding:** in paths, `%`, tab, carriage return and line feed are written as `%25`, `%09`, `%0D` and `%0A`; nothing else is encoded.
+- **What's listed:** every file, including those inside `.git`, except ignored files (§2.8) and the contents of regenerable folders (§4.3), which change too often to track and can be rebuilt.
+- **Symbolic links** are listed, not followed: the checksum is of the link's target path, and the size is that path's length in bytes.
+- **Storage:** manifests are stored at `_System/manifests/<item-id>.tsv`, and the card's `manifest.checksum` is the checksum of that file.
+- **Rebuilding:** a program may reuse an entry's checksum when a file's size and modification time both match the previous manifest, instead of reading the file again.
 
 ### 7.8 Inboxes
 
