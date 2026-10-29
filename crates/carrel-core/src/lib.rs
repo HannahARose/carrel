@@ -18,6 +18,7 @@
 //! | [`manifest`] | Checksums, folder manifests and their diffs | §2.6, §7.7 |
 //! | [`history`] | The Git history of metadata, and undo | §8.1–§8.3 |
 //! | [`coordinator`] | Which writer may change an archive: leases and the disk lock | §8.4 |
+//! | [`local`] | Where this device keeps its own data: configuration and models | none |
 //! | [`providers`] | Text models and text extraction from providers, native or portable | `docs/providers.md` |
 //!
 //! Two promises run through every module: owner text outside managed sections is never
@@ -45,6 +46,7 @@ pub mod detect;
 pub mod documents;
 pub mod frontmatter;
 pub mod history;
+pub mod local;
 pub mod manifest;
 pub mod providers;
 pub mod sections;

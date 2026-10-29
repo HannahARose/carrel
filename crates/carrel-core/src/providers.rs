@@ -7,7 +7,8 @@
 //!
 //! Providers are usually separate programs speaking the provider protocol, which
 //! [`process::ProcessProvider`] runs; that isn't available on iOS and similar systems, where the
-//! app gives the core in-process providers instead. [`PlainText`] is built in.
+//! app gives the core in-process providers instead. [`PlainText`] is built in. [`serve::serve`]
+//! is the other end: it offers any [`Provider`] written in Rust as a provider program.
 
 #[cfg(not(any(
     target_os = "ios",
@@ -16,6 +17,7 @@
     target_os = "visionos"
 )))]
 pub mod process;
+pub mod serve;
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;

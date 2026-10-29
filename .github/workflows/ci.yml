@@ -40,7 +40,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      # The llama.cpp provider has its own job: building llama.cpp takes minutes.
+      - run: cargo clippy --workspace --exclude carrel-provider-llama --all-targets --locked -- -D warnings
 
   test:
     name: Test (${{ matrix.os }})
@@ -55,8 +56,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-      - run: cargo test --workspace --all-targets --locked
-      - run: cargo test --workspace --doc --locked
+      - run: cargo test --workspace --exclude carrel-provider-llama --all-targets --locked
+      - run: cargo test --workspace --exclude carrel-provider-llama --doc --locked
       - name: CLI reports its version
         run: cargo run --locked --bin carrel -- --version
 
@@ -72,7 +73,7 @@ jobs:
         with:
           persist-credentials: false
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-      - run: cargo doc --workspace --no-deps --document-private-items --locked
+      - run: cargo doc --workspace --exclude carrel-provider-llama --no-deps --document-private-items --locked
 
   swift:
     # The Swift side: build the XCFramework and bindings, test them from Swift, check the
@@ -153,11 +154,42 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
+  llama:
+    # The portable model provider, with llama.cpp built in, run against a tiny test model.
+    name: llama.cpp provider (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      # A 1 MB model whose answers are nonsense: enough to test loading, generation and
+      # grammar-constrained JSON.
+      MODEL_URL: https://huggingface.co/ggml-org/models/resolve/main/tinyllamas/stories260K.gguf
+      MODEL_SHA256: 270cba1bd5109f42d03350f60406024560464db173c0e387d91f0426d3bd256d
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - run: cargo clippy -p carrel-provider-llama --all-targets --locked -- -D warnings
+      - name: Download the test model
+        run: |
+          mkdir -p "$RUNNER_TEMP/models"
+          curl -sSfL -o "$RUNNER_TEMP/models/stories260K.gguf" "$MODEL_URL"
+          echo "$MODEL_SHA256  $RUNNER_TEMP/models/stories260K.gguf" | shasum -a 256 -c -
+      - name: Tests
+        run: CARREL_TEST_LLAMA_MODELS="$RUNNER_TEMP/models" cargo test -p carrel-provider-llama --locked
+      - name: Through carrel providers
+        run: |
+          cargo build -p carrel-provider-llama -p carrel-cli --locked
+          CARREL_MODELS_DIR="$RUNNER_TEMP/models" PATH="$PWD/target/debug:$PATH" cargo run --locked --bin carrel -- providers
+
   ok:
     # The single required check for branch protection. It passes only if every job above passed.
     name: CI passed
     if: always()
-    needs: [fmt, clippy, test, docs, swift, deny, zizmor, hygiene]
+    needs: [fmt, clippy, test, docs, swift, llama, deny, zizmor, hygiene]
     runs-on: ubuntu-latest
     steps:
       - name: Check job results

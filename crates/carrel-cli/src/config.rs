@@ -12,20 +12,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::Failure;
 
-/// The configuration folder.
+/// The configuration folder ([`carrel_core::local::config_dir`]).
 pub fn dir() -> Result<PathBuf, Failure> {
-    if let Some(dir) = std::env::var_os("CARREL_CONFIG_DIR") {
-        return Ok(PathBuf::from(dir));
-    }
-    let home = std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .ok_or_else(|| Failure::new("can't find your home folder; set CARREL_CONFIG_DIR"))?;
-    if cfg!(target_os = "macos") {
-        return Ok(home.join("Library/Application Support/Carrel"));
-    }
-    Ok(std::env::var_os("XDG_CONFIG_HOME")
-        .map_or_else(|| home.join(".config"), PathBuf::from)
-        .join("carrel"))
+    carrel_core::local::config_dir()
+        .ok_or_else(|| Failure::new("can't find your home folder; set CARREL_CONFIG_DIR"))
 }
 
 /// Who is making changes from this device, recorded in every history commit.
