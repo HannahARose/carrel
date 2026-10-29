@@ -52,6 +52,12 @@ Every document is analyzed on your own devices. Nothing is sent anywhere unless 
 
 Details are on the [wiki's Roadmap page](https://github.com/HannahARose/carrel/wiki/Roadmap).
 
+## Documentation
+
+- **[Wiki](https://github.com/HannahARose/carrel/wiki):** design, archive format overview, roadmap, development setup and workflow.
+- **[Code documentation](https://hrose.me/carrel/):** every module, type and function, built from the `dev` branch on each change.
+- **[FORMAT.md](FORMAT.md):** the archive format specification.
+
 ## License
 
 - **Code:** [Mozilla Public License 2.0](LICENSE). You can use Carrel's code in other projects, including closed-source ones; changes to Carrel's own files must be shared under the same license.
