@@ -359,3 +359,51 @@ fn review_lists_shows_and_rejects_proposals() {
     let again = sandbox.run_in(&root, &["review", "reject", "00000001"]);
     assert!(String::from_utf8_lossy(&again.stderr).contains("already rejected"));
 }
+
+#[test]
+fn ingest_reports_kinds_sizes_and_duplicates_without_changing_anything() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    let downloads = sandbox.path("Downloads");
+    std::fs::create_dir(&downloads).unwrap();
+    std::fs::copy(
+        root.join("Projects/Hardware/parts-list.csv"),
+        downloads.join("parts-list.csv"),
+    )
+    .unwrap();
+    std::fs::write(downloads.join("new.txt"), "new").unwrap();
+    let downloads_arg = downloads.to_str().unwrap();
+
+    let refused = sandbox.run_in(&root, &["ingest", downloads_arg]);
+    assert_eq!(refused.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("--each"));
+
+    let report = sandbox.json(&root, &["ingest", "--each", downloads_arg]);
+    let items = report["items"].as_array().unwrap();
+    assert_eq!(items.len(), 2);
+    let csv = items
+        .iter()
+        .find(|i| i["path"].as_str().unwrap().ends_with("parts-list.csv"))
+        .unwrap();
+    assert_eq!(
+        csv["duplicate_of"]["card"],
+        "Projects/Hardware/parts-list.csv.md"
+    );
+    let new = items
+        .iter()
+        .find(|i| i["path"].as_str().unwrap().ends_with("new.txt"))
+        .unwrap();
+    assert_eq!(new["kind"], "file");
+    assert_eq!(new["size"], 3);
+    assert_eq!(new["duplicate_of"], serde_json::Value::Null);
+
+    assert!(downloads.join("new.txt").exists(), "nothing is moved");
+    assert_eq!(
+        sandbox.json(&root, &["review"])["entries"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1,
+        "no new proposals yet"
+    );
+}

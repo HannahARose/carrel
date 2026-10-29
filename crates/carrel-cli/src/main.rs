@@ -6,6 +6,7 @@
 
 mod commands;
 mod config;
+mod ingest;
 mod providers;
 mod review;
 
@@ -65,6 +66,19 @@ enum Command {
     },
     /// List the providers on this device (text models, text extraction) and which are used.
     Providers,
+    /// Examine files and folders to ingest: their kind, size and duplicates. Nothing is
+    /// changed yet; drafting cards and destinations comes next.
+    Ingest {
+        /// The files and folders. Each is one item.
+        #[arg(required = true)]
+        paths: Vec<PathBuf>,
+        /// Ingest each entry inside a folder as its own item.
+        #[arg(long, conflicts_with = "whole")]
+        each: bool,
+        /// Ingest a folder as one item even when its name suggests a pile, such as Downloads.
+        #[arg(long)]
+        whole: bool,
+    },
     /// Review proposals to file items: list them, show one, or reject them.
     Review {
         /// Include proposals already decided (with no subcommand).
@@ -157,6 +171,11 @@ fn main() -> ExitCode {
         Command::Show { item } => commands::show(cli.archive.as_deref(), &item),
         Command::Log { max_count } => commands::log(cli.archive.as_deref(), max_count),
         Command::Providers => Ok(providers::list()),
+        Command::Ingest { paths, each, whole } => ingest::ingest(
+            cli.archive.as_deref(),
+            &paths,
+            carrel_core::ingest::IntakeOptions { each, whole },
+        ),
         Command::Review { all, action } => match action.unwrap_or(ReviewAction::List { all }) {
             ReviewAction::List { all } => review::list(cli.archive.as_deref(), all),
             ReviewAction::Show { id } => review::show(cli.archive.as_deref(), &id),
