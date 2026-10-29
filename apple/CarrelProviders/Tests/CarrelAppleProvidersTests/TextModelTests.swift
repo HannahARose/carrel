@@ -128,3 +128,19 @@ func appleModelAnswersPrompts() async throws {
     #expect(!title.isEmpty)
     #expect(tags.count <= 3)
 }
+
+@Test(.enabled(if: appleModelAvailable, "Apple's on-device model isn't available here"))
+func promptsTooLongForTheModelAreUnsupported() async {
+    // Far beyond an 8,192-token context, so another model with a larger one gets it.
+    let long = String(repeating: "The oscillators drift in and out of phase. ", count: 1500)
+    do {
+        _ = try await FoundationModel().complete(CompletionRequest(prompt: "Summarize: " + long))
+        Issue.record("a prompt this long should be refused")
+    } catch {
+        guard case .unsupported(let why) = error else {
+            Issue.record("expected unsupported, got \(error)")
+            return
+        }
+        #expect(why.contains("too long"), "\(why)")
+    }
+}
