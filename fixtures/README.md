@@ -32,4 +32,21 @@ A small, hand-built archive that follows [FORMAT.md](../FORMAT.md) v1.0 (draft).
 
 ### Changing the fixture
 
-Checksums, sizes and manifests must match the files exactly. After editing an item, update its card's `checksum` and `size` (or its manifest file and the card's `manifest.checksum`). Until the core can do this ([#12](https://github.com/HannahARose/carrel/issues/12), [#15](https://github.com/HannahARose/carrel/issues/15)), `shasum -a 256 <file>` gives the checksum. CI validation of fixtures is [#43](https://github.com/HannahARose/carrel/issues/43).
+Checksums, sizes and manifests must match the files exactly. After editing an item, update its card's `checksum` and `size` (or its manifest file and the card's `manifest.checksum`). `shasum -a 256 <file>` gives a file's checksum. After editing `FORMAT.md`, copy it over `sample-archive/_System/FORMAT.md`.
+
+### How it's checked
+
+`crates/carrel-core/tests/fixtures.rs` checks the sample archive on every test run, locally and in CI:
+
+```bash
+cargo test -p carrel-core --test fixtures
+```
+
+It reports every problem it finds, one per line:
+
+- every card's frontmatter against `schemas/card.schema.json`, and that the core reads and writes it back byte for byte
+- unique identifiers, and checksums, sizes and manifests matching the items
+- tags from a vocabulary that applies, and links that resolve
+- the `ARCHIVE.md` and collection listings, and that every card can be reached from `ARCHIVE.md`
+- nothing left uncataloged
+- valid JSON and YAML under `_System`, and an exact copy of `FORMAT.md`
