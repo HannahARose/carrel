@@ -22,12 +22,16 @@ min_collection_items: 5
 
 A small archive that exercises every part of the Carrel format: each item kind, sealing, links, checkout, history entries, a tombstone and a naming clash.
 
-## Collections
-
-- **Reading:** papers, books and web pages kept for reference.
-- **Projects:** things being built, with **Hardware** as a subcollection.
-- **Holding:** items waiting for a better home.
-
 ## Conventions
 
-Collection and file names are plain words. Dates in file names are written `YYYY-MM-DD`.
+Collection and file names are plain words. Dates in file names are written `YYYY-MM-DD`. Subcollections go at most three levels deep.
+
+<!-- carrel:collections -->
+## Collections
+
+| Collection | Items | Description |
+| --- | --- | --- |
+| [Holding](Holding/_collection.md) | 1 | Items waiting for a better home |
+| [Projects](Projects/_collection.md) | 3 (+4 in subcollections) | Things being made: code, notes and data |
+| [Reading](Reading/_collection.md) | 4 | Papers, books and web pages kept for reference |
+<!-- /carrel:collections -->
