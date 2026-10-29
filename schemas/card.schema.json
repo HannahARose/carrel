@@ -1,0 +1,564 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Carrel card",
+  "description": "Frontmatter of a Carrel card (FORMAT.md §5).",
+  "type": "object",
+  "properties": {
+    "carrel": {
+      "description": "Document type; always `card`.",
+      "$ref": "#/$defs/CardMarker"
+    },
+    "format": {
+      "description": "Format version the card was written with, such as `\"1.0\"`.",
+      "$ref": "#/$defs/FormatVersion"
+    },
+    "id": {
+      "description": "The item's permanent identifier.",
+      "$ref": "#/$defs/Id"
+    },
+    "kind": {
+      "description": "What kind of item this card describes.",
+      "$ref": "#/$defs/Kind"
+    },
+    "title": {
+      "description": "Human-readable title (the owner may edit it).",
+      "type": "string"
+    },
+    "item": {
+      "description": "The item's name relative to the card's folder; required for files, folders and bundles.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "sealed": {
+      "description": "How strictly a bundle is protected; required for bundles.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Sealing"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "allow_readme": {
+      "description": "For soft-sealed bundles: whether a program may add a `README.md` inside (default `true`).",
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "summary": {
+      "description": "Two or three sentences describing the item.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "tags": {
+      "description": "Tags from the vocabularies along the item's path (FORMAT.md §6.5).",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Tag"
+      }
+    },
+    "links": {
+      "description": "Typed links to other items (FORMAT.md §5.4).",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Link"
+      }
+    },
+    "dates": {
+      "description": "Dates associated with the item.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Dates"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sensitivity": {
+      "description": "How carefully the item must be handled.",
+      "$ref": "#/$defs/Sensitivity"
+    },
+    "checksum": {
+      "description": "The file's checksum; required for files.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Checksum"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "size": {
+      "description": "Size in bytes; required for files, folders and bundles.",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint64",
+      "minimum": 0
+    },
+    "manifest": {
+      "description": "The folder's or bundle's manifest; required for folders and bundles.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ManifestRef"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "location": {
+      "description": "Where the item is, for physical objects and external references.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "url": {
+      "description": "The resource's address; required for URL items.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "checked_out": {
+      "description": "Present while the item is checked out (FORMAT.md §9.1).",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Checkout"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "generated": {
+      "description": "How program-written fields were produced (FORMAT.md §5.6).",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Provenance"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "removed": {
+      "description": "Why and when the item was removed; required for tombstones (FORMAT.md §10).",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Removal"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "carrel",
+    "format",
+    "id",
+    "kind",
+    "title",
+    "sensitivity"
+  ],
+  "$defs": {
+    "CardMarker": {
+      "description": "The `carrel: card` marker that identifies a Markdown file as a card (FORMAT.md §5).",
+      "oneOf": [
+        {
+          "description": "The only value.",
+          "type": "string",
+          "const": "card"
+        }
+      ]
+    },
+    "FormatVersion": {
+      "description": "Archive format version, MAJOR.MINOR (FORMAT.md §12).",
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+$"
+    },
+    "Id": {
+      "description": "A permanent identifier: a UUID, which FORMAT.md §2.3 requires to be version 7.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "Kind": {
+      "description": "Item kinds (FORMAT.md §4.1).",
+      "oneOf": [
+        {
+          "description": "A single file.",
+          "type": "string",
+          "const": "file"
+        },
+        {
+          "description": "A folder whose contents programs may reorganize with approval.",
+          "type": "string",
+          "const": "folder"
+        },
+        {
+          "description": "A folder stored and moved whole.",
+          "type": "string",
+          "const": "bundle"
+        },
+        {
+          "description": "Something outside the archive, such as a book; card only.",
+          "type": "string",
+          "const": "physical"
+        },
+        {
+          "description": "A web resource; card only.",
+          "type": "string",
+          "const": "url"
+        },
+        {
+          "description": "A file or folder stored outside the archive; card only.",
+          "type": "string",
+          "const": "external"
+        },
+        {
+          "description": "A record of a removed item; card only.",
+          "type": "string",
+          "const": "tombstone"
+        }
+      ]
+    },
+    "Sealing": {
+      "description": "How strictly a bundle is protected (FORMAT.md §4.2).",
+      "oneOf": [
+        {
+          "description": "Never write inside.",
+          "type": "string",
+          "const": "hard"
+        },
+        {
+          "description": "Never write inside, except an optional `README.md`.",
+          "type": "string",
+          "const": "soft"
+        }
+      ]
+    },
+    "Tag": {
+      "description": "A tag: lowercase words joined by `-` (FORMAT.md §6.5).",
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+    },
+    "Link": {
+      "description": "A typed link to another item (FORMAT.md §5.4).",
+      "type": "object",
+      "properties": {
+        "type": {
+          "description": "A built-in link type or a custom one declared in `ARCHIVE.md`.",
+          "$ref": "#/$defs/LinkType"
+        },
+        "id": {
+          "description": "The target item's identifier.",
+          "$ref": "#/$defs/Id"
+        },
+        "path": {
+          "description": "The target card's path relative to this card, kept current as a convenience.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "note": {
+          "description": "A short explanation.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "type",
+        "id"
+      ]
+    },
+    "LinkType": {
+      "description": "A link type. Built-in types are listed in [`LinkType::BUILT_IN`].",
+      "type": "string"
+    },
+    "Dates": {
+      "description": "Dates associated with an item.",
+      "type": "object",
+      "properties": {
+        "created": {
+          "description": "When the item was created.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DateOrTime"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "modified": {
+          "description": "When the item was last modified.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DateOrTime"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "added": {
+          "description": "When the item was added to the archive.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DateOrTime"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "worked": {
+          "description": "When the item was last worked on.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DateOrTime"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "document": {
+          "description": "The item's own date, such as a publication date.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DateOrTime"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "DateOrTime": {
+      "description": "An ISO 8601 date (`2026-10-29`) or RFC 3339 timestamp with offset (FORMAT.md §2.4).",
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}(T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2}))?$"
+    },
+    "Sensitivity": {
+      "description": "Sensitivity levels.",
+      "oneOf": [
+        {
+          "description": "Fine to describe anywhere.",
+          "type": "string",
+          "const": "public"
+        },
+        {
+          "description": "The owner's own material.",
+          "type": "string",
+          "const": "personal"
+        },
+        {
+          "description": "Needs care before it is described outside the device.",
+          "type": "string",
+          "const": "sensitive"
+        },
+        {
+          "description": "Identity, medical or financial records.",
+          "type": "string",
+          "const": "restricted"
+        }
+      ]
+    },
+    "Checksum": {
+      "description": "A checksum written as `algorithm:hex` (FORMAT.md §2.6). Version 1.0 uses SHA-256.",
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "ManifestRef": {
+      "description": "Where a folder's or bundle's manifest is, and its checksum (FORMAT.md §7.7).",
+      "type": "object",
+      "properties": {
+        "checksum": {
+          "description": "Checksum of the manifest file.",
+          "$ref": "#/$defs/Checksum"
+        },
+        "path": {
+          "description": "The manifest's path under `_System/manifests/`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "checksum",
+        "path"
+      ]
+    },
+    "Checkout": {
+      "description": "A checkout in progress (FORMAT.md §9.1).",
+      "type": "object",
+      "properties": {
+        "to": {
+          "description": "Where the working copy is, on the device that checked it out.",
+          "type": "string"
+        },
+        "device": {
+          "description": "The device that checked it out.",
+          "$ref": "#/$defs/Id"
+        },
+        "person": {
+          "description": "The person who checked it out.",
+          "$ref": "#/$defs/Id"
+        },
+        "since": {
+          "description": "When it was checked out.",
+          "$ref": "#/$defs/DateOrTime"
+        },
+        "due": {
+          "description": "When it is due back, if a due date was set.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DateOrTime"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "manifest": {
+          "description": "The manifest checksum at checkout, for detecting changes on return.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Checksum"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "to",
+        "device",
+        "person",
+        "since"
+      ]
+    },
+    "Provenance": {
+      "description": "How program-written fields were produced (FORMAT.md §5.6).",
+      "type": "object",
+      "properties": {
+        "fields": {
+          "description": "The card fields this describes.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "by": {
+          "description": "The program and version, such as `carrel 0.2.0`.",
+          "type": "string"
+        },
+        "model": {
+          "description": "The model, if one was used.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "device": {
+          "description": "The device that produced the fields.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "at": {
+          "description": "When the fields were produced.",
+          "$ref": "#/$defs/DateOrTime"
+        },
+        "level": {
+          "description": "Whether a stronger device should re-check the result.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/QualityLevel"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "fields",
+        "by",
+        "at"
+      ]
+    },
+    "QualityLevel": {
+      "description": "Whether a result was produced at its task's preferred level.",
+      "oneOf": [
+        {
+          "description": "Produced at the preferred level.",
+          "type": "string",
+          "const": "preferred"
+        },
+        {
+          "description": "Produced below it; a stronger device should re-check.",
+          "type": "string",
+          "const": "below-preferred"
+        }
+      ]
+    },
+    "Removal": {
+      "description": "Why and when an item was removed (FORMAT.md §10.1).",
+      "type": "object",
+      "properties": {
+        "at": {
+          "description": "When the item was removed.",
+          "$ref": "#/$defs/DateOrTime"
+        },
+        "reason": {
+          "description": "Why it was removed.",
+          "type": "string"
+        },
+        "former_kind": {
+          "description": "What kind of item it was.",
+          "$ref": "#/$defs/Kind"
+        },
+        "former_path": {
+          "description": "Where it was.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "recoverable_from": {
+          "description": "The backup snapshot it can be restored from.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "at",
+        "reason",
+        "former_kind"
+      ]
+    }
+  }
+}

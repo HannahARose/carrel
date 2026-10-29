@@ -4,6 +4,8 @@
 //! It has no platform-specific code; anything that needs the operating system (models,
 //! text extraction, sync) is supplied by the caller.
 
+pub mod card;
+
 /// The version of the archive format this build reads and writes (`FORMAT.md`).
 pub const FORMAT_VERSION: FormatVersion = FormatVersion { major: 1, minor: 0 };
 
@@ -44,6 +46,36 @@ impl FormatVersion {
 impl std::fmt::Display for FormatVersion {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}.{}", self.major, self.minor)
+    }
+}
+
+// Written as a quoted string ("1.0") so YAML never reads it as a number.
+impl serde::Serialize for FormatVersion {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for FormatVersion {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let text = <std::borrow::Cow<'de, str>>::deserialize(deserializer)?;
+        Self::parse(&text).ok_or_else(|| {
+            serde::de::Error::custom(format!("format version must be MAJOR.MINOR, got {text:?}"))
+        })
+    }
+}
+
+impl schemars::JsonSchema for FormatVersion {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "FormatVersion".into()
+    }
+
+    fn json_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "type": "string",
+            "pattern": "^[0-9]+\\.[0-9]+$",
+            "description": "Archive format version, MAJOR.MINOR (FORMAT.md §12)."
+        })
     }
 }
 
