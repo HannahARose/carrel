@@ -59,6 +59,8 @@ public struct FoundationModel: TextModel {
     /// The model's name for provenance, such as `apple/afm-3-core-advanced`.
     @available(macOS 26.0, *)
     static var modelName: String {
+        // `variant` is in the macOS 27 SDK, which comes with Swift 6.4; older SDKs can't name it.
+        #if compiler(>=6.4)
         if #available(macOS 27.0, *) {
             let slug = SystemLanguageModel.default.variant.displayName
                 .lowercased()
@@ -66,6 +68,7 @@ public struct FoundationModel: TextModel {
                 .joined(separator: "-")
             if !slug.isEmpty { return "apple/\(slug)" }
         }
+        #endif
         return "apple/afm"
     }
 
@@ -85,14 +88,56 @@ public struct FoundationModel: TextModel {
             }
             let response = try await session.respond(to: request.prompt, options: options)
             return Completion(text: response.content, model: modelName)
-        } catch let error as ProviderError {
-            throw error
-        } catch let error as LanguageModelSession.GenerationError {
-            throw map(error)
         } catch {
-            throw .failed(error.localizedDescription)
+            throw map(any: error)
         }
     }
+
+    /// Sorts the model's errors into the protocol's codes. macOS 27 reports them as
+    /// `LanguageModelError` and `SystemLanguageModel.Error`; macOS 26 as `GenerationError`.
+    @available(macOS 26.0, *)
+    static func map(any error: any Error) -> ProviderError {
+        if let error = error as? ProviderError {
+            return error
+        }
+        #if compiler(>=6.4)
+        if #available(macOS 27.0, *) {
+            if let error = error as? LanguageModelError {
+                return map(error)
+            }
+            if let error = error as? SystemLanguageModel.Error {
+                switch error {
+                case .assetsUnavailable: return .unavailable(error.localizedDescription)
+                @unknown default: return .failed(error.localizedDescription)
+                }
+            }
+        }
+        #endif
+        if let error = error as? LanguageModelSession.GenerationError {
+            return map(error)
+        }
+        return .failed(error.localizedDescription)
+    }
+
+    #if compiler(>=6.4)
+    @available(macOS 27.0, *)
+    static func map(_ error: LanguageModelError) -> ProviderError {
+        let why = error.localizedDescription
+        switch error {
+        case .contextSizeExceeded:
+            return .unsupported("too long for Apple's on-device model: \(why)")
+        case .guardrailViolation, .refusal:
+            return .unsupported("Apple's on-device model declined: \(why)")
+        case .unsupportedCapability, .unsupportedTranscriptContent, .unsupportedGenerationGuide,
+            .unsupportedLanguageOrLocale:
+            return .unsupported(why)
+        case .rateLimited, .timeout:
+            return .failed(why)
+        @unknown default:
+            return .failed(why)
+        }
+    }
+    #endif
 
     @available(macOS 26.0, *)
     static func map(_ error: LanguageModelSession.GenerationError) -> ProviderError {
