@@ -234,10 +234,22 @@ impl Manifest {
         out
     }
 
-    /// The checksum of [`Manifest::to_tsv`], as recorded in a card's `manifest.checksum`.
+    /// The content checksum recorded in a card's `manifest.checksum` (FORMAT.md §7.7): the
+    /// checksum of every row's encoded path, checksum and size, without modification times or
+    /// the header. Two manifests of the same contents always have the same content checksum.
     #[must_use]
     pub fn checksum(&self) -> Checksum {
-        Checksum::of_bytes(self.to_tsv().as_bytes())
+        let mut text = String::with_capacity(self.entries.len() * 100);
+        for e in &self.entries {
+            let _ = writeln!(
+                text,
+                "{}\t{}\t{}",
+                encode_path(&e.path),
+                e.checksum.0,
+                e.size
+            );
+        }
+        Checksum::of_bytes(text.as_bytes())
     }
 
     /// Reads a manifest file.

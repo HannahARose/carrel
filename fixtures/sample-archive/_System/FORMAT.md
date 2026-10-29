@@ -517,8 +517,10 @@ src/main.rs	sha256:e3b0c442…	2048	2026-09-14T10:02:11.137401922-07:00
 - **Encoding:** in paths, `%`, tab, carriage return and line feed are written as `%25`, `%09`, `%0D` and `%0A`; nothing else is encoded.
 - **What's listed:** every file, including those inside `.git`, except ignored files (§2.8) and the contents of regenerable folders (§4.3), which change too often to track and can be rebuilt.
 - **Symbolic links** are listed, not followed: the checksum is of the link's target path, and the size is that path's length in bytes.
-- **Storage:** manifests are stored at `_System/manifests/<item-id>.tsv`, and the card's `manifest.checksum` is the checksum of that file.
-- **Rebuilding:** a program may reuse an entry's checksum when a file's size and modification time both match the previous manifest, instead of reading the file again.
+- **Storage:** manifests are stored at `_System/manifests/<item-id>.tsv`. They sync with the archive but are not part of the history repository (§8.1).
+- **Content checksum:** the card's `manifest.checksum` identifies the item's contents, not the manifest file. It is the checksum of the text made by writing, for every row in order, the encoded path, a tab, the checksum, a tab, the size and a line feed. Modification times and the header are left out, so touching a file without changing it never changes the card, and a manifest rebuilt from a backup can be checked exactly against history.
+- **Reusing checksums:** a program may reuse an entry's checksum when a file's size and modification time both match the previous manifest, instead of reading the file again.
+- **Past manifests** can be rebuilt from the backup snapshot named in a history commit's `Carrel-Snapshot` trailer, using the rules in `_System/rules/` as of that commit, and checked against the `manifest.checksum` in the card as of that commit.
 
 ### 7.8 Inboxes
 
@@ -559,7 +561,7 @@ Rebuildable, device-specific data. The `.nosync` suffix keeps iCloud Drive from 
 
 The archive's metadata history is a Git repository whose Git directory is `_System/history.git` and whose work tree is the archive root. Keeping the Git directory under `_System` leaves no `.git` folder at the root, so the root never looks like a code repository and never interferes with sealed bundles that are repositories themselves.
 
-The repository tracks **only metadata**: cards, design documents, `CHANGELOG.md` files, `README.md`, the Journal, `Active/`, and `_System/` files other than `history.git/`, `index/` and `cache.nosync/`. Its `info/exclude` file ignores everything else, and in particular the contents of every item and every sealed bundle. Item contents are versioned by the backup system, not by Git.
+The repository tracks **only metadata**: cards, design documents, `CHANGELOG.md` files, `README.md`, the Journal, `Active/`, and `_System/` files other than `history.git/`, `manifests/`, `index/` and `cache.nosync/`. Its `info/exclude` file ignores everything else, and in particular the contents of every item and every sealed bundle. Item contents are versioned by the backup system, not by Git. Manifests are left out because a manifest of a large bundle can reach hundreds of megabytes and is fully determined by the item's contents; history keeps each manifest's content checksum in the card instead (§7.7).
 
 Anyone with Git can read the history:
 

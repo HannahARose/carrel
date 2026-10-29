@@ -94,7 +94,54 @@ fn tsv_round_trips_including_awkward_names() {
             && tsv.contains("new%0Aline\t")
     );
     assert_eq!(Manifest::parse(&tsv).unwrap(), m);
-    assert_eq!(m.checksum(), Checksum::of_bytes(tsv.as_bytes()));
+    let mut content = String::new();
+    for e in &m.entries {
+        use std::fmt::Write as _;
+        let path = carrel_core::manifest::encode_path(&e.path);
+        writeln!(content, "{path}\t{}\t{}", e.checksum.0, e.size).unwrap();
+    }
+    assert_eq!(
+        m.checksum(),
+        Checksum::of_bytes(content.as_bytes()),
+        "content only (FORMAT.md §7.7)"
+    );
+}
+
+#[test]
+fn the_content_checksum_ignores_times_but_not_contents() {
+    let dir = tempfile::tempdir().unwrap();
+    write(&dir.path().join("a.txt"), "aaa");
+    write(&dir.path().join("sub/b.txt"), "bbb");
+    let rules = Rules::default();
+    let m = Manifest::build(dir.path(), Id::new_v7(), &rules, None).unwrap();
+
+    let mut retimed = m.clone();
+    for e in &mut retimed.entries {
+        e.modified = DateOrTime("1999-12-31T23:59:59+00:00".into());
+    }
+    retimed.item = Id::new_v7();
+    assert_ne!(retimed.to_tsv(), m.to_tsv());
+    assert_eq!(
+        retimed.checksum(),
+        m.checksum(),
+        "times and the header don't count"
+    );
+
+    let mut edited = m.clone();
+    edited.entries[0].checksum = Checksum::of_bytes(b"other");
+    assert_ne!(edited.checksum(), m.checksum());
+    let mut resized = m.clone();
+    resized.entries[0].size += 1;
+    assert_ne!(resized.checksum(), m.checksum());
+    let mut moved = m.clone();
+    moved.entries[0].path = "z.txt".into();
+    assert_ne!(moved.checksum(), m.checksum());
+
+    let empty = Manifest {
+        item: m.item,
+        entries: vec![],
+    };
+    assert_eq!(empty.checksum(), Checksum::of_bytes(b""));
 }
 
 #[test]
@@ -213,14 +260,13 @@ fn the_sample_archive_manifests_match_their_folders() {
         assert!(matches!(card.kind, Kind::Folder | Kind::Bundle));
         let manifest_ref = card.manifest.as_ref().unwrap();
         let text = std::fs::read_to_string(root.join(&manifest_ref.path)).unwrap();
+        let stored = Manifest::parse(&text).unwrap();
         assert_eq!(
-            Checksum::of_bytes(text.as_bytes()),
+            stored.checksum(),
             manifest_ref.checksum,
             "{}",
             card_path.display()
         );
-
-        let stored = Manifest::parse(&text).unwrap();
         assert_eq!(stored.item, card.id);
         let folder = card_path
             .parent()
@@ -235,6 +281,14 @@ fn the_sample_archive_manifests_match_their_folders() {
         );
         assert_eq!(paths(&stored), paths(&fresh), "same order");
         assert_eq!(card.size, Some(fresh.total_size()));
+        // A manifest rebuilt from the files, with today's modification times, still matches
+        // the checksum recorded in the card.
+        assert_eq!(
+            fresh.checksum(),
+            manifest_ref.checksum,
+            "{}",
+            card_path.display()
+        );
         checked += 1;
     }
     assert_eq!(checked, 4);

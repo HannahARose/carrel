@@ -19,14 +19,14 @@ dates:
 sensitivity: personal
 size: 613
 manifest:
-  checksum: "sha256:4e7ebc9d21c2159169d8358fe8e4a871b10aee9cb13469a884741b31427469ee"
+  checksum: "sha256:7a9feb9bcd69e47ac76d51369e18a9db7b11db96d7494ab90d939a73cf8dac52"
   path: "_System/manifests/01a18701-0500-776a-9867-080924eb019c.tsv"
 checked_out:
   to: "~/Desktop/oscillator-sim"
   device: 01a18701-0500-776a-9867-0800c9e7e287
   person: 01a18701-0500-776a-9867-07ffadd03c6b
   since: "2026-10-27T09:12:00-07:00"
-  manifest: "sha256:4e7ebc9d21c2159169d8358fe8e4a871b10aee9cb13469a884741b31427469ee"
+  manifest: "sha256:7a9feb9bcd69e47ac76d51369e18a9db7b11db96d7494ab90d939a73cf8dac52"
 ---
 
 Sealed because it is a Rust project (`Cargo.toml`). Currently checked out to the Desktop.
