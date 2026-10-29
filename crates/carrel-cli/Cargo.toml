@@ -1,0 +1,20 @@
+[package]
+name = "carrel-cli"
+description = "The carrel command-line tool."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "carrel"
+path = "src/main.rs"
+
+[dependencies]
+carrel-core.workspace = true
+
+[lints]
+workspace = true

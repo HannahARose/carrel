@@ -1,0 +1,6 @@
+# Pins the Rust version for everyone, locally and in CI. Apple cross-compilation targets
+# are added where needed (see the wiki's Development Setup page) to keep CI downloads small.
+[toolchain]
+channel = "1.99.1"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

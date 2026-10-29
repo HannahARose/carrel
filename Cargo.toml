@@ -1,0 +1,25 @@
+[workspace]
+members = ["crates/carrel-core", "crates/carrel-cli", "crates/carrel-ffi"]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0-alpha.0"
+edition = "2024"
+rust-version = "1.99"
+license = "MPL-2.0"
+repository = "https://github.com/HannahARose/carrel"
+homepage = "https://github.com/HannahARose/carrel/wiki"
+authors = ["Hannah Rose"]
+publish = false
+
+[workspace.dependencies]
+carrel-core = { path = "crates/carrel-core" }
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
