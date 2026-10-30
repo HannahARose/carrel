@@ -596,6 +596,7 @@ A device only ever writes to its own inbox folder. The writer applies inbox file
 | `destination` | The collection proposed, its path when proposed, `confidence` (`high`, `medium` or `low`), the `reasons`, and `rule` when a routing rule (§7.4) decided |
 | `problems` | What validation or the owner needs to settle, as `{"stage", "message"}` objects |
 | `attempts` | Every provider call made for the entry: `stage`, `provider`, `offer`, `result` (`ok`, `unsupported`, `unavailable` or `failed`) and an optional `message` |
+| `sensitivity_reasons` | Why `card.sensitivity` is `sensitive` or `restricted`, in words that never quote what was found; absent otherwise |
 
 When an approved or held entry has been archived, programs remove the entry; the history commit (§8.2) records what was filed. A rejected entry is removed once the owner has seen the batch summary. Entries whose `source.device` is another device can't be archived there; they wait for that device.
 

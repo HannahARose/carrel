@@ -7,6 +7,7 @@
 
 pub mod card;
 pub mod route;
+pub mod sensitivity;
 pub mod text;
 
 use std::collections::HashMap;
@@ -355,9 +356,23 @@ pub struct Batch<'a> {
 }
 
 impl Batch<'_> {
+    /// The sensitivity an item gets at `route`'s destination before any rule or model looks
+    /// at it: the collection's `sensitivity_default`, else the archive's, else `personal`.
+    #[must_use]
+    pub fn default_sensitivity(&self, route: &route::Route) -> crate::card::Sensitivity {
+        self.collections
+            .iter()
+            .find(|c| Some(c.doc.id) == route.collection)
+            .and_then(|c| c.doc.extra.get("sensitivity_default"))
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .or(self.archive.doc().sensitivity_default)
+            .unwrap_or(crate::card::Sensitivity::Personal)
+    }
+
     /// The review entry proposing to file `candidate` as `draft`, where `route` says (stage
     /// 11). Tags are narrowed to those that apply at the destination, the model's new tag (if
-    /// any) is proposed, and the entry needs the owner when the card couldn't be settled.
+    /// any) is proposed, and the entry needs the owner when the card couldn't be settled or
+    /// repeats a restricted value `sensitivity` found.
     /// `None` when the route has no collection, as in an archive without Holding.
     #[must_use]
     pub fn propose(
@@ -365,6 +380,7 @@ impl Batch<'_> {
         candidate: &Candidate,
         draft: &card::Draft,
         route: &route::Route,
+        sensitivity: &sensitivity::Assessment,
         earlier_attempts: &[crate::review::Attempt],
     ) -> Option<ReviewEntry> {
         let (archive, collections, batch, device) =
@@ -396,17 +412,26 @@ impl Batch<'_> {
                 ),
             });
         }
-        let sensitivity = collections
-            .iter()
-            .find(|c| c.doc.id == collection)
-            .and_then(|c| c.doc.extra.get("sensitivity_default"))
-            .and_then(|v| serde_json::from_value(v.clone()).ok())
-            .or(archive.doc().sensitivity_default)
-            .unwrap_or(crate::card::Sensitivity::Personal);
+        let repeated = sensitivity.matched.iter().any(|value| {
+            draft.title.contains(value.as_str())
+                || draft
+                    .summary
+                    .as_deref()
+                    .is_some_and(|s| s.contains(value.as_str()))
+        });
+        if repeated {
+            problems.push(Problem {
+                stage: "sensitivity".into(),
+                message:
+                    "the card repeats an account or identity number from the item; edit it out"
+                        .into(),
+            });
+        }
         let mut attempts = earlier_attempts.to_vec();
+        attempts.extend(sensitivity.attempts.iter().cloned());
         attempts.extend(draft.attempts.iter().cloned());
         attempts.extend(route.attempts.iter().cloned());
-        let state = if draft.problems.is_empty() {
+        let state = if draft.problems.is_empty() && !repeated {
             State::Proposed
         } else {
             State::NeedsOwner
@@ -441,7 +466,7 @@ impl Batch<'_> {
                     created: Some(created),
                     ..crate::card::Dates::default()
                 }),
-                sensitivity,
+                sensitivity: sensitivity.level,
                 generated: draft.generated.clone(),
                 extra: crate::card::Extra::new(),
             },
@@ -456,6 +481,7 @@ impl Batch<'_> {
             },
             problems,
             attempts,
+            sensitivity_reasons: sensitivity.reasons.clone(),
             extra: crate::card::Extra::new(),
         })
     }

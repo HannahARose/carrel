@@ -4,9 +4,10 @@
 use std::path::{Path, PathBuf};
 
 use carrel_core::archive::Archive;
-use carrel_core::card::{Checksum, Id, Kind, Tag};
+use carrel_core::card::{Checksum, Id, Kind, Sensitivity, Tag};
 use carrel_core::ingest::card::Draft;
 use carrel_core::ingest::route::{Route, Router, RoutingRules, tags_for};
+use carrel_core::ingest::sensitivity::floor;
 use carrel_core::ingest::{Batch, Candidate};
 use carrel_core::providers::{ProviderError, Registry};
 use carrel_core::review::{Confidence, ReviewQueue, State};
@@ -311,7 +312,11 @@ fn proposals_carry_the_card_destination_and_applicable_tags() {
         id: Id::new_v7(),
         device: Id::new_v7(),
     };
-    let entry = batch.propose(&item, &card, &route, &[]).unwrap();
+    let assessment = floor("notes.txt", "", batch.default_sensitivity(&route));
+    assert_eq!(assessment.level, Sensitivity::Personal);
+    let entry = batch
+        .propose(&item, &card, &route, &assessment, &[])
+        .unwrap();
     assert_eq!(entry.state, State::Proposed);
     assert_eq!(entry.destination.path, "Projects/Hardware");
     assert_eq!(entry.card.tags, [Tag("electronics".into())]);
@@ -332,6 +337,29 @@ fn proposals_carry_the_card_destination_and_applicable_tags() {
     unsettled
         .problems
         .push("no model drafted a usable card".into());
-    let entry = batch.propose(&item, &unsettled, &route, &[]).unwrap();
+    let entry = batch
+        .propose(&item, &unsettled, &route, &assessment, &[])
+        .unwrap();
     assert_eq!(entry.state, State::NeedsOwner);
+
+    // A card that repeats a card number from the item waits for the owner, restricted.
+    let text = "Card 4111 1111 1111 1111 charged";
+    let restricted = floor("receipt.txt", text, batch.default_sensitivity(&route));
+    let leaky = draft("Receipt for 4111 1111 1111 1111", &[]);
+    let entry = batch
+        .propose(&item, &leaky, &route, &restricted, &[])
+        .unwrap();
+    assert_eq!(entry.state, State::NeedsOwner);
+    assert_eq!(entry.card.sensitivity, Sensitivity::Restricted);
+    assert!(entry.problems.iter().any(|p| p.stage == "sensitivity"));
+    assert_eq!(
+        entry.sensitivity_reasons,
+        ["contains what looks like a card number"]
+    );
+    let json = serde_json::to_string(&entry).unwrap();
+    assert_eq!(
+        json.matches("4111 1111 1111 1111").count(),
+        1,
+        "only the card's own title holds the number; no reason or problem quotes it"
+    );
 }

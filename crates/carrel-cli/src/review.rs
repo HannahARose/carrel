@@ -125,6 +125,12 @@ pub fn show(archive: Option<&Path>, id: &str) -> Result<Report, Failure> {
             writeln!(text, "  {reason}").unwrap();
         }
     }
+    if !entry.sensitivity_reasons.is_empty() {
+        writeln!(text, "\nWhy {}:", sensitivity_name(&entry)).unwrap();
+        for reason in &entry.sensitivity_reasons {
+            writeln!(text, "  {reason}").unwrap();
+        }
+    }
     if !entry.problems.is_empty() {
         writeln!(text, "\nTo settle:").unwrap();
         for problem in &entry.problems {

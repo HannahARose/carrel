@@ -9,8 +9,10 @@ use carrel_core::card::Id;
 use carrel_core::card::Kind;
 use carrel_core::ingest::card::{Context, Draft, Glossary, Vocabulary, draft};
 use carrel_core::ingest::route::{Route, Router, RoutingRules};
+use carrel_core::ingest::sensitivity::{Assessment, assess};
 use carrel_core::ingest::text::{ItemText, read};
 use carrel_core::ingest::{Batch, Candidate, IntakeOptions, plan};
+use carrel_core::providers::Registry;
 use carrel_core::review::{ReviewEntry, ReviewQueue, short_id};
 use serde_json::{Value, json};
 
@@ -69,11 +71,17 @@ pub fn ingest(
         id: Id::new_v7(),
         device: identity.device,
     };
+    let assessments = assess_all(&registry, &batch, &candidates, &texts, &routes);
     let entries: Vec<Option<ReviewEntry>> = candidates
         .iter()
-        .zip(texts.iter().zip(&drafts).zip(&routes))
-        .map(|(c, ((t, d), r))| match (t, d, r) {
-            (Some(t), Some(d), Some(r)) => batch.propose(c, d, r, &t.attempts),
+        .zip(
+            texts
+                .iter()
+                .zip(&drafts)
+                .zip(routes.iter().zip(&assessments)),
+        )
+        .map(|(c, ((t, d), (r, s)))| match (t, d, r, s) {
+            (Some(t), Some(d), Some(r), Some(s)) => batch.propose(c, d, r, s, &t.attempts),
             _ => None,
         })
         .collect();
@@ -84,7 +92,14 @@ pub fn ingest(
         }
     }
 
-    let mut out = render(&candidates, &texts, &drafts, &routes, &skipped);
+    let mut out = render(
+        &candidates,
+        &texts,
+        &drafts,
+        &routes,
+        &assessments,
+        &skipped,
+    );
     for problem in &routing_rules.problems {
         writeln!(out, "warning: {problem}").unwrap();
     }
@@ -102,20 +117,47 @@ pub fn ingest(
     }
 
     let items = items_json(&candidates, &texts, &drafts);
-    let skipped: Vec<Value> = skipped
-        .iter()
-        .map(|s| json!({"path": s.path, "reason": s.reason}))
-        .collect();
     Ok(Report::new(
         out,
         json!({
             "batch": batch.id,
             "saved": !dry_run,
             "items": items,
-            "skipped": skipped,
+            "skipped": skipped.iter().map(|s| json!({"path": s.path, "reason": s.reason})).collect::<Vec<_>>(),
             "proposals": entries.iter().flatten().collect::<Vec<_>>(),
         }),
     ))
+}
+
+/// How sensitive each item that has text and a destination is.
+fn assess_all(
+    registry: &Registry,
+    batch: &Batch,
+    candidates: &[Candidate],
+    texts: &[Option<ItemText>],
+    routes: &[Option<Route>],
+) -> Vec<Option<Assessment>> {
+    candidates
+        .iter()
+        .zip(texts.iter().zip(routes))
+        .map(|(c, (t, r))| match (t, r) {
+            (Some(t), Some(r)) => Some(assess(
+                registry,
+                &name(c),
+                &t.text,
+                batch.default_sensitivity(r),
+            )),
+            _ => None,
+        })
+        .collect()
+}
+
+/// An item's file or folder name.
+fn name(candidate: &Candidate) -> String {
+    candidate.path.file_name().map_or_else(
+        || candidate.path.display().to_string(),
+        |n| n.to_string_lossy().into_owned(),
+    )
 }
 
 /// Each item as JSON.
@@ -151,14 +193,9 @@ fn render(
     texts: &[Option<ItemText>],
     drafts: &[Option<Draft>],
     routes: &[Option<Route>],
+    assessments: &[Option<Assessment>],
     skipped: &[carrel_core::ingest::Skipped],
 ) -> String {
-    let name = |c: &Candidate| {
-        c.path.file_name().map_or_else(
-            || c.path.display().to_string(),
-            |n| n.to_string_lossy().into_owned(),
-        )
-    };
     let mut out = String::new();
     match candidates.len() {
         0 => out.push_str("Nothing to ingest\n"),
@@ -170,8 +207,12 @@ fn render(
         .map(|c| name(c).chars().count())
         .max()
         .unwrap_or(0);
-    for (((candidate, item_text), card), route) in
-        candidates.iter().zip(texts).zip(drafts).zip(routes)
+    for ((((candidate, item_text), card), route), assessment) in candidates
+        .iter()
+        .zip(texts)
+        .zip(drafts)
+        .zip(routes)
+        .zip(assessments)
     {
         let mut notes = Vec::new();
         if let Some(duplicate) = &candidate.duplicate_of {
@@ -218,6 +259,18 @@ fn render(
                 format!("{:?}", route.confidence).to_lowercase()
             )
             .unwrap();
+        }
+        if let Some(assessment) = assessment {
+            let level = serde_json::to_value(assessment.level)
+                .ok()
+                .and_then(|v| v.as_str().map(str::to_owned))
+                .unwrap_or_default();
+            let why = if assessment.reasons.is_empty() {
+                String::new()
+            } else {
+                format!(": {}", assessment.reasons.join("; "))
+            };
+            writeln!(out, "  {:<width$}  sensitivity: {level}{why}", "").unwrap();
         }
     }
     if !skipped.is_empty() {
