@@ -429,3 +429,35 @@ fn an_unreachable_backup_never_stops_filing() {
     let log = History::open(&setup.archive).unwrap().log().unwrap();
     assert_eq!(log[0].snapshot, None);
 }
+
+#[test]
+fn uncertain_placements_are_kept_on_the_card_and_certain_ones_are_not() {
+    use carrel_core::card::{PlacedBy, PlacementConfidence};
+    use carrel_core::review::Confidence;
+
+    let mut setup = Setup::new();
+    let unsure = setup.incoming("unsure.txt", "maybe hardware\n");
+    let mut low = setup.proposal(&unsure);
+    low.destination.confidence = Confidence::Low;
+    let sure = setup.incoming("sure.txt", "certainly hardware\n");
+    let mut high = setup.proposal(&sure);
+    high.destination.confidence = Confidence::High;
+    let held = setup.incoming("held.txt", "nowhere yet\n");
+    let mut holding = setup.proposal(&held);
+    holding.destination.confidence = Confidence::Low;
+    setup.file(vec![
+        (low, Placement::Destination),
+        (high, Placement::Destination),
+        (holding, Placement::Holding),
+    ]);
+
+    let card = card_at(&setup.root().join("Projects/Hardware/unsure.txt.md"));
+    let placement = card.card().placement.as_ref().unwrap();
+    assert_eq!(placement.confidence, PlacementConfidence::Low);
+    assert_eq!(placement.by, PlacedBy::Model);
+    assert!(placement.at.is_valid());
+    let certain = card_at(&setup.root().join("Projects/Hardware/sure.txt.md"));
+    assert_eq!(certain.card().placement, None);
+    let waiting = card_at(&setup.root().join("Holding/held.txt.md"));
+    assert_eq!(waiting.card().placement, None, "being in Holding says it");
+}

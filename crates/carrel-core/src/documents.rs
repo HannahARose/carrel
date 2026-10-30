@@ -150,9 +150,42 @@ pub struct Settings {
     /// Ingest behavior.
     #[serde(default, skip_serializing_if = "IngestSettings::is_default")]
     pub ingest: IngestSettings,
+    /// When the structure shows signs of needing a restructure.
+    #[serde(default, skip_serializing_if = "SignalSettings::is_default")]
+    pub signals: SignalSettings,
     /// Keys this version doesn't know.
     #[serde(flatten)]
     pub extra: Extra,
+}
+
+/// Restructure signal settings (FORMAT.md §7.2, `docs/design/signals.md`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SignalSettings {
+    /// How many loose items make a collection with no subcollections crowded.
+    #[serde(default = "default_crowded_items")]
+    pub crowded_items: u32,
+    /// Keys this version doesn't know.
+    #[serde(flatten)]
+    pub extra: Extra,
+}
+
+fn default_crowded_items() -> u32 {
+    30
+}
+
+impl Default for SignalSettings {
+    fn default() -> Self {
+        Self {
+            crowded_items: default_crowded_items(),
+            extra: Extra::new(),
+        }
+    }
+}
+
+impl SignalSettings {
+    fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
 }
 
 /// Ingest settings (FORMAT.md §7.2).
@@ -270,6 +303,7 @@ impl Default for Settings {
             embedding: None,
             backups: None,
             ingest: IngestSettings::default(),
+            signals: SignalSettings::default(),
             extra: Extra::new(),
         }
     }

@@ -163,6 +163,8 @@ pub fn rename(
         }
         file.card_mut().item = Some(new_name.to_owned());
     }
+    // The owner has placed the item, so its placement is no longer in doubt (FORMAT.md §5.8).
+    file.card_mut().placement = None;
     let text = file.to_text()?;
     let temp = folder.join(format!(".{card_name}.tmp-{}", item.id));
     std::fs::write(&temp, text).map_err(io(&temp))?;

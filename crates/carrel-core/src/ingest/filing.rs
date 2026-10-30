@@ -7,13 +7,16 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use crate::archive::{Archive, ArchiveError, Collection, escape_link_text};
-use crate::card::{Card, CardMarker, Checksum, DateOrTime, Extra, Id, Kind, ManifestRef};
+use crate::card::{
+    Card, CardMarker, Checksum, DateOrTime, Extra, Id, Kind, ManifestRef, PlacedBy,
+    PlacementConfidence, PlacementRecord,
+};
 use crate::card_file::{CardFile, CardFileError};
 use crate::coordinator::{CoordinatorError, DEFAULT_LEASE, WriterLease};
 use crate::documents::{CollectionDoc, Originals, TagDef};
 use crate::history::{Change, History, HistoryError, Operation};
 use crate::manifest::{Manifest, ManifestError};
-use crate::review::{Problem, ReviewEntry, ReviewError, ReviewQueue, State};
+use crate::review::{Confidence, Problem, ReviewEntry, ReviewError, ReviewQueue, State};
 
 /// Holding's folder (FORMAT.md §3).
 const HOLDING: &str = "Holding";
@@ -442,6 +445,30 @@ fn fingerprint(
     }
 }
 
+/// What a filed card keeps of routing's uncertainty (FORMAT.md §5.8): nothing for a certain
+/// placement, or for Holding, where being there says the same.
+fn placement_record(entry: &ReviewEntry, placement: Placement) -> Option<PlacementRecord> {
+    let confidence = match (placement, entry.destination.confidence) {
+        (Placement::Holding, _) | (_, Confidence::High) => return None,
+        (Placement::Destination, Confidence::Medium) => PlacementConfidence::Medium,
+        (Placement::Destination, Confidence::Low) => PlacementConfidence::Low,
+    };
+    Some(PlacementRecord {
+        confidence,
+        by: if entry.destination.rule.is_some() {
+            PlacedBy::Rule
+        } else {
+            PlacedBy::Model
+        },
+        at: DateOrTime(
+            jiff::Zoned::now()
+                .strftime("%Y-%m-%dT%H:%M:%S%:z")
+                .to_string(),
+        ),
+        extra: Extra::new(),
+    })
+}
+
 /// The card for a filed proposal, without the fields that depend on where it lands.
 fn card_for(
     entry: &ReviewEntry,
@@ -494,6 +521,7 @@ fn card_for(
         url: None,
         checked_out: None,
         generated: draft.generated.clone(),
+        placement: placement_record(entry, placement),
         removed: None,
         extra: draft.extra.clone(),
     }

@@ -184,6 +184,7 @@ Fields are owned by programs unless marked as owner fields. Optional fields are 
 | `url` | string | for `url` | The resource's address |
 | `checked_out` | map | no | Present while checked out (§9.1) |
 | `generated` | map | no | Provenance of program-written fields (§5.6) |
+| `placement` | map | no | How sure filing was of the item's collection, when it wasn't (§5.8) |
 | `removed` | map | for `tombstone` | §10 |
 
 Programs **must** preserve fields they don't recognize when rewriting a card.
@@ -284,6 +285,19 @@ Useful for the closed-loop latency numbers in the methods section.
 ## History
 <!-- /carrel:history -->
 ```
+
+### 5.8 Placement
+
+When an item is filed where routing wasn't sure it belongs, its card says so, as evidence for restructuring (`docs/design/signals.md`):
+
+```yaml
+placement:
+  confidence: low          # low or medium
+  by: model                # model or rule
+  at: "2026-10-30T14:02:11-04:00"
+```
+
+Programs write `placement` when filing a proposal whose destination confidence (§7.9) was `low` or `medium`, and never for items filed to Holding, where being there says the same. They remove it when the owner places the item themselves, such as by moving or renaming it, since the owner's choice settles where it belongs.
 
 ## 6. Collections and design documents
 
@@ -459,6 +473,7 @@ Archive-level settings that every device follows. Version 1.0 defines:
 | `embedding.model` | model identifier | chosen at creation |
 | `backups` | map describing the backup repository: `type` (`kopia`), `repository` (the backup system's identifier for it) and `description`. Never its path, which differs between devices, and never the password | none |
 | `ingest.originals` | `move` (the original is moved into the archive on approval) or `keep` (it's copied, and the original is left for the owner to delete) | `move` |
+| `signals.crowded_items` | integer: how many loose items make a collection with no subcollections crowded, as a restructure signal | `30` |
 
 Programs **must** preserve unknown keys.
 
