@@ -286,6 +286,8 @@ pub fn status(archive: Option<&Path>) -> Result<Report, Failure> {
             }
         }
     }
+    let names = carrel_core::names::check(&archive)?;
+    text.push_str(&names_section(&names));
     let mut warnings = Vec::new();
     if synced {
         warnings.push(SYNCED_WARNING);
@@ -305,9 +307,40 @@ pub fn status(archive: Option<&Path>) -> Result<Report, Failure> {
             "last": log.first().map(entry_json),
         })),
         "writer": writer_json(lock.as_ref()),
+        "names": names.iter().map(|f| json!({
+            "path": f.path,
+            "problems": f.problems,
+            "suggestion": f.suggestion,
+        })).collect::<Vec<_>>(),
         "warnings": warnings,
     });
     Ok(Report::new(text, json))
+}
+
+/// The part of `carrel status` about names that won't work on every system.
+fn names_section(names: &[carrel_core::names::Finding]) -> String {
+    let mut text = String::new();
+    if names.is_empty() {
+        return text;
+    }
+    writeln!(
+        text,
+        "\n{} won't work on every system:",
+        plural(names.len(), "name")
+    )
+    .unwrap();
+    for finding in names {
+        writeln!(text, "  {}: {}", finding.path, finding.problems.join("; ")).unwrap();
+        if let Some(suggestion) = &finding.suggestion {
+            writeln!(
+                text,
+                "    rename it with `carrel rename \"{}\" \"{suggestion}\"`",
+                finding.path
+            )
+            .unwrap();
+        }
+    }
+    text
 }
 
 fn history_line(history: Option<&[Entry]>) -> String {
@@ -529,5 +562,55 @@ pub fn log(archive: Option<&Path>, max_count: Option<usize>) -> Result<Report, F
     Ok(Report::new(
         text,
         Value::Array(entries.iter().map(entry_json).collect()),
+    ))
+}
+
+/// `carrel rename ITEM [NEW_NAME]`: renames an item and its card together, to a portable name
+/// suggested for it unless one is given.
+pub fn rename(
+    archive: Option<&Path>,
+    query: &str,
+    new_name: Option<&str>,
+) -> Result<Report, Failure> {
+    let archive = locate(archive)?;
+    let items = archive.items()?;
+    let item = find_item(&archive, &items, query)?;
+    let current = item.item.as_deref().unwrap_or(&item.card);
+    let current = current.rsplit('/').next().unwrap_or(current);
+    let new_name = if let Some(name) = new_name {
+        name.to_owned()
+    } else {
+        let suggestion = carrel_core::names::portable(current);
+        if suggestion == current {
+            return Err(Failure::new(format!(
+                "“{current}” already works on every system; give a new name to rename it"
+            )));
+        }
+        suggestion
+    };
+    let identity = Identity::load_or_create()?;
+    let lease =
+        DiskLock::for_archive(&archive).acquire(holder(&identity), "rename", DEFAULT_LEASE)?;
+    let result = carrel_core::rename::rename(&archive, item, &new_name, &lease);
+    lease.release()?;
+    let renamed = result?;
+    let mut text = format!("Renamed {} to {}\n", renamed.from, renamed.to);
+    if !renamed.relinked.is_empty() {
+        writeln!(
+            text,
+            "Updated links in {}",
+            plural(renamed.relinked.len(), "card")
+        )
+        .unwrap();
+    }
+    Ok(Report::new(
+        text,
+        json!({
+            "from": renamed.from,
+            "to": renamed.to,
+            "card": renamed.card,
+            "relinked": renamed.relinked,
+            "commit": renamed.commit,
+        }),
     ))
 }
