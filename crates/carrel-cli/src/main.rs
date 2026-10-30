@@ -112,6 +112,11 @@ enum Command {
         /// The new name; without one, the portable name `carrel status` suggests.
         new_name: Option<String>,
     },
+    /// Create collections: folders with a design document saying what belongs in them.
+    Collection {
+        #[command(subcommand)]
+        action: CollectionAction,
+    },
     /// Back up the archive's contents with Kopia: set up, snapshot, list, verify or restore.
     Backup {
         #[command(subcommand)]
@@ -172,6 +177,24 @@ enum ModelsAction {
         /// Delete without asking.
         #[arg(long)]
         yes: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum CollectionAction {
+    /// Create a collection, such as `Finances` or `Finances/Tax`, with a design document to
+    /// fill in. Models read it before filing anything there, so say what belongs and what
+    /// doesn't.
+    New {
+        /// The collection's path: folder names separated by `/`. A parent must already be a
+        /// collection.
+        path: String,
+        /// One line saying what belongs in it.
+        #[arg(long)]
+        description: Option<String>,
+        /// A tag for its items and what it means, as `name=meaning`; repeat for more.
+        #[arg(long = "tag", value_name = "NAME=MEANING")]
+        tags: Vec<String>,
     },
 }
 
@@ -381,6 +404,13 @@ fn main() -> ExitCode {
         Command::Rename { item, new_name } => {
             commands::rename(cli.archive.as_deref(), &item, new_name.as_deref())
         }
+        Command::Collection { action } => match action {
+            CollectionAction::New {
+                path,
+                description,
+                tags,
+            } => commands::collection_new(cli.archive.as_deref(), &path, description, &tags),
+        },
         Command::Backup { action } => match action {
             BackupAction::Setup { path, description } => {
                 backup::setup(cli.archive.as_deref(), &path, description.as_deref())

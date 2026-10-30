@@ -617,6 +617,50 @@ pub fn undo(archive: Option<&Path>, change: &str) -> Result<Report, Failure> {
     ))
 }
 
+/// `carrel collection new PATH`: a new collection with a design document to fill in.
+///
+/// # Errors
+///
+/// [`Failure`] if the path can't be used, a tag isn't `name=meaning`, or writing fails.
+pub fn collection_new(
+    archive: Option<&Path>,
+    path: &str,
+    description: Option<String>,
+    tags: &[String],
+) -> Result<Report, Failure> {
+    let archive = locate(archive)?;
+    let tags = tags
+        .iter()
+        .map(|t| {
+            t.split_once('=')
+                .map(|(name, meaning)| (name.trim().to_owned(), meaning.trim().to_owned()))
+                .filter(|(name, meaning)| !name.is_empty() && !meaning.is_empty())
+                .ok_or_else(|| Failure::new(format!("give a tag as name=meaning, not “{t}”")))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let identity = Identity::load_or_create()?;
+    let lease =
+        DiskLock::for_archive(&archive).acquire(holder(&identity), "collection", DEFAULT_LEASE)?;
+    let new = carrel_core::collections::NewCollection { description, tags };
+    let result = carrel_core::collections::create(&archive, path, &new, &lease);
+    lease.release()?;
+    let created = result?;
+    let text = format!(
+        "Created the collection {}.\nDescribe what belongs there, and what doesn't, in {}: models read it before filing anything.\n",
+        created.path,
+        archive.root().join(&created.design_document).display()
+    );
+    Ok(Report::new(
+        text,
+        json!({
+            "path": created.path,
+            "id": created.id,
+            "design_document": created.design_document,
+            "commit": created.commit,
+        }),
+    ))
+}
+
 /// `carrel rename ITEM [NEW_NAME]`: renames an item and its card together, to a portable name
 /// suggested for it unless one is given.
 pub fn rename(
