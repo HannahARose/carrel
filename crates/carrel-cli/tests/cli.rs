@@ -323,7 +323,9 @@ fn providers_lists_what_this_device_has_and_what_is_used() {
     );
     assert_eq!(report["chosen"]["text-model"]["provider"], "echo");
     // The built-in reader, unless a provider built beside `carrel` outranks it.
-    let extractor = report["chosen"]["extract-text"]["provider"].as_str().unwrap();
+    let extractor = report["chosen"]["extract-text"]["provider"]
+        .as_str()
+        .unwrap();
     assert!(
         ["built-in", "extract", "apple"].contains(&extractor),
         "{extractor}"
