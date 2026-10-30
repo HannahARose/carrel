@@ -1,0 +1,26 @@
+[package]
+name = "carrel-fetch"
+description = "Carrel's network helper: the only Carrel program that goes online. It downloads models into the models folder and never reads an archive."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[dependencies]
+carrel-core.workspace = true
+fs4 = "1.1.0"
+jiff = "0.2.38"
+serde_json = { version = "1.0.154", features = ["preserve_order"] }
+sha2 = "0.11.1"
+ureq = "3.5.0"
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+serde_json = "1.0.154"
+sha2 = "0.11.1"
+tempfile = "3.27.0"

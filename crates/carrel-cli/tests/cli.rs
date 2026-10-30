@@ -543,3 +543,33 @@ fn undo_reverses_a_change_by_its_identifier() {
         Some(filed.as_str())
     );
 }
+
+#[test]
+fn models_lists_the_catalog_and_asks_before_downloading() {
+    let sandbox = Sandbox::new();
+    let here = sandbox.path("");
+    let models = sandbox.path("config/models");
+    std::fs::create_dir_all(&models).unwrap();
+    std::fs::write(models.join("mine.gguf"), b"GGUF").unwrap();
+
+    let listed = sandbox.json(&here, &["models"]);
+    assert_eq!(listed["provisional"], true);
+    let catalog = listed["catalog"].as_array().unwrap();
+    assert!(catalog.iter().all(|m| m["state"] == "available"));
+    assert!(catalog.iter().any(|m| m["name"] == "granite-4.2-3b"));
+    assert_eq!(listed["others"][0]["name"], "mine");
+
+    // Not in a terminal, a download needs --yes, and nothing is fetched.
+    let out = sandbox.run_in(&here, &["models", "download", "granite-4.2-3b"]);
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("--yes"));
+    assert!(!sandbox.path("config/logs/network.log").exists());
+
+    let out = sandbox.run_in(&here, &["models", "download", "nope", "--yes"]);
+    assert!(String::from_utf8_lossy(&out.stderr).contains("no model called nope"));
+
+    sandbox.ok(&here, &["models", "remove", "mine", "--yes"]);
+    assert!(!models.join("mine.gguf").exists());
+    let out = sandbox.run_in(&here, &["models", "remove", "mine", "--yes"]);
+    assert!(String::from_utf8_lossy(&out.stderr).contains("isn't downloaded"));
+}

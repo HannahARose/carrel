@@ -1,6 +1,6 @@
 # Design: downloading models (v0.2)
 
-Status: draft for the owner. Issue #99.
+Status: accepted 2026-10-30, with the five recommendations below. Issue #99.
 
 ## What this adds
 
@@ -43,7 +43,7 @@ The design spec keeps every part of Carrel offline except one helper process, th
 - **Checked before it's used:** the helper writes `NAME.gguf.part` and hashes as it goes. Only when the size and SHA-256 both match does Carrel rename it to `NAME.gguf`, so the provider never sees a partial or altered file. A mismatch deletes the part file and says so.
 - **Resumable:** an interrupted download keeps its `.part` file, and the next `download` continues it with an HTTP range request, re-hashing what's already there first.
 - **Logged:** every request the helper makes is appended to `logs/network.log` in Carrel's configuration folder as a JSON line (time, URL, bytes, SHA-256, result). That's a device log, not part of an archive. `carrel models` shows where it is.
-- **Progress:** a progress line on a terminal; with `--json`, one line per update.
+- **Progress:** a progress line on a terminal; with `--json`, one JSON line per update on standard error, so standard output still holds one JSON value.
 
 ## Building it
 
@@ -53,7 +53,7 @@ The design spec keeps every part of Carrel offline except one helper process, th
 4. `cargo deny` rules that keep HTTP clients out of every other crate.
 5. The benchmark (#33) marks the recommended models.
 
-## Decisions for the owner
+## Decisions (accepted 2026-10-30)
 
 1. **A separate `carrel-fetch` program** as the only networked component, as the spec requires, instead of an HTTP client inside `carrel`. Recommended: it costs one more small binary and keeps the boundary checkable today.
 2. **A built-in, pinned catalog** that changes only with releases, instead of a list fetched online. Recommended: no extra trust in a server, and every file is checked against a hash Carrel shipped with.
