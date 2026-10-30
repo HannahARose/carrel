@@ -5,7 +5,7 @@
 #
 #   scripts/third-party-licenses.sh OUT
 #
-# Needs cargo-about: cargo install --locked cargo-about --version 0.9.2
+# Needs cargo-about: cargo install --locked cargo-about --version 0.9.2 --features cli
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
