@@ -1,6 +1,6 @@
 # Design: the ingest queue, ingesting from the interactive mode, and settings (v0.2)
 
-Status: draft for the owner. Revisits the interactive mode's decision to keep ingest a command (`docs/design/interactive.md`), now that ingest can report progress item by item (#127).
+Status: accepted 2026-10-30, with the five recommendations below. Revisits the interactive mode's decision to keep ingest a command (`docs/design/interactive.md`), now that ingest can report progress item by item (#127).
 
 ## What this changes
 
@@ -99,7 +99,7 @@ Each change is saved when it's made. A change to archive settings is a history c
 4. External pickers, then the built-in browser.
 5. The Settings screen.
 
-## Decisions for the owner
+## Decisions (accepted 2026-10-30)
 
 1. **A persistent intake queue in the archive** (`_System/queue/intake/`, device-bound like review entries), processed **item by item** with each proposal saved as it's ready. Recommended.
 2. **An on-demand, detached `carrel worker`**, one per archive per device, that resumes unfinished work; no system service in v0.2. Recommended.
