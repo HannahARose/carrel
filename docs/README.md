@@ -20,3 +20,7 @@
 | [The v0.2 gate](v0.2-gate.md) | The checklist for filing a real Downloads sample |
 
 The archive format is specified in [FORMAT.md](../FORMAT.md), and how to contribute is in [CONTRIBUTING.md](../CONTRIBUTING.md).
+
+## Publishing to the wiki
+
+The pages above in `guide/` and `dev/` are published to the [wiki](https://github.com/HannahARose/carrel/wiki) on every merge to `dev`, by `scripts/publish-wiki.py` and `.github/workflows/wiki.yml`. Edit them here, not on the wiki. To publish a new page, add it to `PAGES` in the script, and link it from the wiki's sidebar and Home, which are edited on the wiki itself. Pull requests that change the docs check that every link resolves.

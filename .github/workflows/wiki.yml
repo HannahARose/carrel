@@ -1,0 +1,71 @@
+name: Wiki
+
+# Publishes the written documentation in docs/ to the wiki whenever dev changes
+# (scripts/publish-wiki.py, #49). Pull requests that change it check that every link resolves.
+#
+# Pushing to the wiki uses the workflow's own token; if GitHub refuses it, add a fine-grained
+# token with read and write access to this repository's contents as the WIKI_TOKEN secret.
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - docs/**
+      - scripts/publish-wiki.py
+      - .github/workflows/wiki.yml
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - docs/**
+      - scripts/publish-wiki.py
+      - .github/workflows/wiki.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read # check out the code
+
+# One publish at a time, in order; a newer one waits rather than cancelling.
+concurrency:
+  group: wiki-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Check wiki pages
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: python3 -I scripts/publish-wiki.py --check
+
+  publish:
+    name: Publish to the wiki
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push to the wiki
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Publish
+        env:
+          TOKEN: ${{ secrets.WIKI_TOKEN || github.token }}
+        run: |
+          wiki="$RUNNER_TEMP/wiki"
+          git clone --quiet "https://github.com/$GITHUB_REPOSITORY.wiki.git" "$wiki"
+          python3 -I scripts/publish-wiki.py "$wiki"
+          cd "$wiki"
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "The wiki is already up to date."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit --quiet -m "Publish docs/ from ${GITHUB_SHA::7}"
+          auth="$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)"
+          git -c http.extraheader="AUTHORIZATION: basic $auth" push --quiet origin HEAD
+          git log --oneline -1
