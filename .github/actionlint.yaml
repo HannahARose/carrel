@@ -1,0 +1,4 @@
+self-hosted-runner:
+  # The owner's Mac (docs/design/on-device-ci.md).
+  labels:
+    - carrel-on-device

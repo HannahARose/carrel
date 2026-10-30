@@ -131,25 +131,7 @@ enum Command {
     /// Measure text models on the benchmark's test set, for choosing defaults
     /// (`docs/design/benchmark.md`).
     #[command(hide = true)]
-    Bench {
-        /// A model to measure, as `provider/offer` or the offer alone; repeat for more.
-        /// Defaults to every available text model.
-        #[arg(long = "model", value_name = "MODEL")]
-        models: Vec<String>,
-        /// The test set: a folder with `archive`, `items` and `answers.yaml`.
-        #[arg(long, default_value = "fixtures/bench")]
-        corpus: PathBuf,
-        /// Where to write `results.json` and `report.md`.
-        #[arg(long, default_value = "bench-results")]
-        out: PathBuf,
-        /// Use only the first N items, for a quick check.
-        #[arg(long, value_name = "N")]
-        limit: Option<usize>,
-        /// Discard results saved in `--out` by an earlier run, instead of carrying on from them.
-        /// Use it after changing prompts, checks or models.
-        #[arg(long)]
-        fresh: bool,
-    },
+    Bench(bench::BenchArgs),
     /// Models for local providers: list them, or download or remove one. Nothing is
     /// downloaded unless asked for.
     Models {
@@ -497,13 +479,7 @@ fn main() -> ExitCode {
             }
             QuestionsAction::Dismiss { id } => questions::dismiss(cli.archive.as_deref(), &id),
         },
-        Command::Bench {
-            models,
-            corpus,
-            out,
-            limit,
-            fresh,
-        } => bench::bench(&corpus, &models, &out, limit, fresh, cli.json),
+        Command::Bench(args) => bench::bench(&args, cli.json),
         Command::Models { action } => match action.unwrap_or(ModelsAction::List) {
             ModelsAction::List => models::list(),
             ModelsAction::Download { name, yes } => models::download(&name, yes, cli.json),
