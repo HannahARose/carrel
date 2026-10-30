@@ -148,8 +148,10 @@ pub struct Outcome {
     pub title: String,
     /// The summary drafted.
     pub summary: Option<String>,
-    /// Whether every model output passed validation the first time.
+    /// Whether every stage ended with model output that passed validation, retries allowed.
     pub valid: bool,
+    /// Whether every model output passed validation the first time.
+    pub first_try: bool,
     /// What was left for the owner to settle.
     pub problems: Vec<String>,
     /// Model calls that didn't succeed, as `stage: result: message`.
@@ -171,10 +173,11 @@ pub fn outcomes(run: &Run) -> Vec<Outcome> {
                 .flat_map(|d| &d.attempts)
                 .chain(route.into_iter().flat_map(|r| &r.attempts))
                 .chain(assessment.into_iter().flat_map(|a| &a.attempts));
-            let mut model_calls = 0;
+            // Each stage's last call says how it ended; earlier ones were retries.
+            let mut last: BTreeMap<&str, &str> = BTreeMap::new();
             let mut failures = Vec::new();
             for attempt in attempts {
-                model_calls += 1;
+                last.insert(&attempt.stage, &attempt.result);
                 if attempt.result != "ok" {
                     failures.push(format!(
                         "{}: {}: {}",
@@ -203,9 +206,10 @@ pub fn outcomes(run: &Run) -> Vec<Outcome> {
                 title: draft.map(|d| d.title.clone()).unwrap_or_default(),
                 summary: draft.and_then(|d| d.summary.clone()),
                 valid: draft.is_some()
-                    && model_calls > 0
-                    && failures.is_empty()
+                    && !last.is_empty()
+                    && last.values().all(|r| *r == "ok")
                     && problems.is_empty(),
+                first_try: !last.is_empty() && failures.is_empty() && problems.is_empty(),
                 problems,
                 failures,
             }
@@ -244,8 +248,10 @@ pub struct ItemScore {
     pub tags_expected: usize,
     /// Tags outside the must and may lists.
     pub tags_outside: Vec<String>,
-    /// Whether the model outputs passed validation the first time.
+    /// Whether every stage ended with model output that passed validation.
     pub valid: bool,
+    /// Whether every model output passed the first time.
+    pub first_try: bool,
 }
 
 /// A run's scores over every item.
@@ -253,8 +259,10 @@ pub struct ItemScore {
 pub struct Score {
     /// How many items were scored.
     pub items: usize,
-    /// The share with valid output.
+    /// The share with valid output, retries allowed.
     pub valid: f64,
+    /// The share whose output was valid the first time.
+    pub first_try: f64,
     /// The routing score, as a share.
     pub routing: f64,
     /// The share rated exactly.
@@ -373,6 +381,7 @@ pub fn score(answers: &Answers, outcomes: &[Outcome], seconds: f64) -> (Score, V
                 tags_expected: answer.tags.len(),
                 tags_outside,
                 valid: outcome.valid,
+                first_try: outcome.first_try,
             },
         ));
     }
@@ -385,6 +394,7 @@ pub fn score(answers: &Answers, outcomes: &[Outcome], seconds: f64) -> (Score, V
     let summary = Score {
         items: items.len(),
         valid: share(&|s| s.valid),
+        first_try: share(&|s| s.first_try),
         routing: items.iter().map(|(_, s)| s.routing).sum::<f64>() / n,
         sensitivity_exact: share(&|s| s.sensitivity == Rating::Exact),
         under_rated: share(&under),
@@ -440,6 +450,7 @@ items:
             title: "t".into(),
             summary: None,
             valid: true,
+            first_try: true,
             problems: Vec::new(),
             failures: Vec::new(),
         }
