@@ -149,6 +149,9 @@ enum ModelsAction {
     Download {
         /// The model's name, from `carrel models`.
         name: String,
+        /// `gguf` for the llama.cpp provider, or `mlx` for the MLX provider on Apple silicon.
+        #[arg(long, value_enum, default_value_t)]
+        format: models::Format,
         /// Download without asking.
         #[arg(long)]
         yes: bool,
@@ -157,6 +160,9 @@ enum ModelsAction {
     Remove {
         /// The model's name.
         name: String,
+        /// Which download to delete: `gguf` or `mlx`.
+        #[arg(long, value_enum, default_value_t)]
+        format: models::Format,
         /// Delete without asking.
         #[arg(long)]
         yes: bool,
@@ -508,8 +514,10 @@ fn main() -> ExitCode {
         Command::Bench(args) => bench::bench(&args, cli.json),
         Command::Models { action } => match action.unwrap_or(ModelsAction::List) {
             ModelsAction::List => models::list(),
-            ModelsAction::Download { name, yes } => models::download(&name, yes, cli.json),
-            ModelsAction::Remove { name, yes } => models::remove(&name, yes),
+            ModelsAction::Download { name, format, yes } => {
+                models::download(&name, format, yes, cli.json)
+            }
+            ModelsAction::Remove { name, format, yes } => models::remove(&name, format, yes),
         },
     };
     finish(result, cli.json)

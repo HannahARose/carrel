@@ -1,6 +1,6 @@
 # Carrel provider protocol
 
-**Version 1 (draft).** A provider is a separate program that gives Carrel a capability it can't provide portably by itself: a text model, or text extraction from PDFs and images. Carrel starts providers, asks what they offer, and sends them requests. Native tools are used through providers where they exist (Apple's Foundation Models, MLX, PDFKit and Vision through `carrel-provider-apple`), and portable providers fill in elsewhere. Anyone can write a provider in any language by following this document.
+**Version 1 (draft).** A provider is a separate program that gives Carrel a capability it can't provide portably by itself: a text model, or text extraction from PDFs and images. Carrel starts providers, asks what they offer, and sends them requests. Native tools are used through providers where they exist (Apple's Foundation Models, PDFKit and Vision through `carrel-provider-apple`, and open models through MLX with `carrel-provider-mlx`), and portable providers fill in elsewhere. Anyone can write a provider in any language by following this document.
 
 ## Finding providers
 

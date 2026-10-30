@@ -148,6 +148,15 @@ jobs:
             --package-path apple/CarrelProviders --show-bin-path)"
           echo "APPLE_PROVIDER=$bin/carrel-provider-apple" >> "$GITHUB_ENV"
           echo "BIN_DIR=target/universal" >> "$GITHUB_ENV"
+      - name: Build the MLX provider (macOS, Apple silicon)
+        if: runner.os == 'macOS'
+        working-directory: apple/CarrelMLX
+        run: |
+          xcodebuild -showComponent MetalToolchain | grep -q "Status: installed" \
+            || xcodebuild -downloadComponent MetalToolchain
+          xcodebuild -scheme carrel-provider-mlx -destination 'platform=macOS,arch=arm64' \
+            -derivedDataPath .build/xcode -configuration Release -skipMacroValidation build
+          echo "MLX_PROVIDER=$PWD/.build/xcode/Build/Products/Release/carrel-provider-mlx" >> "$GITHUB_ENV"
       - name: Check the binaries run
         run: |
           exe=""
@@ -158,6 +167,9 @@ jobs:
         with:
           name: license-notices
           path: notices
+      - name: Swift license notices (macOS)
+        if: runner.os == 'macOS'
+        run: scripts/swift-licenses.sh apple/CarrelMLX notices/THIRD-PARTY-LICENSES.md
       - name: Package
         env:
           THIRD_PARTY: notices/THIRD-PARTY-LICENSES.md

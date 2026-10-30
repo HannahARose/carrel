@@ -35,6 +35,47 @@ pub struct Model {
     pub memory_gb: u8,
     /// Whether the benchmark (#33) recommends it for machines with that much memory.
     pub recommended: bool,
+    /// The same model converted for MLX, for `carrel-provider-mlx` (`docs/design/mlx.md`).
+    pub mlx: Option<MlxBuild>,
+}
+
+/// A model converted for MLX: a folder of files rather than one, each pinned like a GGUF file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct MlxBuild {
+    /// The Hugging Face repository holding it.
+    pub repository: &'static str,
+    /// The repository's commit the files are pinned to.
+    pub revision: &'static str,
+    /// The files the provider needs: the configuration, tokenizer and weights.
+    pub files: &'static [ModelFile],
+}
+
+/// One file of an [`MlxBuild`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct ModelFile {
+    /// Its path in the repository, which is also its path in the model's folder.
+    pub path: &'static str,
+    /// Its size in bytes.
+    pub size: u64,
+    /// Its SHA-256, in lowercase hexadecimal.
+    pub sha256: &'static str,
+}
+
+impl MlxBuild {
+    /// The files' total size in bytes.
+    #[must_use]
+    pub fn size(&self) -> u64 {
+        self.files.iter().map(|f| f.size).sum()
+    }
+
+    /// Where `file` is downloaded from.
+    #[must_use]
+    pub fn url(&self, file: &ModelFile) -> String {
+        format!(
+            "https://huggingface.co/{}/resolve/{}/{}",
+            self.repository, self.revision, file.path
+        )
+    }
 }
 
 impl Model {
@@ -55,7 +96,9 @@ impl Model {
 }
 
 /// The models Carrel can download. Each is open weights under a permissive license, not gated
-/// behind an account, and loadable by the llama.cpp Carrel ships.
+/// behind an account, and loadable by the llama.cpp Carrel ships. Their MLX builds are the
+/// model makers' own where there is one (IBM's), else `mlx-community`'s 4-bit conversion,
+/// with the files `carrel-provider-mlx` reads.
 pub const CATALOG: &[Model] = &[
     Model {
         name: "granite-4.2-3b",
@@ -68,6 +111,42 @@ pub const CATALOG: &[Model] = &[
         license: "Apache-2.0",
         memory_gb: 8,
         recommended: false,
+        mlx: Some(MlxBuild {
+            repository: "ibm-granite/granite-4.2-3b-q4-mlx",
+            revision: "0c6f39b1827afd5eb2c1c3b13751929857434953",
+            files: &[
+                ModelFile {
+                    path: "chat_template.jinja",
+                    size: 9_013,
+                    sha256: "f0ba43f79b3cabca5e5a7584c77aec92f49feae45cdf7779c87d9fc54cd90258",
+                },
+                ModelFile {
+                    path: "config.json",
+                    size: 1_185,
+                    sha256: "bfcb1a01587dae223af89f07b960f0b456ef9fe9576167a126aa807941b213d7",
+                },
+                ModelFile {
+                    path: "generation_config.json",
+                    size: 207,
+                    sha256: "1b9baf0a7959d31d7fb58ff6b506c27d09a73d395cadccc7e6dd1d4b7e43fd9d",
+                },
+                ModelFile {
+                    path: "model.safetensors",
+                    size: 2_059_005_430,
+                    sha256: "a71cf9297827b3c3d6ad426081b67c423044f6576632dabe40e7590552fd267d",
+                },
+                ModelFile {
+                    path: "tokenizer.json",
+                    size: 7_153_414,
+                    sha256: "883975314d58743726347caaf2c32ac89afd5ad57222cffbc4f052f2ab27b2d7",
+                },
+                ModelFile {
+                    path: "tokenizer_config.json",
+                    size: 436,
+                    sha256: "0b1cc678b9fbde8ce90c81e0f6483c4e1696dfa377330e42a88106416b96e659",
+                },
+            ],
+        }),
     },
     Model {
         name: "qwen3.5-4b",
@@ -80,6 +159,42 @@ pub const CATALOG: &[Model] = &[
         license: "Apache-2.0",
         memory_gb: 8,
         recommended: false,
+        mlx: Some(MlxBuild {
+            repository: "mlx-community/Qwen3.5-4B-MLX-4bit",
+            revision: "32f3e8ecf65426fc3306969496342d504bfa13f3",
+            files: &[
+                ModelFile {
+                    path: "chat_template.jinja",
+                    size: 7_756,
+                    sha256: "a4aee8afcf2e0711942cf848899be66016f8d14a889ff9ede07bca099c28f715",
+                },
+                ModelFile {
+                    path: "config.json",
+                    size: 3_366,
+                    sha256: "f3efc81b2ea8d96a45301037d3ccccbcccdef44a961845c87f286aaddbc6eaaa",
+                },
+                ModelFile {
+                    path: "model.safetensors",
+                    size: 3_034_300_695,
+                    sha256: "5fb9acd0246866381cf8c5c354c6db1019f6498eec4ccb4f5edcc71ffeacb2db",
+                },
+                ModelFile {
+                    path: "model.safetensors.index.json",
+                    size: 101_944,
+                    sha256: "52e534c41f7b97708329c85f762e5882bf48bd5955a422c6ae74eba321e6048a",
+                },
+                ModelFile {
+                    path: "tokenizer.json",
+                    size: 19_989_343,
+                    sha256: "87a7830d63fcf43bf241c3c5242e96e62dd3fdc29224ca26fed8ea333db72de4",
+                },
+                ModelFile {
+                    path: "tokenizer_config.json",
+                    size: 1_139,
+                    sha256: "e98f1901ac6f0adff67b1d540bfa0c36ac1a0cf59eb72ed78146ef89aafa1182",
+                },
+            ],
+        }),
     },
     Model {
         name: "gemma-4-e4b",
@@ -92,6 +207,47 @@ pub const CATALOG: &[Model] = &[
         license: "Apache-2.0",
         memory_gb: 16,
         recommended: false,
+        mlx: Some(MlxBuild {
+            repository: "mlx-community/gemma-4-e4b-it-4bit",
+            revision: "475b9088d29754a3379866cf5aeb6b41acd313c2",
+            files: &[
+                ModelFile {
+                    path: "chat_template.jinja",
+                    size: 17_336,
+                    sha256: "2f1b4d75d067bae3fe44e676721c7f077d243bc007156cb9c2f8b5836613d082",
+                },
+                ModelFile {
+                    path: "config.json",
+                    size: 6_628,
+                    sha256: "780ccb3a514a5f1ced161d383f948fc22eca9b84b752ca19494f625bd9bad7a6",
+                },
+                ModelFile {
+                    path: "generation_config.json",
+                    size: 208,
+                    sha256: "d4226bbe3117d2d253ba4609720ba82c6c4ce4627a9a6ae05387c78983ac03de",
+                },
+                ModelFile {
+                    path: "model.safetensors",
+                    size: 5_146_800_534,
+                    sha256: "932b8271fc3fe65adcc78b96c10c6268bbfb13e8f67d1358727c0d6ee97e1eff",
+                },
+                ModelFile {
+                    path: "model.safetensors.index.json",
+                    size: 240_961,
+                    sha256: "f8accac59ee7efe87e0c298c854610b262c3cadd477407503147c71209ff0093",
+                },
+                ModelFile {
+                    path: "tokenizer.json",
+                    size: 32_169_626,
+                    sha256: "cc8d3a0ce36466ccc1278bf987df5f71db1719b9ca6b4118264f45cb627bfe0f",
+                },
+                ModelFile {
+                    path: "tokenizer_config.json",
+                    size: 2_740,
+                    sha256: "080d9e1aff284e2f6043889cd05367966f7c7b80e025fbc0b06745e218158656",
+                },
+            ],
+        }),
     },
     Model {
         name: "granite-4.2-8b",
@@ -104,6 +260,42 @@ pub const CATALOG: &[Model] = &[
         license: "Apache-2.0",
         memory_gb: 16,
         recommended: false,
+        mlx: Some(MlxBuild {
+            repository: "ibm-granite/granite-4.2-8b-q4-mlx",
+            revision: "9047f073e46c527f70dade07bb55b1700d728e36",
+            files: &[
+                ModelFile {
+                    path: "chat_template.jinja",
+                    size: 9_013,
+                    sha256: "f0ba43f79b3cabca5e5a7584c77aec92f49feae45cdf7779c87d9fc54cd90258",
+                },
+                ModelFile {
+                    path: "config.json",
+                    size: 1_187,
+                    sha256: "a1ee533ce70c3792b0281f9c7458ad4513ea3a9102e860f5da6f3f636e19c75c",
+                },
+                ModelFile {
+                    path: "generation_config.json",
+                    size: 207,
+                    sha256: "1b9baf0a7959d31d7fb58ff6b506c27d09a73d395cadccc7e6dd1d4b7e43fd9d",
+                },
+                ModelFile {
+                    path: "model.safetensors",
+                    size: 4_945_853_970,
+                    sha256: "86a0c04a5deb24de6ada66a37c7373e3e37dbf2a138ed28bb03c212d331b6429",
+                },
+                ModelFile {
+                    path: "tokenizer.json",
+                    size: 7_153_414,
+                    sha256: "883975314d58743726347caaf2c32ac89afd5ad57222cffbc4f052f2ab27b2d7",
+                },
+                ModelFile {
+                    path: "tokenizer_config.json",
+                    size: 436,
+                    sha256: "0b1cc678b9fbde8ce90c81e0f6483c4e1696dfa377330e42a88106416b96e659",
+                },
+            ],
+        }),
     },
     Model {
         name: "qwen3.5-9b",
@@ -116,6 +308,47 @@ pub const CATALOG: &[Model] = &[
         license: "Apache-2.0",
         memory_gb: 16,
         recommended: false,
+        mlx: Some(MlxBuild {
+            repository: "mlx-community/Qwen3.5-9B-MLX-4bit",
+            revision: "938d8919941c6e7efd3c7150eff7fe9d12afa631",
+            files: &[
+                ModelFile {
+                    path: "chat_template.jinja",
+                    size: 7_756,
+                    sha256: "a4aee8afcf2e0711942cf848899be66016f8d14a889ff9ede07bca099c28f715",
+                },
+                ModelFile {
+                    path: "config.json",
+                    size: 3_331,
+                    sha256: "a96942cb6a8a1d3f1d17514d81a1925d04362a6a3233b389d13012211baaa9f8",
+                },
+                ModelFile {
+                    path: "model-00001-of-00002.safetensors",
+                    size: 5_349_771_222,
+                    sha256: "a68b87558c6ef43f74c2bd63ce7e9092ceddc3101f3def0030774bae5f42aadd",
+                },
+                ModelFile {
+                    path: "model-00002-of-00002.safetensors",
+                    size: 600_449_850,
+                    sha256: "b0a770bf8469c7f3f18756a0e0283f1c1174344a83e059a4e483f6af4907352d",
+                },
+                ModelFile {
+                    path: "model.safetensors.index.json",
+                    size: 123_592,
+                    sha256: "dd023913fb87cfdae27fb11dcf695117c925833796ccac3c64117d6652d8ff1e",
+                },
+                ModelFile {
+                    path: "tokenizer.json",
+                    size: 19_989_343,
+                    sha256: "87a7830d63fcf43bf241c3c5242e96e62dd3fdc29224ca26fed8ea333db72de4",
+                },
+                ModelFile {
+                    path: "tokenizer_config.json",
+                    size: 1_139,
+                    sha256: "e98f1901ac6f0adff67b1d540bfa0c36ac1a0cf59eb72ed78146ef89aafa1182",
+                },
+            ],
+        }),
     },
 ];
 
@@ -204,6 +437,8 @@ pub enum ModelError {
     },
     /// The model isn't downloaded.
     NotDownloaded(String),
+    /// The model has no MLX build in the catalog.
+    NoMlx(String),
     /// Reading or writing the models folder failed.
     Io(std::io::Error),
 }
@@ -225,6 +460,7 @@ impl std::fmt::Display for ModelError {
                 "the downloaded file isn't the one expected ({expected}, found {found}), so it was deleted"
             ),
             Self::NotDownloaded(name) => write!(f, "{name} isn't downloaded"),
+            Self::NoMlx(name) => write!(f, "{name} has no MLX build; download it as GGUF instead"),
             Self::Io(e) => write!(f, "{e}"),
         }
     }
@@ -389,6 +625,141 @@ pub fn installed(dir: &Path) -> std::io::Result<Vec<Installed>> {
     }
     found.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(found)
+}
+
+/// The folder MLX models are kept in, inside the models folder `dir`.
+#[must_use]
+pub fn mlx_dir(dir: &Path) -> PathBuf {
+    dir.join("mlx")
+}
+
+/// The MLX models in `dir`'s `mlx` folder: folders with a `config.json`, whether from the
+/// catalog or added by hand, by name. A partial download (`NAME.part`) isn't one.
+///
+/// # Errors
+///
+/// [`std::io::Error`] if the folder can't be read.
+pub fn installed_mlx(dir: &Path) -> std::io::Result<Vec<Installed>> {
+    let entries = match std::fs::read_dir(mlx_dir(dir)) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(e),
+    };
+    let mut found = Vec::new();
+    for entry in entries {
+        let path = entry?.path();
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        let partial = Path::new(name)
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("part"));
+        if name.starts_with('.') || partial || !path.join("config.json").is_file() {
+            continue;
+        }
+        let mut size = 0;
+        for file in std::fs::read_dir(&path)? {
+            let metadata = file?.metadata()?;
+            if metadata.is_file() {
+                size += metadata.len();
+            }
+        }
+        found.push(Installed {
+            name: name.to_owned(),
+            path: path.clone(),
+            size,
+        });
+    }
+    found.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(found)
+}
+
+/// Downloads `model`'s MLX build into `dir`'s `mlx` folder through `fetcher`, one file at a
+/// time into `NAME.part`, continuing any partial file. Each file is checked against the
+/// catalog as it finishes, and the folder is renamed to `NAME` only once every file is right,
+/// so the provider never sees half a model. `progress` gets the bytes done of the whole.
+///
+/// # Errors
+///
+/// [`ModelError::NoMlx`] if the model has no MLX build, [`ModelError::Fetch`] if a download
+/// stops, [`ModelError::Mismatch`] if a file isn't the one expected (it's deleted), or
+/// [`ModelError::Io`].
+pub fn download_mlx(
+    model: &Model,
+    dir: &Path,
+    fetcher: &dyn Fetcher,
+    log: Option<&Path>,
+    progress: &mut dyn FnMut(u64, u64),
+) -> Result<PathBuf, ModelError> {
+    let build = model
+        .mlx
+        .ok_or_else(|| ModelError::NoMlx(model.name.to_owned()))?;
+    let folder = mlx_dir(dir).join(model.name);
+    if folder.is_dir() {
+        return Ok(folder);
+    }
+    let part = mlx_dir(dir).join(format!("{}.part", model.name));
+    std::fs::create_dir_all(&part)?;
+    let total = build.size();
+    let mut before = 0;
+    for file in build.files {
+        let to = part.join(file.path);
+        if let Some(parent) = to.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let finished = to.is_file() && hash_file(&to)? == (file.size, file.sha256.to_owned());
+        if !finished {
+            let request = FetchRequest {
+                url: build.url(file),
+                hosts: ALLOWED_HOSTS.iter().map(|h| (*h).to_owned()).collect(),
+                size: file.size,
+                sha256: file.sha256.to_owned(),
+                to: to.clone(),
+                log: log.map(Path::to_owned),
+            };
+            fetcher.fetch(&request, &mut |done, _| progress(before + done, total))?;
+            let (size, sha256) = hash_file(&to)?;
+            if size != file.size || sha256 != file.sha256 {
+                std::fs::remove_file(&to)?;
+                return Err(ModelError::Mismatch {
+                    expected: format!(
+                        "{}: {} bytes, SHA-256 {}",
+                        file.path, file.size, file.sha256
+                    ),
+                    found: format!("{size} bytes, SHA-256 {sha256}"),
+                });
+            }
+        }
+        before += file.size;
+        progress(before, total);
+    }
+    std::fs::rename(&part, &folder)?;
+    Ok(folder)
+}
+
+/// Deletes the MLX model called `name` from `dir`'s `mlx` folder, and any partial download.
+///
+/// # Errors
+///
+/// [`ModelError::NotDownloaded`] if there's nothing to delete, or [`ModelError::Io`].
+pub fn remove_mlx(name: &str, dir: &Path) -> Result<PathBuf, ModelError> {
+    if name.is_empty() || name.contains(['/', '\\']) || name.starts_with('.') {
+        return Err(ModelError::NotDownloaded(name.to_owned()));
+    }
+    let folder = mlx_dir(dir).join(name);
+    let part = mlx_dir(dir).join(format!("{name}.part"));
+    let had_part = part.is_dir();
+    if had_part {
+        std::fs::remove_dir_all(&part)?;
+    }
+    if folder.is_dir() {
+        std::fs::remove_dir_all(&folder)?;
+        Ok(folder)
+    } else if had_part {
+        Ok(part)
+    } else {
+        Err(ModelError::NotDownloaded(name.to_owned()))
+    }
 }
 
 /// Where a model's partial download is kept.
@@ -560,6 +931,15 @@ mod tests {
             );
             assert!(model.url().starts_with("https://huggingface.co/"));
             assert!(crate::names::is_portable(&model.file_name()));
+            if let Some(build) = model.mlx {
+                assert_eq!(build.revision.len(), 40, "{}", model.name);
+                assert!(build.files.iter().any(|f| f.path == "config.json"));
+                assert!(build.files.iter().any(|f| f.path.ends_with(".safetensors")));
+                for file in build.files {
+                    assert_eq!(file.sha256.len(), 64, "{} {}", model.name, file.path);
+                    assert!(!file.path.contains(".."), "{}", file.path);
+                }
+            }
         }
         let mut names: Vec<_> = CATALOG.iter().map(|m| m.name).collect();
         names.sort_unstable();
@@ -661,5 +1041,109 @@ mod tests {
         let json = serde_json::to_string(&event).unwrap();
         assert_eq!(json, r#"{"event":"progress","done":1,"total":3}"#);
         assert_eq!(serde_json::from_str::<FetchEvent>(&json).unwrap(), event);
+    }
+
+    /// Writes each file's contents, chosen by the end of its URL.
+    struct Files(Vec<(&'static str, Vec<u8>)>);
+
+    impl Fetcher for Files {
+        fn fetch(
+            &self,
+            request: &FetchRequest,
+            progress: &mut dyn FnMut(u64, u64),
+        ) -> Result<(), ModelError> {
+            let (_, contents) = self
+                .0
+                .iter()
+                .find(|(path, _)| request.url.ends_with(path))
+                .ok_or_else(|| ModelError::Fetch(format!("unexpected {}", request.url)))?;
+            std::fs::write(&request.to, contents)?;
+            progress(contents.len() as u64, request.size);
+            Ok(())
+        }
+    }
+
+    fn mlx_model(files: &[(&'static str, &[u8])]) -> Model {
+        let files: Vec<ModelFile> = files
+            .iter()
+            .map(|(path, contents)| ModelFile {
+                path,
+                size: contents.len() as u64,
+                sha256: Box::leak(hex(&Sha256::digest(contents)).into_boxed_str()),
+            })
+            .collect();
+        Model {
+            mlx: Some(MlxBuild {
+                repository: "mlx-community/test",
+                revision: "0000000000000000000000000000000000000000",
+                files: Box::leak(files.into_boxed_slice()),
+            }),
+            ..CATALOG[0]
+        }
+    }
+
+    #[test]
+    fn an_mlx_build_downloads_as_a_folder_only_once_every_file_checks_out() {
+        let dir = tempfile::tempdir().unwrap();
+        let model = mlx_model(&[("config.json", b"{}"), ("model.safetensors", b"weights")]);
+        let mut seen = Vec::new();
+        let fetcher = Files(vec![
+            ("config.json", b"{}".to_vec()),
+            ("model.safetensors", b"weights".to_vec()),
+        ]);
+        let folder = download_mlx(&model, dir.path(), &fetcher, None, &mut |d, t| {
+            seen.push((d, t));
+        })
+        .unwrap();
+        assert_eq!(folder, dir.path().join("mlx").join(model.name));
+        assert!(folder.join("model.safetensors").is_file());
+        assert_eq!(
+            seen.last(),
+            Some(&(9, 9)),
+            "progress is of the whole folder"
+        );
+        let listed = installed_mlx(dir.path()).unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].size, 9);
+        assert!(installed(dir.path()).unwrap().is_empty(), "not a GGUF file");
+
+        remove_mlx(model.name, dir.path()).unwrap();
+        assert_eq!(installed_mlx(dir.path()).unwrap(), Vec::new());
+        assert!(matches!(
+            remove_mlx(model.name, dir.path()),
+            Err(ModelError::NotDownloaded(_))
+        ));
+    }
+
+    #[test]
+    fn a_wrong_file_is_deleted_and_the_folder_stays_partial() {
+        let dir = tempfile::tempdir().unwrap();
+        let model = mlx_model(&[("config.json", b"{}"), ("model.safetensors", b"weights")]);
+        let wrong = Files(vec![
+            ("config.json", b"{}".to_vec()),
+            ("model.safetensors", b"tampered".to_vec()),
+        ]);
+        assert!(matches!(
+            download_mlx(&model, dir.path(), &wrong, None, &mut |_, _| {}),
+            Err(ModelError::Mismatch { .. })
+        ));
+        let part = dir.path().join("mlx").join(format!("{}.part", model.name));
+        assert!(
+            part.join("config.json").is_file(),
+            "finished files are kept"
+        );
+        assert!(!part.join("model.safetensors").exists());
+        assert_eq!(installed_mlx(dir.path()).unwrap(), Vec::new());
+
+        // Carrying on fetches only what's missing.
+        let rest = Files(vec![("model.safetensors", b"weights".to_vec())]);
+        download_mlx(&model, dir.path(), &rest, None, &mut |_, _| {}).unwrap();
+        assert_eq!(installed_mlx(dir.path()).unwrap().len(), 1);
+
+        let none = Model { mlx: None, ..model };
+        assert!(matches!(
+            download_mlx(&none, dir.path(), &rest, None, &mut |_, _| {}),
+            Err(ModelError::NoMlx(_))
+        ));
     }
 }
