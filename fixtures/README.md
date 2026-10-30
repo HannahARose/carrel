@@ -65,3 +65,5 @@ The test set for the model benchmark ([docs/design/benchmark.md](../docs/design/
 ```bash
 cargo run -p carrel-cli -- bench --out bench-results
 ```
+
+It can be stopped at any point and continued by running the same command again; add `--fresh` to start over after changing prompts, checks or models.

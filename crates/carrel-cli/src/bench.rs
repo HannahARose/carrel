@@ -2,8 +2,13 @@
 //! with each model in turn, scores what each proposed, and writes `results.json` and a
 //! side-by-side `report.md`. It's for people developing Carrel and choosing models, so it's
 //! left out of `carrel --help`.
+//!
+//! Items are ingested one at a time, and each result is saved to `runs/` in the output folder
+//! as soon as it's done. Stopping a run (Ctrl-C) loses at most the item in progress, and
+//! running again with the same `--out` carries on where it stopped; `--fresh` starts over.
 
 use std::fmt::Write as _;
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -13,7 +18,7 @@ use carrel_core::bench::{
 };
 use carrel_core::card::Id;
 use carrel_core::ingest::IntakeOptions;
-use carrel_core::ingest::run::run;
+use carrel_core::ingest::run::run_with_progress;
 use carrel_core::providers::{Capability, Registry};
 use serde_json::{Value, json};
 
@@ -45,6 +50,8 @@ pub fn bench(
     wanted: &[String],
     out: &Path,
     limit: Option<usize>,
+    fresh: bool,
+    json: bool,
 ) -> Result<Report, Failure> {
     let answers = Answers::load(&corpus.join("answers.yaml")).map_err(Failure::new)?;
     let fixture = corpus.join("archive");
@@ -61,30 +68,53 @@ pub fn bench(
         items.truncate(limit);
     }
 
+    let runs = out.join("runs");
+    if fresh {
+        let _ = std::fs::remove_dir_all(&runs);
+    }
+    std::fs::create_dir_all(&runs).map_err(|e| Failure::io(&runs, &e))?;
+
     let (mut registry, _) = crate::providers::registry();
     let models = choose(&registry, wanted)?;
     let mut measured = Vec::new();
-    for model in models {
-        eprintln!("carrel bench: {} ({} items)…", model.label, items.len());
-        registry.pin(Capability::TextModel, &model.provider, &model.offer);
-        let copy = std::env::temp_dir().join(format!("carrel-bench-{}", Id::new_v7()));
-        copy_dir(&fixture, &copy).map_err(|e| Failure::io(&copy, &e))?;
-        let started = Instant::now();
-        let result = Archive::open(&copy)
-            .map_err(Failure::from)
-            .and_then(|archive| {
-                run(
-                    &archive,
-                    &registry,
-                    &items,
-                    IntakeOptions::default(),
-                    Id::new_v7(),
-                )
-                .map_err(Failure::from)
-            });
-        let seconds = started.elapsed().as_secs_f64();
-        let _ = std::fs::remove_dir_all(&copy);
-        let found = outcomes(&result?);
+    let count = models.len();
+    for (n, model) in models.into_iter().enumerate() {
+        let saved_path = runs.join(format!(
+            "{}--{}.jsonl",
+            file_safe(&model.provider),
+            file_safe(&model.offer)
+        ));
+        let mut saved = load_saved(&saved_path);
+        let mut display =
+            crate::progress::Display::new(format!("{} ({} of {count})", model.label, n + 1), json);
+        let todo: Vec<&PathBuf> = items
+            .iter()
+            .filter(|p| {
+                !saved
+                    .iter()
+                    .any(|(o, _)| Some(o.item.as_str()) == file_name(p))
+            })
+            .collect();
+        if !todo.is_empty() {
+            registry.pin(Capability::TextModel, &model.provider, &model.offer);
+            let copy = std::env::temp_dir().join(format!("carrel-bench-{}", Id::new_v7()));
+            copy_dir(&fixture, &copy).map_err(|e| Failure::io(&copy, &e))?;
+            let result = measure(
+                &copy,
+                &registry,
+                &todo,
+                &saved_path,
+                &mut saved,
+                |done, item| {
+                    display.count("items", items.len() - todo.len() + done, items.len(), item);
+                },
+            );
+            let _ = std::fs::remove_dir_all(&copy);
+            result?;
+        }
+        display.finish();
+        let seconds: f64 = saved.iter().map(|(_, s)| s).sum();
+        let found: Vec<Outcome> = saved.into_iter().map(|(o, _)| o).collect();
         let (score, scores) = score(&answers, &found, seconds);
         let mut by_item: Vec<(Outcome, ItemScore)> = Vec::new();
         for s in scores {
@@ -117,6 +147,76 @@ pub fn bench(
     )
     .unwrap();
     Ok(Report::new(text, results))
+}
+
+/// Ingests each of `todo` on its own with the pinned model, appending each outcome and its
+/// time to `saved_path` as soon as it's known.
+fn measure(
+    archive: &Path,
+    registry: &Registry,
+    todo: &[&PathBuf],
+    saved_path: &Path,
+    saved: &mut Vec<(Outcome, f64)>,
+    mut progress: impl FnMut(usize, Option<&str>),
+) -> Result<(), Failure> {
+    let archive = Archive::open(archive)?;
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(saved_path)
+        .map_err(|e| Failure::io(saved_path, &e))?;
+    for (done, path) in todo.iter().enumerate() {
+        progress(done, file_name(path));
+        let started = Instant::now();
+        let run = run_with_progress(
+            &archive,
+            registry,
+            std::slice::from_ref(*path),
+            IntakeOptions::default(),
+            Id::new_v7(),
+            &mut |_| {},
+        )?;
+        let seconds = started.elapsed().as_secs_f64();
+        for outcome in outcomes(&run) {
+            // One line per item, written whole, so a stop mid-run loses at most this item.
+            let line = json!({ "outcome": outcome, "seconds": seconds });
+            writeln!(file, "{line}").map_err(|e| Failure::io(saved_path, &e))?;
+            saved.push((outcome, seconds));
+        }
+    }
+    progress(todo.len(), None);
+    Ok(())
+}
+
+/// The outcomes saved by an earlier run, skipping a line cut short when it was stopped.
+fn load_saved(path: &Path) -> Vec<(Outcome, f64)> {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    text.lines()
+        .filter_map(|line| {
+            let value: Value = serde_json::from_str(line).ok()?;
+            let outcome = serde_json::from_value(value.get("outcome")?.clone()).ok()?;
+            Some((outcome, value.get("seconds")?.as_f64()?))
+        })
+        .collect()
+}
+
+fn file_name(path: &Path) -> Option<&str> {
+    path.file_name().and_then(|n| n.to_str())
+}
+
+/// A name usable as a file name everywhere.
+fn file_safe(name: &str) -> String {
+    name.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_') {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
 }
 
 /// The models to measure: those named (as `provider/offer`, or an offer alone), or every

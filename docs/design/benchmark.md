@@ -36,6 +36,7 @@ Titles and summaries can't be scored well automatically, so each run writes ever
 ## Running it
 
 - **`carrel bench`**, a command for people developing Carrel and choosing models, is hidden from `carrel --help`. It copies the test archive to a temporary folder, ingests the items with each model given (`--model NAME`, repeatable; default all available), and writes `results.json` and `report.md` to `--out FOLDER`.
+- **Stopping and carrying on:** items are ingested one at a time and each result is saved to `runs/` in the output folder as soon as it's done, so a run can be stopped at any point (Ctrl-C) and continued by running it again with the same `--out`; `--fresh` starts over, as is needed after changing prompts, checks or models. Each model shows a progress bar with the time left.
 - **Not in CI:** models are gigabytes and runs take minutes per model. CI checks the corpus and answers file instead: every item has an answer, and every destination exists.
 - **Recorded results:** a run's summary is committed under `docs/bench/` with the device, models, provider versions and date. The `recommended` flags in the catalog cite it.
 

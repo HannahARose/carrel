@@ -28,20 +28,35 @@ pub fn ingest(
     paths: &[PathBuf],
     options: IntakeOptions,
     dry_run: bool,
+    json: bool,
 ) -> Result<Report, Failure> {
     let archive = locate(archive)?;
     let (registry, _) = crate::providers::registry();
     let identity = crate::config::Identity::load_or_create()?;
     let (backups, _) = crate::backup::for_batch(&archive);
-    let Ingested { run, filed } = actions::ingest(
-        &archive,
-        &registry,
-        paths,
-        options,
-        crate::commands::holder(&identity),
-        backups.as_ref().map(|b| b as &dyn Backups),
-        !dry_run,
-    )?;
+    let mut display = crate::progress::Display::new("", json);
+    let Ingested { run, filed } = if dry_run {
+        let run = carrel_core::ingest::run::run_with_progress(
+            &archive,
+            &registry,
+            paths,
+            options,
+            identity.device,
+            &mut |p| display.update(p),
+        )?;
+        Ingested { run, filed: None }
+    } else {
+        actions::ingest(
+            &archive,
+            &registry,
+            paths,
+            options,
+            crate::commands::holder(&identity),
+            backups.as_ref().map(|b| b as &dyn Backups),
+            &mut |p| display.update(p),
+        )?
+    };
+    display.finish();
     Ok(report(&run, filed.as_ref(), dry_run))
 }
 

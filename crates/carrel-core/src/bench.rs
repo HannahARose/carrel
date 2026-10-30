@@ -130,7 +130,7 @@ pub fn check(answers: &Answers, archive: &Archive, items: &Path) -> Result<Vec<S
 }
 
 /// What a run proposed for one item.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Outcome {
     /// The item's file name.
     pub item: String,
