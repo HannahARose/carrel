@@ -61,6 +61,18 @@ pub struct Prefs {
     /// The archive used when no other is given, set by `carrel open`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub archive: Option<PathBuf>,
+    /// The file picker for choosing what to ingest: a known picker's name, any command
+    /// (with `{out}` for the file to write paths to), or `builtin`. Unset, the first known
+    /// picker installed is used.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub picker: Option<String>,
+    /// The editor for cards, before `$VISUAL` and `$EDITOR`; its words are split as a shell
+    /// would.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub editor: Option<String>,
+    /// The folder files were last picked from, where picking starts next time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_folder: Option<PathBuf>,
     /// Keys this version doesn't know.
     #[serde(flatten)]
     pub extra: Extra,

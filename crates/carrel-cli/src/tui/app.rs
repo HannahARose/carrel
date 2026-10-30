@@ -28,16 +28,22 @@ pub enum Tab {
     Browse,
     /// Recorded changes.
     History,
+    /// Items waiting to be drafted, and adding more.
+    Ingest,
+    /// This device's and the archive's settings.
+    Settings,
 }
 
 impl Tab {
     /// Every tab, in order.
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 7] = [
         Self::Status,
         Self::Review,
         Self::Questions,
         Self::Browse,
         Self::History,
+        Self::Ingest,
+        Self::Settings,
     ];
 
     /// The tab's name.
@@ -48,6 +54,8 @@ impl Tab {
             Self::Questions => "Questions",
             Self::Browse => "Browse",
             Self::History => "History",
+            Self::Ingest => "Ingest",
+            Self::Settings => "Settings",
         }
     }
 
@@ -68,6 +76,13 @@ pub enum Confirm {
     },
     /// Rejecting these proposals, which history can't undo.
     Reject(Vec<Id>),
+    /// Downloading this catalog model.
+    Download {
+        /// The model's name.
+        name: String,
+        /// What it is, its size and license, and where it goes.
+        about: String,
+    },
 }
 
 /// Work the run loop does for the app: it needs the writer lease, which the app doesn't hold.
@@ -104,6 +119,30 @@ pub enum Effect {
     },
     /// Dismiss this question.
     Dismiss(Id),
+    /// Add these paths to the intake queue, and start a worker.
+    Queue {
+        /// The files and folders.
+        paths: Vec<std::path::PathBuf>,
+        /// How folders among them are read.
+        options: carrel_core::ingest::IntakeOptions,
+    },
+    /// Take this item off the intake queue.
+    Unqueue(Id),
+    /// Move this item to the front of the intake queue.
+    Front(Id),
+    /// Try this failed item again.
+    Retry(Id),
+    /// Run the owner's file picker, with the terminal to itself, and plan what it chose.
+    Pick(Vec<String>),
+    /// Set a setting, as `carrel settings set` does.
+    SetSetting {
+        /// The setting.
+        key: String,
+        /// Its new value.
+        value: String,
+    },
+    /// Download this catalog model.
+    Download(String),
 }
 
 /// The interactive mode's state.
@@ -115,7 +154,7 @@ pub struct App {
     /// What `carrel status` shows.
     pub status: Vec<String>,
     /// How far each report screen is scrolled.
-    pub scroll: [u16; 5],
+    pub scroll: [u16; 7],
     /// The history, newest first.
     pub history: Vec<Entry>,
     /// The selected change.
@@ -158,6 +197,26 @@ pub struct App {
     pub message: Option<String>,
     /// A question waiting for yes or no.
     pub confirm: Option<Confirm>,
+    /// This device, whose intake queue is shown.
+    pub device: Option<Id>,
+    /// This device's intake queue: waiting, then failed.
+    pub intake: Vec<carrel_core::intake::IntakeEntry>,
+    /// The chosen queued item.
+    pub intake_chosen: usize,
+    /// What would be added, while it's shown before queueing.
+    pub planned: Option<super::intake::Plan>,
+    /// What the worker was doing when last looked at.
+    pub worker: super::intake::Worker,
+    /// The Settings screen's rows.
+    pub settings: Vec<super::settings::Shown>,
+    /// The chosen setting.
+    pub settings_chosen: usize,
+    /// The built-in file browser, while it's open.
+    pub browser: Option<super::browser::Browser>,
+    /// The `picker` preference.
+    pub picker_preference: Option<String>,
+    /// Where picking files starts: the folder last picked from, or the home folder.
+    pub start_folder: std::path::PathBuf,
     /// Whether every key is shown.
     pub help: bool,
     /// Whether to leave.
@@ -179,7 +238,7 @@ impl App {
             archive,
             tab: Tab::Status,
             status: Vec::new(),
-            scroll: [0; 5],
+            scroll: [0; 7],
             history: Vec::new(),
             selected: 0,
             waiting: (0, 0),
@@ -201,9 +260,29 @@ impl App {
             input: None,
             message: None,
             confirm: None,
+            device: crate::config::Identity::load()
+                .ok()
+                .flatten()
+                .map(|i| i.device),
+            intake: Vec::new(),
+            intake_chosen: 0,
+            planned: None,
+            worker: super::intake::Worker::default(),
+            settings: Vec::new(),
+            settings_chosen: 0,
+            browser: None,
+            picker_preference: None,
+            start_folder: std::path::PathBuf::from("."),
             help: false,
             quit: false,
         };
+        let prefs = crate::config::Prefs::load().unwrap_or_default();
+        app.picker_preference = prefs.picker;
+        app.start_folder = prefs
+            .last_folder
+            .filter(|f| f.is_dir())
+            .or_else(carrel_core::local::home_dir)
+            .unwrap_or_else(|| std::path::PathBuf::from("."));
         app.reload()?;
         Ok(app)
     }
@@ -233,6 +312,8 @@ impl App {
         self.load_queue(entries);
         self.load_questions(questions);
         self.load_browse()?;
+        self.load_intake();
+        self.load_settings();
         Ok(())
     }
 
@@ -263,7 +344,7 @@ impl App {
                 ("q", "quit"),
             ];
         }
-        let mut keys = vec![("1-5", "screens")];
+        let mut keys = vec![("1-7", "screens")];
         if let Some(input) = &self.input {
             return vec![
                 ("type", input.prompt()),
@@ -279,7 +360,34 @@ impl App {
                 ("Esc", "cancel"),
             ];
         }
+        if self.browser.is_some() {
+            return vec![
+                ("↑↓", "choose"),
+                ("Enter ←", "open, up"),
+                ("Space", "mark"),
+                ("i", "add"),
+                (".", "hidden"),
+                ("/", "type a path"),
+                ("Esc", "cancel"),
+            ];
+        }
+        if self.tab == Tab::Ingest && self.planned.is_some() {
+            return vec![
+                ("Enter", "queue them"),
+                ("e", "each entry"),
+                ("w", "whole folder"),
+                ("Esc", "cancel"),
+            ];
+        }
         match self.tab {
+            Tab::Settings => keys.extend([("↑↓", "choose"), ("Enter", "change")]),
+            Tab::Ingest => keys.extend([
+                ("i", "add"),
+                ("↑↓", "choose"),
+                ("x", "remove"),
+                ("t", "to front"),
+                ("r", "retry"),
+            ]),
             Tab::History => keys.extend([("↑↓", "choose"), ("u", "undo")]),
             Tab::Questions => {
                 keys.extend([("↑↓", "choose"), ("Enter", "answer"), ("d", "dismiss")]);
@@ -302,6 +410,10 @@ impl App {
             self.asked_chosen = step(self.asked_chosen, delta, self.asked.len());
         } else if self.tab == Tab::Browse {
             self.browse_move(delta);
+        } else if self.tab == Tab::Ingest {
+            self.intake_move(delta);
+        } else if self.tab == Tab::Settings {
+            self.settings_move(delta);
         } else if self.tab == Tab::History {
             let last = self.history.len().saturating_sub(1);
             let next = i64::try_from(self.selected).unwrap_or(0) + i64::from(delta);
@@ -327,6 +439,7 @@ impl App {
                 return Some(match confirm {
                     Confirm::Undo { id, .. } => Effect::Undo(id),
                     Confirm::Reject(ids) => Effect::Reject(ids),
+                    Confirm::Download { name, .. } => Effect::Download(name),
                 });
             }
             self.message = Some("Nothing changed".into());
@@ -339,6 +452,21 @@ impl App {
         if self.input.is_some() {
             return self.input_key(key);
         }
+        if let Some(browser) = &mut self.browser {
+            match browser.key(key) {
+                super::browser::Outcome::Browsing => {}
+                super::browser::Outcome::Add(paths) => {
+                    self.browser = None;
+                    self.plan(paths, carrel_core::ingest::IntakeOptions::default());
+                }
+                super::browser::Outcome::Type => {
+                    self.browser = None;
+                    self.ask_for_paths();
+                }
+                super::browser::Outcome::Cancel => self.browser = None,
+            }
+            return None;
+        }
         if self.picker.is_some() {
             return self.picker_key(key);
         }
@@ -347,6 +475,8 @@ impl App {
             Tab::Review => self.review_key(key),
             Tab::Questions => self.questions_key(key),
             Tab::Browse => self.browse_key(key),
+            Tab::Ingest => self.intake_key(key),
+            Tab::Settings => self.settings_key(key),
             _ => Handled::No,
         };
         if let Handled::Yes(effect) = handled {
@@ -361,7 +491,8 @@ impl App {
                     Err(Failure(e)) => e,
                 });
             }
-            KeyCode::Char(c @ '1'..='5') => {
+            KeyCode::Char('i') => return self.start_ingest(),
+            KeyCode::Char(c @ '1'..='7') => {
                 self.tab = Tab::ALL[usize::from(c as u8 - b'1')];
             }
             KeyCode::Tab | KeyCode::Right => {

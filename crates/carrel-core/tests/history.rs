@@ -412,3 +412,42 @@ fn the_first_change_cant_be_undone_and_nothing_is_touched() {
     assert!(archive.root().join("ARCHIVE.md").is_file());
     assert_eq!(history.log().unwrap().len(), 1);
 }
+
+#[test]
+fn a_changed_setting_is_recorded_and_can_be_undone() {
+    use carrel_core::settings::{Key, change};
+
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("archive");
+    let archive = carrel_core::archive::Archive::init(
+        &root,
+        &carrel_core::archive::InitOptions::new("Settings"),
+    )
+    .unwrap();
+    let holder = carrel_core::coordinator::Holder {
+        person: carrel_core::card::Id::new_v7(),
+        device: carrel_core::card::Id::new_v7(),
+    };
+    let lease = carrel_core::coordinator::DiskLock::for_archive(&archive)
+        .acquire(holder, "test", carrel_core::coordinator::DEFAULT_LEASE)
+        .unwrap();
+    History::start(&archive, &lease).unwrap();
+
+    let changed = change(&archive, Key::Originals, "keep", &lease).unwrap();
+    assert_eq!(
+        (changed.from.as_str(), changed.to.as_str()),
+        ("move", "keep")
+    );
+    let commit = changed.commit.expect("recorded");
+    let reopened = carrel_core::archive::Archive::open(&root).unwrap();
+    assert_eq!(Key::Originals.get(reopened.settings()), "keep");
+    let again = change(&reopened, Key::Originals, "keep", &lease).unwrap();
+    assert_eq!(again.commit, None, "the same value changes nothing");
+
+    History::open(&reopened)
+        .unwrap()
+        .undo(&reopened, &commit, &lease)
+        .unwrap();
+    let undone = carrel_core::archive::Archive::open(&root).unwrap();
+    assert_eq!(Key::Originals.get(undone.settings()), "move");
+}

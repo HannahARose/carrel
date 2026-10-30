@@ -210,6 +210,24 @@ fn run(model: &Model, dir: &Path, fetcher: &dyn Fetcher, json: bool) -> Result<P
     })
 }
 
+/// Downloads a catalog model without asking and without drawing progress, for the interactive
+/// mode, which has already asked and has the terminal.
+///
+/// # Errors
+///
+/// As [`download`].
+pub fn download_quietly(name: &str) -> Result<Report, Failure> {
+    let model = known(name)?;
+    let dir = folder()?;
+    let helper = Helper::find()?;
+    let log = network_log();
+    let path = fetch_model(model, &dir, &helper, log.as_deref(), &mut |_, _| {})?;
+    Ok(Report::new(
+        format!("Downloaded {} to {}\n", model.name, path.display()),
+        json!({ "name": model.name, "path": path }),
+    ))
+}
+
 /// `carrel models remove NAME`: deletes a downloaded model, after asking.
 ///
 /// # Errors
