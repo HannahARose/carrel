@@ -8,6 +8,7 @@
 //!
 //! | Module | What it handles | FORMAT.md |
 //! | --- | --- | --- |
+//! | [`actions`] | The owner's decisions on proposals and questions, shared by every interface | §7.9 |
 //! | [`archive`] | Creating, opening and finding archives; listing collections | §3, §7.1, §12 |
 //! | [`documents`] | `ARCHIVE.md`, `_collection.md`, `archive.json` and `settings.json` | §6.2, §6.3, §7.1, §7.2 |
 //! | [`card`] | Card frontmatter as typed fields, and checking it conforms | §5 |
@@ -43,6 +44,7 @@
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 
+pub mod actions;
 pub mod archive;
 pub mod backup;
 pub mod card;

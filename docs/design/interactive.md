@@ -1,6 +1,6 @@
 # Design: interactive mode (v0.2)
 
-Status: proposed. Issue #88.
+Status: accepted 2026-10-30, with the five recommendations below. Issue #88.
 
 ## What it's for
 
@@ -72,7 +72,7 @@ A help line along the bottom always shows the keys that work on the current scre
 4. Review, with marks, batches and the collection picker.
 5. Questions, Browse and History.
 
-## Decisions to make
+## Decisions (accepted 2026-10-30)
 
 1. **Recommended: `carrel` alone opens the interactive mode in a terminal,** and prints help otherwise. The alternative is only `carrel tui`.
 2. **Recommended: v0.2 covers status, review, questions, browsing and history;** ingest stays a command.
