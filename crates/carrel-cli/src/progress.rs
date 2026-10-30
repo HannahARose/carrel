@@ -9,7 +9,6 @@ use std::fmt::Write as _;
 use std::io::{IsTerminal as _, Write as _};
 use std::time::{Duration, Instant};
 
-use carrel_core::ingest::run::{Progress, Stage};
 use serde_json::json;
 
 /// The width of the bar, in characters.
@@ -64,17 +63,6 @@ impl Display {
             tenth: 0,
             drawn: false,
         }
-    }
-
-    /// Shows an ingest run's progress.
-    pub fn update(&mut self, progress: Progress<'_>) {
-        let step = format!(
-            "[{}/{}] {}",
-            progress.stage.number(),
-            Stage::COUNT,
-            progress.stage.describe()
-        );
-        self.count(&step, progress.done, progress.total, progress.item);
     }
 
     /// Shows that `done` of `total` are finished in `step`, and `item` is being worked on.

@@ -2,8 +2,11 @@
 //! `carrel tui`. Everything it does is also a command.
 
 mod app;
+mod browser;
+mod intake;
 mod review;
 mod screens;
+mod settings;
 mod ui;
 
 use std::fmt::Write as _;
@@ -59,7 +62,20 @@ fn event_loop(
 ) -> Result<(), Failure> {
     let starts = ui::tab_starts();
     let mut running: Option<Done> = None;
+    let mut checked = std::time::Instant::now();
     while !app.quit {
+        // The worker runs in another process; see what it has done about once a second.
+        if checked.elapsed() >= Duration::from_secs(1) {
+            checked = std::time::Instant::now();
+            if app.poll_worker() {
+                let message = app.message.take();
+                if let Err(Failure(e)) = app.reload() {
+                    app.message = Some(e);
+                } else {
+                    app.message = message;
+                }
+            }
+        }
         if let Some(done) = &running
             && let Ok(result) = done.try_recv()
         {
@@ -92,6 +108,18 @@ fn event_loop(
                 let result = crate::review::edit(Some(app.archive.root()), &id.to_string());
                 *terminal = enter();
                 finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
+            }
+            Some(Effect::Pick(words)) => {
+                // The picker needs the terminal to itself, as the editor does.
+                leave();
+                let picked = crate::picker::run(&words, &app.start_folder);
+                *terminal = enter();
+                if let Some(folder) = picked_files(app, picked)
+                    && let Ok(mut prefs) = crate::config::Prefs::load()
+                {
+                    prefs.last_folder = Some(folder);
+                    let _ = prefs.save();
+                }
             }
             Some(effect) if running.is_none() => {
                 if let Some(work) = background(app, effect) {
@@ -151,9 +179,33 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
             finished(app, Ok(text));
             return None;
         }
-        Effect::Edit(_) => return None,
+        Effect::Edit(_) | Effect::Pick(_) => return None,
         Effect::Dismiss(id) => {
             let result = crate::questions::dismiss(Some(&root), &id.to_string());
+            finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
+            return None;
+        }
+        Effect::SetSetting { key, value } => {
+            let result = crate::settings::set(Some(&root), &key, &value);
+            finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
+            return None;
+        }
+        Effect::Download(name) => (
+            format!("Downloading {name}…"),
+            Box::new(move || crate::models::download_quietly(&name)),
+        ),
+        Effect::Queue { paths, options } => {
+            let result = queue(&root, &paths, options);
+            finished(app, result.map_err(|Failure(e)| e));
+            return None;
+        }
+        Effect::Unqueue(id) | Effect::Front(id) | Effect::Retry(id) => {
+            let change = match effect {
+                Effect::Unqueue(_) => crate::ingest::Change::Remove,
+                Effect::Front(_) => crate::ingest::Change::First,
+                _ => crate::ingest::Change::Retry,
+            };
+            let result = crate::ingest::change_queued(Some(&root), &id.to_string(), change);
             finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
             return None;
         }
@@ -195,6 +247,54 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
         let _ = send.send(result);
     });
     Some(receive)
+}
+
+/// Plans what the picker chose; if the picker couldn't run, says why and opens the built-in
+/// browser instead. Returns the folder picked from, to start in next time.
+fn picked_files(app: &mut App, picked: Result<Vec<PathBuf>, Failure>) -> Option<PathBuf> {
+    match picked {
+        Ok(paths) if paths.is_empty() => {
+            app.message = Some("Nothing chosen".into());
+            None
+        }
+        Ok(paths) => {
+            let folder = paths[0].parent().filter(|f| f.is_dir()).map(Path::to_owned);
+            if let Some(folder) = &folder {
+                folder.clone_into(&mut app.start_folder);
+            }
+            app.plan(paths, carrel_core::ingest::IntakeOptions::default());
+            folder
+        }
+        Err(Failure(e)) => {
+            app.message = Some(format!("{e}; using the built-in browser"));
+            app.open_browser();
+            None
+        }
+    }
+}
+
+/// Adds `paths` to the intake queue and starts a worker, saying what happened in a line.
+fn queue(
+    root: &Path,
+    paths: &[PathBuf],
+    options: carrel_core::ingest::IntakeOptions,
+) -> Result<String, Failure> {
+    let archive = carrel_core::archive::Archive::open(root)?;
+    let identity = crate::config::Identity::load_or_create()?;
+    let queued = carrel_core::intake::add(&archive, paths, options, identity.device)?;
+    let started = crate::worker::start(&archive)?;
+    let n = queued.added.len();
+    Ok(match (n, started || crate::worker::running(&archive)?) {
+        (0, _) => "Nothing new to queue".into(),
+        (n, true) => format!(
+            "Queued {n} item{}; the worker drafts them in the background",
+            if n == 1 { "" } else { "s" }
+        ),
+        (n, false) => format!(
+            "Queued {n} item{}; no worker started (CARREL_WORKER is off)",
+            if n == 1 { "" } else { "s" }
+        ),
+    })
 }
 
 #[cfg(test)]
@@ -612,5 +712,129 @@ mod tests {
             app.key(key(KeyCode::Char('d'))),
             Some(Effect::Dismiss(term.id))
         );
+    }
+
+    #[test]
+    fn i_adds_files_through_a_plan_and_the_queue_can_be_changed() {
+        let (dir, mut app) = sample(false);
+        app.device = Some(Id::new_v7());
+        let file = dir.path().join("a note.txt");
+        std::fs::write(&file, "a note\n").unwrap();
+
+        app.picker_preference = Some("builtin".into());
+        app.start_folder = dir.path().to_owned();
+        assert_eq!(app.key(key(KeyCode::Char('i'))), None);
+        assert!(app.browser.is_some(), "the built-in browser, as preferred");
+        app.key(key(KeyCode::Char('/')));
+        assert!(app.input.is_some(), "/ types a path instead");
+        for c in format!("'{}'", file.display()).chars() {
+            app.key(key(KeyCode::Char(c)));
+        }
+        app.key(key(KeyCode::Enter));
+        assert_eq!(app.tab, Tab::Ingest);
+        let plan = app.planned.clone().expect("a plan before queueing");
+        assert_eq!(plan.count, 1);
+        assert!(screen(&app, 100, 30).contains("1 item to queue"));
+
+        let effect = app.key(key(KeyCode::Enter));
+        assert_eq!(
+            effect,
+            Some(Effect::Queue {
+                paths: vec![file.clone()],
+                options: carrel_core::ingest::IntakeOptions::default(),
+            })
+        );
+        assert_eq!(app.planned, None);
+
+        // As the run loop would: queue it, then read the queue.
+        carrel_core::intake::add(
+            &app.archive,
+            std::slice::from_ref(&file),
+            carrel_core::ingest::IntakeOptions::default(),
+            app.device.unwrap(),
+        )
+        .unwrap();
+        app.load_intake();
+        assert_eq!(app.intake.len(), 1);
+        assert!(screen(&app, 100, 30).contains("a note.txt"));
+        let id = app.intake[0].id;
+        assert_eq!(app.key(key(KeyCode::Char('x'))), Some(Effect::Unqueue(id)));
+        assert_eq!(app.key(key(KeyCode::Char('t'))), Some(Effect::Front(id)));
+        assert_eq!(app.key(key(KeyCode::Char('r'))), Some(Effect::Retry(id)));
+    }
+
+    #[test]
+    fn a_pile_folder_waits_for_each_or_whole() {
+        let (dir, mut app) = sample(false);
+        app.device = Some(Id::new_v7());
+        let pile = dir.path().join("Downloads");
+        std::fs::create_dir(&pile).unwrap();
+        std::fs::write(pile.join("one.txt"), "1").unwrap();
+        std::fs::write(pile.join("two.txt"), "2").unwrap();
+        app.plan(vec![pile], carrel_core::ingest::IntakeOptions::default());
+        assert!(app.planned.as_ref().unwrap().problem.is_some());
+        assert_eq!(app.key(key(KeyCode::Enter)), None, "nothing to queue yet");
+        app.key(key(KeyCode::Char('e')));
+        let plan = app.planned.clone().unwrap();
+        assert_eq!((plan.count, plan.problem), (2, None));
+        app.key(key(KeyCode::Esc));
+        assert_eq!(app.planned, None);
+    }
+
+    #[test]
+    fn i_runs_the_owners_picker_when_there_is_one() {
+        let (dir, mut app) = sample(false);
+        app.picker_preference = Some("lf".into());
+        assert_eq!(
+            app.key(key(KeyCode::Char('i'))),
+            Some(Effect::Pick(vec![
+                "lf".into(),
+                "-selection-path={out}".into()
+            ]))
+        );
+        app.device = Some(Id::new_v7());
+        let file = dir.path().join("picked.txt");
+        std::fs::write(&file, "x").unwrap();
+        super::picked_files(&mut app, Ok(vec![file]));
+        assert_eq!(app.planned.as_ref().map(|p| p.count), Some(1));
+        super::picked_files(
+            &mut app,
+            Err(crate::Failure::new("couldn't start the picker lf")),
+        );
+        assert!(app.browser.is_some(), "falls back to the built-in browser");
+    }
+
+    #[test]
+    fn settings_are_shown_and_changed_the_way_the_command_does() {
+        let (_dir, mut app) = sample(false);
+        app.key(key(KeyCode::Char('7')));
+        assert_eq!(app.tab, Tab::Settings);
+        let screen_text = screen(&app, 120, 30);
+        assert!(screen_text.contains("This device"), "{screen_text}");
+        assert!(screen_text.contains("ingest.originals"), "{screen_text}");
+
+        let originals = app
+            .settings
+            .iter()
+            .position(|s| s.label == "ingest.originals")
+            .unwrap();
+        app.settings_chosen = originals;
+        app.key(key(KeyCode::Enter));
+        let picker = app.picker.clone().expect("a choice of values");
+        assert_eq!(picker.collections, ["move", "keep"]);
+        app.key(key(KeyCode::Down));
+        assert_eq!(
+            app.key(key(KeyCode::Enter)),
+            Some(Effect::SetSetting {
+                key: "ingest.originals".into(),
+                value: "keep".into(),
+            })
+        );
+
+        app.settings_chosen = 0;
+        app.key(key(KeyCode::Enter));
+        let pickers = app.picker.clone().expect("a choice of pickers");
+        assert!(pickers.collections.contains(&"builtin".to_owned()));
+        assert!(pickers.collections.contains(&"yazi".to_owned()));
     }
 }

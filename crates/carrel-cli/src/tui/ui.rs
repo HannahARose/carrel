@@ -101,6 +101,8 @@ pub fn draw(frame: &mut Frame, app: &App, theme: Theme) {
         Tab::Questions => draw_questions(frame, app, theme, inner),
         Tab::Browse => draw_browse(frame, app, theme, inner),
         Tab::Status => draw_report(frame, app, inner, Some(waiting_line(app))),
+        Tab::Ingest => draw_ingest(frame, app, theme, inner),
+        Tab::Settings => draw_settings(frame, app, theme, inner),
     }
     draw_help_line(frame, app, theme, bottom);
     if app.help {
@@ -108,6 +110,9 @@ pub fn draw(frame: &mut Frame, app: &App, theme: Theme) {
     }
     if let Some(picker) = &app.picker {
         draw_picker(frame, picker, theme, area);
+    }
+    if let Some(browser) = &app.browser {
+        draw_browser(frame, browser, theme, area);
     }
     if let Some(input) = &app.input {
         draw_input(frame, input, theme, area);
@@ -216,6 +221,9 @@ fn draw_help_line(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
     if let Some(busy) = &app.busy {
         spans.push(Span::styled(format!(" {busy}  ·"), theme.key()));
     }
+    if let Some(worker) = app.worker_line() {
+        spans.push(Span::styled(format!(" {worker}  ·"), theme.key()));
+    }
     if let Some(note) = app.marked_note() {
         spans.push(Span::raw(format!(" {note}  ·")));
     }
@@ -243,7 +251,11 @@ fn centered(area: Rect, width: u16, height: u16) -> Rect {
 
 fn draw_help(frame: &mut Frame, theme: Theme, area: Rect) {
     let rows = [
-        ("1 to 5, Tab, ←→", "switch screens"),
+        ("1 to 7, Tab, ←→", "switch screens"),
+        (
+            "i",
+            "add files and folders to ingest, with your file picker or the built-in one",
+        ),
         ("↑↓, j k, PgUp PgDn, Home End", "scroll, or choose a change"),
         ("a  h", "approve, or hold in Holding (Review)"),
         ("m  e  x", "move, edit or reject (Review)"),
@@ -257,6 +269,11 @@ fn draw_help(frame: &mut Frame, theme: Theme, area: Rect) {
             "collections or items; search; clear it (Browse)",
         ),
         ("u", "undo the chosen change (History)"),
+        ("x  t  r", "remove, move to the front, retry (Ingest)"),
+        (
+            "e  w",
+            "each entry, or whole folder, before queueing (Ingest)",
+        ),
         ("Ctrl-R", "read everything again"),
         ("?", "this help"),
         ("q, Esc, Ctrl-C", "quit"),
@@ -286,6 +303,12 @@ fn draw_confirm(frame: &mut Frame, confirm: &Confirm, theme: Theme, area: Rect) 
             "A new change reverses it: items it moved go back, and the cards and documents it \
              changed return to how they were.",
             " undo   ",
+        ),
+        Confirm::Download { name, about } => (
+            " Download ",
+            format!("Download {name}?"),
+            about.as_str(),
+            " download   ",
         ),
         Confirm::Reject(ids) => (
             " Reject ",
@@ -397,6 +420,8 @@ fn draw_picker(frame: &mut Frame, picker: &Picker, theme: Theme, area: Rect) {
     let what = match picker.purpose {
         super::review::Purpose::Move(_) => "Move to",
         super::review::Purpose::Answer(_) => "They belong in",
+        super::review::Purpose::Setting(_) => "Set it to",
+        super::review::Purpose::Download => "Download",
     };
     let title = if picker.filter.is_empty() {
         format!(" {what} (type to narrow) ")
@@ -547,6 +572,11 @@ fn draw_input(frame: &mut Frame, input: &Input, theme: Theme, area: Rect) {
             " Search ",
             "Words to find in titles, tags and summaries:".to_owned(),
         ),
+        InputPurpose::Setting(key) => (" Settings ", format!("New value for {key}:")),
+        InputPurpose::Ingest => (
+            " Ingest ",
+            "Files and folders to add, separated by spaces (drop them here, or paste):".to_owned(),
+        ),
     };
     let lines = vec![
         Line::from(above),
@@ -564,5 +594,144 @@ fn draw_input(frame: &mut Frame, input: &Input, theme: Theme, area: Rect) {
             .wrap(Wrap { trim: false })
             .block(Block::bordered().title(title)),
         popup,
+    );
+}
+
+fn draw_ingest(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
+    if let Some(plan) = &app.planned {
+        let mut lines = vec![
+            Line::from(match plan.count {
+                0 => "Nothing new to queue".to_owned(),
+                1 => "1 item to queue:".to_owned(),
+                n => format!("{n} items to queue:"),
+            })
+            .style(Style::new().add_modifier(Modifier::BOLD)),
+        ];
+        lines.extend(plan.lines.iter().map(|l| Line::from(l.as_str())));
+        lines.push(Line::from(""));
+        if let Some(problem) = &plan.problem {
+            lines.push(Line::from(problem.as_str()));
+            lines.push(Line::from(""));
+        }
+        lines.push(Line::from(Span::styled(
+            "Enter adds them to the queue; a worker drafts each in the background, and its \
+             proposal appears in Review when it's ready. e reads folders entry by entry, w as \
+             one item.",
+            theme.dim(),
+        )));
+        frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), area);
+        return;
+    }
+    let [top, list_area] =
+        Layout::vertical([Constraint::Length(2), Constraint::Min(0)]).areas(area);
+    let head = app.worker_line().unwrap_or_else(|| {
+        if app.intake.iter().any(|e| !e.stuck()) {
+            "No worker is running; queue something or run `carrel worker` to start one".into()
+        } else {
+            "Press i to add files and folders.".into()
+        }
+    });
+    frame.render_widget(Paragraph::new(head), top);
+    if app.intake.is_empty() {
+        frame.render_widget(Paragraph::new("The queue is empty"), list_area);
+        return;
+    }
+    let items: Vec<ListItem> = app
+        .intake_lines()
+        .into_iter()
+        .map(|(_, line)| ListItem::new(line))
+        .collect();
+    let mut state = ListState::default().with_selected(Some(app.intake_chosen));
+    frame.render_stateful_widget(
+        List::new(items)
+            .highlight_style(theme.selected())
+            .block(Block::new().title(" Waiting ")),
+        list_area,
+        &mut state,
+    );
+}
+
+fn draw_browser(frame: &mut Frame, browser: &super::browser::Browser, theme: Theme, area: Rect) {
+    let popup = centered(
+        area,
+        area.width.saturating_sub(8),
+        area.height.saturating_sub(4),
+    );
+    frame.render_widget(Clear, popup);
+    let marked = if browser.marked.is_empty() {
+        String::new()
+    } else {
+        format!(" · {} marked", browser.marked.len())
+    };
+    let block = Block::bordered().title(format!(" {}{marked} ", browser.dir.display()));
+    if let Some(problem) = &browser.problem {
+        frame.render_widget(Paragraph::new(problem.as_str()).block(block), popup);
+        return;
+    }
+    let items: Vec<ListItem> = browser
+        .entries
+        .iter()
+        .map(|(name, folder)| {
+            let mark = if browser.marked.contains(&browser.dir.join(name)) {
+                "* "
+            } else {
+                "  "
+            };
+            ListItem::new(format!("{mark}{name}{}", if *folder { "/" } else { "" }))
+        })
+        .collect();
+    let mut state = ListState::default().with_selected(Some(browser.chosen));
+    frame.render_stateful_widget(
+        List::new(items)
+            .highlight_style(theme.selected())
+            .block(block),
+        popup,
+        &mut state,
+    );
+}
+
+fn draw_settings(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
+    let [list_area, detail_area] =
+        Layout::horizontal([Constraint::Percentage(45), Constraint::Percentage(55)]).areas(area);
+    let mut items = Vec::new();
+    let mut rows = Vec::new();
+    let mut device = None;
+    for (i, shown) in app.settings.iter().enumerate() {
+        let is_device = super::settings::is_device(shown.row);
+        if device != Some(is_device) {
+            device = Some(is_device);
+            items.push(ListItem::new(Line::from(Span::styled(
+                if is_device {
+                    "This device"
+                } else {
+                    "This archive (shared by every device)"
+                },
+                theme.dim(),
+            ))));
+            rows.push(None);
+        }
+        items.push(ListItem::new(format!(
+            "  {:22} {}",
+            shown.label, shown.value
+        )));
+        rows.push(Some(i));
+    }
+    let selected = rows.iter().position(|r| *r == Some(app.settings_chosen));
+    let mut state = ListState::default().with_selected(selected);
+    frame.render_stateful_widget(
+        List::new(items).highlight_style(theme.selected()),
+        list_area,
+        &mut state,
+    );
+    let detail: Vec<Line> = app
+        .settings
+        .get(app.settings_chosen)
+        .map(|s| s.detail.iter().map(|l| Line::from(l.as_str())).collect())
+        .unwrap_or_default();
+    frame.render_widget(
+        Paragraph::new(detail)
+            .wrap(Wrap { trim: false })
+            .block(Block::new().borders(ratatui::widgets::Borders::LEFT)),
+        detail_area,
     );
 }
