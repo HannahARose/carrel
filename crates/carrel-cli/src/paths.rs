@@ -3,7 +3,8 @@
 use std::path::PathBuf;
 
 /// Words as a shell splits them: separated by spaces, with quotes or backslashes keeping a
-/// space inside a word.
+/// space inside a word. On Windows a backslash is the path separator, not an escape, so only
+/// quotes keep spaces, as Windows shells and File Explorer use them.
 #[must_use]
 pub fn split_words(text: &str) -> Vec<String> {
     let mut words = Vec::new();
@@ -18,7 +19,7 @@ pub fn split_words(text: &str) -> Vec<String> {
                 quote = Some(c);
                 started = true;
             }
-            (None | Some('"'), '\\') => {
+            (None | Some('"'), '\\') if cfg!(not(windows)) => {
                 if let Some(next) = chars.next() {
                     current.push(next);
                     started = true;
@@ -78,13 +79,18 @@ mod tests {
     #[test]
     fn paths_are_split_as_a_shell_would() {
         assert_eq!(
-            split_paths(r"/a/b.txt '/c/with space.pdf' /d/escaped\ name.md"),
+            split_paths(r"/a/b.txt '/c/with space.pdf'"),
             [
                 PathBuf::from("/a/b.txt"),
-                PathBuf::from("/c/with space.pdf"),
-                PathBuf::from("/d/escaped name.md"),
+                PathBuf::from("/c/with space.pdf")
             ]
         );
+        if cfg!(not(windows)) {
+            assert_eq!(
+                split_paths(r"/d/escaped\ name.md"),
+                [PathBuf::from("/d/escaped name.md")]
+            );
+        }
         assert_eq!(split_paths("  \"/x y\"  "), [PathBuf::from("/x y")]);
         assert_eq!(split_paths(""), Vec::<PathBuf>::new());
         let home = carrel_core::local::home_dir().unwrap();
@@ -92,6 +98,18 @@ mod tests {
         assert_eq!(
             split_words("yazi --chooser-file={out}"),
             ["yazi", "--chooser-file={out}"]
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn backslashes_are_separators_on_windows() {
+        assert_eq!(
+            split_paths(r#"C:\Users\me\a.txt "C:\Program Files\b.pdf""#),
+            [
+                PathBuf::from(r"C:\Users\me\a.txt"),
+                PathBuf::from(r"C:\Program Files\b.pdf"),
+            ]
         );
     }
 }
