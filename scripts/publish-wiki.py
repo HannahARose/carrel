@@ -29,6 +29,7 @@ PAGES = {
     "docs/dev/architecture.md": "Architecture",
     "docs/dev/code-map.md": "Code-Map",
     "docs/dev/overhead.md": "Overhead",
+    "docs/dev/on-device-runner.md": "On-Device-Runner",
 }
 
 LINK = re.compile(r"\[([^\]]+)\]\(([^)\s]+)\)")

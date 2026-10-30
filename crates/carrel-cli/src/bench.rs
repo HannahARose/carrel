@@ -39,20 +39,47 @@ struct Measured {
     items: Vec<(Outcome, ItemScore)>,
 }
 
+/// `carrel bench`'s options.
+#[derive(Debug, clap::Args)]
+pub struct BenchArgs {
+    /// A model to measure, as `provider/offer` or the offer alone; repeat for more.
+    /// Defaults to every available text model.
+    #[arg(long = "model", value_name = "MODEL")]
+    pub models: Vec<String>,
+    /// The test set: a folder with `archive`, `items` and `answers.yaml`.
+    #[arg(long, default_value = "fixtures/bench")]
+    pub corpus: PathBuf,
+    /// Where to write `results.json` and `report.md`.
+    #[arg(long, default_value = "bench-results")]
+    pub out: PathBuf,
+    /// Use only the first N items, for a quick check.
+    #[arg(long, value_name = "N")]
+    pub limit: Option<usize>,
+    /// Discard results saved in `--out` by an earlier run, instead of carrying on from them.
+    /// Use it after changing prompts, checks or models.
+    #[arg(long)]
+    pub fresh: bool,
+    /// Compare with an earlier run's `results.json`: writes `comparison.md`, and fails
+    /// if a model that met the bar then no longer does.
+    #[arg(long, value_name = "RESULTS")]
+    pub compare: Option<PathBuf>,
+}
+
 /// `carrel bench`.
 ///
 /// # Errors
 ///
 /// [`Failure`] if the test set is inconsistent, a model asked for isn't available, or the
-/// results can't be written.
-pub fn bench(
-    corpus: &Path,
-    wanted: &[String],
-    out: &Path,
-    limit: Option<usize>,
-    fresh: bool,
-    json: bool,
-) -> Result<Report, Failure> {
+/// results can't be written; or, with `--compare`, if a model no longer meets the bar.
+pub fn bench(args: &BenchArgs, json: bool) -> Result<Report, Failure> {
+    let (corpus, wanted, out, limit, fresh) = (
+        args.corpus.as_path(),
+        args.models.as_slice(),
+        args.out.as_path(),
+        args.limit,
+        args.fresh,
+    );
+    let previous = load_previous(args.compare.as_deref())?;
     let answers = Answers::load(&corpus.join("answers.yaml")).map_err(Failure::new)?;
     let fixture = corpus.join("archive");
     let items_dir = corpus.join("items");
@@ -113,20 +140,7 @@ pub fn bench(
             result?;
         }
         display.finish();
-        let seconds: f64 = saved.iter().map(|(_, s)| s).sum();
-        let found: Vec<Outcome> = saved.into_iter().map(|(o, _)| o).collect();
-        let (score, scores) = score(&answers, &found, seconds);
-        let mut by_item: Vec<(Outcome, ItemScore)> = Vec::new();
-        for s in scores {
-            if let Some(o) = found.iter().find(|o| o.item == s.item) {
-                by_item.push((o.clone(), s));
-            }
-        }
-        measured.push(Measured {
-            model,
-            score,
-            items: by_item,
-        });
+        measured.push(scored(model, saved, &answers));
     }
 
     std::fs::create_dir_all(out).map_err(|e| Failure::io(out, &e))?;
@@ -146,7 +160,129 @@ pub fn bench(
         report_path.display()
     )
     .unwrap();
+    if let Some(previous) = &previous {
+        compare_with(previous, &measured, out, &mut text)?;
+    }
     Ok(Report::new(text, results))
+}
+
+/// Writes `comparison.md` in `out` and adds it to `text`; fails, with `text` as the message,
+/// if a model no longer meets the bar.
+fn compare_with(
+    previous: &Value,
+    measured: &[Measured],
+    out: &Path,
+    text: &mut String,
+) -> Result<(), Failure> {
+    let (table, regressions) = comparison(previous, measured);
+    let path = out.join("comparison.md");
+    std::fs::write(&path, &table).map_err(|e| Failure::io(&path, &e))?;
+    writeln!(text, "\n{table}").unwrap();
+    if regressions.is_empty() {
+        Ok(())
+    } else {
+        Err(Failure::new(format!(
+            "{text}\nNo longer meets the bar: {}",
+            regressions.join(", ")
+        )))
+    }
+}
+
+/// An earlier run's `results.json`, read before any work so a bad path fails at once.
+fn load_previous(path: Option<&Path>) -> Result<Option<Value>, Failure> {
+    path.map(|path| {
+        let text = std::fs::read_to_string(path).map_err(|e| Failure::io(path, &e))?;
+        serde_json::from_str(&text).map_err(|e| Failure::new(format!("{}: {e}", path.display())))
+    })
+    .transpose()
+}
+
+/// One model's results, from its saved outcomes and their times.
+fn scored(model: Model, saved: Vec<(Outcome, f64)>, answers: &Answers) -> Measured {
+    let seconds: f64 = saved.iter().map(|(_, s)| s).sum();
+    let found: Vec<Outcome> = saved.into_iter().map(|(o, _)| o).collect();
+    let (score, scores) = score(answers, &found, seconds);
+    let mut items: Vec<(Outcome, ItemScore)> = Vec::new();
+    for s in scores {
+        if let Some(o) = found.iter().find(|o| o.item == s.item) {
+            items.push((o.clone(), s));
+        }
+    }
+    Measured {
+        model,
+        score,
+        items,
+    }
+}
+
+/// Each model's main scores beside the same model's in `previous` (an earlier
+/// `results.json`), as Markdown, and the models that met the bar then and don't now.
+fn comparison(previous: &Value, measured: &[Measured]) -> (String, Vec<String>) {
+    let earlier = |m: &Measured| {
+        previous["models"].as_array().and_then(|models| {
+            models.iter().find(|p| {
+                p["provider"].as_str() == Some(m.model.provider.as_str())
+                    && p["offer"].as_str() == Some(m.model.offer.as_str())
+            })
+        })
+    };
+    let mut text = format!(
+        "## Compared with the run of {} (Carrel {})\n\n\
+         | Model | Valid | Routing | Under-rated | s/item | Meets the bar |\n\
+         | --- | --- | --- | --- | --- | --- |\n",
+        previous["date"].as_str().unwrap_or("an earlier date"),
+        previous["carrel"].as_str().unwrap_or("?"),
+    );
+    let mut regressions = Vec::new();
+    for m in measured {
+        let before = earlier(m);
+        let was = |key: &str| before.and_then(|p| p["score"][key].as_f64());
+        let share = |now: f64, key: &str| match was(key) {
+            Some(then) => format!("{} ({})", percent(now), points(now - then)),
+            None => percent(now),
+        };
+        let seconds = match was("seconds_per_item") {
+            Some(then) => format!(
+                "{:.1} ({:+.1})",
+                m.score.seconds_per_item,
+                m.score.seconds_per_item - then
+            ),
+            None => format!("{:.1}", m.score.seconds_per_item),
+        };
+        let meets = m.score.shortfalls(&BAR).is_empty();
+        let met = before.map(|p| p["shortfalls"].as_array().is_some_and(Vec::is_empty));
+        let verdict = match (met, meets) {
+            (Some(true), false) => {
+                regressions.push(m.model.label.clone());
+                "no, newly"
+            }
+            (Some(false), true) => "yes, newly",
+            (_, true) => "yes",
+            (_, false) => "no",
+        };
+        writeln!(
+            text,
+            "| {}{} | {} | {} | {} | {seconds} | {verdict} |",
+            m.model.label,
+            if before.is_none() { " (new)" } else { "" },
+            share(m.score.valid, "valid"),
+            share(m.score.routing, "routing"),
+            share(m.score.under_rated, "under_rated"),
+        )
+        .unwrap();
+    }
+    (text, regressions)
+}
+
+/// A change in a share, in percentage points: `+3 pts`, `-12 pts`, `±0`.
+fn points(change: f64) -> String {
+    #[allow(clippy::cast_possible_truncation)] // a display value
+    let rounded = (change * 100.0).round() as i64;
+    if rounded == 0 {
+        "±0".to_owned()
+    } else {
+        format!("{rounded:+} pts")
+    }
 }
 
 /// Ingests each of `todo` on its own with the pinned model, appending each outcome and its
@@ -412,4 +548,76 @@ fn report_markdown(measured: &[Measured], answers: &Answers) -> String {
         }
     }
     text
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn measured(valid: f64) -> Measured {
+        Measured {
+            model: Model {
+                provider: "llama".into(),
+                offer: "small.gguf".into(),
+                label: "llama/small".into(),
+                version: None,
+            },
+            score: Score {
+                items: 10,
+                valid,
+                first_try: valid,
+                declined: 0.0,
+                routing: 0.9,
+                sensitivity_exact: 1.0,
+                under_rated: 0.0,
+                under_rated_restricted: 0,
+                date: 1.0,
+                tags_found: 1.0,
+                tags_outside: 0,
+                seconds_per_item: 10.0,
+            },
+            items: Vec::new(),
+        }
+    }
+
+    fn previous(valid: f64, met: bool) -> Value {
+        json!({
+            "date": "2026-10-25",
+            "carrel": "0.1.0",
+            "models": [{
+                "provider": "llama",
+                "offer": "small.gguf",
+                "score": {"valid": valid, "routing": 0.9, "under_rated": 0.0, "seconds_per_item": 12.0},
+                "shortfalls": if met { json!([]) } else { json!(["valid output"]) },
+            }],
+        })
+    }
+
+    #[test]
+    fn a_model_that_drops_below_the_bar_is_a_regression() {
+        let (table, regressions) = comparison(&previous(1.0, true), &[measured(0.5)]);
+        assert_eq!(regressions, ["llama/small"]);
+        assert!(table.contains("50% (-50 pts)"), "{table}");
+        assert!(table.contains("10.0 (-2.0)"), "{table}");
+        assert!(table.contains("no, newly"), "{table}");
+
+        let (table, regressions) = comparison(&previous(0.5, false), &[measured(1.0)]);
+        assert_eq!(regressions, Vec::<String>::new());
+        assert!(table.contains("yes, newly"), "{table}");
+
+        let (table, regressions) = comparison(&json!({"models": []}), &[measured(0.5)]);
+        assert_eq!(
+            regressions,
+            Vec::<String>::new(),
+            "a new model can't regress"
+        );
+        assert!(table.contains("llama/small (new)"), "{table}");
+    }
+
+    #[test]
+    fn changes_are_in_points() {
+        assert_eq!(points(0.031), "+3 pts");
+        assert_eq!(points(-0.12), "-12 pts");
+        assert_eq!(points(0.001), "±0");
+    }
 }

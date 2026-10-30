@@ -15,6 +15,7 @@
 | [Architecture](dev/architecture.md) | The parts, how they communicate, what's on disk, the main flows, with diagrams |
 | [Code map](dev/code-map.md) | Where each part is in the code, linked to the [code documentation](https://hrose.me/carrel/) |
 | [What separating the parts costs](dev/overhead.md) | Measured time, memory and disk, and what the separation buys |
+| [The on-device runner](dev/on-device-runner.md) | The tests and weekly benchmark on the owner's Mac, and setting it up |
 | [Providers](providers.md) | The protocol for provider programs |
 | [Design documents](design/) | The accepted design for each larger feature |
 | [The v0.2 gate](v0.2-gate.md) | The checklist for filing a real Downloads sample |

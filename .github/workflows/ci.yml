@@ -129,6 +129,21 @@ jobs:
         with:
           # Print findings and fail, rather than uploading them to code scanning.
           advanced-security: false
+      - name: No pull requests on the owner's Mac
+        # The self-hosted runner (docs/design/on-device-ci.md) runs code on the owner's
+        # machine, so no workflow that names its label may run for pull requests.
+        run: |
+          status=0
+          label="carrel-on-""device" # split, so this check doesn't find itself
+          for file in .github/workflows/*.yml .github/workflows/*.yaml; do
+            [ -f "$file" ] || continue
+            grep -v '^[[:space:]]*#' "$file" | grep -q "runs-on:.*$label" || continue
+            if grep -v '^[[:space:]]*#' "$file" | grep -q 'pull_request'; then
+              echo "::error file=$file::$file uses the self-hosted runner and runs on pull requests"
+              status=1
+            fi
+          done
+          exit $status
 
   hygiene:
     # Spelling (_typos.toml), Markdown style (.markdownlint-cli2.yaml) and links in the
