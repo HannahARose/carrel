@@ -48,11 +48,11 @@ fn the_sample_archives_listings_are_exactly_what_carrel_writes() {
 fn a_new_item_and_subcollection_appear_everywhere_they_should() {
     let (_dir, archive) = sample();
     let hardware = archive.root().join("Projects/Hardware");
-    std::fs::write(hardware.join("wiring | v2.txt"), "wiring\n").unwrap();
+    std::fs::write(hardware.join("wiring (v2).txt"), "wiring\n").unwrap();
     std::fs::write(
-        hardware.join("wiring | v2.txt.md"),
+        hardware.join("wiring (v2).txt.md"),
         "---\ncarrel: card\nformat: \"1.0\"\nid: 01a18701-0500-776a-9867-0899f0000001\nkind: file\n\
-         title: \"Wiring [v2] | final\"\nitem: \"wiring | v2.txt\"\ndates:\n  added: \"2026-10-30\"\n\
+         title: \"Wiring [v2] | final\"\nitem: \"wiring (v2).txt\"\ndates:\n  added: \"2026-10-30\"\n\
          sensitivity: personal\nchecksum: \"sha256:0000000000000000000000000000000000000000000000000000000000000000\"\n\
          size: 7\n---\n",
     )
@@ -79,7 +79,7 @@ fn a_new_item_and_subcollection_appear_everywhere_they_should() {
     let listing = read(&archive, "Projects/Hardware/_collection.md");
     assert!(
         listing.contains(
-            "| [Wiring \\[v2\\] \\| final](wiring%20%7C%20v2.txt.md) | file | 2026-10-30 |"
+            "| [Wiring \\[v2\\] \\| final](wiring%20%28v2%29.txt.md) | file | 2026-10-30 |"
         ),
         "{listing}"
     );

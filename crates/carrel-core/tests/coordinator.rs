@@ -220,6 +220,19 @@ fn synced_folders_are_recognized() {
     assert!(DiskLock::is_synced_folder(Path::new(
         "/Users/me/Library/CloudStorage/Dropbox/Archive"
     )));
+    for synced in [
+        "C:/Users/me/OneDrive/Archive",
+        "C:/Users/me/OneDrive - Cognitogram/Archive",
+        "/home/me/Dropbox/Archive",
+        "C:/Users/me/Dropbox (Personal)/Archive",
+        "G:/My Drive/Archive",
+        "C:/Users/me/iCloudDrive/Archive",
+    ] {
+        assert!(DiskLock::is_synced_folder(Path::new(synced)), "{synced}");
+    }
+    assert!(!DiskLock::is_synced_folder(Path::new(
+        "/home/me/OneDriveNotes/Archive"
+    )));
     assert!(!DiskLock::is_synced_folder(Path::new(
         "/Volumes/Backup/Archive"
     )));
