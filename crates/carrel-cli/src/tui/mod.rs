@@ -210,10 +210,10 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
             return None;
         }
         Effect::Answer { id, answer } => {
-            // A term's answer drafts its items again, which can take a while with a model.
+            // A term's answer queues its items to be drafted again by the worker.
             let id = id.to_string();
             (
-                "Answering, and drafting its items again…".into(),
+                "Answering…".into(),
                 Box::new(move || crate::questions::answer(Some(&root), &id, &[answer])),
             )
         }

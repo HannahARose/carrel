@@ -183,6 +183,16 @@ fn answers_teach_the_glossary_or_place_the_items_and_dismissing_frees_them() {
         queue.find(&term.id.to_string()).is_err(),
         "answered questions leave"
     );
+    // Its items go back on the queue, at the front, for the worker to draft again.
+    let requeued = actions::requeue_waiting(&s.archive, term, s.holder.device).unwrap();
+    assert_eq!(requeued.len(), 2);
+    let waiting = carrel_core::intake::waiting(&s.archive, s.holder.device, false).unwrap();
+    assert_eq!(waiting.len(), 2);
+    assert_eq!(
+        actions::waiting(&s.archive, term).unwrap().len(),
+        0,
+        "their proposals left the review queue"
+    );
 
     // A known term whose items can't be placed asks where they go.
     let questions = carrel_core::ingest::questions::ask(

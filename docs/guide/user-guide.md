@@ -114,7 +114,7 @@ Editing opens the card's fields in your editor. When you save, Carrel checks the
 
 When several items share something Carrel doesn't know, such as a project's code name in their file names, it asks one question instead of guessing on each. Questions wait on the Questions screen (`3`), the most useful first.
 
-- **A term** ("What is “scope-ds”?"): answer in a sentence. Carrel saves it to `_System/glossary.md`, which every model reads from then on, and drafts the waiting items again.
+- **A term** ("What is “scope-ds”?"): answer in a sentence. Carrel saves it to `_System/glossary.md`, which every model reads from then on, and puts the waiting items back at the front of the queue, so the worker drafts them again with what you said.
 - **A collection** ("Which collection do items about … belong in?"): choose one, and the waiting items move there.
 
 Items waiting on a question aren't approved in bulk until it's answered or dismissed.
