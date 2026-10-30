@@ -129,7 +129,7 @@ impl App {
                         self.message = Some("No answer given; the question still waits".into());
                     }
                     InputPurpose::Ingest => {
-                        let paths = super::intake::split_paths(&text);
+                        let paths = crate::paths::split_paths(&text);
                         if paths.is_empty() {
                             self.message = Some("Nothing to ingest".into());
                         } else {

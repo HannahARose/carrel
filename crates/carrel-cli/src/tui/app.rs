@@ -121,6 +121,8 @@ pub enum Effect {
     Front(Id),
     /// Try this failed item again.
     Retry(Id),
+    /// Run the owner's file picker, with the terminal to itself, and plan what it chose.
+    Pick(Vec<String>),
 }
 
 /// The interactive mode's state.
@@ -185,6 +187,12 @@ pub struct App {
     pub planned: Option<super::intake::Plan>,
     /// What the worker was doing when last looked at.
     pub worker: super::intake::Worker,
+    /// The built-in file browser, while it's open.
+    pub browser: Option<super::browser::Browser>,
+    /// The `picker` preference.
+    pub picker_preference: Option<String>,
+    /// Where picking files starts: the folder last picked from, or the home folder.
+    pub start_folder: std::path::PathBuf,
     /// Whether every key is shown.
     pub help: bool,
     /// Whether to leave.
@@ -236,9 +244,19 @@ impl App {
             intake_chosen: 0,
             planned: None,
             worker: super::intake::Worker::default(),
+            browser: None,
+            picker_preference: None,
+            start_folder: std::path::PathBuf::from("."),
             help: false,
             quit: false,
         };
+        let prefs = crate::config::Prefs::load().unwrap_or_default();
+        app.picker_preference = prefs.picker;
+        app.start_folder = prefs
+            .last_folder
+            .filter(|f| f.is_dir())
+            .or_else(carrel_core::local::home_dir)
+            .unwrap_or_else(|| std::path::PathBuf::from("."));
         app.reload()?;
         Ok(app)
     }
@@ -312,6 +330,17 @@ impl App {
                 ("↑↓", "choose"),
                 ("type", "filter"),
                 ("Enter", "choose it"),
+                ("Esc", "cancel"),
+            ];
+        }
+        if self.browser.is_some() {
+            return vec![
+                ("↑↓", "choose"),
+                ("Enter ←", "open, up"),
+                ("Space", "mark"),
+                ("i", "add"),
+                (".", "hidden"),
+                ("/", "type a path"),
                 ("Esc", "cancel"),
             ];
         }
@@ -392,6 +421,21 @@ impl App {
         if self.input.is_some() {
             return self.input_key(key);
         }
+        if let Some(browser) = &mut self.browser {
+            match browser.key(key) {
+                super::browser::Outcome::Browsing => {}
+                super::browser::Outcome::Add(paths) => {
+                    self.browser = None;
+                    self.plan(paths, carrel_core::ingest::IntakeOptions::default());
+                }
+                super::browser::Outcome::Type => {
+                    self.browser = None;
+                    self.ask_for_paths();
+                }
+                super::browser::Outcome::Cancel => self.browser = None,
+            }
+            return None;
+        }
         if self.picker.is_some() {
             return self.picker_key(key);
         }
@@ -415,7 +459,7 @@ impl App {
                     Err(Failure(e)) => e,
                 });
             }
-            KeyCode::Char('i') => self.ask_for_paths(),
+            KeyCode::Char('i') => return self.start_ingest(),
             KeyCode::Char(c @ '1'..='6') => {
                 self.tab = Tab::ALL[usize::from(c as u8 - b'1')];
             }
