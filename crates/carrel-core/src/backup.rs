@@ -8,6 +8,12 @@
 //! that only the owner can read.
 
 use std::path::{Path, PathBuf};
+#[cfg(not(any(
+    target_os = "ios",
+    target_os = "tvos",
+    target_os = "watchos",
+    target_os = "visionos"
+)))]
 use std::process::{Command, Stdio};
 
 use serde::Deserialize;
@@ -157,7 +163,13 @@ pub fn ignore_patterns(archive: &Archive) -> Vec<String> {
     patterns
 }
 
-/// Backups with Kopia.
+/// Backups with Kopia. Not on iOS and the other platforms that can't start programs.
+#[cfg(not(any(
+    target_os = "ios",
+    target_os = "tvos",
+    target_os = "watchos",
+    target_os = "visionos"
+)))]
 #[derive(Clone)]
 pub struct Kopia {
     program: PathBuf,
@@ -167,6 +179,12 @@ pub struct Kopia {
     password: Option<String>,
 }
 
+#[cfg(not(any(
+    target_os = "ios",
+    target_os = "tvos",
+    target_os = "watchos",
+    target_os = "visionos"
+)))]
 impl std::fmt::Debug for Kopia {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Kopia")
@@ -232,6 +250,12 @@ impl From<KopiaSnapshot> for Snapshot {
 /// The pin on snapshots Carrel takes, so retention never removes one history names.
 const PIN: &str = "carrel";
 
+#[cfg(not(any(
+    target_os = "ios",
+    target_os = "tvos",
+    target_os = "watchos",
+    target_os = "visionos"
+)))]
 impl Kopia {
     /// The `kopia` program, beside `carrel` or on `PATH`.
     #[must_use]
@@ -460,6 +484,12 @@ impl Kopia {
     }
 }
 
+#[cfg(not(any(
+    target_os = "ios",
+    target_os = "tvos",
+    target_os = "watchos",
+    target_os = "visionos"
+)))]
 impl Backups for Kopia {
     fn describe(&self) -> String {
         self.repository_path().map_or_else(
@@ -532,6 +562,12 @@ impl Backups for Kopia {
 }
 
 /// Whether two paths are on the same disk, as far as can be told.
+#[cfg(not(any(
+    target_os = "ios",
+    target_os = "tvos",
+    target_os = "watchos",
+    target_os = "visionos"
+)))]
 #[cfg(unix)]
 fn same_disk(a: &Path, b: &Path) -> bool {
     use std::os::unix::fs::MetadataExt as _;
@@ -542,6 +578,12 @@ fn same_disk(a: &Path, b: &Path) -> bool {
 }
 
 /// Whether two paths are on the same disk, as far as can be told: on Windows, the same drive.
+#[cfg(not(any(
+    target_os = "ios",
+    target_os = "tvos",
+    target_os = "watchos",
+    target_os = "visionos"
+)))]
 #[cfg(not(unix))]
 fn same_disk(a: &Path, b: &Path) -> bool {
     a.components().next() == b.components().next()
