@@ -15,7 +15,23 @@ use crate::picker::{BUILT_IN, Choice, KNOWN, choose};
 use crate::{Failure, Report};
 
 /// This device's preferences that `carrel settings set` changes.
-pub const DEVICE_KEYS: [&str; 2] = ["picker", "editor"];
+pub const DEVICE_KEYS: [&str; 3] = ["picker", "editor", "model"];
+
+/// The text model in use, and why, for people. Starts the providers to find out.
+pub fn model_line(preference: Option<&str>) -> String {
+    let (registry, _) = crate::providers::registry();
+    let best = crate::providers::text_models(&registry).into_iter().next();
+    match (preference, best) {
+        (_, None) => "none available (see `carrel models`)".into(),
+        (Some(chosen), Some(best)) if best.name() == chosen => {
+            format!("{} (your choice)", best.label)
+        }
+        (Some(chosen), Some(best)) => {
+            format!("{} ({chosen} is chosen but isn't available)", best.label)
+        }
+        (None, Some(best)) => format!("{} (Carrel's choice)", best.label),
+    }
+}
 
 /// The file picker in use, and why, for people.
 #[must_use]
@@ -47,6 +63,8 @@ pub fn list(archive: Option<&Path>) -> Result<Report, Failure> {
     let mut text = String::from("This device:\n");
     writeln!(text, "  picker  {}", picker_line(prefs.picker.as_deref())).unwrap();
     writeln!(text, "  editor  {editor} (from {from})").unwrap();
+    let model = model_line(prefs.model.as_deref());
+    writeln!(text, "  model   {model}").unwrap();
     let missing: Vec<String> = KNOWN
         .iter()
         .filter(|k| !k.installed())
@@ -72,6 +90,8 @@ pub fn list(archive: Option<&Path>) -> Result<Report, Failure> {
                 "picker": prefs.picker,
                 "picker_in_use": picker_line(prefs.picker.as_deref()),
                 "editor": editor,
+                "model": prefs.model,
+                "model_in_use": model,
             },
             "archive": Key::ALL.iter().map(|k| (k.as_str().to_owned(), json!(k.get(settings)))).collect::<serde_json::Map<_, _>>(),
         }),
@@ -88,17 +108,22 @@ pub fn set(archive: Option<&Path>, key: &str, value: &str) -> Result<Report, Fai
     if DEVICE_KEYS.contains(&key) {
         let mut prefs = Prefs::load()?;
         let cleared = value.trim().is_empty() || value.trim() == "default";
-        let stored = (!cleared).then(|| value.trim().to_owned());
-        if key == "picker" {
-            prefs.picker = stored;
-        } else {
-            prefs.editor = stored;
+        let mut stored = (!cleared).then(|| value.trim().to_owned());
+        match key {
+            "picker" => prefs.picker.clone_from(&stored),
+            "model" => {
+                if let Some(name) = &stored {
+                    let (registry, _) = crate::providers::registry();
+                    stored = Some(crate::providers::resolve_model(&registry, name)?.name());
+                }
+                prefs.model.clone_from(&stored);
+            }
+            _ => prefs.editor.clone_from(&stored),
         }
         prefs.save()?;
-        let text = if cleared {
-            format!("Cleared {key}; Carrel chooses for itself\n")
-        } else {
-            format!("Set {key} to {value} on this device\n")
+        let text = match &stored {
+            None => format!("Cleared {key}; Carrel chooses for itself\n"),
+            Some(stored) => format!("Set {key} to {stored} on this device\n"),
         };
         return Ok(Report::new(
             text,

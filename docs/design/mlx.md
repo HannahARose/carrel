@@ -39,7 +39,7 @@ On Linux, Windows and Intel Macs nothing changes: the llama.cpp provider fills t
 ## Choosing it
 
 - **Priority 90:** native, but below Apple's model (100), which is shared and costs no memory. With both available, Apple's model is used unless the owner chooses otherwise.
-- **The choice in settings:** a new device setting, `model` in `cli.json` (`apple`, or a catalog name with its format, such as `mlx/qwen3.5-4b`), shown in the Settings tab with each installed model's memory and benchmark score. It pins the text-model capability with `Registry::pin`, as `carrel bench` does. The benchmark's recommendation is the default.
+- **The choice in settings:** a new device setting, `model` in `cli.json` (`apple`, or a catalog name with its format, such as `mlx/qwen3.5-4b`), shown in the Settings tab with each installed model's memory and benchmark score. It's tried first (`Registry::prefer`); if it isn't available, Carrel falls back to the next best rather than drafting nothing. (Accepted as "pins"; changed while building it, since a removed model file would otherwise stop all drafting.) The benchmark's recommendation is the default.
 
 ## Building it
 
