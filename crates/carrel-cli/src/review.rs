@@ -4,13 +4,11 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::path::Path;
 
+use carrel_core::actions;
 use carrel_core::archive::Archive;
 use carrel_core::backup::Backups;
-use carrel_core::card::Sensitivity;
-use carrel_core::coordinator::{Coordinator, DEFAULT_LEASE, DiskLock};
-use carrel_core::ingest::filing::{Filed, Placement, file_batch};
-use carrel_core::questions::redirect;
-use carrel_core::review::{Confidence, ReviewEntry, ReviewQueue, State, short_id};
+use carrel_core::ingest::filing::{Filed, Placement};
+use carrel_core::review::{ReviewEntry, ReviewQueue, State, short_id};
 use serde_json::{Value, json};
 
 use crate::commands::{holder, locate};
@@ -153,24 +151,17 @@ pub fn show(archive: Option<&Path>, id: &str) -> Result<Report, Failure> {
 /// `carrel review reject ID...`: the items stay where they are.
 pub fn reject(archive: Option<&Path>, ids: &[String]) -> Result<Report, Failure> {
     let archive = locate(archive)?;
-    let queue = ReviewQueue::of(&archive);
-    // Find them all first, so a typo changes nothing.
-    let mut entries = Vec::new();
-    for id in ids {
-        let entry = queue.find(id)?;
-        if !entry.state.is_open() {
-            return Err(Failure::new(format!(
-                "{} is already {}",
-                short_id(entry.id),
-                entry.state.as_str()
-            )));
-        }
-        entries.push(entry);
+    let entries = actions::proposals(&archive, ids)?;
+    // Approved and held proposals are on their way; rejecting is for those still undecided.
+    if let Some(entry) = entries.iter().find(|e| !e.state.is_open()) {
+        return Err(Failure::new(format!(
+            "{} is already {}",
+            short_id(entry.id),
+            entry.state.as_str()
+        )));
     }
     let mut text = String::new();
-    for mut entry in entries {
-        entry.state = State::Rejected;
-        queue.save(&entry)?;
+    for entry in actions::reject(&archive, entries)? {
         writeln!(
             text,
             "Rejected {}: {} stays where it is",
@@ -186,18 +177,9 @@ pub fn reject(archive: Option<&Path>, ids: &[String]) -> Result<Report, Failure>
 pub fn approve(archive: Option<&Path>, ids: &[String], all_high: bool) -> Result<Report, Failure> {
     let archive = locate(archive)?;
     let entries = if all_high {
-        let (entries, _) = ReviewQueue::of(&archive).list()?;
-        entries
-            .into_iter()
-            .filter(|e| {
-                e.state == State::Proposed
-                    && e.destination.confidence == Confidence::High
-                    && e.card.sensitivity < Sensitivity::Sensitive
-                    && e.duplicate_of.is_none()
-            })
-            .collect()
+        actions::all_high(&archive)?
     } else {
-        decidable(&archive, ids)?
+        actions::proposals(&archive, ids)?
     };
     decide(&archive, entries, Placement::Destination)
 }
@@ -205,7 +187,7 @@ pub fn approve(archive: Option<&Path>, ids: &[String], all_high: bool) -> Result
 /// `carrel review hold ID...`: files the items in Holding, to be placed later.
 pub fn hold(archive: Option<&Path>, ids: &[String]) -> Result<Report, Failure> {
     let archive = locate(archive)?;
-    let entries = decidable(&archive, ids)?;
+    let entries = actions::proposals(&archive, ids)?;
     decide(&archive, entries, Placement::Holding)
 }
 
@@ -213,70 +195,25 @@ pub fn hold(archive: Option<&Path>, ids: &[String]) -> Result<Report, Failure> {
 /// until the proposal is approved.
 pub fn move_to(archive: Option<&Path>, id: &str, collection: &str) -> Result<Report, Failure> {
     let archive = locate(archive)?;
-    let queue = ReviewQueue::of(&archive);
-    let mut entry = queue.find(id)?;
-    if matches!(entry.state, State::Rejected | State::Archived) {
-        return Err(Failure::new(format!(
-            "{} is already {}",
-            short_id(entry.id),
-            entry.state.as_str()
-        )));
-    }
-    let collections = archive.collections()?;
-    let wanted = collection.trim_matches('/');
-    let target = collections
-        .iter()
-        .find(|c| c.path.eq_ignore_ascii_case(wanted))
-        .ok_or_else(|| Failure::new(format!("no collection {wanted}")))?;
-    let dropped = redirect(
-        &archive,
-        &collections,
-        &mut entry,
-        target,
-        "chosen by the owner",
-    );
+    let moved = actions::move_to(&archive, id, collection)?;
     let mut text = format!(
         "{} will go to {} when approved\n",
-        short_id(entry.id),
-        target.path
+        short_id(moved.entry.id),
+        moved.to
     );
-    if !dropped.is_empty() {
+    if !moved.dropped.is_empty() {
         writeln!(
             text,
             "Tags {} don't apply in {}, so they were left off",
-            dropped.join(", "),
-            target.path
+            moved.dropped.join(", "),
+            moved.to
         )
         .unwrap();
     }
-    queue.save(&entry)?;
     Ok(Report::new(
         text,
-        serde_json::to_value(&entry).unwrap_or(Value::Null),
+        serde_json::to_value(&moved.entry).unwrap_or(Value::Null),
     ))
-}
-
-/// The proposals named by `ids`, all of them found before anything changes.
-fn decidable(archive: &Archive, ids: &[String]) -> Result<Vec<ReviewEntry>, Failure> {
-    if ids.is_empty() {
-        return Err(Failure::new("name the proposals to decide"));
-    }
-    let queue = ReviewQueue::of(archive);
-    let mut entries: Vec<ReviewEntry> = Vec::new();
-    for id in ids {
-        let entry = queue.find(id)?;
-        if matches!(entry.state, State::Rejected | State::Archived) {
-            return Err(Failure::new(format!(
-                "{} is already {}",
-                short_id(entry.id),
-                entry.state.as_str()
-            )));
-        }
-        if !entries.iter().any(|e| e.id == entry.id) {
-            entries.push(entry);
-        }
-    }
-    Ok(entries)
 }
 
 /// Files `entries` as one batch, holding the writer lease.
@@ -292,19 +229,14 @@ fn decide(
         ));
     }
     let identity = Identity::load_or_create()?;
-    let mut lease =
-        DiskLock::for_archive(archive).acquire(holder(&identity), "ingest", DEFAULT_LEASE)?;
-    let decided = entries.into_iter().map(|e| (e, placement)).collect();
     let (backups, note) = crate::backup::for_batch(archive);
-    let outcome = file_batch(
+    let outcome = actions::decide(
         archive,
-        decided,
-        &mut lease,
-        identity.device,
+        entries,
+        placement,
+        holder(&identity),
         backups.as_ref().map(|b| b as &dyn Backups),
-    );
-    lease.release()?;
-    let outcome = outcome?;
+    )?;
 
     let mut text = String::new();
     for filed in &outcome.filed {

@@ -1,16 +1,13 @@
 //! `carrel questions`: what ingest needs the owner to explain, most items first.
 
 use std::fmt::Write as _;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
+use carrel_core::actions::{self, Ingested};
 use carrel_core::archive::Archive;
-use carrel_core::coordinator::{Coordinator, DEFAULT_LEASE, DiskLock};
-use carrel_core::history::{Change, History, Operation};
-use carrel_core::ingest::IntakeOptions;
-use carrel_core::questions::{
-    QuestionEntry, QuestionKind, QuestionQueue, add_fact, clear_waiting, redirect,
-};
-use carrel_core::review::{ReviewEntry, ReviewQueue, short_id};
+use carrel_core::backup::Backups;
+use carrel_core::questions::{QuestionEntry, QuestionKind, QuestionQueue};
+use carrel_core::review::short_id;
 use serde_json::{Value, json};
 
 use crate::commands::{holder, locate};
@@ -50,34 +47,23 @@ pub fn list(archive: Option<&Path>) -> Result<Report, Failure> {
 /// items waiting on it are drafted again; a collection's answer redirects its items there.
 pub fn answer(archive: Option<&Path>, id: &str, words: &[String]) -> Result<Report, Failure> {
     let archive = locate(archive)?;
-    let queue = QuestionQueue::of(&archive);
-    let question = queue.find(id)?;
+    let question = QuestionQueue::of(&archive).find(id)?;
     let answer = words.join(" ");
     let answer = answer.trim();
     if answer.is_empty() {
         return Err(Failure::new("give an answer"));
     }
-    let (mut text, json) = match question.kind {
-        QuestionKind::Term => teach(&archive, &question, answer)?,
-        QuestionKind::Collection => place(&archive, &question, answer)?,
-    };
-    queue.remove(question.id)?;
-    if question.kind == QuestionKind::Term {
-        text.push_str(&redraft(&archive, &question)?);
+    match question.kind {
+        QuestionKind::Term => teach(&archive, &question, answer),
+        QuestionKind::Collection => place(&archive, &question, answer),
     }
-    Ok(Report::new(text, json))
 }
 
 /// `carrel questions dismiss ID`: the items stop waiting on the question.
 pub fn dismiss(archive: Option<&Path>, id: &str) -> Result<Report, Failure> {
     let archive = locate(archive)?;
-    let queue = QuestionQueue::of(&archive);
-    let question = queue.find(id)?;
-    for mut entry in waiting(&archive, &question)? {
-        clear_waiting(&mut entry, &question);
-        ReviewQueue::of(&archive).save(&entry)?;
-    }
-    queue.remove(question.id)?;
+    let question = QuestionQueue::of(&archive).find(id)?;
+    actions::dismiss(&archive, &question)?;
     Ok(Report::new(
         format!(
             "Dismissed {}: {}\n",
@@ -88,107 +74,49 @@ pub fn dismiss(archive: Option<&Path>, id: &str) -> Result<Report, Failure> {
     ))
 }
 
-/// The proposals still waiting on `question`.
-fn waiting(archive: &Archive, question: &QuestionEntry) -> Result<Vec<ReviewEntry>, Failure> {
-    let (entries, _) = ReviewQueue::of(archive).list()?;
-    Ok(entries
-        .into_iter()
-        .filter(|e| question.items.contains(&e.id) && e.state.is_open())
-        .collect())
-}
-
-/// Adds the answer to the glossary, as one history commit.
-fn teach(
-    archive: &Archive,
-    question: &QuestionEntry,
-    fact: &str,
-) -> Result<(String, Value), Failure> {
+/// Adds the answer to the glossary, then drafts the items waiting on it again.
+fn teach(archive: &Archive, question: &QuestionEntry, fact: &str) -> Result<Report, Failure> {
     let identity = Identity::load_or_create()?;
-    let lease =
-        DiskLock::for_archive(archive).acquire(holder(&identity), "glossary", DEFAULT_LEASE)?;
-    let result = (|| -> Result<Option<String>, Failure> {
-        add_fact(archive, &question.subject, fact)
-            .map_err(|e| Failure::io(&archive.root().join(carrel_core::questions::GLOSSARY), &e))?;
-        let change = Change::new(
-            Operation::Edit,
-            format!("Add “{}” to the glossary", question.subject),
-            identity.person,
-            identity.device,
-        );
-        Ok(History::open(archive)?.commit(archive, &change, &lease)?)
-    })();
-    lease.release()?;
-    let commit = result?;
-    Ok((
-        format!("Added “{}” to the glossary\n", question.subject),
+    let commit = actions::teach(archive, question, fact, holder(&identity))?;
+    let mut text = format!("Added “{}” to the glossary\n", question.subject);
+    let (registry, _) = crate::providers::registry();
+    let (backups, _) = crate::backup::for_batch(archive);
+    if let Some(Ingested { run, filed }) = actions::redraft(
+        archive,
+        &registry,
+        question,
+        holder(&identity),
+        backups.as_ref().map(|b| b as &dyn Backups),
+    )? {
+        let report = crate::ingest::report(&run, filed.as_ref(), false);
+        write!(text, "\nDrafted again:\n{}", report.text).unwrap();
+    }
+    Ok(Report::new(
+        text,
         json!({"question": question.id, "glossary": question.subject, "commit": commit}),
     ))
 }
 
 /// Points every waiting proposal at the collection the owner named.
-fn place(
-    archive: &Archive,
-    question: &QuestionEntry,
-    path: &str,
-) -> Result<(String, Value), Failure> {
-    let collections = archive.collections()?;
-    let wanted = path.trim_matches('/');
-    let target = collections
-        .iter()
-        .find(|c| c.path.eq_ignore_ascii_case(wanted))
-        .ok_or_else(|| {
-            Failure::new(format!(
-                "no collection {wanted}; choose one of {}",
-                question.choices.join(", ")
-            ))
-        })?;
+fn place(archive: &Archive, question: &QuestionEntry, path: &str) -> Result<Report, Failure> {
+    let moved = actions::place(archive, question, path)?;
     let mut text = String::new();
-    let mut moved = Vec::new();
-    for mut entry in waiting(archive, question)? {
-        clear_waiting(&mut entry, question);
-        let dropped = redirect(
-            archive,
-            &collections,
-            &mut entry,
-            target,
-            format!("you said items about “{}” belong here", question.subject),
-        );
-        ReviewQueue::of(archive).save(&entry)?;
-        write!(text, "{} will go to {}", short_id(entry.id), target.path).unwrap();
-        if !dropped.is_empty() {
-            write!(text, " (tags {} left off)", dropped.join(", ")).unwrap();
+    for m in &moved {
+        write!(text, "{} will go to {}", short_id(m.entry.id), m.to).unwrap();
+        if !m.dropped.is_empty() {
+            write!(text, " (tags {} left off)", m.dropped.join(", ")).unwrap();
         }
         text.push('\n');
-        moved.push(entry.id);
     }
-    Ok((
+    let to = moved
+        .first()
+        .map_or_else(|| path.trim_matches('/').to_owned(), |m| m.to.clone());
+    Ok(Report::new(
         text,
-        json!({"question": question.id, "collection": target.path, "proposals": moved}),
+        json!({
+            "question": question.id,
+            "collection": to,
+            "proposals": moved.iter().map(|m| m.entry.id).collect::<Vec<_>>(),
+        }),
     ))
-}
-
-/// Drafts the items waiting on a term question again, now that the glossary explains it.
-/// Items on other devices, or no longer where they were, just stop waiting.
-fn redraft(archive: &Archive, question: &QuestionEntry) -> Result<String, Failure> {
-    let identity = Identity::load_or_create()?;
-    let queue = ReviewQueue::of(archive);
-    let mut paths: Vec<PathBuf> = Vec::new();
-    for mut entry in waiting(archive, question)? {
-        if entry.source.device == identity.device && entry.source.path.exists() {
-            queue.remove(entry.id)?;
-            paths.push(entry.source.path.clone());
-        } else {
-            clear_waiting(&mut entry, question);
-            queue.save(&entry)?;
-        }
-    }
-    if paths.is_empty() {
-        return Ok(String::new());
-    }
-    let options = IntakeOptions {
-        each: false,
-        whole: true,
-    };
-    let report = crate::ingest::ingest(Some(archive.root()), &paths, options, false)?;
-    Ok(format!("\nDrafted again:\n{}", report.text))
 }

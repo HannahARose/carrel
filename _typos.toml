@@ -5,6 +5,8 @@
 dentifiers = "dentifiers"
 # A glob pattern in a test.
 ba = "ba"
+# The terminal interface library.
+ratatui = "ratatui"
 
 [files]
 extend-exclude = ["Cargo.lock", "schemas/*.json"]
