@@ -511,7 +511,17 @@ fn card_for(
         allow_readme: None,
         summary: draft.summary.clone(),
         tags,
-        links: Vec::new(),
+        links: draft
+            .links
+            .iter()
+            .map(|link| crate::card::Link {
+                path: link
+                    .path
+                    .as_deref()
+                    .map(|to| crate::listing::relative(&collection.path, to)),
+                ..link.clone()
+            })
+            .collect(),
         dates: Some(dates),
         sensitivity: draft.sensitivity,
         checksum: None,

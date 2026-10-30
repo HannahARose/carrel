@@ -48,6 +48,7 @@ fn candidate(path: PathBuf, kind: Kind) -> Candidate {
         checksum: Checksum::of_bytes(b"x"),
         size: 1,
         duplicate_of: None,
+        likely: Vec::new(),
         same_as: None,
     }
 }

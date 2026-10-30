@@ -260,6 +260,10 @@ fn draw_help(frame: &mut Frame, theme: Theme, area: Rect) {
         ("a  h", "approve, or hold in Holding (Review)"),
         ("m  e  x", "move, edit or reject (Review)"),
         (
+            "v  b  s  [ ]",
+            "a duplicate: file as a version, keep both, skip; other matches (Review)",
+        ),
+        (
             "Space  A",
             "mark several; approve all high-confidence (Review)",
         ),
@@ -389,6 +393,8 @@ fn draw_review(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
         }
         if entry.duplicate_of.is_some() {
             flags.push("duplicate".into());
+        } else if !entry.likely_duplicates.is_empty() {
+            flags.push("likely duplicate".into());
         }
         items.push(ListItem::new(format!(
             "{mark} {}  ({})",
@@ -402,12 +408,80 @@ fn draw_review(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
         list_area,
         &mut state,
     );
+    let detail_area = match app.comparisons.get(app.compared) {
+        Some(comparison) => {
+            let height = u16::try_from(comparison.rows.len() + 3).unwrap_or(u16::MAX);
+            let [compare_area, rest] =
+                Layout::vertical([Constraint::Length(height), Constraint::Min(0)])
+                    .areas(detail_area);
+            draw_comparison(frame, app, comparison, theme, compare_area);
+            rest
+        }
+        None => detail_area,
+    };
     let lines: Vec<Line> = app.detail.iter().map(|l| Line::from(l.as_str())).collect();
     frame.render_widget(
         Paragraph::new(lines)
             .wrap(Wrap { trim: false })
             .block(Block::new().borders(ratatui::widgets::Borders::LEFT)),
         detail_area,
+    );
+}
+
+/// The proposal beside an archived item it duplicates, the rows that differ highlighted.
+fn draw_comparison(
+    frame: &mut Frame,
+    app: &App,
+    comparison: &carrel_core::actions::Comparison,
+    theme: Theme,
+    area: Rect,
+) {
+    let exact = comparison.why == ["same checksum"];
+    let count = if app.comparisons.len() > 1 {
+        format!("  {} of {}", app.compared + 1, app.comparisons.len())
+    } else {
+        String::new()
+    };
+    let title = format!(
+        " {} ({}){count} ",
+        if exact {
+            "Duplicate"
+        } else {
+            "Likely duplicate"
+        },
+        comparison.why.join(", ")
+    );
+    let header = ratatui::widgets::Row::new(["", "this item", "archived"])
+        .style(Style::new().add_modifier(Modifier::BOLD));
+    let rows = comparison.rows.iter().map(|row| {
+        let cells = [
+            row.label.to_owned(),
+            row.proposed.clone(),
+            row.archived.clone(),
+        ];
+        let line = ratatui::widgets::Row::new(cells);
+        if row.differs {
+            line.style(theme.key())
+        } else {
+            line
+        }
+    });
+    frame.render_widget(
+        ratatui::widgets::Table::new(
+            rows,
+            [
+                Constraint::Length(11),
+                Constraint::Percentage(50),
+                Constraint::Percentage(50),
+            ],
+        )
+        .header(header)
+        .block(
+            Block::new()
+                .borders(ratatui::widgets::Borders::LEFT | ratatui::widgets::Borders::BOTTOM)
+                .title(title),
+        ),
+        area,
     );
 }
 

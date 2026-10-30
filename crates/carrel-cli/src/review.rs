@@ -52,6 +52,8 @@ pub fn list(archive: Option<&Path>, all: bool) -> Result<Report, Failure> {
             }
             if entry.duplicate_of.is_some() {
                 flags.push("duplicate".into());
+            } else if !entry.likely_duplicates.is_empty() {
+                flags.push("likely duplicate".into());
             }
             writeln!(
                 text,
@@ -82,6 +84,12 @@ fn sensitivity_name(entry: &ReviewEntry) -> String {
 
 /// `carrel review show ID`.
 pub fn show(archive: Option<&Path>, id: &str) -> Result<Report, Failure> {
+    detail(archive, id, true)
+}
+
+/// A proposal in full, with the archived items it duplicates side by side when `compare`;
+/// the interactive mode draws those itself.
+pub(crate) fn detail(archive: Option<&Path>, id: &str, compare: bool) -> Result<Report, Failure> {
     let archive = locate(archive)?;
     let entry = ReviewQueue::of(&archive).find(id)?;
     let mut text = String::new();
@@ -113,16 +121,23 @@ pub fn show(archive: Option<&Path>, id: &str) -> Result<Report, Failure> {
             &format!("{} (added to the collection if approved)", tags.join(", ")),
         );
     }
-    if let Some(duplicate) = entry.duplicate_of {
-        row("duplicate of", &duplicate.to_string());
-    }
     if let Some(generated) = &entry.card.generated
         && let Some(model) = &generated.model
     {
         row("drafted by", model);
     }
+    for link in &entry.card.links {
+        row(
+            &link.link_type.0,
+            link.path.as_deref().unwrap_or(&link.id.to_string()),
+        );
+    }
     if let Some(summary) = &entry.card.summary {
         writeln!(text, "\n{}", summary.trim_end()).unwrap();
+    }
+    let comparisons = actions::compare(&archive, &entry)?;
+    if compare {
+        write_comparisons(&mut text, &entry, &comparisons);
     }
     if !entry.destination.reasons.is_empty() {
         writeln!(text, "\nWhy {}:", entry.destination.path).unwrap();
@@ -169,10 +184,75 @@ pub fn show(archive: Option<&Path>, id: &str) -> Result<Report, Failure> {
             writeln!(text, "  {}: {}", problem.stage, problem.message).unwrap();
         }
     }
-    Ok(Report::new(
+    let mut json = serde_json::to_value(&entry).unwrap_or(Value::Null);
+    if let Value::Object(map) = &mut json {
+        map.insert("comparisons".into(), json!(comparisons));
+    }
+    Ok(Report::new(text, json))
+}
+
+/// Each archived item `entry` duplicates beside it, and how to decide.
+fn write_comparisons(text: &mut String, entry: &ReviewEntry, comparisons: &[actions::Comparison]) {
+    for comparison in comparisons {
+        write_comparison(text, comparison);
+    }
+    if !comparisons.is_empty() && entry.state.is_open() {
+        let id = short_id(entry.id);
+        writeln!(
+            text,
+            "\n  File as a new version:  carrel review approve {id} --as-version-of ITEM\n  \
+             Keep both:              carrel review approve {id} --related-to ITEM\n  \
+             Skip it:                carrel review reject {id}"
+        )
+        .unwrap();
+    }
+}
+
+/// The proposal beside an archived item, as a table; rows that differ are marked with `*`.
+fn write_comparison(text: &mut String, comparison: &actions::Comparison) {
+    writeln!(
         text,
-        serde_json::to_value(&entry).unwrap_or(Value::Null),
-    ))
+        "\n{} {} ({})",
+        if comparison.why == ["same checksum"] {
+            "Duplicate of"
+        } else {
+            "Likely duplicate of"
+        },
+        comparison.card,
+        comparison.why.join(", ")
+    )
+    .unwrap();
+    writeln!(text, "  item {}", comparison.id).unwrap();
+    let width = comparison
+        .rows
+        .iter()
+        .map(|r| r.proposed.chars().count())
+        .max()
+        .unwrap_or(0)
+        .clamp(8, 40);
+    writeln!(
+        text,
+        "    {}{:<width$}  archived",
+        " ".repeat(12),
+        "this item"
+    )
+    .unwrap();
+    for row in &comparison.rows {
+        let proposed: String = if row.proposed.chars().count() > width {
+            let cut: String = row.proposed.chars().take(width - 1).collect();
+            format!("{cut}…")
+        } else {
+            row.proposed.clone()
+        };
+        writeln!(
+            text,
+            "  {} {:<12}{proposed:<width$}  {}",
+            if row.differs { '*' } else { ' ' },
+            row.label,
+            row.archived
+        )
+        .unwrap();
+    }
 }
 
 /// `carrel review reject ID...`: the items stay where they are.
@@ -200,14 +280,31 @@ pub fn reject(archive: Option<&Path>, ids: &[String]) -> Result<Report, Failure>
     Ok(Report::new(text, json!({ "rejected": ids })))
 }
 
-/// `carrel review approve ID... | --all-high`: files the items where proposed.
-pub fn approve(archive: Option<&Path>, ids: &[String], all_high: bool) -> Result<Report, Failure> {
+/// `carrel review approve ID... | --all-high`: files the items where proposed, linked to an
+/// archived item with `--as-version-of` or `--related-to` (an empty target when none was
+/// given).
+pub fn approve(
+    archive: Option<&Path>,
+    ids: &[String],
+    all_high: bool,
+    as_version_of: Option<&str>,
+    related_to: Option<&str>,
+) -> Result<Report, Failure> {
     let archive = locate(archive)?;
-    let entries = if all_high {
+    let mut entries = if all_high {
         actions::all_high(&archive)?
     } else {
         actions::proposals(&archive, ids)?
     };
+    let kept = as_version_of
+        .map(|t| (actions::Kept::AsVersion, t))
+        .or(related_to.map(|t| (actions::Kept::Both, t)));
+    if let Some((kept, target)) = kept {
+        let target = Some(target).filter(|t| !t.is_empty());
+        for entry in &mut entries {
+            actions::keep(&archive, entry, kept, target)?;
+        }
+    }
     decide(&archive, entries, Placement::Destination)
 }
 

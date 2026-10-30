@@ -231,6 +231,12 @@ fn plan_report(queued: &Queued, note: &str) -> Report {
             .duplicate_of
             .as_ref()
             .map(|d| format!(", a duplicate of {}", d.card))
+            .or_else(|| {
+                candidate
+                    .likely
+                    .first()
+                    .map(|l| format!(", likely {}", likely_note(l)))
+            })
             .unwrap_or_default();
         writeln!(
             text,
@@ -258,6 +264,7 @@ fn plan_report(queued: &Queued, note: &str) -> Report {
                 "kind": c.kind,
                 "size": c.size,
                 "duplicate_of": c.duplicate_of.as_ref().map(|d| json!({"id": d.id, "card": d.card})),
+                "likely_duplicates": c.likely,
             })).collect::<Vec<_>>(),
             "skipped": queued.skipped.iter().map(|s| json!({"path": s.path, "reason": s.reason})).collect::<Vec<_>>(),
         }),
@@ -496,6 +503,7 @@ fn items_json(
                 "checksum": c.checksum,
                 "size": c.size,
                 "duplicate_of": c.duplicate_of.as_ref().map(|d| json!({"id": d.id, "card": d.card})),
+                "likely_duplicates": c.likely,
                 "same_as": c.same_as.map(|i| &candidates[i].path),
                 "text": t.as_ref().map(text_json),
                 "card": d.as_ref().map(draft_json),
@@ -534,6 +542,9 @@ fn render(
         let mut notes = Vec::new();
         if let Some(duplicate) = &candidate.duplicate_of {
             notes.push(format!("duplicate of {}", duplicate.card));
+        }
+        for likely in &candidate.likely {
+            notes.push(format!("likely {}", likely_note(likely)));
         }
         if let Some(earlier) = candidate.same_as {
             notes.push(format!(
@@ -690,23 +701,12 @@ fn describe_kind(candidate: &Candidate) -> String {
     }
 }
 
-/// `1.3 KB`, `482 KB`, `2.1 GB`.
-pub(crate) fn human_size(bytes: u64) -> String {
-    const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
-    #[allow(clippy::cast_precision_loss)] // a display value
-    let mut value = bytes as f64;
-    let mut unit = 0;
-    while value >= 1000.0 && unit < UNITS.len() - 1 {
-        value /= 1000.0;
-        unit += 1;
-    }
-    if unit == 0 {
-        format!("{bytes} B")
-    } else if value < 10.0 {
-        format!("{value:.1} {}", UNITS[unit])
-    } else {
-        format!("{value:.0} {}", UNITS[unit])
-    }
+pub(crate) use carrel_core::human_size;
+
+/// `duplicate of Finance/report.pdf.md (same file name)`.
+fn likely_note(likely: &carrel_core::ingest::likely::Likely) -> String {
+    let why: Vec<String> = likely.why.iter().map(ToString::to_string).collect();
+    format!("duplicate of {} ({})", likely.card, why.join(", "))
 }
 
 #[cfg(test)]

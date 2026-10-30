@@ -276,3 +276,106 @@ fn an_edited_card_is_checked_and_becomes_the_owners() {
         "the model's summary is still the model's"
     );
 }
+
+#[test]
+fn likely_duplicates_are_filed_as_versions_or_beside_the_archived_item() {
+    use carrel_core::ingest::likely::{Likely, Why};
+    let s = setup();
+    let archived = s
+        .archive
+        .items()
+        .unwrap()
+        .into_iter()
+        .find(|i| i.card == "Projects/Hardware/parts-list.csv.md")
+        .unwrap();
+    let likely = |why: Why| Likely {
+        id: archived.id,
+        card: archived.card.clone(),
+        why: vec![why],
+    };
+    let card_of = |filed: &carrel_core::ingest::filing::Filed| {
+        let text = std::fs::read_to_string(s.archive.root().join(&filed.card)).unwrap();
+        carrel_core::card_file::CardFile::parse(&text)
+            .unwrap()
+            .card()
+            .clone()
+    };
+
+    // A newer version is linked as one without the owner choosing, and isn't approved in bulk.
+    let mut newer = s.proposal("parts-list v2.csv", Confidence::High);
+    newer.likely_duplicates = vec![likely(Why::NewerVersion)];
+    ReviewQueue::of(&s.archive).save(&newer).unwrap();
+    assert!(!actions::is_high(&newer));
+    let outcome = actions::decide(
+        &s.archive,
+        vec![newer],
+        Placement::Destination,
+        s.holder,
+        None,
+    )
+    .unwrap();
+    let card = card_of(&outcome.filed[0]);
+    assert_eq!(card.links.len(), 1);
+    assert_eq!(card.links[0].link_type.0, "version-of");
+    assert_eq!(card.links[0].id, archived.id);
+    let path = card.links[0].path.as_deref().unwrap();
+    assert!(
+        !path.starts_with("Projects/") && path.ends_with("parts-list.csv.md"),
+        "the path is relative to the new card: {path}"
+    );
+
+    // The same name has no default link; the owner keeps both with a `related` one.
+    let mut same = s.proposal("parts-list (1).csv", Confidence::High);
+    same.likely_duplicates = vec![likely(Why::SameName)];
+    actions::keep(&s.archive, &mut same, actions::Kept::Both, None).unwrap();
+    let outcome = actions::decide(
+        &s.archive,
+        vec![same],
+        Placement::Destination,
+        s.holder,
+        None,
+    )
+    .unwrap();
+    assert_eq!(card_of(&outcome.filed[0]).links[0].link_type.0, "related");
+
+    // With nothing to link to, or a target that isn't archived, nothing changes.
+    let mut plain = s.proposal("plain.txt", Confidence::High);
+    assert!(matches!(
+        actions::keep(&s.archive, &mut plain, actions::Kept::AsVersion, None),
+        Err(ActionError::Invalid(_))
+    ));
+    assert!(matches!(
+        actions::keep(
+            &s.archive,
+            &mut plain,
+            actions::Kept::AsVersion,
+            Some("ffffffff")
+        ),
+        Err(ActionError::Invalid(_))
+    ));
+    let id = archived.id.0.to_string();
+    let end = &id[id.len() - 8..];
+    actions::keep(&s.archive, &mut plain, actions::Kept::AsVersion, Some(end)).unwrap();
+    assert_eq!(
+        plain.card.links[0].id, archived.id,
+        "the end of an identifier is enough"
+    );
+
+    let comparisons = actions::compare(&s.archive, &{
+        let mut e = s.proposal("parts-list (2).csv", Confidence::High);
+        e.likely_duplicates = vec![likely(Why::SameName)];
+        e
+    })
+    .unwrap();
+    assert_eq!(comparisons.len(), 1);
+    assert_eq!(comparisons[0].why, ["same file name"]);
+    let row = |label: &str| {
+        comparisons[0]
+            .rows
+            .iter()
+            .find(|r| r.label == label)
+            .unwrap()
+    };
+    assert_eq!(row("file name").archived, "parts-list.csv");
+    assert!(row("file name").differs);
+}

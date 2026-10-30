@@ -40,8 +40,10 @@ Exit status is `0` on success, `1` when the command failed, and `2` for a usage 
 | Command | What it does |
 | --- | --- |
 | `carrel review [--all]` | Lists proposals waiting for review, by destination, with their confidence. `--all` includes those already decided. |
-| `carrel review show ID` | Shows a proposal: the card it would write, where it would go and why, how sensitive it is and why, any model that declined it, and what's left to settle. |
-| `carrel review approve ID... [--all-high]` | Files the items where proposed, as one history change. `--all-high` approves every high-confidence proposal that isn't sensitive. |
+| `carrel review show ID` | Shows a proposal: the card it would write, where it would go and why, how sensitive it is and why, any model that declined it, and what's left to settle. A duplicate or likely duplicate is shown beside the archived item. |
+| `carrel review approve ID... [--all-high]` | Files the items where proposed, as one history change. `--all-high` approves every high-confidence proposal that isn't sensitive or a duplicate. |
+| `carrel review approve ID... --as-version-of [ITEM]` | Files them as new versions of the archived item `ITEM`, with a `version-of` link. `ITEM` can be left out when each is a duplicate of just one item. |
+| `carrel review approve ID... --related-to [ITEM]` | Files them beside the archived item, with a `related` link. |
 | `carrel review hold ID...` | Files the items in Holding, to place later. |
 | `carrel review move-to ID COLLECTION` | Proposes another collection; the item is filed there when approved. |
 | `carrel review edit ID` | Opens the card in your editor, checks it when you save, and reopens it with the problems listed until it checks out. |

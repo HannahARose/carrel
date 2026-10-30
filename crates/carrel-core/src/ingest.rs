@@ -7,6 +7,7 @@
 
 pub mod card;
 pub mod filing;
+pub mod likely;
 pub mod questions;
 pub mod route;
 pub mod run;
@@ -211,6 +212,8 @@ pub struct Candidate {
     pub size: u64,
     /// An archived item with the same fingerprint.
     pub duplicate_of: Option<Duplicate>,
+    /// Archived items it's likely a duplicate of, by name (`docs/design/duplicates.md`).
+    pub likely: Vec<likely::Likely>,
     /// An earlier candidate in the same batch with the same fingerprint, by position.
     pub same_as: Option<usize>,
 }
@@ -251,18 +254,30 @@ pub fn examine(archive: &Archive, path: &Path) -> Result<Candidate, IngestError>
         checksum,
         size,
         duplicate_of: None,
+        likely: Vec::new(),
         same_as: None,
     })
 }
 
-/// The archive's items by fingerprint: files by checksum, folders and bundles by manifest
-/// content checksum.
-#[derive(Debug, Clone, Default)]
-pub struct ChecksumIndex {
-    items: HashMap<Checksum, Duplicate>,
+/// What the index keeps of one archived item, to find likely duplicates.
+#[derive(Debug, Clone)]
+struct Indexed {
+    item: Duplicate,
+    kind: Kind,
+    name: Option<likely::Name>,
+    title: String,
+    created: Option<String>,
 }
 
-impl ChecksumIndex {
+/// The archive's items, to find duplicates: by fingerprint (files by checksum, folders and
+/// bundles by manifest content checksum), and by name and title for likely duplicates.
+#[derive(Debug, Clone, Default)]
+pub struct ItemIndex {
+    by_fingerprint: HashMap<Checksum, Duplicate>,
+    items: Vec<Indexed>,
+}
+
+impl ItemIndex {
     /// Reads every card in `archive`. Cards that don't parse are left out, as they are from
     /// [`Archive::items`].
     ///
@@ -270,7 +285,7 @@ impl ChecksumIndex {
     ///
     /// An error listing the archive or reading a card.
     pub fn build(archive: &Archive) -> Result<Self, IngestError> {
-        let mut items = HashMap::new();
+        let mut index = Self::default();
         for item in archive.items()? {
             let path = archive.root().join(&item.card);
             let text = std::fs::read_to_string(&path).map_err(io(&path))?;
@@ -278,44 +293,119 @@ impl ChecksumIndex {
                 continue;
             };
             let card = file.card();
+            let duplicate = Duplicate {
+                id: item.id,
+                card: item.card.clone(),
+            };
             let fingerprint = card
                 .checksum
                 .clone()
                 .or_else(|| card.manifest.as_ref().map(|m| m.checksum.clone()));
             if let Some(fingerprint) = fingerprint {
-                items.entry(fingerprint).or_insert(Duplicate {
-                    id: item.id,
-                    card: item.card.clone(),
-                });
+                index
+                    .by_fingerprint
+                    .entry(fingerprint)
+                    .or_insert_with(|| duplicate.clone());
             }
+            let name = item
+                .item
+                .as_deref()
+                .and_then(|p| p.rsplit('/').next())
+                .map(likely::Name::parse);
+            index.items.push(Indexed {
+                item: duplicate,
+                kind: item.kind,
+                name,
+                title: likely::title_key(&card.title),
+                created: card
+                    .dates
+                    .as_ref()
+                    .and_then(|d| d.created.clone())
+                    .map(|d| d.0),
+            });
         }
-        Ok(Self { items })
+        // Newest first, so the most recent matches are the ones kept.
+        index.items.sort_by_key(|i| std::cmp::Reverse(i.item.id.0));
+        Ok(index)
     }
 
     /// The archived item with this fingerprint, if any.
     #[must_use]
     pub fn get(&self, checksum: &Checksum) -> Option<&Duplicate> {
-        self.items.get(checksum)
+        self.by_fingerprint.get(checksum)
     }
 
-    /// How many items are indexed.
+    /// Archived items whose names match `candidate`'s: the same name, or another version.
+    #[must_use]
+    pub fn by_name(&self, candidate: &Candidate) -> Vec<likely::Likely> {
+        let Some(name) = candidate.path.file_name() else {
+            return Vec::new();
+        };
+        let name = likely::Name::parse(&name.to_string_lossy());
+        let mut found = Vec::new();
+        for indexed in &self.items {
+            if indexed.kind != candidate.kind {
+                continue;
+            }
+            if let Some(why) = indexed.name.as_ref().and_then(|n| name.compare(n)) {
+                likely::add(&mut found, indexed.item.id, &indexed.item.card, why);
+            }
+        }
+        found
+    }
+
+    /// Adds the archived items with the same title and date as `entry`'s card to its likely
+    /// duplicates. An item that's an exact duplicate isn't checked.
+    pub fn add_by_title(&self, entry: &mut ReviewEntry) {
+        if entry.duplicate_of.is_some() {
+            return;
+        }
+        let title = likely::title_key(&entry.card.title);
+        if title.is_empty() {
+            return;
+        }
+        let created = entry
+            .card
+            .dates
+            .as_ref()
+            .and_then(|d| d.created.as_ref())
+            .map(|d| d.0.as_str());
+        for indexed in &self.items {
+            if indexed.title == title && indexed.created.as_deref() == created {
+                likely::add(
+                    &mut entry.likely_duplicates,
+                    indexed.item.id,
+                    &indexed.item.card,
+                    likely::Why::SameTitleAndDate,
+                );
+            }
+        }
+    }
+
+    /// How many items have a fingerprint.
     #[must_use]
     pub fn len(&self) -> usize {
-        self.items.len()
+        self.by_fingerprint.len()
     }
 
-    /// Whether no items are indexed.
+    /// Whether no items have a fingerprint.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.items.is_empty()
+        self.by_fingerprint.is_empty()
     }
 }
 
-/// Marks candidates that duplicate an archived item, or an earlier candidate in the batch.
-pub fn mark_duplicates(index: &ChecksumIndex, candidates: &mut [Candidate]) {
+/// Marks candidates that duplicate an archived item, or an earlier candidate in the batch,
+/// and those that are likely duplicates of an archived item by name.
+pub fn mark_duplicates(index: &ItemIndex, candidates: &mut [Candidate]) {
     let mut first: HashMap<Checksum, usize> = HashMap::new();
     for (i, candidate) in candidates.iter_mut().enumerate() {
         candidate.duplicate_of = index.get(&candidate.checksum).cloned();
+        candidate.likely = if candidate.duplicate_of.is_some() {
+            Vec::new()
+        } else {
+            index.by_name(candidate)
+        };
         match first.get(&candidate.checksum) {
             Some(&earlier) => candidate.same_as = Some(earlier),
             None => {
@@ -335,14 +425,39 @@ pub fn plan(
     paths: &[PathBuf],
     options: IntakeOptions,
 ) -> Result<(Vec<Candidate>, Vec<Skipped>), IngestError> {
+    let (candidates, skipped, _) = plan_with_index(archive, paths, options)?;
+    Ok((candidates, skipped))
+}
+
+/// [`plan`], also returning the index it built, for the checks made once items are drafted.
+///
+/// # Errors
+///
+/// As [`plan`].
+pub fn plan_with_index(
+    archive: &Archive,
+    paths: &[PathBuf],
+    options: IntakeOptions,
+) -> Result<(Vec<Candidate>, Vec<Skipped>, ItemIndex), IngestError> {
     let (items, skipped) = intake(archive, paths, options)?;
     let mut candidates = items
         .iter()
         .map(|path| examine(archive, path))
         .collect::<Result<Vec<_>, _>>()?;
-    let index = ChecksumIndex::build(archive)?;
+    let index = ItemIndex::build(archive)?;
     mark_duplicates(&index, &mut candidates);
-    Ok((candidates, skipped))
+    Ok((candidates, skipped, index))
+}
+
+/// Whether the card `draft` repeats an account or identity number `sensitivity` found.
+fn repeats_restricted(draft: &card::Draft, sensitivity: &sensitivity::Assessment) -> bool {
+    sensitivity.matched.iter().any(|value| {
+        draft.title.contains(value.as_str())
+            || draft
+                .summary
+                .as_deref()
+                .is_some_and(|s| s.contains(value.as_str()))
+    })
 }
 
 /// An ingest batch: where its proposals go and who is making them.
@@ -415,13 +530,7 @@ impl Batch<'_> {
                 ),
             });
         }
-        let repeated = sensitivity.matched.iter().any(|value| {
-            draft.title.contains(value.as_str())
-                || draft
-                    .summary
-                    .as_deref()
-                    .is_some_and(|s| s.contains(value.as_str()))
-        });
+        let repeated = repeats_restricted(draft, sensitivity);
         if repeated {
             problems.push(Problem {
                 stage: "sensitivity".into(),
@@ -461,6 +570,7 @@ impl Batch<'_> {
             kind: candidate.kind,
             sealed: candidate.sealed,
             duplicate_of: candidate.duplicate_of.as_ref().map(|d| d.id),
+            likely_duplicates: candidate.likely.clone(),
             card: CardDraft {
                 title: draft.title.clone(),
                 summary: draft.summary.clone(),
@@ -471,6 +581,7 @@ impl Batch<'_> {
                 }),
                 sensitivity: sensitivity.level,
                 generated: draft.generated.clone(),
+                links: Vec::new(),
                 extra: crate::card::Extra::new(),
             },
             proposed_tags: draft.new_tag.clone().into_iter().collect(),

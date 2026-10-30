@@ -108,6 +108,24 @@ Review is where proposals become filed items. In the interactive mode (`2`), eac
 
 Mark several with `Space` to decide them together, or approve every high-confidence, non-sensitive proposal with `A`. Each batch you approve is one change in history, with one backup snapshot.
 
+### Duplicates
+
+A proposal marked **duplicate** has the same checksum as an archived item: it's byte-for-byte the same. One marked **likely duplicate** isn't, but looks like the same thing arriving again:
+
+- **same file name:** the names match once copy marks such as `(1)` and `copy` are ignored;
+- **looks like a newer (or older) version:** the names match apart from a version marker, such as `v2`, `rev 4`, `draft 3`, `final` or a trailing date;
+- **same title and date:** the drafted card's title and date match an archived card's.
+
+The Review screen shows the proposal beside the archived item, with the rows that differ highlighted; `[` and `]` switch between matches when there are several. Then:
+
+| Decision | Key | Command |
+| --- | --- | --- |
+| File it as a new version, linked with `version-of` | `v` | `carrel review approve ID --as-version-of ITEM` |
+| Keep both, linked with `related` | `b` | `carrel review approve ID --related-to ITEM` |
+| Skip it: the file stays where it is | `s` | `carrel review reject ID` |
+
+`ITEM` is the archived item's identifier, or its start or end, and can be left out when there's only one match. Approving with `a` files a newer version as a version and anything else without a link. `A` never approves a duplicate or a likely one. Both versions stay in the archive; Carrel doesn't replace the archived item.
+
 Editing opens the card's fields in your editor. When you save, Carrel checks them (tags from the vocabulary, real dates, a title) and reopens the file with any problems listed, until it checks out or you leave it unchanged.
 
 ## Questions and the glossary

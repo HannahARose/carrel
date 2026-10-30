@@ -4,7 +4,8 @@ use std::path::{Path, PathBuf};
 
 use carrel_core::archive::Archive;
 use carrel_core::card::{Kind, Sealing};
-use carrel_core::ingest::{ChecksumIndex, IngestError, IntakeOptions, examine, intake, plan};
+use carrel_core::ingest::likely::Why;
+use carrel_core::ingest::{IngestError, IntakeOptions, ItemIndex, examine, intake, plan};
 
 fn sample_archive() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/sample-archive")
@@ -178,7 +179,7 @@ fn examine_finds_the_kind_and_fingerprint() {
 #[test]
 fn duplicates_of_archived_items_and_within_a_batch_are_marked() {
     let (_dir, archive, incoming) = setup();
-    let index = ChecksumIndex::build(&archive).unwrap();
+    let index = ItemIndex::build(&archive).unwrap();
     assert!(
         index.len() >= 5,
         "the sample's files and bundles are indexed"
@@ -220,6 +221,37 @@ fn duplicates_of_archived_items_and_within_a_batch_are_marked() {
     );
     assert_eq!(candidates[by_name("one.txt")].same_as, None);
     assert_eq!(candidates[by_name("one.txt")].duplicate_of, None);
+    assert!(
+        csv.likely.is_empty(),
+        "an exact duplicate isn't also a likely one"
+    );
+}
+
+#[test]
+fn files_named_like_archived_ones_are_likely_duplicates() {
+    let (_dir, archive, incoming) = setup();
+    std::fs::write(incoming.join("Parts-List (1).csv"), "changed,parts\n").unwrap();
+    std::fs::write(incoming.join("parts-list v2.csv"), "more,parts\n").unwrap();
+    std::fs::write(incoming.join("parts-list.txt"), "another kind of file\n").unwrap();
+
+    let (candidates, _) = plan(&archive, std::slice::from_ref(&incoming), each()).unwrap();
+    let likely = |name: &str| {
+        candidates
+            .iter()
+            .find(|c| c.path.file_name().unwrap() == name)
+            .unwrap()
+            .likely
+            .clone()
+    };
+    let same = likely("Parts-List (1).csv");
+    assert_eq!(same.len(), 1);
+    assert_eq!(same[0].card, "Projects/Hardware/parts-list.csv.md");
+    assert_eq!(same[0].why, [Why::SameName]);
+    assert_eq!(likely("parts-list v2.csv")[0].why, [Why::NewerVersion]);
+    assert!(
+        likely("parts-list.txt").is_empty(),
+        "the extension must match"
+    );
 }
 
 #[test]

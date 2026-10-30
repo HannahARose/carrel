@@ -101,6 +101,11 @@ pub struct CardDraft {
     /// How program-written fields were produced.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub generated: Option<Provenance>,
+    /// Links to other items, such as `version-of` for a likely duplicate the owner files as a
+    /// new version. Until the item is filed, a link's `path` is relative to the archive root,
+    /// since where the card will be isn't settled.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub links: Vec<crate::card::Link>,
     /// Other card fields.
     #[serde(flatten)]
     pub extra: Extra,
@@ -188,6 +193,9 @@ pub struct ReviewEntry {
     /// An archived item with the same checksum.
     #[serde(default)]
     pub duplicate_of: Option<Id>,
+    /// Archived items it's likely a duplicate of, and why (`docs/design/duplicates.md`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub likely_duplicates: Vec<crate::ingest::likely::Likely>,
     /// The card it would get.
     pub card: CardDraft,
     /// At most one new tag for the destination's vocabulary.
