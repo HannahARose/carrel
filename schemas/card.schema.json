@@ -152,6 +152,17 @@
         }
       ]
     },
+    "placement": {
+      "description": "How sure filing was of the item's collection, when it wasn't (FORMAT.md §5.8).",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PlacementRecord"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "removed": {
       "description": "Why and when the item was removed; required for tombstones (FORMAT.md §10).",
       "anyOf": [
@@ -520,6 +531,59 @@
           "description": "Produced below it; a stronger device should re-check.",
           "type": "string",
           "const": "below-preferred"
+        }
+      ]
+    },
+    "PlacementRecord": {
+      "description": "How sure filing was of an item's collection, kept when it wasn't sure (FORMAT.md §5.8), as\nevidence for restructuring.",
+      "type": "object",
+      "properties": {
+        "confidence": {
+          "description": "How sure routing was.",
+          "$ref": "#/$defs/PlacementConfidence"
+        },
+        "by": {
+          "description": "What chose the collection.",
+          "$ref": "#/$defs/PlacedBy"
+        },
+        "at": {
+          "description": "When the item was filed.",
+          "$ref": "#/$defs/DateOrTime"
+        }
+      },
+      "required": [
+        "confidence",
+        "by",
+        "at"
+      ]
+    },
+    "PlacementConfidence": {
+      "description": "How sure routing was of a placement worth recording.",
+      "oneOf": [
+        {
+          "description": "The routing passes disagreed, the model chose Holding, or validation needed a retry.",
+          "type": "string",
+          "const": "low"
+        },
+        {
+          "description": "A model chose it and a second pass agreed.",
+          "type": "string",
+          "const": "medium"
+        }
+      ]
+    },
+    "PlacedBy": {
+      "description": "What chose an item's collection.",
+      "oneOf": [
+        {
+          "description": "A text model.",
+          "type": "string",
+          "const": "model"
+        },
+        {
+          "description": "An owner routing rule.",
+          "type": "string",
+          "const": "rule"
         }
       ]
     },

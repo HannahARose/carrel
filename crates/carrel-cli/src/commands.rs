@@ -288,6 +288,8 @@ pub fn status(archive: Option<&Path>) -> Result<Report, Failure> {
     }
     let names = carrel_core::names::check(&archive)?;
     text.push_str(&names_section(&names));
+    let signals = carrel_core::signals::signals(&archive)?;
+    text.push_str(&signals_section(&signals));
     let mut warnings = Vec::new();
     if synced {
         warnings.push(SYNCED_WARNING);
@@ -307,6 +309,7 @@ pub fn status(archive: Option<&Path>) -> Result<Report, Failure> {
             "last": log.first().map(entry_json),
         })),
         "writer": writer_json(lock.as_ref()),
+        "signals": signals,
         "names": names.iter().map(|f| json!({
             "path": f.path,
             "problems": f.problems,
@@ -315,6 +318,20 @@ pub fn status(archive: Option<&Path>) -> Result<Report, Failure> {
         "warnings": warnings,
     });
     Ok(Report::new(text, json))
+}
+
+/// The part of `carrel status` about the structure: where it shows signs of needing a
+/// restructure (`docs/design/signals.md`).
+fn signals_section(signals: &[carrel_core::signals::Signal]) -> String {
+    let mut text = String::new();
+    if signals.is_empty() {
+        return text;
+    }
+    text.push_str("\nStructure (signs a restructure may help later):\n");
+    for signal in signals {
+        writeln!(text, "  {}", signal.describe()).unwrap();
+    }
+    text
 }
 
 /// The part of `carrel status` about names that won't work on every system.

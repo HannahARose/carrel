@@ -1,6 +1,6 @@
 # Design: restructure signals (v0.2)
 
-Status: draft for the owner. Issue #122.
+Status: accepted 2026-10-30, with the five recommendations below. Issue #122.
 
 ## What this adds
 
@@ -50,7 +50,7 @@ The spec's other signals, items in different branches often linked or worked on 
 2. `carrel_core::signals`: computing the signals and their thresholds, with `signals.crowded_items` in settings.
 3. The Structure section in `carrel status` and the Status screen.
 
-## Decisions for the owner
+## Decisions (accepted 2026-10-30)
 
 1. **Record low- and medium-confidence placements on the card** (`placement`), removed once the owner places the item. Recommended: it travels with the item, can't go stale, and is readable in any Markdown viewer. The alternative is a separate log in `_System/`, which would need cleaning up as items move.
 2. **Compute signals from the archive's current state**, not from a running count. Recommended.

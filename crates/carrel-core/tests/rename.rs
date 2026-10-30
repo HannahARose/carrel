@@ -48,7 +48,8 @@ fn setup() -> (tempfile::TempDir, Archive, WriterLease) {
             "---\ncarrel: card\nformat: \"1.0\"\nid: {PLAN}\nkind: file\ntitle: \"Q3 plan\"\n\
              item: \"{name}\"\ndates:\n  added: \"2026-10-30\"\nsensitivity: personal\n\
              checksum: \"sha256:0000000000000000000000000000000000000000000000000000000000000000\"\n\
-             size: 5\n---\n\nThe owner's notes.\n"
+             size: 5\nplacement:\n  confidence: low\n  by: model\n  at: \"2026-10-30T10:00:00-04:00\"\n\
+             ---\n\nThe owner's notes.\n"
         ),
     )
     .unwrap();
@@ -124,6 +125,7 @@ fn renaming_moves_item_and_card_relinks_and_can_be_undone() {
     )
     .unwrap();
     assert_eq!(card.card().item.as_deref(), Some("Q3 plan.txt"));
+    assert_eq!(card.card().placement, None, "the owner has placed it");
     assert_eq!(
         card.body(),
         "\nThe owner's notes.\n",

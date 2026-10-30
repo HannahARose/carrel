@@ -68,6 +68,7 @@ pub mod questions;
 pub mod rename;
 pub mod review;
 pub mod sections;
+pub mod signals;
 
 /// The version of the archive format this build reads and writes (`FORMAT.md`).
 pub const FORMAT_VERSION: FormatVersion = FormatVersion { major: 1, minor: 0 };

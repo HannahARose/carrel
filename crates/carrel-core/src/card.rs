@@ -76,6 +76,9 @@ pub struct Card {
     /// How program-written fields were produced (FORMAT.md §5.6).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub generated: Option<Provenance>,
+    /// How sure filing was of the item's collection, when it wasn't (FORMAT.md §5.8).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub placement: Option<PlacementRecord>,
     /// Why and when the item was removed; required for tombstones (FORMAT.md §10).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub removed: Option<Removal>,
@@ -384,6 +387,42 @@ pub struct ManifestRef {
     #[serde(flatten)]
     #[schemars(skip)]
     pub extra: Extra,
+}
+
+/// How sure filing was of an item's collection, kept when it wasn't sure (FORMAT.md §5.8), as
+/// evidence for restructuring.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct PlacementRecord {
+    /// How sure routing was.
+    pub confidence: PlacementConfidence,
+    /// What chose the collection.
+    pub by: PlacedBy,
+    /// When the item was filed.
+    pub at: DateOrTime,
+    /// Keys this version doesn't know.
+    #[serde(flatten)]
+    #[schemars(skip)]
+    pub extra: Extra,
+}
+
+/// How sure routing was of a placement worth recording.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum PlacementConfidence {
+    /// The routing passes disagreed, the model chose Holding, or validation needed a retry.
+    Low,
+    /// A model chose it and a second pass agreed.
+    Medium,
+}
+
+/// What chose an item's collection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum PlacedBy {
+    /// A text model.
+    Model,
+    /// An owner routing rule.
+    Rule,
 }
 
 /// A checkout in progress (FORMAT.md §9.1).
