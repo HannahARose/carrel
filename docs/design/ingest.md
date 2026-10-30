@@ -106,7 +106,7 @@ Checks after each model call, beyond what the schema guarantees:
 - the collection ID exists and is one of the choices offered
 - tags are in the vocabulary, or are the one allowed proposal
 - each field is within its length limit
-- the title isn't just the file name repeated
+- the title isn't just a machine-made file name repeated (`IMG_2041`, `scan0003`, `document (3)`); a name a person chose is often already the right title
 - dates are real dates
 - the sensitivity isn't below the floor
 
