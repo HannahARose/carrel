@@ -2,9 +2,12 @@
 //! `carrel tui`. Everything it does is also a command.
 
 mod app;
+mod review;
 mod ui;
 
-use std::path::Path;
+use std::fmt::Write as _;
+use std::path::{Path, PathBuf};
+use std::sync::mpsc::Receiver;
 use std::time::Duration;
 
 use ratatui::crossterm::event::{
@@ -17,6 +20,7 @@ use crate::commands::locate;
 use crate::{Failure, Report};
 
 pub use app::App;
+use app::Effect;
 
 /// Opens the interactive mode on the archive commands would use, and returns when the owner
 /// quits. The terminal is restored however it ends.
@@ -24,14 +28,28 @@ pub fn run(archive: Option<&Path>) -> Result<Report, Failure> {
     let archive = locate(archive)?;
     let mut app = App::new(archive)?;
     let theme = ui::Theme::from_env();
-    // ratatui::init enters raw mode and the alternate screen, and restores both on a panic.
-    let mut terminal = ratatui::init();
-    let _ = execute!(std::io::stdout(), EnableMouseCapture);
+    let mut terminal = enter();
     let result = event_loop(&mut terminal, &mut app, theme);
-    let _ = execute!(std::io::stdout(), DisableMouseCapture);
-    ratatui::restore();
+    leave();
     result.map(|()| Report::new(String::new(), Value::Null))
 }
+
+/// Takes over the terminal. `ratatui::init` enters raw mode and the alternate screen, and
+/// restores both on a panic.
+fn enter() -> ratatui::DefaultTerminal {
+    let terminal = ratatui::init();
+    let _ = execute!(std::io::stdout(), EnableMouseCapture);
+    terminal
+}
+
+/// Gives the terminal back as it was.
+fn leave() {
+    let _ = execute!(std::io::stdout(), DisableMouseCapture);
+    ratatui::restore();
+}
+
+/// Background work's outcome, as a line for the owner.
+type Done = Receiver<Result<String, String>>;
 
 fn event_loop(
     terminal: &mut ratatui::DefaultTerminal,
@@ -39,11 +57,19 @@ fn event_loop(
     theme: ui::Theme,
 ) -> Result<(), Failure> {
     let starts = ui::tab_starts();
+    let mut running: Option<Done> = None;
     while !app.quit {
+        if let Some(done) = &running
+            && let Ok(result) = done.try_recv()
+        {
+            running = None;
+            app.busy = None;
+            finished(app, result);
+        }
         terminal
             .draw(|frame| ui::draw(frame, app, theme))
             .map_err(|e| Failure::new(format!("couldn't draw: {e}")))?;
-        if !event::poll(Duration::from_millis(250))
+        if !event::poll(Duration::from_millis(100))
             .map_err(|e| Failure::new(format!("couldn't read the terminal: {e}")))?
         {
             continue;
@@ -58,29 +84,103 @@ fn event_loop(
             }
             _ => None,
         };
-        if let Some(effect) = effect {
-            perform(app, effect);
+        match effect {
+            Some(Effect::Edit(id)) => {
+                // The editor needs the terminal to itself.
+                leave();
+                let result = crate::review::edit(Some(app.archive.root()), &id.to_string());
+                *terminal = enter();
+                finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
+            }
+            Some(effect) if running.is_none() => {
+                if let Some(work) = background(app, effect) {
+                    running = Some(work);
+                }
+            }
+            Some(_) => app.message = Some("Still busy; try again when it's done".into()),
+            None => {}
         }
     }
     Ok(())
 }
 
-/// Carries out work that needs the writer lease, and says how it went.
-fn perform(app: &mut App, effect: app::Effect) {
-    let result = match effect {
-        app::Effect::Undo(id) => undo(app, &id),
+/// Shows how work went and reads everything again.
+fn finished(app: &mut App, result: Result<String, String>) {
+    let text = match result {
+        Ok(text) | Err(text) => text,
     };
-    app.message = Some(match result {
-        Ok(message) | Err(Failure(message)) => message,
+    let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
+    app.message = Some(match lines.as_slice() {
+        [] => "Done".into(),
+        [one] => (*one).to_owned(),
+        [first, rest @ ..] => format!("{first} (+{} more)", rest.len()),
     });
+    app.marked.clear();
     if let Err(Failure(message)) = app.reload() {
         app.message = Some(message);
     }
 }
 
-fn undo(app: &App, id: &str) -> Result<String, Failure> {
-    let report = crate::commands::undo(Some(app.archive.root()), id)?;
-    Ok(report.text.trim_end().to_owned())
+/// Starts work that takes the writer lease, or does it at once when it's quick. The
+/// commands do the work, so the interactive mode reports exactly what they report.
+fn background(app: &mut App, effect: Effect) -> Option<Done> {
+    let root: PathBuf = app.archive.root().to_owned();
+    let ids = |ids: &[carrel_core::card::Id]| -> Vec<String> {
+        ids.iter().map(ToString::to_string).collect()
+    };
+    let (busy, work): (String, Box<dyn FnOnce() -> Result<Report, Failure> + Send>) = match effect {
+        Effect::Undo(id) => {
+            let result = crate::commands::undo(Some(&root), &id);
+            finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
+            return None;
+        }
+        Effect::Reject(chosen) => {
+            let result = crate::review::reject(Some(&root), &ids(&chosen));
+            finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
+            return None;
+        }
+        Effect::Move { ids: chosen, to } => {
+            let mut text = String::new();
+            for id in ids(&chosen) {
+                match crate::review::move_to(Some(&root), &id, &to) {
+                    Ok(report) => text.push_str(&report.text),
+                    Err(Failure(e)) => writeln!(text, "{e}").unwrap(),
+                }
+            }
+            finished(app, Ok(text));
+            return None;
+        }
+        Effect::Edit(_) => return None,
+        Effect::Decide {
+            ids: chosen,
+            holding,
+        } => {
+            let count = chosen.len();
+            let chosen = ids(&chosen);
+            let busy = format!(
+                "{} {count} proposal{}…",
+                if holding { "Holding" } else { "Filing" },
+                if count == 1 { "" } else { "s" }
+            );
+            let work: Box<dyn FnOnce() -> Result<Report, Failure> + Send> = if holding {
+                Box::new(move || crate::review::hold(Some(&root), &chosen))
+            } else {
+                Box::new(move || crate::review::approve(Some(&root), &chosen, false))
+            };
+            (busy, work)
+        }
+        Effect::ApproveAllHigh => (
+            "Filing every high-confidence proposal…".into(),
+            Box::new(move || crate::review::approve(Some(&root), &[], true)),
+        ),
+    };
+    app.busy = Some(busy);
+    let (send, receive) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let result = work().map(|r| r.text).map_err(|Failure(e)| e);
+        let _ = send.send(result);
+    });
+    Some(receive)
 }
 
 #[cfg(test)]
@@ -256,5 +356,128 @@ mod tests {
                 .any(|c| c.modifier.contains(ratatui::style::Modifier::REVERSED)),
             "the current screen is still marked"
         );
+    }
+
+    /// The sample archive with three proposals: the fixture's, one for Reading and one for
+    /// Holding.
+    fn review_sample() -> (tempfile::TempDir, App) {
+        let (dir, app) = sample(false);
+        let queue = carrel_core::review::ReviewQueue::of(&app.archive);
+        let (entries, _) = queue.list().unwrap();
+        let collections = app.archive.collections().unwrap();
+        for (title, path) in [("A paper", "Reading"), ("A scan", "Holding")] {
+            let mut entry = entries[0].clone();
+            entry.id = Id::new_v7();
+            entry.card.title = title.into();
+            let collection = collections.iter().find(|c| c.path == path).unwrap();
+            entry.destination.collection = collection.doc.id;
+            entry.destination.path = path.into();
+            queue.save(&entry).unwrap();
+        }
+        let archive = app.archive.clone();
+        (dir, App::new(archive).unwrap())
+    }
+
+    #[test]
+    fn review_shows_the_queue_by_destination_beside_the_chosen_proposal() {
+        let (_dir, mut app) = review_sample();
+        app.key(key(KeyCode::Char('2')));
+        let text = screen(&app, 120, 30);
+        assert!(text.contains("Holding"), "{text}");
+        let holding = text.find("Holding").unwrap();
+        let hardware = text.find("Projects/Hardware").unwrap();
+        let reading = text.find("Reading").unwrap();
+        assert!(
+            holding < hardware && hardware < reading,
+            "grouped by destination, in order"
+        );
+        assert!(text.contains("A scan  (medium)"));
+        assert!(text.contains("proposal"), "the chosen proposal in full");
+        assert!(text.lines().last().unwrap().contains("a approve"));
+    }
+
+    #[test]
+    fn review_keys_decide_the_chosen_or_the_marked_proposals() {
+        let (_dir, mut app) = review_sample();
+        app.key(key(KeyCode::Char('2')));
+        let ids: Vec<Id> = app.queue.iter().map(|e| e.id).collect();
+        assert_eq!(
+            app.key(key(KeyCode::Char('a'))),
+            Some(Effect::Decide {
+                ids: vec![ids[0]],
+                holding: false
+            })
+        );
+        app.key(key(KeyCode::Char(' ')));
+        app.key(key(KeyCode::Char(' ')));
+        assert_eq!(app.marked.len(), 2);
+        assert!(screen(&app, 120, 30).contains("2 marked"));
+        assert_eq!(app.chosen, 2, "marking moves on");
+        match app.key(key(KeyCode::Char('h'))) {
+            Some(Effect::Decide {
+                ids: chosen,
+                holding: true,
+            }) => {
+                assert_eq!(chosen.len(), 2);
+                assert!(chosen.contains(&ids[0]) && chosen.contains(&ids[1]));
+            }
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(
+            app.key(key(KeyCode::Char('A'))),
+            Some(Effect::ApproveAllHigh)
+        );
+        assert_eq!(app.key(key(KeyCode::Char('e'))), Some(Effect::Edit(ids[2])));
+
+        app.marked.clear();
+        assert_eq!(app.key(key(KeyCode::Char('x'))), None);
+        assert!(screen(&app, 120, 30).contains("Reject 1 proposal?"));
+        assert_eq!(
+            app.key(key(KeyCode::Char('y'))),
+            Some(Effect::Reject(vec![ids[2]]))
+        );
+
+        app.busy = Some("Filing 2 proposals…".into());
+        assert_eq!(
+            app.key(key(KeyCode::Char('a'))),
+            None,
+            "one batch at a time"
+        );
+        assert!(app.message.as_deref().unwrap().starts_with("Still busy"));
+        assert!(
+            screen(&app, 120, 30)
+                .lines()
+                .last()
+                .unwrap()
+                .contains("Filing 2 proposals…")
+        );
+    }
+
+    #[test]
+    fn the_picker_narrows_collections_as_you_type() {
+        let (_dir, mut app) = review_sample();
+        app.key(key(KeyCode::Char('2')));
+        let id = app.queue[app.chosen].id;
+        app.key(key(KeyCode::Char('m')));
+        assert!(screen(&app, 120, 30).contains("Move to (type to narrow)"));
+        for c in "hard".chars() {
+            app.key(key(KeyCode::Char(c)));
+        }
+        assert_eq!(
+            app.picker.as_ref().unwrap().matching(),
+            ["Projects/Hardware"]
+        );
+        assert_eq!(
+            app.key(key(KeyCode::Enter)),
+            Some(Effect::Move {
+                ids: vec![id],
+                to: "Projects/Hardware".into()
+            })
+        );
+        assert!(app.picker.is_none());
+        app.key(key(KeyCode::Char('m')));
+        app.key(key(KeyCode::Esc));
+        assert!(app.picker.is_none(), "Esc cancels");
+        assert!(!app.quit, "and doesn't quit");
     }
 }

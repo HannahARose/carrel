@@ -30,7 +30,7 @@ Tabs along the top, switched with `1` to `5` or `Tab`:
    - what's waiting: proposals and questions, which `2` and `3` switch to (`q` quits everywhere, as in most terminal programs)
 2. **Review:** the queue grouped by destination, as `carrel review` shows it, beside the selected proposal in full:
    - the card, the destination and why, sensitivity and why, problems, and the provider calls
-   - keys: `a` approve, `h` hold, `m` move (a collection picker), `x` reject, `e` edit, `Space` mark
+   - keys: `a` approve, `h` hold, `m` move (a collection picker you can type to narrow), `x` reject (after asking, since rejecting isn't a change History can undo), `e` edit (the editor takes the terminal, then the screen returns), `Space` mark
    - marks: decisions apply to every marked proposal, as one batch with one commit and one snapshot
    - `A` approves every high-confidence proposal that isn't sensitive (`--all-high`)
 3. **Questions:** ranked as `carrel questions` ranks them, with the items each affects. `Enter` answers: a line of text for a term, or a collection picker. `d` dismisses.
