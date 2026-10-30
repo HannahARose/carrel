@@ -86,6 +86,32 @@ impl App {
         })
     }
 
+    /// Starts choosing what to ingest: the owner's file picker, or the built-in browser.
+    pub(super) fn start_ingest(&mut self) -> Option<Effect> {
+        match crate::picker::choose(self.picker_preference.as_deref()) {
+            crate::picker::Choice::Command(words) => Some(Effect::Pick(words)),
+            crate::picker::Choice::BuiltIn => {
+                if self.picker_preference.is_none()
+                    && let Some(hint) = crate::picker::KNOWN
+                        .iter()
+                        .find_map(|k| k.install_here().map(|i| (k.name, i)))
+                {
+                    self.message = Some(format!(
+                        "No file picker found, so using the built-in one; {} is a good one ({})",
+                        hint.0, hint.1
+                    ));
+                }
+                self.open_browser();
+                None
+            }
+        }
+    }
+
+    /// Opens the built-in browser where picking starts.
+    pub(super) fn open_browser(&mut self) {
+        self.browser = Some(super::browser::Browser::open(self.start_folder.clone()));
+    }
+
     /// Opens the line to type or paste paths into.
     pub(super) fn ask_for_paths(&mut self) {
         self.input = Some(Input {
@@ -197,78 +223,5 @@ fn describe(entry: &IntakeEntry) -> String {
         Some(failure) if entry.stuck() => format!("{name}  failed: {failure}"),
         Some(failure) => format!("{name}  (trying again: {failure})"),
         None => name,
-    }
-}
-
-/// Paths as typed, pasted or dropped from a file manager: separated by spaces, with quotes or
-/// backslashes keeping spaces in a name, and `~` for the home folder.
-#[must_use]
-pub fn split_paths(text: &str) -> Vec<PathBuf> {
-    let mut paths = Vec::new();
-    let mut current = String::new();
-    let mut quote: Option<char> = None;
-    let mut started = false;
-    let mut chars = text.chars();
-    while let Some(c) = chars.next() {
-        match (quote, c) {
-            (Some(q), c) if c == q => quote = None,
-            (None, '\'' | '"') => {
-                quote = Some(c);
-                started = true;
-            }
-            (None | Some('"'), '\\') => {
-                if let Some(next) = chars.next() {
-                    current.push(next);
-                    started = true;
-                }
-            }
-            (None, c) if c.is_whitespace() => {
-                if started {
-                    paths.push(expand(&std::mem::take(&mut current)));
-                    started = false;
-                }
-            }
-            (_, c) => {
-                current.push(c);
-                started = true;
-            }
-        }
-    }
-    if started {
-        paths.push(expand(&current));
-    }
-    paths
-}
-
-fn expand(path: &str) -> PathBuf {
-    match path.strip_prefix('~') {
-        Some(rest) if rest.is_empty() || rest.starts_with('/') => carrel_core::local::home_dir()
-            .map_or_else(
-                || PathBuf::from(path),
-                |home| home.join(rest.trim_start_matches('/')),
-            ),
-        _ => PathBuf::from(path),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::split_paths;
-    use std::path::PathBuf;
-
-    #[test]
-    fn paths_are_split_as_a_shell_would() {
-        assert_eq!(
-            split_paths(r"/a/b.txt '/c/with space.pdf' /d/escaped\ name.md"),
-            [
-                PathBuf::from("/a/b.txt"),
-                PathBuf::from("/c/with space.pdf"),
-                PathBuf::from("/d/escaped name.md"),
-            ]
-        );
-        assert_eq!(split_paths("  \"/x y\"  "), [PathBuf::from("/x y")]);
-        assert_eq!(split_paths(""), Vec::<PathBuf>::new());
-        let home = carrel_core::local::home_dir().unwrap();
-        assert_eq!(split_paths("~/Downloads"), [home.join("Downloads")]);
     }
 }

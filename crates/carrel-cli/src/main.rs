@@ -10,6 +10,8 @@ mod commands;
 mod config;
 mod ingest;
 mod models;
+mod paths;
+mod picker;
 mod progress;
 mod providers;
 mod questions;

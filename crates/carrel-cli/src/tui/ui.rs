@@ -110,6 +110,9 @@ pub fn draw(frame: &mut Frame, app: &App, theme: Theme) {
     if let Some(picker) = &app.picker {
         draw_picker(frame, picker, theme, area);
     }
+    if let Some(browser) = &app.browser {
+        draw_browser(frame, browser, theme, area);
+    }
     if let Some(input) = &app.input {
         draw_input(frame, input, theme, area);
     }
@@ -248,7 +251,10 @@ fn centered(area: Rect, width: u16, height: u16) -> Rect {
 fn draw_help(frame: &mut Frame, theme: Theme, area: Rect) {
     let rows = [
         ("1 to 6, Tab, ←→", "switch screens"),
-        ("i", "add files and folders to ingest, from any screen"),
+        (
+            "i",
+            "add files and folders to ingest, with your file picker or the built-in one",
+        ),
         ("↑↓, j k, PgUp PgDn, Home End", "scroll, or choose a change"),
         ("a  h", "approve, or hold in Holding (Review)"),
         ("m  e  x", "move, edit or reject (Review)"),
@@ -631,6 +637,45 @@ fn draw_ingest(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
             .highlight_style(theme.selected())
             .block(Block::new().title(" Waiting ")),
         list_area,
+        &mut state,
+    );
+}
+
+fn draw_browser(frame: &mut Frame, browser: &super::browser::Browser, theme: Theme, area: Rect) {
+    let popup = centered(
+        area,
+        area.width.saturating_sub(8),
+        area.height.saturating_sub(4),
+    );
+    frame.render_widget(Clear, popup);
+    let marked = if browser.marked.is_empty() {
+        String::new()
+    } else {
+        format!(" · {} marked", browser.marked.len())
+    };
+    let block = Block::bordered().title(format!(" {}{marked} ", browser.dir.display()));
+    if let Some(problem) = &browser.problem {
+        frame.render_widget(Paragraph::new(problem.as_str()).block(block), popup);
+        return;
+    }
+    let items: Vec<ListItem> = browser
+        .entries
+        .iter()
+        .map(|(name, folder)| {
+            let mark = if browser.marked.contains(&browser.dir.join(name)) {
+                "* "
+            } else {
+                "  "
+            };
+            ListItem::new(format!("{mark}{name}{}", if *folder { "/" } else { "" }))
+        })
+        .collect();
+    let mut state = ListState::default().with_selected(Some(browser.chosen));
+    frame.render_stateful_widget(
+        List::new(items)
+            .highlight_style(theme.selected())
+            .block(block),
+        popup,
         &mut state,
     );
 }

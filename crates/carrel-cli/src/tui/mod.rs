@@ -2,6 +2,7 @@
 //! `carrel tui`. Everything it does is also a command.
 
 mod app;
+mod browser;
 mod intake;
 mod review;
 mod screens;
@@ -107,6 +108,18 @@ fn event_loop(
                 *terminal = enter();
                 finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
             }
+            Some(Effect::Pick(words)) => {
+                // The picker needs the terminal to itself, as the editor does.
+                leave();
+                let picked = crate::picker::run(&words, &app.start_folder);
+                *terminal = enter();
+                if let Some(folder) = picked_files(app, picked)
+                    && let Ok(mut prefs) = crate::config::Prefs::load()
+                {
+                    prefs.last_folder = Some(folder);
+                    let _ = prefs.save();
+                }
+            }
             Some(effect) if running.is_none() => {
                 if let Some(work) = background(app, effect) {
                     running = Some(work);
@@ -165,7 +178,7 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
             finished(app, Ok(text));
             return None;
         }
-        Effect::Edit(_) => return None,
+        Effect::Edit(_) | Effect::Pick(_) => return None,
         Effect::Dismiss(id) => {
             let result = crate::questions::dismiss(Some(&root), &id.to_string());
             finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
@@ -224,6 +237,30 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
         let _ = send.send(result);
     });
     Some(receive)
+}
+
+/// Plans what the picker chose; if the picker couldn't run, says why and opens the built-in
+/// browser instead. Returns the folder picked from, to start in next time.
+fn picked_files(app: &mut App, picked: Result<Vec<PathBuf>, Failure>) -> Option<PathBuf> {
+    match picked {
+        Ok(paths) if paths.is_empty() => {
+            app.message = Some("Nothing chosen".into());
+            None
+        }
+        Ok(paths) => {
+            let folder = paths[0].parent().filter(|f| f.is_dir()).map(Path::to_owned);
+            if let Some(folder) = &folder {
+                folder.clone_into(&mut app.start_folder);
+            }
+            app.plan(paths, carrel_core::ingest::IntakeOptions::default());
+            folder
+        }
+        Err(Failure(e)) => {
+            app.message = Some(format!("{e}; using the built-in browser"));
+            app.open_browser();
+            None
+        }
+    }
 }
 
 /// Adds `paths` to the intake queue and starts a worker, saying what happened in a line.
@@ -674,7 +711,12 @@ mod tests {
         let file = dir.path().join("a note.txt");
         std::fs::write(&file, "a note\n").unwrap();
 
+        app.picker_preference = Some("builtin".into());
+        app.start_folder = dir.path().to_owned();
         assert_eq!(app.key(key(KeyCode::Char('i'))), None);
+        assert!(app.browser.is_some(), "the built-in browser, as preferred");
+        app.key(key(KeyCode::Char('/')));
+        assert!(app.input.is_some(), "/ types a path instead");
         for c in format!("'{}'", file.display()).chars() {
             app.key(key(KeyCode::Char(c)));
         }
@@ -727,5 +769,28 @@ mod tests {
         assert_eq!((plan.count, plan.problem), (2, None));
         app.key(key(KeyCode::Esc));
         assert_eq!(app.planned, None);
+    }
+
+    #[test]
+    fn i_runs_the_owners_picker_when_there_is_one() {
+        let (dir, mut app) = sample(false);
+        app.picker_preference = Some("lf".into());
+        assert_eq!(
+            app.key(key(KeyCode::Char('i'))),
+            Some(Effect::Pick(vec![
+                "lf".into(),
+                "-selection-path={out}".into()
+            ]))
+        );
+        app.device = Some(Id::new_v7());
+        let file = dir.path().join("picked.txt");
+        std::fs::write(&file, "x").unwrap();
+        super::picked_files(&mut app, Ok(vec![file]));
+        assert_eq!(app.planned.as_ref().map(|p| p.count), Some(1));
+        super::picked_files(
+            &mut app,
+            Err(crate::Failure::new("couldn't start the picker lf")),
+        );
+        assert!(app.browser.is_some(), "falls back to the built-in browser");
     }
 }
