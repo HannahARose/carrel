@@ -101,6 +101,7 @@ pub fn draw(frame: &mut Frame, app: &App, theme: Theme) {
         Tab::Questions => draw_questions(frame, app, theme, inner),
         Tab::Browse => draw_browse(frame, app, theme, inner),
         Tab::Status => draw_report(frame, app, inner, Some(waiting_line(app))),
+        Tab::Ingest => draw_ingest(frame, app, theme, inner),
     }
     draw_help_line(frame, app, theme, bottom);
     if app.help {
@@ -216,6 +217,9 @@ fn draw_help_line(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
     if let Some(busy) = &app.busy {
         spans.push(Span::styled(format!(" {busy}  ·"), theme.key()));
     }
+    if let Some(worker) = app.worker_line() {
+        spans.push(Span::styled(format!(" {worker}  ·"), theme.key()));
+    }
     if let Some(note) = app.marked_note() {
         spans.push(Span::raw(format!(" {note}  ·")));
     }
@@ -243,7 +247,8 @@ fn centered(area: Rect, width: u16, height: u16) -> Rect {
 
 fn draw_help(frame: &mut Frame, theme: Theme, area: Rect) {
     let rows = [
-        ("1 to 5, Tab, ←→", "switch screens"),
+        ("1 to 6, Tab, ←→", "switch screens"),
+        ("i", "add files and folders to ingest, from any screen"),
         ("↑↓, j k, PgUp PgDn, Home End", "scroll, or choose a change"),
         ("a  h", "approve, or hold in Holding (Review)"),
         ("m  e  x", "move, edit or reject (Review)"),
@@ -257,6 +262,11 @@ fn draw_help(frame: &mut Frame, theme: Theme, area: Rect) {
             "collections or items; search; clear it (Browse)",
         ),
         ("u", "undo the chosen change (History)"),
+        ("x  t  r", "remove, move to the front, retry (Ingest)"),
+        (
+            "e  w",
+            "each entry, or whole folder, before queueing (Ingest)",
+        ),
         ("Ctrl-R", "read everything again"),
         ("?", "this help"),
         ("q, Esc, Ctrl-C", "quit"),
@@ -547,6 +557,10 @@ fn draw_input(frame: &mut Frame, input: &Input, theme: Theme, area: Rect) {
             " Search ",
             "Words to find in titles, tags and summaries:".to_owned(),
         ),
+        InputPurpose::Ingest => (
+            " Ingest ",
+            "Files and folders to add, separated by spaces (drop them here, or paste):".to_owned(),
+        ),
     };
     let lines = vec![
         Line::from(above),
@@ -564,5 +578,59 @@ fn draw_input(frame: &mut Frame, input: &Input, theme: Theme, area: Rect) {
             .wrap(Wrap { trim: false })
             .block(Block::bordered().title(title)),
         popup,
+    );
+}
+
+fn draw_ingest(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
+    if let Some(plan) = &app.planned {
+        let mut lines = vec![
+            Line::from(match plan.count {
+                0 => "Nothing new to queue".to_owned(),
+                1 => "1 item to queue:".to_owned(),
+                n => format!("{n} items to queue:"),
+            })
+            .style(Style::new().add_modifier(Modifier::BOLD)),
+        ];
+        lines.extend(plan.lines.iter().map(|l| Line::from(l.as_str())));
+        lines.push(Line::from(""));
+        if let Some(problem) = &plan.problem {
+            lines.push(Line::from(problem.as_str()));
+            lines.push(Line::from(""));
+        }
+        lines.push(Line::from(Span::styled(
+            "Enter adds them to the queue; a worker drafts each in the background, and its \
+             proposal appears in Review when it's ready. e reads folders entry by entry, w as \
+             one item.",
+            theme.dim(),
+        )));
+        frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), area);
+        return;
+    }
+    let [top, list_area] =
+        Layout::vertical([Constraint::Length(2), Constraint::Min(0)]).areas(area);
+    let head = app.worker_line().unwrap_or_else(|| {
+        if app.intake.iter().any(|e| !e.stuck()) {
+            "No worker is running; queue something or run `carrel worker` to start one".into()
+        } else {
+            "Press i to add files and folders.".into()
+        }
+    });
+    frame.render_widget(Paragraph::new(head), top);
+    if app.intake.is_empty() {
+        frame.render_widget(Paragraph::new("The queue is empty"), list_area);
+        return;
+    }
+    let items: Vec<ListItem> = app
+        .intake_lines()
+        .into_iter()
+        .map(|(_, line)| ListItem::new(line))
+        .collect();
+    let mut state = ListState::default().with_selected(Some(app.intake_chosen));
+    frame.render_stateful_widget(
+        List::new(items)
+            .highlight_style(theme.selected())
+            .block(Block::new().title(" Waiting ")),
+        list_area,
+        &mut state,
     );
 }

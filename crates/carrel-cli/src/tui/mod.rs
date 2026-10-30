@@ -2,6 +2,7 @@
 //! `carrel tui`. Everything it does is also a command.
 
 mod app;
+mod intake;
 mod review;
 mod screens;
 mod ui;
@@ -59,7 +60,20 @@ fn event_loop(
 ) -> Result<(), Failure> {
     let starts = ui::tab_starts();
     let mut running: Option<Done> = None;
+    let mut checked = std::time::Instant::now();
     while !app.quit {
+        // The worker runs in another process; see what it has done about once a second.
+        if checked.elapsed() >= Duration::from_secs(1) {
+            checked = std::time::Instant::now();
+            if app.poll_worker() {
+                let message = app.message.take();
+                if let Err(Failure(e)) = app.reload() {
+                    app.message = Some(e);
+                } else {
+                    app.message = message;
+                }
+            }
+        }
         if let Some(done) = &running
             && let Ok(result) = done.try_recv()
         {
@@ -157,6 +171,21 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
             finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
             return None;
         }
+        Effect::Queue { paths, options } => {
+            let result = queue(&root, &paths, options);
+            finished(app, result.map_err(|Failure(e)| e));
+            return None;
+        }
+        Effect::Unqueue(id) | Effect::Front(id) | Effect::Retry(id) => {
+            let change = match effect {
+                Effect::Unqueue(_) => crate::ingest::Change::Remove,
+                Effect::Front(_) => crate::ingest::Change::First,
+                _ => crate::ingest::Change::Retry,
+            };
+            let result = crate::ingest::change_queued(Some(&root), &id.to_string(), change);
+            finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
+            return None;
+        }
         Effect::Answer { id, answer } => {
             // A term's answer drafts its items again, which can take a while with a model.
             let id = id.to_string();
@@ -195,6 +224,30 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
         let _ = send.send(result);
     });
     Some(receive)
+}
+
+/// Adds `paths` to the intake queue and starts a worker, saying what happened in a line.
+fn queue(
+    root: &Path,
+    paths: &[PathBuf],
+    options: carrel_core::ingest::IntakeOptions,
+) -> Result<String, Failure> {
+    let archive = carrel_core::archive::Archive::open(root)?;
+    let identity = crate::config::Identity::load_or_create()?;
+    let queued = carrel_core::intake::add(&archive, paths, options, identity.device)?;
+    let started = crate::worker::start(&archive)?;
+    let n = queued.added.len();
+    Ok(match (n, started || crate::worker::running(&archive)?) {
+        (0, _) => "Nothing new to queue".into(),
+        (n, true) => format!(
+            "Queued {n} item{}; the worker drafts them in the background",
+            if n == 1 { "" } else { "s" }
+        ),
+        (n, false) => format!(
+            "Queued {n} item{}; no worker started (CARREL_WORKER is off)",
+            if n == 1 { "" } else { "s" }
+        ),
+    })
 }
 
 #[cfg(test)]
@@ -612,5 +665,67 @@ mod tests {
             app.key(key(KeyCode::Char('d'))),
             Some(Effect::Dismiss(term.id))
         );
+    }
+
+    #[test]
+    fn i_adds_files_through_a_plan_and_the_queue_can_be_changed() {
+        let (dir, mut app) = sample(false);
+        app.device = Some(Id::new_v7());
+        let file = dir.path().join("a note.txt");
+        std::fs::write(&file, "a note\n").unwrap();
+
+        assert_eq!(app.key(key(KeyCode::Char('i'))), None);
+        for c in format!("'{}'", file.display()).chars() {
+            app.key(key(KeyCode::Char(c)));
+        }
+        app.key(key(KeyCode::Enter));
+        assert_eq!(app.tab, Tab::Ingest);
+        let plan = app.planned.clone().expect("a plan before queueing");
+        assert_eq!(plan.count, 1);
+        assert!(screen(&app, 100, 30).contains("1 item to queue"));
+
+        let effect = app.key(key(KeyCode::Enter));
+        assert_eq!(
+            effect,
+            Some(Effect::Queue {
+                paths: vec![file.clone()],
+                options: carrel_core::ingest::IntakeOptions::default(),
+            })
+        );
+        assert_eq!(app.planned, None);
+
+        // As the run loop would: queue it, then read the queue.
+        carrel_core::intake::add(
+            &app.archive,
+            std::slice::from_ref(&file),
+            carrel_core::ingest::IntakeOptions::default(),
+            app.device.unwrap(),
+        )
+        .unwrap();
+        app.load_intake();
+        assert_eq!(app.intake.len(), 1);
+        assert!(screen(&app, 100, 30).contains("a note.txt"));
+        let id = app.intake[0].id;
+        assert_eq!(app.key(key(KeyCode::Char('x'))), Some(Effect::Unqueue(id)));
+        assert_eq!(app.key(key(KeyCode::Char('t'))), Some(Effect::Front(id)));
+        assert_eq!(app.key(key(KeyCode::Char('r'))), Some(Effect::Retry(id)));
+    }
+
+    #[test]
+    fn a_pile_folder_waits_for_each_or_whole() {
+        let (dir, mut app) = sample(false);
+        app.device = Some(Id::new_v7());
+        let pile = dir.path().join("Downloads");
+        std::fs::create_dir(&pile).unwrap();
+        std::fs::write(pile.join("one.txt"), "1").unwrap();
+        std::fs::write(pile.join("two.txt"), "2").unwrap();
+        app.plan(vec![pile], carrel_core::ingest::IntakeOptions::default());
+        assert!(app.planned.as_ref().unwrap().problem.is_some());
+        assert_eq!(app.key(key(KeyCode::Enter)), None, "nothing to queue yet");
+        app.key(key(KeyCode::Char('e')));
+        let plan = app.planned.clone().unwrap();
+        assert_eq!((plan.count, plan.problem), (2, None));
+        app.key(key(KeyCode::Esc));
+        assert_eq!(app.planned, None);
     }
 }
