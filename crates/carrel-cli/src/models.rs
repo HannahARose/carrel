@@ -6,13 +6,23 @@ use std::io::{BufRead as _, IsTerminal as _, Write as _};
 use std::path::{Path, PathBuf};
 
 use carrel_core::models::{
-    CATALOG, Fetcher, Helper, Installed, Model, download as fetch_model, find, installed,
-    network_log, part_path, remove as remove_model,
+    CATALOG, Fetcher, Helper, Installed, Model, download as fetch_model, download_mlx, find,
+    installed, installed_mlx, mlx_dir, network_log, part_path, remove as remove_model, remove_mlx,
 };
 use serde_json::{Value, json};
 
 use crate::ingest::human_size;
 use crate::{Failure, Report};
+
+/// A model's file format: one GGUF file for the llama.cpp provider, or a folder for MLX.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum)]
+pub enum Format {
+    /// One GGUF file, for the llama.cpp provider (any platform).
+    #[default]
+    Gguf,
+    /// A folder for the MLX provider (Apple-silicon Macs).
+    Mlx,
+}
 
 fn folder() -> Result<PathBuf, Failure> {
     carrel_core::local::models_dir()
@@ -46,8 +56,9 @@ fn state(model: &Model, dir: &Path, found: &[Installed]) -> (&'static str, Optio
 pub fn list() -> Result<Report, Failure> {
     let dir = folder()?;
     let found = installed(&dir).map_err(|e| Failure::io(&dir, &e))?;
+    let found_mlx = installed_mlx(&dir).map_err(|e| Failure::io(&dir, &e))?;
     let mut text = format!(
-        "Models for the llama.cpp provider, kept in {}\n\n",
+        "Models for the llama.cpp and MLX providers, kept in {}\n\n",
         dir.display()
     );
     let width = CATALOG.iter().map(|m| m.name.len()).max().unwrap_or(0);
@@ -78,12 +89,35 @@ pub fn list() -> Result<Report, Failure> {
             },
         )
         .unwrap();
+        let mlx_state = model.mlx.map(|build| {
+            if found_mlx.iter().any(|f| f.name == model.name) {
+                writeln!(text, "  {:width$}  MLX build downloaded", "").unwrap();
+                "downloaded"
+            } else if mlx_dir(&dir).join(format!("{}.part", model.name)).is_dir() {
+                writeln!(text, "  {:width$}  MLX build partly downloaded", "").unwrap();
+                "partial"
+            } else {
+                writeln!(
+                    text,
+                    "  {:width$}  also as MLX, {}: --format mlx",
+                    "",
+                    human_size(build.size())
+                )
+                .unwrap();
+                "available"
+            }
+        });
         let mut entry = serde_json::to_value(model).unwrap_or(Value::Null);
         entry["state"] = json!(state);
         entry["downloaded_bytes"] = json!(part);
+        entry["mlx_state"] = json!(mlx_state);
         catalog.push(entry);
     }
-    let others: Vec<&Installed> = found.iter().filter(|f| find(&f.name).is_none()).collect();
+    let others: Vec<&Installed> = found
+        .iter()
+        .chain(&found_mlx)
+        .filter(|f| find(&f.name).is_none())
+        .collect();
     if !others.is_empty() {
         text.push_str("\nAlso in the folder:\n");
         for other in &others {
@@ -130,17 +164,28 @@ fn confirm(question: &str, yes: bool) -> Result<bool, Failure> {
     Ok(matches!(answer.trim(), "y" | "Y" | "yes" | "Yes"))
 }
 
-/// `carrel models download NAME`: shows the size, license and destination, asks, then
-/// downloads through the network helper.
+/// `carrel models download NAME [--format mlx]`: shows the size, license and destination,
+/// asks, then downloads through the network helper.
 ///
 /// # Errors
 ///
-/// [`Failure`] if the model isn't known, the helper is missing, or the download fails.
-pub fn download(name: &str, yes: bool, json: bool) -> Result<Report, Failure> {
+/// [`Failure`] if the model isn't known or has no build in that format, the helper is
+/// missing, or the download fails.
+pub fn download(name: &str, format: Format, yes: bool, json: bool) -> Result<Report, Failure> {
     let model = known(name)?;
     let dir = folder()?;
-    let destination = dir.join(model.file_name());
-    if destination.is_file() {
+    let (destination, size, provider) = match format {
+        Format::Gguf => (dir.join(model.file_name()), model.size, "llama.cpp"),
+        Format::Mlx => {
+            let build = model.mlx.ok_or_else(|| {
+                Failure::new(format!(
+                    "{name} has no MLX build; download it as GGUF instead"
+                ))
+            })?;
+            (mlx_dir(&dir).join(model.name), build.size(), "MLX")
+        }
+    };
+    if destination.exists() {
         return Ok(Report::new(
             format!(
                 "{} is already downloaded, at {}.\n",
@@ -152,19 +197,24 @@ pub fn download(name: &str, yes: bool, json: bool) -> Result<Report, Failure> {
     }
     let helper = Helper::find()?;
     let question = format!(
-        "Download {} ({}, {} license) from huggingface.co to {}?",
+        "Download {}{} ({}, {} license) from huggingface.co to {}?",
         model.title,
-        human_size(model.size),
+        if format == Format::Mlx {
+            ", for MLX"
+        } else {
+            ""
+        },
+        human_size(size),
         model.license,
         destination.display()
     );
     if !confirm(&question, yes)? {
         return Err(Failure::new("nothing downloaded"));
     }
-    let path = run(model, &dir, &helper, json)?;
+    let path = run(model, format, &dir, &helper, json)?;
     Ok(Report::new(
         format!(
-            "Downloaded {} to {}; the llama.cpp provider offers it now.\n",
+            "Downloaded {} to {}; the {provider} provider offers it now.\n",
             model.name,
             path.display()
         ),
@@ -174,7 +224,13 @@ pub fn download(name: &str, yes: bool, json: bool) -> Result<Report, Failure> {
 
 /// Downloads with a progress line on a terminal, or progress as JSON lines on standard error
 /// with `--json`.
-fn run(model: &Model, dir: &Path, fetcher: &dyn Fetcher, json: bool) -> Result<PathBuf, Failure> {
+fn run(
+    model: &Model,
+    format: Format,
+    dir: &Path,
+    fetcher: &dyn Fetcher,
+    json: bool,
+) -> Result<PathBuf, Failure> {
     let terminal = std::io::stderr().is_terminal();
     let log = network_log();
     let mut progress = |done: u64, total: u64| {
@@ -194,13 +250,19 @@ fn run(model: &Model, dir: &Path, fetcher: &dyn Fetcher, json: bool) -> Result<P
             let _ = std::io::stderr().flush();
         }
     };
-    let result = fetch_model(model, dir, fetcher, log.as_deref(), &mut progress);
+    let result = match format {
+        Format::Gguf => fetch_model(model, dir, fetcher, log.as_deref(), &mut progress),
+        Format::Mlx => download_mlx(model, dir, fetcher, log.as_deref(), &mut progress),
+    };
     if terminal && !json {
         eprintln!();
     }
     result.map_err(|e| {
-        let kept = part_path(model, dir);
-        if kept.is_file() {
+        let kept = match format {
+            Format::Gguf => part_path(model, dir),
+            Format::Mlx => mlx_dir(dir).join(format!("{}.part", model.name)),
+        };
+        if kept.exists() {
             Failure::new(format!(
                 "{e}; the partial download is kept, and running this again continues it"
             ))
@@ -228,17 +290,24 @@ pub fn download_quietly(name: &str) -> Result<Report, Failure> {
     ))
 }
 
-/// `carrel models remove NAME`: deletes a downloaded model, after asking.
+/// `carrel models remove NAME [--format mlx]`: deletes a downloaded model, after asking.
 ///
 /// # Errors
 ///
 /// [`Failure`] if it isn't downloaded or can't be deleted.
-pub fn remove(name: &str, yes: bool) -> Result<Report, Failure> {
+pub fn remove(name: &str, format: Format, yes: bool) -> Result<Report, Failure> {
     let dir = folder()?;
-    if !confirm(&format!("Delete {name} from {}?", dir.display()), yes)? {
+    let shown = match format {
+        Format::Gguf => format!("{name} from {}", dir.display()),
+        Format::Mlx => format!("the MLX build of {name} from {}", mlx_dir(&dir).display()),
+    };
+    if !confirm(&format!("Delete {shown}?"), yes)? {
         return Err(Failure::new("nothing deleted"));
     }
-    let path = remove_model(name, &dir)?;
+    let path = match format {
+        Format::Gguf => remove_model(name, &dir)?,
+        Format::Mlx => remove_mlx(name, &dir)?,
+    };
     Ok(Report::new(
         format!("Deleted {}.\n", path.display()),
         json!({ "name": name, "path": path }),

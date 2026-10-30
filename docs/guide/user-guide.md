@@ -177,10 +177,11 @@ Carrel never sends your files anywhere. Everything it does with them runs on you
 | Provider | What it gives Carrel | Where |
 | --- | --- | --- |
 | `apple` | Apple's on-device model, PDF text (PDFKit), OCR (Vision) | Macs with Apple Intelligence |
+| `mlx` | Open models you download, through Apple's MLX, usually faster than llama.cpp on the same Mac | Apple-silicon Macs with twice the model's size in memory |
 | `llama` | Open models you download, through llama.cpp | Any platform |
 | `extract` | PDF text, and OCR through [Tesseract](https://tesseract-ocr.github.io) if it's installed | Any platform |
 
-`carrel providers` shows what this device has and which is used for what; the best available is chosen, and the next is tried when one can't help. `carrel models` lists models you can download, with their size, the memory they need and their license, and downloads one only when you ask. The only Carrel program that goes online is `carrel-fetch`, which downloads models and logs every request to `logs/network.log` on this device.
+`carrel providers` shows what this device has and which is used for what; the best available is chosen, and the next is tried when one can't help. `carrel models` lists models you can download, with their size, the memory they need and their license, and downloads one only when you ask: `carrel models download NAME` for llama.cpp, or `--format mlx` for the MLX provider. An MLX model is loaded on its first request and unloaded after five idle minutes. The only Carrel program that goes online is `carrel-fetch`, which downloads models and logs every request to `logs/network.log` on this device.
 
 ## Settings
 

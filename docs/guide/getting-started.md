@@ -26,6 +26,12 @@ On a Mac, also build the Apple provider, which gives Carrel Apple's on-device mo
 cd ~/Code/carrel-dev && swift build -c release --package-path apple/CarrelProviders && cp "$(swift build -c release --package-path apple/CarrelProviders --show-bin-path)/carrel-provider-apple" ~/.cargo/bin/
 ```
 
+On an Apple-silicon Mac you can also build the MLX provider, for open models through MLX. It needs Xcode and its Metal Toolchain (`xcodebuild -downloadComponent MetalToolchain`), and takes a few minutes:
+
+```bash
+cd ~/Code/carrel-dev/apple/CarrelMLX && xcodebuild -scheme carrel-provider-mlx -destination 'platform=macOS' -derivedDataPath .build/xcode -configuration Release -skipMacroValidation -quiet build && cp -R .build/xcode/Build/Products/Release/carrel-provider-mlx .build/xcode/Build/Products/Release/mlx-swift_Cmlx.bundle ~/.cargo/bin/
+```
+
 Make sure `~/.cargo/bin` is on your `PATH`, then check what Carrel found:
 
 ```bash

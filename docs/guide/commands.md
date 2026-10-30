@@ -77,8 +77,8 @@ Backups need [Kopia](https://kopia.io), beside `carrel` or on `PATH`.
 | --- | --- |
 | `carrel providers` | Lists the providers on this device (text models, text extraction) and which Carrel uses for each. |
 | `carrel models` | Lists the models Carrel can download, with size, memory needed and license, and the models already downloaded. |
-| `carrel models download NAME [--yes]` | Downloads a model after showing its size and license and asking; `--yes` skips the question. The file is checked against the checksum Carrel ships with. |
-| `carrel models remove NAME [--yes]` | Deletes a downloaded model, after asking. |
+| `carrel models download NAME [--format mlx] [--yes]` | Downloads a model after showing its size and license and asking; `--yes` skips the question. Every file is checked against the checksum Carrel ships with. `--format mlx` downloads the MLX build, a folder, for the MLX provider. |
+| `carrel models remove NAME [--format mlx] [--yes]` | Deletes a downloaded model, or its MLX build, after asking. |
 
 ## Settings
 

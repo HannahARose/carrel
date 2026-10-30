@@ -1,6 +1,6 @@
 #!/bin/sh
 # The tests that need a real Mac with Apple Intelligence and local models (#45): the Apple
-# provider and its on-device model, the llama.cpp provider with a real model, and a short
+# provider and its on-device model, the llama.cpp and MLX providers with real models, and a short
 # benchmark that drafts a few items with every installed model. CI runs it on the
 # self-hosted runner (.github/workflows/on-device.yml); run it by hand on any Apple-silicon Mac.
 #
@@ -18,6 +18,13 @@ cargo build --release --locked -p carrel-cli -p carrel-provider-extract -p carre
 swift build -c release --package-path apple/CarrelProviders --product carrel-provider-apple
 bin="$(pwd)/target/release"
 cp "$(swift build -c release --package-path apple/CarrelProviders --show-bin-path)/carrel-provider-apple" "$bin/"
+# MLX's shaders need xcodebuild; the provider finds them in the bundle beside it.
+(cd apple/CarrelMLX && xcodebuild -scheme carrel-provider-mlx -destination 'platform=macOS' \
+    -derivedDataPath .build/xcode -configuration Release -skipMacroValidation -quiet build)
+mlx="apple/CarrelMLX/.build/xcode/Build/Products/Release"
+cp "$mlx/carrel-provider-mlx" "$bin/"
+rm -rf "$bin/mlx-swift_Cmlx.bundle"
+cp -R "$mlx/mlx-swift_Cmlx.bundle" "$bin/"
 
 echo "== Apple provider"
 (cd apple/CarrelProviders && swift test)
@@ -30,6 +37,11 @@ if [ -z "$models" ]; then
     models="$("$bin/carrel" --json models list | python3 -c 'import json, sys; print(json.load(sys.stdin)["folder"])')"
 fi
 CARREL_TEST_LLAMA_MODELS="$models" cargo test --release --locked -p carrel-provider-llama
+
+echo "== MLX provider"
+# xcodebuild passes TEST_RUNNER_X to the tests as X.
+(cd apple/CarrelMLX && TEST_RUNNER_CARREL_TEST_MLX_MODELS="$models" xcodebuild -scheme CarrelMLX-Package \
+    -destination 'platform=macOS' -derivedDataPath .build/xcode -skipMacroValidation -quiet test)
 
 echo "== Drafting with every installed model"
 out="$(mktemp -d)"

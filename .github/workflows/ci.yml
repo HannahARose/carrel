@@ -104,6 +104,27 @@ jobs:
           CARREL_TEST_APPLE_PROVIDER="$bin/carrel-provider-apple" cargo test --locked -p carrel-core --test apple_provider
           PATH="$bin:$PATH" cargo run --locked --bin carrel -- providers
 
+  mlx:
+    # The MLX provider (apple/CarrelMLX). MLX's Metal shaders need xcodebuild, not swift build.
+    # Hosted runners can't run a model, so this builds it and runs the tests that need none;
+    # the on-device runner drafts with real MLX models.
+    name: MLX provider
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Metal Toolchain
+        # Xcode ships the Metal compiler as a separate component.
+        run: |
+          xcodebuild -showComponent MetalToolchain | grep -q "Status: installed" \
+            || xcodebuild -downloadComponent MetalToolchain
+      - name: Build and test
+        working-directory: apple/CarrelMLX
+        run: |
+          xcodebuild -scheme CarrelMLX-Package -destination 'platform=macOS' \
+            -derivedDataPath .build/xcode -skipMacroValidation test
+
   deny:
     # Known vulnerabilities, unmaintained or yanked crates, licenses, duplicate versions and
     # crate sources, as set in deny.toml.
@@ -273,7 +294,7 @@ jobs:
     # The single required check for branch protection. It passes only if every job above passed.
     name: CI passed
     if: always()
-    needs: [fmt, clippy, test, docs, swift, llama, extract, kopia, deny, zizmor, hygiene]
+    needs: [fmt, clippy, test, docs, swift, mlx, llama, extract, kopia, deny, zizmor, hygiene]
     runs-on: ubuntu-latest
     steps:
       - name: Check job results
