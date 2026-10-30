@@ -170,6 +170,16 @@ fn approved_items_move_in_with_cards_tags_changelog_and_one_commit() {
     assert_eq!(log[0].items.len(), 2);
     let (queued, _) = ReviewQueue::of(&setup.archive).list().unwrap();
     assert!(queued.is_empty(), "filed proposals leave the queue");
+    let listing =
+        std::fs::read_to_string(setup.root().join("Projects/Hardware/_collection.md")).unwrap();
+    assert!(listing.contains("| [About strip.txt](strip.txt.md) | file |"));
+    assert!(
+        std::fs::read_to_string(setup.root().join("ARCHIVE.md"))
+            .unwrap()
+            .contains("(+6 in subcollections)"),
+        "the counts above it change too"
+    );
+    assert_eq!(outcome.listing_problems, Vec::<String>::new());
 }
 
 #[test]

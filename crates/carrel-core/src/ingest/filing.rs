@@ -172,6 +172,8 @@ pub struct Outcome {
     pub snapshot: Option<crate::backup::Snapshot>,
     /// Why no snapshot was taken, when backups are set up but failed.
     pub snapshot_error: Option<crate::backup::BackupError>,
+    /// Listings that couldn't be brought up to date (FORMAT.md §6.3), and why.
+    pub listing_problems: Vec<String>,
 }
 
 /// Why a batch couldn't be filed at all.
@@ -296,6 +298,10 @@ pub fn file_batch(
     }
     change.body = Some(body);
     change.items = outcome.filed.iter().map(|f| f.item).collect();
+    match crate::listing::refresh(archive) {
+        Ok(refreshed) => outcome.listing_problems = refreshed.problems,
+        Err(error) => outcome.listing_problems.push(error.to_string()),
+    }
     if let Some(backups) = backups {
         match backups.snapshot(archive.root(), &change.summary) {
             Ok(snapshot) => {
@@ -664,7 +670,7 @@ fn add_to_changelog(
         "- {} · added [{}]({}) from ingest\n",
         jiff::Zoned::now().strftime("%Y-%m-%d"),
         escape_link_text(title),
-        link_destination(card_name)
+        crate::listing::link_destination(card_name)
     );
     // After the heading and its blank line, before the newest entry.
     let at = text.find("\n- ").map_or(text.len(), |i| i + 1);
@@ -680,31 +686,13 @@ fn add_to_changelog(
     replace(&path, &updated)
 }
 
-/// A path percent-encoded for a Markdown link destination (FORMAT.md §2.5).
-fn link_destination(path: &str) -> String {
-    let mut out = String::with_capacity(path.len());
-    for ch in path.chars() {
-        match ch {
-            ' ' => out.push_str("%20"),
-            '(' => out.push_str("%28"),
-            ')' => out.push_str("%29"),
-            '%' => out.push_str("%25"),
-            '#' => out.push_str("%23"),
-            '?' => out.push_str("%3F"),
-            '<' => out.push_str("%3C"),
-            '>' => out.push_str("%3E"),
-            _ => out.push(ch),
-        }
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn link_destinations_are_encoded() {
+        use crate::listing::link_destination;
         assert_eq!(
             link_destination("RFC 9562 (draft).md"),
             "RFC%209562%20%28draft%29.md"
