@@ -21,6 +21,8 @@ cuda = ["llama-cpp-2/cuda"]
 [dependencies]
 carrel-core.workspace = true
 llama-cpp-2 = { version = "0.1.160", default-features = false, features = ["common"] }
+minijinja = "3.0.1"
+minijinja-contrib = { version = "3.0.1", features = ["pycompat"] }
 serde_json = { version = "1.0.154", features = ["preserve_order"] }
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "std"] }
 
