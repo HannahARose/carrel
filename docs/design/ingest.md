@@ -88,13 +88,13 @@ The prompt includes the glossary (§7.3), so facts the owner has taught are used
 ### 8. Route
 
 1. **Rules:** `rules/routing.yaml` (§7.4), in order, with the first match winning (#25). A match has high confidence. With `auto_file: true` it can skip review, but sensitive items still wait.
-2. **Model, one level at a time:** the model sees the top-level collections' titles, descriptions and design-document sections ("Purpose and scope", "Not here"), plus the card draft, and picks one or **Holding**. If the chosen collection has subcollections, it repeats with those, choosing among them or "here". Each step sees only siblings, so the context stays small even for a large archive. That matters for Apple's 8,192 tokens, and it scales to the 100,000-card target. The answer carries a short reason for review.
-3. **Confidence:**
+2. **Model, one level at a time:** the model sees the top-level collections' titles, descriptions and design-document sections ("Purpose and scope", "Not here"), plus the card draft. It picks the collection that fits best and says how well it fits: well, partly or poorly. Holding isn't offered as a choice: offered as one, models take it whenever unsure. If the chosen collection has subcollections, the same question repeats with those, plus the collection itself, which always comes last. Each step sees only siblings, so the context stays small even for a large archive. That matters for Apple's 8,192 tokens, and it scales to the 100,000-card target. The answer carries a short reason for review.
+3. **Confidence**, from asking each level twice with the choices in opposite orders:
    - **high:** a rule matched
-   - **medium:** the model chose a collection and a second, shuffled-order pass agreed
-   - **low:** the passes disagreed, the model chose Holding, or validation needed a retry
+   - **medium:** both passes agreed and called it a good fit at every level
+   - **low:** a partial fit (the collection is kept); passes that disagreed or a poor fit at the top (Holding); or disagreement or a poor fit below the top (the parent collection)
 
-   The second pass costs one more call per level; it's skipped when a rule matched.
+   The second pass costs one more call per level, and is skipped when a rule matched.
 4. **Low confidence proposes Holding** (#28), and the item is recorded as a restructure signal (`_System/index/signals`), as are items the owner moves out of Holding later.
 
 The early benchmark (wiki: Models and Privacy) found Apple's model weak at routing from names alone. Design documents as context and the second pass are the answer to that, and the benchmark harness (#33) measures it.

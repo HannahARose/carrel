@@ -378,6 +378,17 @@ fn ingest_reports_kinds_sizes_and_duplicates_without_changing_anything() {
     assert_eq!(refused.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&refused.stderr).contains("--each"));
 
+    let dry = sandbox.json(&root, &["ingest", "--each", "--dry-run", downloads_arg]);
+    assert_eq!(dry["saved"], false);
+    assert_eq!(
+        sandbox.json(&root, &["review"])["entries"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1,
+        "a dry run saves nothing"
+    );
+
     let report = sandbox.json(&root, &["ingest", "--each", downloads_arg]);
     let items = report["items"].as_array().unwrap();
     assert_eq!(items.len(), 2);
@@ -412,12 +423,22 @@ fn ingest_reports_kinds_sizes_and_duplicates_without_changing_anything() {
     );
 
     assert!(downloads.join("new.txt").exists(), "nothing is moved");
+    let proposals = report["proposals"].as_array().unwrap();
     assert_eq!(
-        sandbox.json(&root, &["review"])["entries"]
-            .as_array()
-            .unwrap()
-            .len(),
+        proposals.len(),
         1,
-        "no new proposals yet"
+        "one proposal for the new file, none for the duplicate"
+    );
+    assert!(
+        proposals[0]["source"]["path"]
+            .as_str()
+            .unwrap()
+            .ends_with("new.txt")
+    );
+    let listed = sandbox.json(&root, &["review"]);
+    assert_eq!(
+        listed["entries"].as_array().unwrap().len(),
+        2,
+        "the sample's one and the new one"
     );
 }

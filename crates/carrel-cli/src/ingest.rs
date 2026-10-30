@@ -1,14 +1,17 @@
-//! `carrel ingest`: putting new files and folders into the archive. For now it examines them
-//! and reports the plan (kind, size, duplicates, and how each item's text was read) without
-//! changing anything; drafting cards and destinations follows (`docs/design/ingest.md`).
+//! `carrel ingest`: proposing to file new files and folders (`docs/design/ingest.md`). Each
+//! new item is examined, its text read, its card drafted and its destination chosen, and the
+//! result saved as a review proposal. Nothing is moved until a proposal is approved.
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
+use carrel_core::card::Id;
 use carrel_core::card::Kind;
 use carrel_core::ingest::card::{Context, Draft, Glossary, Vocabulary, draft};
+use carrel_core::ingest::route::{Route, Router, RoutingRules};
 use carrel_core::ingest::text::{ItemText, read};
-use carrel_core::ingest::{Candidate, IntakeOptions, plan};
+use carrel_core::ingest::{Batch, Candidate, IntakeOptions, plan};
+use carrel_core::review::{ReviewEntry, ReviewQueue, short_id};
 use serde_json::{Value, json};
 
 use crate::commands::locate;
@@ -19,6 +22,7 @@ pub fn ingest(
     archive: Option<&Path>,
     paths: &[PathBuf],
     options: IntakeOptions,
+    dry_run: bool,
 ) -> Result<Report, Failure> {
     let archive = locate(archive)?;
     let (candidates, skipped) = plan(&archive, paths, options)?;
@@ -47,12 +51,83 @@ pub fn ingest(
         .map(|(c, t)| t.as_ref().map(|t| draft(&registry, &context, c, t)))
         .collect();
 
-    let out = render(&candidates, &texts, &drafts, &skipped);
-
-    let items: Vec<Value> = candidates
+    let routing_rules = RoutingRules::of(&archive, &collections);
+    let chooser = Router::new(&archive, &collections, &routing_rules);
+    let routes: Vec<Option<Route>> = candidates
         .iter()
-        .zip(&texts)
         .zip(&drafts)
+        .map(|(c, d)| {
+            d.as_ref().map(|d| {
+                let source = c.path.parent().unwrap_or(&c.path);
+                chooser.route(&registry, c, source, d)
+            })
+        })
+        .collect();
+    let batch = Batch {
+        archive: &archive,
+        collections: &collections,
+        id: Id::new_v7(),
+        device: identity.device,
+    };
+    let entries: Vec<Option<ReviewEntry>> = candidates
+        .iter()
+        .zip(texts.iter().zip(&drafts).zip(&routes))
+        .map(|(c, ((t, d), r))| match (t, d, r) {
+            (Some(t), Some(d), Some(r)) => batch.propose(c, d, r, &t.attempts),
+            _ => None,
+        })
+        .collect();
+    if !dry_run {
+        let queue = ReviewQueue::of(&archive);
+        for entry in entries.iter().flatten() {
+            queue.save(entry)?;
+        }
+    }
+
+    let mut out = render(&candidates, &texts, &drafts, &routes, &skipped);
+    for problem in &routing_rules.problems {
+        writeln!(out, "warning: {problem}").unwrap();
+    }
+    let saved = entries.iter().flatten().count();
+    if dry_run {
+        out.push_str("\nNothing has been saved (--dry-run).\n");
+    } else if saved > 0 {
+        writeln!(
+            out,
+            "\nSaved {saved} proposal{} (batch {}). Review them with `carrel review`; nothing moves until you approve.",
+            if saved == 1 { "" } else { "s" },
+            short_id(batch.id)
+        )
+        .unwrap();
+    }
+
+    let items = items_json(&candidates, &texts, &drafts);
+    let skipped: Vec<Value> = skipped
+        .iter()
+        .map(|s| json!({"path": s.path, "reason": s.reason}))
+        .collect();
+    Ok(Report::new(
+        out,
+        json!({
+            "batch": batch.id,
+            "saved": !dry_run,
+            "items": items,
+            "skipped": skipped,
+            "proposals": entries.iter().flatten().collect::<Vec<_>>(),
+        }),
+    ))
+}
+
+/// Each item as JSON.
+fn items_json(
+    candidates: &[Candidate],
+    texts: &[Option<ItemText>],
+    drafts: &[Option<Draft>],
+) -> Vec<Value> {
+    candidates
+        .iter()
+        .zip(texts)
+        .zip(drafts)
         .map(|((c, t), d)| {
             json!({
                 "path": c.path,
@@ -67,15 +142,7 @@ pub fn ingest(
                 "card": d.as_ref().map(draft_json),
             })
         })
-        .collect();
-    let skipped: Vec<Value> = skipped
-        .iter()
-        .map(|s| json!({"path": s.path, "reason": s.reason}))
-        .collect();
-    Ok(Report::new(
-        out,
-        json!({ "items": items, "skipped": skipped }),
-    ))
+        .collect()
 }
 
 /// The plan as a report for people.
@@ -83,6 +150,7 @@ fn render(
     candidates: &[Candidate],
     texts: &[Option<ItemText>],
     drafts: &[Option<Draft>],
+    routes: &[Option<Route>],
     skipped: &[carrel_core::ingest::Skipped],
 ) -> String {
     let name = |c: &Candidate| {
@@ -102,7 +170,9 @@ fn render(
         .map(|c| name(c).chars().count())
         .max()
         .unwrap_or(0);
-    for ((candidate, item_text), card) in candidates.iter().zip(texts).zip(drafts) {
+    for (((candidate, item_text), card), route) in
+        candidates.iter().zip(texts).zip(drafts).zip(routes)
+    {
         let mut notes = Vec::new();
         if let Some(duplicate) = &candidate.duplicate_of {
             notes.push(format!("duplicate of {}", duplicate.card));
@@ -134,6 +204,21 @@ fn render(
                 writeln!(out, "  {:<width$}  {line}", "").unwrap();
             }
         }
+        if let Some(route) = route {
+            let why = route
+                .reasons
+                .first()
+                .map(|r| format!(": {r}"))
+                .unwrap_or_default();
+            writeln!(
+                out,
+                "  {:<width$}  to: {} ({} confidence){why}",
+                "",
+                route.path,
+                format!("{:?}", route.confidence).to_lowercase()
+            )
+            .unwrap();
+        }
     }
     if !skipped.is_empty() {
         out.push_str("Skipped:\n");
@@ -144,9 +229,6 @@ fn render(
             );
             writeln!(out, "  {name}: {}", skip.reason).unwrap();
         }
-    }
-    if !candidates.is_empty() {
-        out.push_str("\nNothing has been changed. Choosing destinations, and saving these as proposals, comes next.\n");
     }
     out
 }
