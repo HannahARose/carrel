@@ -178,6 +178,9 @@ fn expand_home(path: &str) -> std::path::PathBuf {
     }
 }
 
+/// The most tokens a routing answer may take.
+const ROUTE_TOKENS: u32 = 300;
+
 /// Where routing decided an item goes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Route {
@@ -509,10 +512,12 @@ impl<'a> Router<'a> {
                 "properties": {
                     "choice": {"enum": names},
                     "fit": {"enum": ["well", "partly", "poorly"], "description": "How well the item fits your choice"},
-                    "reason": {"type": "string", "description": "One short sentence"}
+                    "reason": {"type": "string", "description": "One short sentence, at most 15 words"}
                 }
             })),
-            max_tokens: Some(120),
+            // Room for a local model's fuller reason: an answer cut off before the JSON ends is
+            // wasted. A model that's done sooner stops sooner.
+            max_tokens: Some(ROUTE_TOKENS),
         };
         let stage = |result: &str, message: Option<String>| Attempt {
             stage: "route".into(),

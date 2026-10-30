@@ -15,6 +15,9 @@ use crate::review::Attempt;
 /// How much of an item's text the floor rules read, in bytes.
 const SCAN_BYTES: usize = 200_000;
 
+/// The most tokens a sensitivity answer may take.
+const RATING_TOKENS: u32 = 240;
+
 /// How much text the model sees, in bytes; enough to judge the kind of document.
 const MODEL_BYTES: usize = 6_000;
 
@@ -294,10 +297,11 @@ pub fn assess(registry: &Registry, name: &str, text: &str, default: Sensitivity)
             "required": ["level", "reason"],
             "properties": {
                 "level": {"enum": allowed},
-                "reason": {"type": "string", "description": "One short sentence, without quoting private details"}
+                "reason": {"type": "string", "description": "One short sentence, at most 15 words, without quoting private details"}
             }
         })),
-        max_tokens: Some(80),
+        // Room for a local model's fuller reason, so the JSON isn't cut off.
+        max_tokens: Some(RATING_TOKENS),
     };
     let attempt = |result: &str, message: Option<String>| Attempt {
         stage: "sensitivity".into(),
