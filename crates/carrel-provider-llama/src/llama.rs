@@ -225,9 +225,53 @@ fn format_prompt(model: &LlamaModel, request: &CompletionRequest) -> Result<Stri
         LlamaChatMessage::new("user".into(), request.prompt.clone())
             .map_err(|e| failed("prompt")(e.to_string()))?,
     );
-    model
-        .apply_chat_template(&template, &messages, true)
-        .map_err(|e| failed("chat template")(e.to_string()))
+    match model.apply_chat_template(&template, &messages, true) {
+        Ok(prompt) => Ok(prompt),
+        // llama.cpp only knows the template formats it was built with; a newer model's
+        // template is rendered as the Jinja it is.
+        Err(builtin) => {
+            let source = template
+                .to_str()
+                .map_err(|e| failed("chat template")(e.to_string()))?;
+            let vocab = model.vocab();
+            let eos = String::from_utf8_lossy(&vocab.token_to_piece(vocab.eos(), true, None))
+                .into_owned();
+            render_template(source, request, &eos)
+                .map_err(|jinja| failed("chat template")(format!("{builtin}; as Jinja: {jinja}")))
+        }
+    }
+}
+
+/// Renders a model's Jinja chat template for `request`, as Hugging Face's tokenizers do. The
+/// beginning-of-sequence token is left out because tokenizing adds it.
+fn render_template(source: &str, request: &CompletionRequest, eos: &str) -> Result<String, String> {
+    let mut env = minijinja::Environment::new();
+    env.set_unknown_method_callback(minijinja_contrib::pycompat::unknown_method_callback);
+    env.add_function(
+        "raise_exception",
+        |message: String| -> Result<String, minijinja::Error> {
+            Err(minijinja::Error::new(
+                minijinja::ErrorKind::InvalidOperation,
+                message,
+            ))
+        },
+    );
+    let mut messages = Vec::new();
+    if let Some(system) = &request.system {
+        messages.push(minijinja::context! { role => "system", content => system });
+    }
+    messages.push(minijinja::context! { role => "user", content => &request.prompt });
+    env.render_str(
+        source,
+        minijinja::context! {
+            messages => messages,
+            add_generation_prompt => true,
+            bos_token => "",
+            eos_token => eos,
+            enable_thinking => false,
+        },
+    )
+    .map_err(|e| e.to_string())
 }
 
 fn generate(
@@ -329,6 +373,34 @@ fn generate(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A template in the style of Gemma's, which llama.cpp's built-in formats don't cover.
+    const GEMMA_STYLE: &str = "{{ bos_token }}{% if messages[0]['role'] == 'system' %}{% set first = messages[0]['content'] + '\n\n' %}{% set rest = messages[1:] %}{% else %}{% set first = '' %}{% set rest = messages %}{% endif %}{% for m in rest %}{% if m['role'] not in ['user', 'assistant'] %}{{ raise_exception('unknown role') }}{% endif %}<start_of_turn>{{ 'model' if m['role'] == 'assistant' else m['role'] }}\n{{ (first if loop.first else '') + m['content'] | trim }}<end_of_turn>\n{% endfor %}{% if add_generation_prompt %}<start_of_turn>model\n{% endif %}";
+
+    #[test]
+    fn templates_llama_cpp_does_not_know_are_rendered_as_jinja() {
+        let request = CompletionRequest {
+            system: Some("Be brief.".into()),
+            prompt: "  Name this file.  ".into(),
+            ..CompletionRequest::default()
+        };
+        let prompt = render_template(GEMMA_STYLE, &request, "<eos>").unwrap();
+        assert_eq!(
+            prompt,
+            "<start_of_turn>user\nBe brief.\n\nName this file.<end_of_turn>\n<start_of_turn>model\n"
+        );
+    }
+
+    #[test]
+    fn a_template_that_raises_says_why() {
+        let request = CompletionRequest {
+            prompt: "x".into(),
+            ..CompletionRequest::default()
+        };
+        let error =
+            render_template("{{ raise_exception('no system role') }}", &request, "").unwrap_err();
+        assert!(error.contains("no system role"), "{error}");
+    }
 
     /// The models folder for tests: `CARREL_TEST_LLAMA_MODELS`, which CI sets to a folder with
     /// a tiny model. Tests that need a model pass without checking anything when it isn't set.

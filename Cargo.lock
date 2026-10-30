@@ -462,6 +462,8 @@ version = "0.1.0"
 dependencies = [
  "carrel-core",
  "llama-cpp-2",
+ "minijinja",
+ "minijinja-contrib",
  "serde_json",
  "tracing-subscriber",
 ]
@@ -1595,6 +1597,21 @@ name = "micromap"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a86d3146ed3995b5913c414f6664344b9617457320782e64f0bb44afd49d74"
+
+[[package]]
+name = "minijinja"
+version = "3.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "789a6b737c4a13bec43cd3c1b982aa8a8a192ff4bf444e0fb1fd5a324f064fd1"
+
+[[package]]
+name = "minijinja-contrib"
+version = "3.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e15d0d31fbf10ce99b313a238406d62dd5913d95a9be5fa081f1232e31292fc7"
+dependencies = [
+ "minijinja",
+]
 
 [[package]]
 name = "minimal-lexical"
