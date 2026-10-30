@@ -61,7 +61,7 @@ fn parent_of<'a>(collections: &'a [Collection], path: &str) -> Option<&'a Collec
 }
 
 /// A relative link from the folder `from` to `to`, both relative to the archive root.
-fn relative(from: &str, to: &str) -> String {
+pub(crate) fn relative(from: &str, to: &str) -> String {
     let ups = if from.is_empty() {
         0
     } else {
@@ -239,6 +239,36 @@ fn update(root: &Path, path: &str, name: &str, content: &str) -> Result<bool, St
     std::fs::write(&temp, updated).map_err(|e| format!("{path}: {e}"))?;
     std::fs::rename(&temp, &file).map_err(|e| format!("{path}: {e}"))?;
     Ok(true)
+}
+
+/// Adds `- DATE · ENTRY` to the top of a collection's `CHANGELOG.md` (FORMAT.md §6.4), newest
+/// first, creating the changelog if there is none.
+///
+/// # Errors
+///
+/// A file error.
+pub fn add_to_changelog(archive: &Archive, collection: &str, entry: &str) -> std::io::Result<()> {
+    let path = archive.root().join(collection).join("CHANGELOG.md");
+    let text = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => "# Changelog\n".into(),
+        Err(e) => return Err(e),
+    };
+    let line = format!("- {} · {entry}\n", jiff::Zoned::now().strftime("%Y-%m-%d"));
+    // After the heading and its blank line, before the newest entry.
+    let at = text.find("\n- ").map_or(text.len(), |i| i + 1);
+    let mut updated = text[..at].to_owned();
+    if !updated.ends_with("\n\n") {
+        if !updated.ends_with('\n') {
+            updated.push('\n');
+        }
+        updated.push('\n');
+    }
+    updated.push_str(&line);
+    updated.push_str(&text[at..]);
+    let temp = path.with_extension(format!("tmp-{}", crate::card::Id::new_v7()));
+    std::fs::write(&temp, updated)?;
+    std::fs::rename(&temp, &path)
 }
 
 /// Rebuilds every listing in the archive, rewriting only those that changed.

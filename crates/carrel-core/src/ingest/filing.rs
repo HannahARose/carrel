@@ -360,7 +360,9 @@ pub fn file_one(
         .map(|n| n.to_string_lossy().into_owned())
         .ok_or_else(|| FilingError::Missing(source.clone()))?;
     let folder = archive.root().join(&collection.path);
-    let name = free_name(&folder, &original_name).map_err(io(&folder))?;
+    // Names Carrel creates are always portable (FORMAT.md §2.5).
+    let portable = crate::names::portable(&original_name);
+    let name = free_name(&folder, &portable).map_err(io(&folder))?;
     let mut card = card_for(entry, id, &name, placement, collection);
     let problems: Vec<String> = card
         .problems()
@@ -399,6 +401,11 @@ pub fn file_one(
     }
     let note = if name == original_name {
         String::new()
+    } else if portable != original_name {
+        format!(
+            "\nFiled as “{name}”: “{original_name}” {}, so it wouldn't work on every system.\n",
+            crate::names::problems(&original_name).join(" and ")
+        )
     } else {
         format!(
             "\nFiled as “{name}”: the collection already had an item named “{original_name}”.\n"
@@ -660,30 +667,15 @@ fn add_to_changelog(
     title: &str,
     card_name: &str,
 ) -> Result<(), FilingError> {
-    let path = archive.root().join(&collection.path).join("CHANGELOG.md");
-    let text = match std::fs::read_to_string(&path) {
-        Ok(text) => text,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => "# Changelog\n".into(),
-        Err(e) => return Err(io(&path)(e)),
-    };
-    let line = format!(
-        "- {} · added [{}]({}) from ingest\n",
-        jiff::Zoned::now().strftime("%Y-%m-%d"),
+    let entry = format!(
+        "added [{}]({}) from ingest",
         escape_link_text(title),
         crate::listing::link_destination(card_name)
     );
-    // After the heading and its blank line, before the newest entry.
-    let at = text.find("\n- ").map_or(text.len(), |i| i + 1);
-    let mut updated = text[..at].to_owned();
-    if !updated.ends_with("\n\n") {
-        if !updated.ends_with('\n') {
-            updated.push('\n');
-        }
-        updated.push('\n');
-    }
-    updated.push_str(&line);
-    updated.push_str(&text[at..]);
-    replace(&path, &updated)
+    crate::listing::add_to_changelog(archive, &collection.path, &entry).map_err(io(&archive
+        .root()
+        .join(&collection.path)
+        .join("CHANGELOG.md")))
 }
 
 #[cfg(test)]
