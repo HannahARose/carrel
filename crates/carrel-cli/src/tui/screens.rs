@@ -29,6 +29,8 @@ pub enum InputPurpose {
     },
     /// Words to find in titles, tags and summaries.
     Search,
+    /// Files and folders to ingest.
+    Ingest,
 }
 
 impl Input {
@@ -37,6 +39,7 @@ impl Input {
         match self.purpose {
             InputPurpose::Answer { .. } => "what it is",
             InputPurpose::Search => "words to find",
+            InputPurpose::Ingest => "paths to ingest (or drop files here)",
         }
     }
 }
@@ -124,6 +127,14 @@ impl App {
                     }
                     InputPurpose::Answer { .. } => {
                         self.message = Some("No answer given; the question still waits".into());
+                    }
+                    InputPurpose::Ingest => {
+                        let paths = super::intake::split_paths(&text);
+                        if paths.is_empty() {
+                            self.message = Some("Nothing to ingest".into());
+                        } else {
+                            self.plan(paths, carrel_core::ingest::IntakeOptions::default());
+                        }
                     }
                     InputPurpose::Search => {
                         self.search = (!text.is_empty()).then_some(text);

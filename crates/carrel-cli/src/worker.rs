@@ -98,7 +98,22 @@ pub fn try_lock(archive: &Archive) -> Result<Option<Lock>, Failure> {
 ///
 /// [`Failure`] if the lock file can't be opened.
 pub fn running(archive: &Archive) -> Result<bool, Failure> {
-    Ok(try_lock(archive)?.is_none())
+    // Only looks: a missing lock file means no worker has ever run here, and nothing is
+    // created, so asking never writes to the configuration folder.
+    let path = file_for(archive, "lock")?;
+    let file = match std::fs::OpenOptions::new().write(true).open(&path) {
+        Ok(file) => file,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(e) => return Err(Failure::io(&path, &e)),
+    };
+    match file.try_lock() {
+        Ok(()) => {
+            let _ = file.unlock();
+            Ok(false)
+        }
+        Err(std::fs::TryLockError::WouldBlock) => Ok(true),
+        Err(std::fs::TryLockError::Error(e)) => Err(Failure::io(&path, &e)),
+    }
 }
 
 /// The running worker's status, if there is a worker and it has written one.
