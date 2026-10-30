@@ -40,7 +40,7 @@ Part of [Sample archive](../ARCHIVE.md)
 
 | Item | Kind | Added |
 | --- | --- | --- |
-| [oscillator-sim](oscillator-sim.md) | bundle | 2026-10-24 |
 | [Field notes, 2025](field-notes-2025.md) | bundle | 2026-10-24 |
+| [oscillator-sim](oscillator-sim.md) | bundle | 2026-10-24 |
 | [Sensor dataset, spring 2026](Sensor%20dataset%202026.md) | external | 2026-10-25 |
 <!-- /carrel:listing -->

@@ -332,6 +332,9 @@ fn decide(
             }
         }
     }
+    for problem in &outcome.listing_problems {
+        writeln!(text, "warning: a listing couldn't be updated: {problem}").unwrap();
+    }
     if let Some(line) = crate::backup::describe_outcome(&outcome, note.as_deref()) {
         writeln!(text, "{line}").unwrap();
     }

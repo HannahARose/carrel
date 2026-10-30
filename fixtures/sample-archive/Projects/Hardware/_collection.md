@@ -32,6 +32,6 @@ Part of [Projects](../_collection.md)
 | --- | --- | --- |
 | [Desk lamp build](lamp-build.md) | folder | 2026-10-26 |
 | [Desk lamp parts list](parts-list.csv.md) | file | 2026-10-26 |
-| [Hardware notes folder](notes.card.md) | folder | 2026-10-26 |
 | [Hardware notes](notes.md.md) | file | 2026-10-26 |
+| [Hardware notes folder](notes.card.md) | folder | 2026-10-26 |
 <!-- /carrel:listing -->
