@@ -30,17 +30,20 @@ pub enum Tab {
     History,
     /// Items waiting to be drafted, and adding more.
     Ingest,
+    /// This device's and the archive's settings.
+    Settings,
 }
 
 impl Tab {
     /// Every tab, in order.
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::Status,
         Self::Review,
         Self::Questions,
         Self::Browse,
         Self::History,
         Self::Ingest,
+        Self::Settings,
     ];
 
     /// The tab's name.
@@ -52,6 +55,7 @@ impl Tab {
             Self::Browse => "Browse",
             Self::History => "History",
             Self::Ingest => "Ingest",
+            Self::Settings => "Settings",
         }
     }
 
@@ -72,6 +76,13 @@ pub enum Confirm {
     },
     /// Rejecting these proposals, which history can't undo.
     Reject(Vec<Id>),
+    /// Downloading this catalog model.
+    Download {
+        /// The model's name.
+        name: String,
+        /// What it is, its size and license, and where it goes.
+        about: String,
+    },
 }
 
 /// Work the run loop does for the app: it needs the writer lease, which the app doesn't hold.
@@ -123,6 +134,15 @@ pub enum Effect {
     Retry(Id),
     /// Run the owner's file picker, with the terminal to itself, and plan what it chose.
     Pick(Vec<String>),
+    /// Set a setting, as `carrel settings set` does.
+    SetSetting {
+        /// The setting.
+        key: String,
+        /// Its new value.
+        value: String,
+    },
+    /// Download this catalog model.
+    Download(String),
 }
 
 /// The interactive mode's state.
@@ -134,7 +154,7 @@ pub struct App {
     /// What `carrel status` shows.
     pub status: Vec<String>,
     /// How far each report screen is scrolled.
-    pub scroll: [u16; 6],
+    pub scroll: [u16; 7],
     /// The history, newest first.
     pub history: Vec<Entry>,
     /// The selected change.
@@ -187,6 +207,10 @@ pub struct App {
     pub planned: Option<super::intake::Plan>,
     /// What the worker was doing when last looked at.
     pub worker: super::intake::Worker,
+    /// The Settings screen's rows.
+    pub settings: Vec<super::settings::Shown>,
+    /// The chosen setting.
+    pub settings_chosen: usize,
     /// The built-in file browser, while it's open.
     pub browser: Option<super::browser::Browser>,
     /// The `picker` preference.
@@ -214,7 +238,7 @@ impl App {
             archive,
             tab: Tab::Status,
             status: Vec::new(),
-            scroll: [0; 6],
+            scroll: [0; 7],
             history: Vec::new(),
             selected: 0,
             waiting: (0, 0),
@@ -244,6 +268,8 @@ impl App {
             intake_chosen: 0,
             planned: None,
             worker: super::intake::Worker::default(),
+            settings: Vec::new(),
+            settings_chosen: 0,
             browser: None,
             picker_preference: None,
             start_folder: std::path::PathBuf::from("."),
@@ -287,6 +313,7 @@ impl App {
         self.load_questions(questions);
         self.load_browse()?;
         self.load_intake();
+        self.load_settings();
         Ok(())
     }
 
@@ -317,7 +344,7 @@ impl App {
                 ("q", "quit"),
             ];
         }
-        let mut keys = vec![("1-6", "screens")];
+        let mut keys = vec![("1-7", "screens")];
         if let Some(input) = &self.input {
             return vec![
                 ("type", input.prompt()),
@@ -353,6 +380,7 @@ impl App {
             ];
         }
         match self.tab {
+            Tab::Settings => keys.extend([("↑↓", "choose"), ("Enter", "change")]),
             Tab::Ingest => keys.extend([
                 ("i", "add"),
                 ("↑↓", "choose"),
@@ -384,6 +412,8 @@ impl App {
             self.browse_move(delta);
         } else if self.tab == Tab::Ingest {
             self.intake_move(delta);
+        } else if self.tab == Tab::Settings {
+            self.settings_move(delta);
         } else if self.tab == Tab::History {
             let last = self.history.len().saturating_sub(1);
             let next = i64::try_from(self.selected).unwrap_or(0) + i64::from(delta);
@@ -409,6 +439,7 @@ impl App {
                 return Some(match confirm {
                     Confirm::Undo { id, .. } => Effect::Undo(id),
                     Confirm::Reject(ids) => Effect::Reject(ids),
+                    Confirm::Download { name, .. } => Effect::Download(name),
                 });
             }
             self.message = Some("Nothing changed".into());
@@ -445,6 +476,7 @@ impl App {
             Tab::Questions => self.questions_key(key),
             Tab::Browse => self.browse_key(key),
             Tab::Ingest => self.intake_key(key),
+            Tab::Settings => self.settings_key(key),
             _ => Handled::No,
         };
         if let Handled::Yes(effect) = handled {
@@ -460,7 +492,7 @@ impl App {
                 });
             }
             KeyCode::Char('i') => return self.start_ingest(),
-            KeyCode::Char(c @ '1'..='6') => {
+            KeyCode::Char(c @ '1'..='7') => {
                 self.tab = Tab::ALL[usize::from(c as u8 - b'1')];
             }
             KeyCode::Tab | KeyCode::Right => {

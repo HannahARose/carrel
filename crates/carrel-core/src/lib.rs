@@ -70,6 +70,7 @@ pub mod questions;
 pub mod rename;
 pub mod review;
 pub mod sections;
+pub mod settings;
 pub mod signals;
 
 /// The version of the archive format this build reads and writes (`FORMAT.md`).

@@ -6,6 +6,7 @@ mod browser;
 mod intake;
 mod review;
 mod screens;
+mod settings;
 mod ui;
 
 use std::fmt::Write as _;
@@ -184,6 +185,15 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
             finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
             return None;
         }
+        Effect::SetSetting { key, value } => {
+            let result = crate::settings::set(Some(&root), &key, &value);
+            finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
+            return None;
+        }
+        Effect::Download(name) => (
+            format!("Downloading {name}…"),
+            Box::new(move || crate::models::download_quietly(&name)),
+        ),
         Effect::Queue { paths, options } => {
             let result = queue(&root, &paths, options);
             finished(app, result.map_err(|Failure(e)| e));
@@ -792,5 +802,39 @@ mod tests {
             Err(crate::Failure::new("couldn't start the picker lf")),
         );
         assert!(app.browser.is_some(), "falls back to the built-in browser");
+    }
+
+    #[test]
+    fn settings_are_shown_and_changed_the_way_the_command_does() {
+        let (_dir, mut app) = sample(false);
+        app.key(key(KeyCode::Char('7')));
+        assert_eq!(app.tab, Tab::Settings);
+        let screen_text = screen(&app, 120, 30);
+        assert!(screen_text.contains("This device"), "{screen_text}");
+        assert!(screen_text.contains("ingest.originals"), "{screen_text}");
+
+        let originals = app
+            .settings
+            .iter()
+            .position(|s| s.label == "ingest.originals")
+            .unwrap();
+        app.settings_chosen = originals;
+        app.key(key(KeyCode::Enter));
+        let picker = app.picker.clone().expect("a choice of values");
+        assert_eq!(picker.collections, ["move", "keep"]);
+        app.key(key(KeyCode::Down));
+        assert_eq!(
+            app.key(key(KeyCode::Enter)),
+            Some(Effect::SetSetting {
+                key: "ingest.originals".into(),
+                value: "keep".into(),
+            })
+        );
+
+        app.settings_chosen = 0;
+        app.key(key(KeyCode::Enter));
+        let pickers = app.picker.clone().expect("a choice of pickers");
+        assert!(pickers.collections.contains(&"builtin".to_owned()));
+        assert!(pickers.collections.contains(&"yazi".to_owned()));
     }
 }
