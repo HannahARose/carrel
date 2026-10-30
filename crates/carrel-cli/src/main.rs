@@ -8,6 +8,7 @@ mod backup;
 mod commands;
 mod config;
 mod ingest;
+mod models;
 mod providers;
 mod questions;
 mod review;
@@ -118,6 +119,35 @@ enum Command {
     Questions {
         #[command(subcommand)]
         action: Option<QuestionsAction>,
+    },
+    /// Models for local providers: list them, or download or remove one. Nothing is
+    /// downloaded unless asked for.
+    Models {
+        #[command(subcommand)]
+        action: Option<ModelsAction>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum ModelsAction {
+    /// List the models Carrel can download, and those already in the models folder.
+    List,
+    /// Download a model, after showing its size and license and asking. The file is checked
+    /// against the checksum Carrel ships with before it's used.
+    Download {
+        /// The model's name, from `carrel models`.
+        name: String,
+        /// Download without asking.
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Delete a downloaded model, after asking.
+    Remove {
+        /// The model's name.
+        name: String,
+        /// Delete without asking.
+        #[arg(long)]
+        yes: bool,
     },
 }
 
@@ -343,6 +373,11 @@ fn main() -> ExitCode {
                 questions::answer(cli.archive.as_deref(), &id, &answer)
             }
             QuestionsAction::Dismiss { id } => questions::dismiss(cli.archive.as_deref(), &id),
+        },
+        Command::Models { action } => match action.unwrap_or(ModelsAction::List) {
+            ModelsAction::List => models::list(),
+            ModelsAction::Download { name, yes } => models::download(&name, yes, cli.json),
+            ModelsAction::Remove { name, yes } => models::remove(&name, yes),
         },
     };
     finish(result, cli.json)

@@ -38,6 +38,9 @@ allow = [
     "Zlib",
 ]
 confidence-threshold = 0.9
+# The network helper's TLS trust roots: Mozilla's CA list, published as data under a
+# permissive data license.
+exceptions = [{ crate = "webpki-roots", allow = ["CDLA-Permissive-2.0"] }]
 
 [licenses.private]
 # Carrel's own crates aren't published.
@@ -48,6 +51,16 @@ ignore = true
 multiple-versions = "warn"
 wildcards = "deny"
 allow-wildcard-paths = true
+# Only the network helper goes online (docs/design/models.md): no other crate may use an HTTP
+# client.
+deny = [
+    { crate = "ureq", wrappers = ["carrel-fetch"] },
+    { crate = "reqwest" },
+    { crate = "hyper" },
+    { crate = "curl" },
+    { crate = "isahc" },
+    { crate = "attohttpc" },
+]
 
 [sources]
 # Only crates.io; no git dependencies or other registries.

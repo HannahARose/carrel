@@ -25,6 +25,6 @@ uuid = { version = "1.29.0", features = ["serde", "v7"] }
 workspace = true
 
 [dev-dependencies]
-jsonschema = "0.60.2"
+jsonschema = { version = "0.60.2", default-features = false }
 proptest = "1"
 tempfile = "3.27.0"

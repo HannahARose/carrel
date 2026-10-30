@@ -60,6 +60,7 @@ pub mod ingest;
 pub mod listing;
 pub mod local;
 pub mod manifest;
+pub mod models;
 pub mod names;
 pub mod providers;
 pub mod questions;

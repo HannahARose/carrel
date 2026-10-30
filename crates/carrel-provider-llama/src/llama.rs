@@ -80,7 +80,10 @@ impl LlamaProvider {
             let mut offer = model_offer("none", context);
             offer.available = false;
             offer.reason = Some(match models_dir {
-                Some(dir) => format!("no model yet: put a .gguf file in {}", dir.display()),
+                Some(dir) => format!(
+                    "no model yet: download one with `carrel models`, or put a .gguf file in {}",
+                    dir.display()
+                ),
                 None => "no models folder: set CARREL_MODELS_DIR".to_owned(),
             });
             offers.push(offer);

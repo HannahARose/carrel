@@ -350,7 +350,7 @@ fn describe_kind(candidate: &Candidate) -> String {
 }
 
 /// `1.3 KB`, `482 KB`, `2.1 GB`.
-fn human_size(bytes: u64) -> String {
+pub(crate) fn human_size(bytes: u64) -> String {
     const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
     #[allow(clippy::cast_precision_loss)] // a display value
     let mut value = bytes as f64;
