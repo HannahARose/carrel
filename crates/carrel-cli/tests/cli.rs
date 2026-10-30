@@ -485,3 +485,61 @@ fn review_edit_opens_the_editor_and_saves_a_card_that_checks_out() {
     let out = run("false");
     assert!(!out.status.success(), "a failed editor is an error");
 }
+
+#[test]
+fn bare_carrel_outside_a_terminal_asks_for_a_command() {
+    let sandbox = Sandbox::new();
+    let out = sandbox.run_in(sandbox.dir.path(), &[]);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("a command is needed when not in a terminal")
+    );
+}
+
+#[test]
+fn undo_reverses_a_change_by_its_identifier() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.path("new");
+    sandbox.ok(
+        sandbox.dir.path(),
+        &["init", root.to_str().unwrap(), "--name", "Undo test"],
+    );
+    let first = sandbox.json(&root, &["log"])[0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let blocked = sandbox.run_in(&root, &["undo", &first[..8]]);
+    assert!(
+        !blocked.status.success(),
+        "the first change can't be undone"
+    );
+    assert!(String::from_utf8_lossy(&blocked.stderr).contains("can't be undone"));
+
+    // A change worth undoing: an item filed in Holding.
+    let item = sandbox.path("note.txt");
+    std::fs::write(&item, "a note\n").unwrap();
+    let ingested = sandbox.json(&root, &["ingest", item.to_str().unwrap()]);
+    let proposal = ingested["proposals"][0]["id"].as_str().unwrap().to_owned();
+    sandbox.ok(&root, &["review", "hold", &proposal]);
+    let filed = sandbox.json(&root, &["log"])[0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(root.join("Holding/note.txt.md").is_file());
+
+    let missing = sandbox.run_in(&root, &["undo", "ffffffffff"]);
+    assert!(!missing.status.success());
+    assert!(
+        String::from_utf8_lossy(&missing.stderr).contains("no change ffffffffff in the history")
+    );
+    let out = sandbox.ok(&root, &["undo", &filed[..8]]);
+    assert!(out.starts_with("Undid “File “note”” as change "), "{out}");
+    assert!(
+        !root.join("Holding/note.txt.md").exists(),
+        "the card is gone again"
+    );
+    assert_eq!(
+        sandbox.json(&root, &["log"])[0]["reverts"].as_str(),
+        Some(filed.as_str())
+    );
+}

@@ -531,3 +531,38 @@ pub fn log(archive: Option<&Path>, max_count: Option<usize>) -> Result<Report, F
         Value::Array(entries.iter().map(entry_json).collect()),
     ))
 }
+
+/// `carrel undo CHANGE`: undoes a recorded change with a new change that reverses it. Items it
+/// moved go back, and the metadata it changed returns to how it was.
+pub fn undo(archive: Option<&Path>, change: &str) -> Result<Report, Failure> {
+    let archive = locate(archive)?;
+    let history = History::open(&archive)?;
+    let entries = history.log()?;
+    let matching: Vec<&Entry> = entries
+        .iter()
+        .filter(|e| e.id.starts_with(change))
+        .collect();
+    let entry = match matching.as_slice() {
+        [entry] => *entry,
+        [] => return Err(Failure::new(format!("no change {change} in the history"))),
+        _ => {
+            return Err(Failure::new(format!(
+                "several changes start with {change}; give more of it"
+            )));
+        }
+    };
+    let identity = Identity::load_or_create()?;
+    let lease =
+        DiskLock::for_archive(&archive).acquire(holder(&identity), "undo", DEFAULT_LEASE)?;
+    let result = history.undo(&archive, &entry.id, &lease);
+    lease.release()?;
+    let commit = result?;
+    Ok(Report::new(
+        format!(
+            "Undid “{}” as change {}\n",
+            entry.summary,
+            &commit[..commit.len().min(10)]
+        ),
+        json!({"undone": entry.id, "commit": commit}),
+    ))
+}
