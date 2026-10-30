@@ -151,13 +151,13 @@ fn a_good_answer_becomes_the_draft() {
 #[test]
 fn a_bad_answer_is_retried_with_its_problems() {
     let fixture = Fixture::new();
-    let lazy = json!({"title": "diffuser", "summary": "", "tags": []});
+    let lazy = json!({"title": "IMG_2041", "summary": "", "tags": []});
     let model = Scripted::new("a", 100, 8192, vec![Ok(lazy), Ok(good())]);
     let registry = registry_of(vec![model]);
     let d = draft(
         &registry,
         &fixture.context(),
-        &candidate("diffuser.txt"),
+        &candidate("IMG_2041.txt"),
         &text("Print at 0.2 mm."),
     );
     assert_eq!(d.problems, Vec::<String>::new());
@@ -173,6 +173,24 @@ fn a_bad_answer_is_retried_with_its_problems() {
         message.contains("only repeats the file name") && message.contains("summary is empty"),
         "{message}"
     );
+}
+
+#[test]
+fn a_name_a_person_chose_can_be_the_title() {
+    let fixture = Fixture::new();
+    let named =
+        json!({"title": "Amplifier build log", "summary": "Notes from building it.", "tags": []});
+    let model = Scripted::new("a", 100, 8192, vec![Ok(named)]);
+    let registry = registry_of(vec![model]);
+    let d = draft(
+        &registry,
+        &fixture.context(),
+        &candidate("amplifier build log.txt"),
+        &text("Soldered the op-amp socket."),
+    );
+    assert_eq!(d.problems, Vec::<String>::new());
+    assert_eq!(d.title, "Amplifier build log");
+    assert_eq!(d.attempts.len(), 1, "accepted the first time");
 }
 
 #[test]
@@ -265,20 +283,20 @@ fn long_text_is_fitted_to_the_models_context() {
 }
 
 #[test]
-fn a_title_that_repeats_the_file_name_is_accepted_after_a_retry() {
+fn a_title_that_repeats_a_made_up_file_name_is_accepted_after_a_retry() {
     let fixture = Fixture::new();
     let named = || {
-        Ok(json!({"title": "receipt", "summary": "A scanned shop receipt from 2026.", "tags": []}))
+        Ok(json!({"title": "scan0042", "summary": "A scanned shop receipt from 2026.", "tags": []}))
     };
     let registry = registry_of(vec![Scripted::new("a", 100, 8192, vec![named(), named()])]);
     let d = draft(
         &registry,
         &fixture.context(),
-        &candidate("receipt.pdf"),
+        &candidate("scan0042.pdf"),
         &text("Scanned receipt 2026"),
     );
     assert_eq!(d.problems, Vec::<String>::new());
-    assert_eq!(d.title, "receipt");
+    assert_eq!(d.title, "scan0042");
     assert_eq!(
         d.attempts
             .iter()

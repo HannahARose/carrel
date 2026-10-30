@@ -26,8 +26,9 @@ pub const MAX_TITLE: usize = 120;
 /// The longest summary, in characters.
 pub const MAX_SUMMARY: usize = 600;
 
-/// The problem raised for a file whose title is just its name. Worth one retry, but accepted
-/// on the last attempt: a card titled with the file name beats no card.
+/// The problem raised for a file whose title is just its machine-made name, such as `IMG_2041`.
+/// Worth one retry, but accepted on the last attempt: a card titled with the file name beats no
+/// card. A name a person chose, such as `amplifier build log`, is often already the right title.
 const REPEATS_NAME: &str = "the title only repeats the file name; say what the item is";
 
 /// The most tags a draft may have.
@@ -155,6 +156,64 @@ struct Answer {
     created: Option<String>,
 }
 
+/// Words in file names that cameras, scanners, browsers and programs make up, which say nothing
+/// about what a file is.
+const GENERIC_WORDS: [&str; 31] = [
+    "attachment",
+    "copy",
+    "dcim",
+    "doc",
+    "document",
+    "download",
+    "downloads",
+    "draft",
+    "dsc",
+    "dscn",
+    "export",
+    "file",
+    "final",
+    "image",
+    "img",
+    "mov",
+    "mvimg",
+    "new",
+    "output",
+    "page",
+    "photo",
+    "pic",
+    "picture",
+    "pxl",
+    "scan",
+    "scanned",
+    "screen",
+    "screenshot",
+    "shot",
+    "unnamed",
+    "untitled",
+];
+
+/// Whether a file's name (without its extension) was made by a device or program rather than
+/// chosen by a person: nothing in it but numbers, dates, short fragments and generic words, as
+/// in `IMG_2041`, `scan0003`, `Screenshot 2025-01-01 at 10.21.33` or `document (3)`.
+#[must_use]
+pub fn machine_made(stem: &str) -> bool {
+    let mut words = Vec::new();
+    let mut word = String::new();
+    for c in stem.chars() {
+        if c.is_alphabetic() {
+            word.extend(c.to_lowercase());
+        } else if !word.is_empty() {
+            words.push(std::mem::take(&mut word));
+        }
+    }
+    if !word.is_empty() {
+        words.push(word);
+    }
+    !words
+        .iter()
+        .any(|w| w.chars().count() >= 3 && !GENERIC_WORDS.contains(&w.as_str()))
+}
+
 /// The JSON Schema the model's answer must follow. Tags are an enum of the vocabulary, so a
 /// model can only add new ones through `new_tag`.
 #[must_use]
@@ -263,6 +322,7 @@ fn check(
         problems.push(format!("the title is longer than {MAX_TITLE} characters"));
     } else if candidate.kind == Kind::File
         && (title.to_lowercase() == name || title.to_lowercase() == stem)
+        && machine_made(&stem)
     {
         // A project's name is often its right title, so this only applies to files.
         problems.push(REPEATS_NAME.to_owned());
@@ -581,4 +641,34 @@ fn now() -> DateOrTime {
             .strftime("%Y-%m-%dT%H:%M:%S%:z")
             .to_string(),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn names_people_choose_are_told_apart_from_made_up_ones() {
+        for made in [
+            "IMG_2041",
+            "scan0003",
+            "Screenshot 2025-01-01 at 10.21.33",
+            "document (3)",
+            "PXL_20250314_101112",
+            "01928f3a-7c41-7d2e-9b6a-3f0c5e2a1b44",
+            "20250314",
+            "Untitled",
+        ] {
+            assert!(machine_made(made), "{made}");
+        }
+        for chosen in [
+            "amplifier build log",
+            "Q3 plan",
+            "invoice_2025-03",
+            "cv alex morgan",
+            "Liu2022",
+        ] {
+            assert!(!machine_made(chosen), "{chosen}");
+        }
+    }
 }
