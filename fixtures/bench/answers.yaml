@@ -1,0 +1,348 @@
+# The expected answers for each benchmark item (docs/design/benchmark.md).
+#
+# destinations: the acceptable collections. ambiguous: the item fits more than one, so
+# Holding scores half. sensitivity: the level a correct run gives, never below the archive's
+# default (personal). date: the creation date the text gives, or null. tags: those a card
+# must have; may: others that are also right.
+items:
+  "2025 bank statement March.txt":
+    destinations: [Finances]
+    sensitivity: restricted
+    date: 2025-03-31
+    tags: [bank]
+  "tax return summary 2024.md":
+    destinations: [Finances]
+    sensitivity: sensitive
+    date: 2025-01-20
+    tags: [tax]
+  "pension annual statement.txt":
+    destinations: [Finances]
+    sensitivity: sensitive
+    date: 2025-04-06
+    tags: [pension]
+    may: [investments]
+  "fund report q2.txt":
+    destinations: [Finances]
+    sensitivity: personal
+    date: 2025-07-15
+    tags: [investments]
+  "letter from tax office.txt":
+    destinations: [Finances]
+    sensitivity: sensitive
+    date: 2025-06-02
+    tags: [tax]
+  "order confirmation laptop.txt":
+    destinations: [Receipts]
+    sensitivity: personal
+    date: 2025-02-11
+    tags: [electronics]
+    may: [warranty]
+  "receipt desk chair.txt":
+    destinations: [Receipts]
+    sensitivity: personal
+    date: 2025-05-03
+    tags: [household]
+    may: [warranty]
+  "invoice monitor arm.md":
+    destinations: [Receipts]
+    sensitivity: personal
+    date: 2025-08-19
+    tags: [electronics]
+  "phone repair receipt.txt":
+    destinations: [Receipts]
+    sensitivity: personal
+    date: 2025-09-27
+    tags: [electronics]
+  "prescription amoxicillin.txt":
+    destinations: [Health]
+    sensitivity: sensitive
+    date: 2025-01-14
+    tags: [prescriptions]
+  "blood test results.txt":
+    destinations: [Health]
+    sensitivity: sensitive
+    date: 2025-03-07
+    tags: [results]
+  "physio appointment.txt":
+    destinations: [Health]
+    sensitivity: sensitive
+    date: 2025-10-09
+    tags: [appointments]
+  "vaccination record.md":
+    destinations: [Health]
+    sensitivity: sensitive
+    date: null
+    tags: [results]
+    may: [appointments]
+  "home contents policy.txt":
+    destinations: [Insurance]
+    sensitivity: sensitive
+    date: 2025-02-01
+    tags: [policy]
+  "travel insurance certificate.txt":
+    destinations: [Insurance]
+    sensitivity: sensitive
+    date: 2025-05-20
+    tags: [policy]
+  "claim physio costs.md":
+    destinations: [Insurance]
+    sensitivity: sensitive
+    date: 2025-10-20
+    tags: [claim]
+  "car insurance renewal.txt":
+    destinations: [Insurance]
+    sensitivity: sensitive
+    date: 2025-11-01
+    tags: [policy]
+  "tenancy agreement.md":
+    destinations: [Home]
+    sensitivity: sensitive
+    date: 2023-08-01
+    tags: [lease]
+  "electricity bill september.txt":
+    destinations: [Home]
+    sensitivity: personal
+    date: 2025-10-03
+    tags: [utilities]
+  "boiler repair note.txt":
+    destinations: [Home]
+    sensitivity: personal
+    date: 2025-01-29
+    tags: [repairs]
+  "building notice water off.txt":
+    destinations: [Home]
+    sensitivity: personal
+    date: 2025-07-08
+    tags: [utilities]
+    may: [repairs]
+  "internet contract.txt":
+    destinations: [Home]
+    sensitivity: personal
+    date: 2024-11-12
+    tags: [utilities]
+  "dishwasher manual.txt":
+    destinations: [Manuals]
+    sensitivity: personal
+    date: null
+    tags: [appliances]
+  "router quick start.md":
+    destinations: [Manuals]
+    sensitivity: personal
+    date: null
+    tags: [electronics]
+  "drill safety and warranty.txt":
+    destinations: [Manuals]
+    sensitivity: personal
+    date: null
+    tags: [tools]
+  "coffee machine descaling.txt":
+    destinations: [Manuals]
+    sensitivity: personal
+    date: null
+    tags: [appliances]
+  "employment contract lumen.md":
+    destinations: [Work]
+    sensitivity: sensitive
+    date: 2023-05-15
+    tags: [contracts]
+  "payslip october.txt":
+    destinations: [Work]
+    sensitivity: sensitive
+    date: 2025-10-31
+    tags: [pay]
+  "performance review 2025.md":
+    destinations: [Work]
+    sensitivity: personal
+    date: 2025-06-30
+    tags: [contracts]
+    may: [meetings]
+  "team meeting notes.md":
+    destinations: [Work]
+    sensitivity: personal
+    date: 2025-09-16
+    tags: [meetings]
+  "cv alex morgan.md":
+    destinations: [Work]
+    sensitivity: personal
+    date: 2025-04-02
+    tags: [applications]
+  "plant monitor readme.md":
+    destinations: [Projects]
+    sensitivity: personal
+    date: null
+    tags: [code, electronics]
+  "short story draft.md":
+    destinations: [Projects]
+    sensitivity: personal
+    date: null
+    tags: [writing]
+  "budget app notes.md":
+    destinations: [Projects]
+    sensitivity: personal
+    date: null
+    tags: [code]
+  "amplifier build log.txt":
+    destinations: [Projects]
+    sensitivity: personal
+    date: 2025-03-22
+    tags: [electronics]
+  "darwin origin chapter 4 notes.md":
+    destinations: [Reading]
+    sensitivity: personal
+    date: null
+    tags: [biology]
+    may: [articles]
+  "paper kuramoto synchronization.txt":
+    destinations: [Reading]
+    sensitivity: personal
+    date: 2000-09-01
+    tags: [papers, physics]
+  "essay on attention.md":
+    destinations: [Reading]
+    sensitivity: personal
+    date: null
+    tags: [articles]
+  "rfc 9110 http semantics notes.md":
+    destinations: [Reading]
+    sensitivity: personal
+    date: 2022-06-01
+    tags: [articles]
+  "cell biology review.txt":
+    destinations: [Reading]
+    sensitivity: personal
+    date: 2024-02-12
+    tags: [papers, biology]
+  "lab notebook oscillators week 12.md":
+    destinations: [Research]
+    sensitivity: personal
+    date: 2025-03-21
+    tags: [notes]
+  "draft paper phase response.md":
+    destinations: [Research]
+    sensitivity: personal
+    date: null
+    tags: [drafts]
+  "talk slides outline.md":
+    destinations: [Research]
+    sensitivity: personal
+    date: 2025-11-14
+    tags: [talks]
+  "dataset description.md":
+    destinations: [Research]
+    sensitivity: personal
+    date: 2025-05-09
+    tags: [notes]
+  "flight booking lisbon.txt":
+    destinations: [Travel]
+    sensitivity: personal
+    date: 2025-03-30
+    tags: [flights]
+  "train tickets porto.txt":
+    destinations: [Travel]
+    sensitivity: personal
+    date: 2025-06-18
+    tags: [trains]
+  "hotel booking porto.txt":
+    destinations: [Travel]
+    sensitivity: personal
+    date: 2025-04-04
+    tags: [hotels]
+  "itinerary portugal.md":
+    destinations: [Travel]
+    sensitivity: personal
+    date: null
+    tags: [flights, trains, hotels]
+  "sourdough loaf.md":
+    destinations: [Recipes]
+    sensitivity: personal
+    date: null
+    tags: [baking]
+  "lentil dal.md":
+    destinations: [Recipes]
+    sensitivity: personal
+    date: null
+    tags: [dinner]
+  "lemon drizzle cake.txt":
+    destinations: [Recipes]
+    sensitivity: personal
+    date: null
+    tags: [baking]
+  "letter from grandma.txt":
+    destinations: [Letters]
+    sensitivity: personal
+    date: 2025-02-14
+    tags: [family]
+  "email from sam about visit.txt":
+    destinations: [Letters]
+    sensitivity: personal
+    date: 2025-08-02
+    tags: [friends]
+  "birthday card from sister.txt":
+    destinations: [Letters]
+    sensitivity: personal
+    date: 2025-01-26
+    tags: [family]
+  "receipt and manual blender.txt":
+    destinations: [Receipts, Manuals]
+    ambiguous: true
+    sensitivity: personal
+    date: 2025-04-12
+    tags: []
+    may: [household, appliances, warranty]
+  "travel insurance claim lost bag.md":
+    destinations: [Insurance]
+    ambiguous: true
+    sensitivity: sensitive
+    date: 2025-06-27
+    tags: [claim]
+  "referral letter for physio.txt":
+    destinations: [Health]
+    ambiguous: true
+    sensitivity: sensitive
+    date: 2025-08-28
+    tags: [appointments]
+  "conference registration.txt":
+    destinations: [Research, Work, Travel]
+    ambiguous: true
+    sensitivity: personal
+    date: 2025-07-01
+    tags: []
+    may: [talks, flights, hotels]
+  "home office expenses.md":
+    destinations: [Finances, Receipts]
+    ambiguous: true
+    sensitivity: sensitive
+    date: 2025-01-25
+    tags: []
+    may: [tax, electronics]
+  "misc notes.txt":
+    destinations: [Holding]
+    sensitivity: personal
+    date: null
+    tags: []
+  "untitled scan text.txt":
+    destinations: [Holding]
+    sensitivity: personal
+    date: null
+    tags: []
+  "wifi and alarm codes.txt":
+    destinations: [Home]
+    ambiguous: true
+    sensitivity: restricted
+    date: null
+    tags: [utilities]
+  "card replacement letter.txt":
+    destinations: [Finances]
+    sensitivity: restricted
+    date: 2025-09-05
+    tags: [bank]
+  "old us tax form.txt":
+    destinations: [Finances]
+    sensitivity: restricted
+    date: 2021-04-15
+    tags: [tax]
+  "message to landlord.txt":
+    destinations: [Home]
+    sensitivity: personal
+    date: 2025-10-12
+    tags: [repairs]

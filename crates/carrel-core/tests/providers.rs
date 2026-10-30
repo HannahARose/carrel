@@ -184,6 +184,28 @@ fn the_registry_prefers_higher_priority_and_settings() {
 }
 
 #[test]
+fn a_pinned_offer_has_nothing_to_fall_back_on() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut registry = Registry::new();
+    registry.add(Box::new(start(dir.path(), "echo")));
+    registry.add(Box::new(start(dir.path(), "echo-fail")));
+    let failing = registry.ranked(Capability::TextModel)[0].1.id.clone();
+    registry.pin(Capability::TextModel, "echo-fail", &failing);
+
+    assert_eq!(registry.ranked(Capability::TextModel).len(), 1);
+    let error = registry
+        .complete(&CompletionRequest {
+            prompt: "x".into(),
+            ..CompletionRequest::default()
+        })
+        .unwrap_err();
+    assert_eq!(
+        error,
+        ProviderError::Failed("echo was asked to fail".into())
+    );
+}
+
+#[test]
 fn failures_fall_back_to_the_next_offer() {
     let dir = tempfile::tempdir().unwrap();
     let mut registry = Registry::new();

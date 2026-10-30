@@ -309,6 +309,7 @@ pub struct Attempt {
 pub struct Registry {
     providers: Vec<Box<dyn Provider>>,
     preferred: BTreeMap<Capability, (String, String)>,
+    pinned: BTreeMap<Capability, (String, String)>,
 }
 
 impl std::fmt::Debug for Registry {
@@ -319,6 +320,7 @@ impl std::fmt::Debug for Registry {
                 &self.providers.iter().map(|p| p.name()).collect::<Vec<_>>(),
             )
             .field("preferred", &self.preferred)
+            .field("pinned", &self.pinned)
             .finish()
     }
 }
@@ -350,6 +352,13 @@ impl Registry {
             .insert(capability, (provider.to_owned(), offer.to_owned()));
     }
 
+    /// Uses only `provider`'s offer `offer` for `capability`, with no other to fall back on, as
+    /// when the benchmark measures one model.
+    pub fn pin(&mut self, capability: Capability, provider: &str, offer: &str) {
+        self.pinned
+            .insert(capability, (provider.to_owned(), offer.to_owned()));
+    }
+
     /// The providers, in the order they were added.
     pub fn providers(&self) -> impl Iterator<Item = &dyn Provider> {
         self.providers.iter().map(AsRef::as_ref)
@@ -361,12 +370,14 @@ impl Registry {
     #[must_use]
     pub fn ranked(&self, capability: Capability) -> Vec<(&dyn Provider, &Offer)> {
         let preferred = self.preferred.get(&capability);
+        let pinned = self.pinned.get(&capability);
         let mut offers: Vec<(usize, &dyn Provider, &Offer)> = self
             .providers
             .iter()
             .enumerate()
             .flat_map(|(i, p)| p.offers().iter().map(move |o| (i, p.as_ref(), o)))
             .filter(|(_, _, o)| o.capability == capability && o.available)
+            .filter(|(_, p, o)| pinned.is_none_or(|(name, id)| name == p.name() && id == &o.id))
             .collect();
         offers.sort_by_key(|(i, p, o)| {
             let is_preferred = preferred.is_some_and(|(name, id)| name == p.name() && id == &o.id);

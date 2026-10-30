@@ -13,5 +13,6 @@ globs:
   - "**/*.md"
 ignores:
   - "fixtures/sample-archive/**"
+  - "fixtures/bench/**"
   - "target/**"
   - "**/.build/**"
