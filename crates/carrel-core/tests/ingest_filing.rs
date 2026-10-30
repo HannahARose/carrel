@@ -199,6 +199,24 @@ fn a_taken_name_gets_a_number_and_the_card_says_why() {
     assert!(changelog.contains("(parts-list%20%282%29.csv.md)"));
 }
 
+// Windows can't create these names, so no item from there could have them.
+#[cfg(not(windows))]
+#[test]
+fn names_that_arent_portable_are_filed_under_portable_ones() {
+    let mut setup = Setup::new();
+    let path = setup.incoming("Q3: plan?.txt", "plan\n");
+    let entry = setup.proposal(&path);
+    let outcome = setup.file(vec![(entry, Placement::Destination)]);
+    assert_eq!(outcome.filed[0].path, "Projects/Hardware/Q3- plan-.txt");
+    let card = card_at(&setup.root().join("Projects/Hardware/Q3- plan-.txt.md"));
+    assert_eq!(card.card().item.as_deref(), Some("Q3- plan-.txt"));
+    assert!(
+        card.body().contains("“Q3: plan?.txt” contains : ?"),
+        "{}",
+        card.body()
+    );
+}
+
 #[test]
 fn held_folders_go_to_holding_with_a_manifest() {
     let mut setup = Setup::new();
