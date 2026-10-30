@@ -28,6 +28,18 @@ Every document is analyzed on your own devices. Nothing is sent anywhere unless 
 - **Obsidian-compatible:** the archive root opens as an Obsidian vault.
 - **Command-line tool:** `carrel` does everything the app does, with JSON output for scripts. See the [wiki's Command-Line Tool page](https://github.com/HannahARose/carrel/wiki/Command-Line-Tool).
 
+## Install
+
+From v0.2, each [release](https://github.com/HannahARose/carrel/releases) has an archive for macOS (Apple silicon and Intel), Linux (x86_64 and arm64) and Windows (x86_64), with `SHA256SUMS` and build provenance attestations. An archive holds `carrel` and everything it runs: the network helper, the llama.cpp provider, Kopia for backups, and on macOS the Apple provider. Put them together in a folder on your `PATH`.
+
+To check a download came from this repository's release workflow:
+
+```bash
+gh attestation verify carrel-0.2.0-linux-x86_64.tar.gz --repo HannahARose/carrel
+```
+
+The binaries aren't signed yet (that comes with the Mac app), so on macOS a browser download needs `xattr -d com.apple.quarantine` on each program before it runs; downloads with `curl` or `gh release download` don't. Then download a model for drafting cards with `carrel models`, unless your Mac has Apple's on-device model.
+
 ## Architecture (planned)
 
 - **Core:** Rust, shared by the apps and the CLI; builds on macOS, Linux and Windows.
