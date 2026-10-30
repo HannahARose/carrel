@@ -395,3 +395,20 @@ fn history_can_start_for_an_archive_made_without_it() {
         Err(HistoryError::AlreadyInitialized)
     ));
 }
+
+#[test]
+fn the_first_change_cant_be_undone_and_nothing_is_touched() {
+    let dir = tempfile::tempdir().unwrap();
+    let archive = Archive::init(&dir.path().join("First"), &InitOptions::new("First")).unwrap();
+    let (lease, _, _) = writer(&archive);
+    let history = History::init(&archive, &lease).unwrap();
+    let first = history.log().unwrap()[0].id.clone();
+    let result = history.undo(&archive, &first, &lease);
+    assert!(
+        matches!(result, Err(HistoryError::UndoBlocked(_))),
+        "{result:?}"
+    );
+    assert!(archive.root().join("_System/archive.json").is_file());
+    assert!(archive.root().join("ARCHIVE.md").is_file());
+    assert_eq!(history.log().unwrap().len(), 1);
+}

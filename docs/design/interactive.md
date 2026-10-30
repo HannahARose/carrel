@@ -27,7 +27,7 @@ Tabs along the top, switched with `1` to `5` or `Tab`:
 1. **Status:** what `carrel status` shows, including:
    - counts, problems, and names that won't work everywhere
    - who is writing, and the last snapshot
-   - what's waiting: proposals and questions, which `r` and `q` jump to
+   - what's waiting: proposals and questions, which `2` and `3` switch to (`q` quits everywhere, as in most terminal programs)
 2. **Review:** the queue grouped by destination, as `carrel review` shows it, beside the selected proposal in full:
    - the card, the destination and why, sensitivity and why, problems, and the provider calls
    - keys: `a` approve, `h` hold, `m` move (a collection picker), `x` reject, `e` edit, `Space` mark
@@ -35,7 +35,7 @@ Tabs along the top, switched with `1` to `5` or `Tab`:
    - `A` approves every high-confidence proposal that isn't sensitive (`--all-high`)
 3. **Questions:** ranked as `carrel questions` ranks them, with the items each affects. `Enter` answers: a line of text for a term, or a collection picker. `d` dismisses.
 4. **Browse:** the collection tree beside the selected collection's items, and the selected item's card, read only. `/` searches titles, tags and summaries in what's loaded.
-5. **History:** `carrel log`, with the selected change's items and moves. `u` undoes it after asking.
+5. **History:** `carrel log`, with the selected change's items and moves. `u` undoes it after asking, as `carrel undo` does. The change that started the history can't be undone.
 
 A help line along the bottom always shows the keys that work on the current screen; `?` shows them all. Mouse clicks and scrolling work, but nothing needs them.
 

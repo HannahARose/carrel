@@ -540,6 +540,13 @@ impl History {
             .map_err(|_| HistoryError::UnknownCommit(id.to_owned()))?;
         let head = self.head_commit()?.ok_or(HistoryError::NotInitialized)?;
         let original = entry_from(&target);
+        // Before the first change there was no archive to return to: reverting it would remove
+        // every metadata file, including the ones that make the folder an archive.
+        if target.parent_count() == 0 {
+            return Err(HistoryError::UndoBlocked(
+                "the change that started the archive's history can't be undone".into(),
+            ));
+        }
 
         let mut reverted = self.repo.revert_commit(&target, &head, 0, None)?;
         if reverted.has_conflicts() {

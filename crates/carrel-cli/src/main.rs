@@ -11,6 +11,7 @@ mod ingest;
 mod providers;
 mod questions;
 mod review;
+mod tui;
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -31,7 +32,7 @@ struct Cli {
     json: bool,
 
     #[command(subcommand)]
-    command: Command,
+    command: Option<Command>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -91,6 +92,14 @@ enum Command {
         all: bool,
         #[command(subcommand)]
         action: Option<ReviewAction>,
+    },
+    /// Open the interactive mode: status, review, questions, browsing and history in one
+    /// screen. `carrel` with no command opens it too, when run in a terminal.
+    Tui,
+    /// Undo a recorded change with a new change that reverses it; see `carrel log`.
+    Undo {
+        /// The change's identifier, or its start.
+        change: String,
     },
     /// Rename an item and its card together, as when `carrel status` finds a name that won't
     /// work on every system. Links to it follow, and the change can be undone.
@@ -260,7 +269,22 @@ impl<E: std::error::Error> From<E> for Failure {
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
-    let result = match cli.command {
+    let Some(command) = cli.command else {
+        use std::io::IsTerminal as _;
+        if std::io::stdin().is_terminal() && std::io::stdout().is_terminal() && !cli.json {
+            return finish(tui::run(cli.archive.as_deref()), false);
+        }
+        // Not in a terminal, as in scripts: the usage message, as for any missing command.
+        <Cli as clap::CommandFactory>::command()
+            .error(
+                clap::error::ErrorKind::MissingSubcommand,
+                "a command is needed when not in a terminal",
+            )
+            .exit();
+    };
+    let result = match command {
+        Command::Tui => tui::run(cli.archive.as_deref()),
+        Command::Undo { change } => commands::undo(cli.archive.as_deref(), &change),
         Command::Init {
             path,
             name,
@@ -321,9 +345,14 @@ fn main() -> ExitCode {
             QuestionsAction::Dismiss { id } => questions::dismiss(cli.archive.as_deref(), &id),
         },
     };
+    finish(result, cli.json)
+}
+
+/// Prints a command's result and gives its exit status.
+fn finish(result: Result<Report, Failure>, json: bool) -> ExitCode {
     match result {
         Ok(report) => {
-            if cli.json {
+            if json {
                 println!("{:#}", report.json);
             } else {
                 print!("{}", report.text);
@@ -331,7 +360,7 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(Failure(message)) => {
-            if cli.json {
+            if json {
                 eprintln!("{}", serde_json::json!({ "error": message }));
             } else {
                 eprintln!("carrel: {message}");
