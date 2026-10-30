@@ -9,7 +9,8 @@ use ratatui::widgets::{Block, Clear, List, ListItem, ListState, Paragraph, Wrap}
 use carrel_core::card::Sensitivity;
 use carrel_core::review::{ReviewEntry, State};
 
-use super::app::{App, Confirm, Picker, Tab};
+use super::app::{App, Confirm, Input, Picker, Tab};
+use super::screens::InputPurpose;
 
 /// The smallest terminal the interactive mode lays out in.
 pub const MIN_SIZE: (u16, u16) = (80, 24);
@@ -97,8 +98,9 @@ pub fn draw(frame: &mut Frame, app: &App, theme: Theme) {
     match app.tab {
         Tab::History => draw_history(frame, app, theme, inner),
         Tab::Review => draw_review(frame, app, theme, inner),
+        Tab::Questions => draw_questions(frame, app, theme, inner),
+        Tab::Browse => draw_browse(frame, app, theme, inner),
         Tab::Status => draw_report(frame, app, inner, Some(waiting_line(app))),
-        _ => draw_report(frame, app, inner, None),
     }
     draw_help_line(frame, app, theme, bottom);
     if app.help {
@@ -106,6 +108,9 @@ pub fn draw(frame: &mut Frame, app: &App, theme: Theme) {
     }
     if let Some(picker) = &app.picker {
         draw_picker(frame, picker, theme, area);
+    }
+    if let Some(input) = &app.input {
+        draw_input(frame, input, theme, area);
     }
     if let Some(confirm) = &app.confirm {
         draw_confirm(frame, confirm, theme, area);
@@ -246,6 +251,11 @@ fn draw_help(frame: &mut Frame, theme: Theme, area: Rect) {
             "Space  A",
             "mark several; approve all high-confidence (Review)",
         ),
+        ("Enter  d", "answer or dismiss a question (Questions)"),
+        (
+            "←→  /  Esc",
+            "collections or items; search; clear it (Browse)",
+        ),
         ("u", "undo the chosen change (History)"),
         ("Ctrl-R", "read everything again"),
         ("?", "this help"),
@@ -384,10 +394,14 @@ fn draw_picker(frame: &mut Frame, picker: &Picker, theme: Theme, area: Rect) {
     let height = u16::try_from(matching.len().clamp(1, 12)).unwrap_or(12) + 3;
     let popup = centered(area, 50, height);
     frame.render_widget(Clear, popup);
+    let what = match picker.purpose {
+        super::review::Purpose::Move(_) => "Move to",
+        super::review::Purpose::Answer(_) => "They belong in",
+    };
     let title = if picker.filter.is_empty() {
-        " Move to (type to narrow) ".to_owned()
+        format!(" {what} (type to narrow) ")
     } else {
-        format!(" Move to: {} ", picker.filter)
+        format!(" {what}: {} ", picker.filter)
     };
     let mut state = ListState::default().with_selected(Some(picker.chosen));
     frame.render_stateful_widget(
@@ -396,5 +410,159 @@ fn draw_picker(frame: &mut Frame, picker: &Picker, theme: Theme, area: Rect) {
             .block(Block::bordered().title(title)),
         popup,
         &mut state,
+    );
+}
+
+fn draw_questions(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
+    if app.asked.is_empty() {
+        frame.render_widget(Paragraph::new("No questions"), area);
+        return;
+    }
+    let [list_area, detail_area] =
+        Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)]).areas(area);
+    let items: Vec<ListItem> = app
+        .asked
+        .iter()
+        .map(|q| {
+            ListItem::new(format!(
+                "{}  ({} item{})",
+                q.question,
+                q.items.len(),
+                if q.items.len() == 1 { "" } else { "s" }
+            ))
+        })
+        .collect();
+    let mut state = ListState::default().with_selected(Some(app.asked_chosen));
+    frame.render_stateful_widget(
+        List::new(items).highlight_style(theme.selected()),
+        list_area,
+        &mut state,
+    );
+    let question = &app.asked[app.asked_chosen];
+    let mut lines = vec![
+        Line::from(question.question.clone()).style(Style::new().add_modifier(Modifier::BOLD)),
+        Line::from(""),
+        Line::from("Waiting on the answer:"),
+    ];
+    lines.extend(
+        app.waiting_titles(question)
+            .into_iter()
+            .map(|t| Line::from(format!("  {t}"))),
+    );
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        match question.kind {
+            carrel_core::questions::QuestionKind::Term => {
+                "Enter to say what it is; Carrel remembers it and drafts these again."
+            }
+            carrel_core::questions::QuestionKind::Collection => {
+                "Enter to choose where they belong."
+            }
+        },
+        theme.dim(),
+    )));
+    frame.render_widget(
+        Paragraph::new(lines)
+            .wrap(Wrap { trim: false })
+            .block(Block::new().borders(ratatui::widgets::Borders::LEFT)),
+        detail_area,
+    );
+}
+
+fn draw_browse(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
+    let [tree_area, items_area, card_area] = Layout::horizontal([
+        Constraint::Percentage(25),
+        Constraint::Percentage(30),
+        Constraint::Percentage(45),
+    ])
+    .areas(area);
+    let collections: Vec<ListItem> = app
+        .collections
+        .iter()
+        .map(|c| {
+            let depth = c.path.matches('/').count();
+            ListItem::new(format!("{}{}", "  ".repeat(depth), c.doc.title))
+        })
+        .collect();
+    // The pane the arrows move in is highlighted; the other keeps its choice dimly.
+    let (tree_style, items_style) = if app.browse_in_items {
+        (Style::new().add_modifier(Modifier::BOLD), theme.selected())
+    } else {
+        (theme.selected(), Style::new().add_modifier(Modifier::BOLD))
+    };
+    let mut tree_state = ListState::default().with_selected(Some(app.browse_collection));
+    frame.render_stateful_widget(
+        List::new(collections).highlight_style(tree_style),
+        tree_area,
+        &mut tree_state,
+    );
+    let title = match &app.search {
+        Some(words) => format!(" Found for “{words}” (Esc clears) "),
+        None => String::new(),
+    };
+    let items: Vec<ListItem> = if app.browse_items.is_empty() {
+        vec![ListItem::new(if app.search.is_some() {
+            "Nothing found"
+        } else {
+            "No items"
+        })]
+    } else {
+        app.browse_items
+            .iter()
+            .map(|(path, title)| {
+                if app.search.is_some() {
+                    ListItem::new(format!(
+                        "{title}  ({})",
+                        path.rsplit_once('/').map_or("", |p| p.0)
+                    ))
+                } else {
+                    ListItem::new(title.as_str())
+                }
+            })
+            .collect()
+    };
+    let mut items_state = ListState::default().with_selected(Some(app.browse_item));
+    frame.render_stateful_widget(
+        List::new(items).highlight_style(items_style).block(
+            Block::new()
+                .borders(ratatui::widgets::Borders::LEFT)
+                .title(title),
+        ),
+        items_area,
+        &mut items_state,
+    );
+    let lines: Vec<Line> = app.card.iter().map(|l| Line::from(l.as_str())).collect();
+    frame.render_widget(
+        Paragraph::new(lines)
+            .wrap(Wrap { trim: false })
+            .block(Block::new().borders(ratatui::widgets::Borders::LEFT)),
+        card_area,
+    );
+}
+
+fn draw_input(frame: &mut Frame, input: &Input, theme: Theme, area: Rect) {
+    let (title, above) = match &input.purpose {
+        InputPurpose::Answer { question, .. } => (" Answer ", question.clone()),
+        InputPurpose::Search => (
+            " Search ",
+            "Words to find in titles, tags and summaries:".to_owned(),
+        ),
+    };
+    let lines = vec![
+        Line::from(above),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("> ", theme.key()),
+            Span::raw(input.text.clone()),
+            Span::styled("▏", theme.key()),
+        ]),
+    ];
+    let popup = centered(area, 70, 6);
+    frame.render_widget(Clear, popup);
+    frame.render_widget(
+        Paragraph::new(lines)
+            .wrap(Wrap { trim: false })
+            .block(Block::bordered().title(title)),
+        popup,
     );
 }

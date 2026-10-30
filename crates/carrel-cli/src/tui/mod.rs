@@ -3,6 +3,7 @@
 
 mod app;
 mod review;
+mod screens;
 mod ui;
 
 use std::fmt::Write as _;
@@ -151,6 +152,19 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
             return None;
         }
         Effect::Edit(_) => return None,
+        Effect::Dismiss(id) => {
+            let result = crate::questions::dismiss(Some(&root), &id.to_string());
+            finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
+            return None;
+        }
+        Effect::Answer { id, answer } => {
+            // A term's answer drafts its items again, which can take a while with a model.
+            let id = id.to_string();
+            (
+                "Answering, and drafting its items again…".into(),
+                Box::new(move || crate::questions::answer(Some(&root), &id, &[answer])),
+            )
+        }
         Effect::Decide {
             ids: chosen,
             holding,
@@ -292,7 +306,11 @@ mod tests {
         assert_eq!(app.tab, Tab::Questions);
         app.key(key(KeyCode::Tab));
         assert_eq!(app.tab, Tab::Browse);
-        assert!(screen(&app, 100, 30).contains("Projects  (3 items)"));
+        let browse = screen(&app, 100, 30);
+        assert!(
+            browse.contains("│  Hardware"),
+            "the tree, indented:\n{browse}"
+        );
         app.key(key(KeyCode::BackTab));
         app.key(key(KeyCode::BackTab));
         assert_eq!(app.tab, Tab::Review);
@@ -479,5 +497,120 @@ mod tests {
         app.key(key(KeyCode::Esc));
         assert!(app.picker.is_none(), "Esc cancels");
         assert!(!app.quit, "and doesn't quit");
+    }
+
+    #[test]
+    fn browse_moves_through_collections_items_and_cards_and_searches() {
+        let (_dir, mut app) = sample(false);
+        app.key(key(KeyCode::Char('4')));
+        assert_eq!(app.collections[app.browse_collection].path, "Holding");
+        assert!(screen(&app, 120, 30).contains("Untitled scan"));
+        app.key(key(KeyCode::Down));
+        assert_eq!(app.collections[app.browse_collection].path, "Projects");
+        app.key(key(KeyCode::Right));
+        assert!(app.browse_in_items);
+        assert_eq!(
+            app.tab,
+            Tab::Browse,
+            "→ moves between panes here, not screens"
+        );
+        assert!(!app.card.is_empty(), "the chosen item's card");
+        app.key(key(KeyCode::Left));
+        assert!(!app.browse_in_items);
+
+        app.key(key(KeyCode::Char('/')));
+        for c in "oscillat".chars() {
+            app.key(key(KeyCode::Char(c)));
+        }
+        assert!(screen(&app, 120, 30).contains("> oscillat"));
+        app.key(key(KeyCode::Enter));
+        let titles: Vec<&str> = app.browse_items.iter().map(|(_, t)| t.as_str()).collect();
+        assert!(
+            titles.contains(&"A note on coupled oscillators"),
+            "{titles:?}"
+        );
+        assert!(titles.len() >= 2, "across collections: {titles:?}");
+        assert!(screen(&app, 120, 30).contains("Found for “oscillat”"));
+        app.key(key(KeyCode::Esc));
+        assert!(app.search.is_none());
+        assert!(!app.quit, "Esc clears the search first");
+    }
+
+    #[test]
+    fn questions_are_answered_in_place_or_dismissed() {
+        use carrel_core::questions::{QuestionEntry, QuestionKind, QuestionMarker, QuestionQueue};
+        let (_dir, app) = sample(false);
+        let proposal = app.queue[0].id;
+        let queue = QuestionQueue::of(&app.archive);
+        let question = |kind, subject: &str, question: &str, choices: Vec<String>| QuestionEntry {
+            carrel: QuestionMarker::Question,
+            format: carrel_core::FORMAT_VERSION,
+            id: Id::new_v7(),
+            batch: Id::new_v7(),
+            created: carrel_core::card::DateOrTime("2026-10-30".into()),
+            kind,
+            subject: subject.into(),
+            question: question.into(),
+            items: vec![proposal],
+            choices,
+            extra: carrel_core::card::Extra::new(),
+        };
+        let term = question(QuestionKind::Term, "ABX", "What is “ABX”?", Vec::new());
+        let mut place = question(
+            QuestionKind::Collection,
+            "lamp",
+            "Which collection do items about “lamp” belong in?",
+            vec!["Projects".into(), "Projects/Hardware".into()],
+        );
+        place.items.push(Id::new_v7());
+        queue.save(&term).unwrap();
+        queue.save(&place).unwrap();
+        let mut app = App::new(app.archive.clone()).unwrap();
+        app.key(key(KeyCode::Char('3')));
+        let text = screen(&app, 160, 30);
+        assert!(
+            text.contains("Which collection do items about “lamp” belong in?  (2 items)"),
+            "{text}"
+        );
+        assert_eq!(app.asked[0].id, place.id, "most items first");
+
+        app.key(key(KeyCode::Enter));
+        assert!(screen(&app, 120, 30).contains("They belong in (type to narrow)"));
+        app.key(key(KeyCode::Down));
+        assert_eq!(
+            app.key(key(KeyCode::Enter)),
+            Some(Effect::Answer {
+                id: place.id,
+                answer: "Projects/Hardware".into()
+            })
+        );
+
+        app.key(key(KeyCode::Down));
+        assert!(
+            screen(&app, 120, 30).contains("Desk lamp diffuser (print file)"),
+            "what waits on it"
+        );
+        app.key(key(KeyCode::Enter));
+        for c in "An assay kit.".chars() {
+            app.key(key(KeyCode::Char(c)));
+        }
+        assert!(screen(&app, 120, 30).contains("> An assay kit."));
+        assert_eq!(
+            app.key(key(KeyCode::Enter)),
+            Some(Effect::Answer {
+                id: term.id,
+                answer: "An assay kit.".into()
+            })
+        );
+        app.key(key(KeyCode::Enter));
+        assert_eq!(
+            app.key(key(KeyCode::Enter)),
+            None,
+            "an empty answer isn't sent"
+        );
+        assert_eq!(
+            app.key(key(KeyCode::Char('d'))),
+            Some(Effect::Dismiss(term.id))
+        );
     }
 }
