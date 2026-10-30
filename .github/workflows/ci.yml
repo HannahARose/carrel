@@ -56,7 +56,7 @@ jobs:
         with:
           persist-credentials: false
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-      - run: cargo test --workspace --exclude carrel-provider-llama --all-targets --locked
+      - run: cargo test --workspace --exclude carrel-provider-llama --all-targets --locked --no-fail-fast
       - run: cargo test --workspace --exclude carrel-provider-llama --doc --locked
       - name: CLI reports its version
         run: cargo run --locked --bin carrel -- --version
