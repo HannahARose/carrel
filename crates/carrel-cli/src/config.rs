@@ -66,6 +66,10 @@ pub struct Prefs {
     /// picker installed is used.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub picker: Option<String>,
+    /// The editor for cards, before `$VISUAL` and `$EDITOR`; its words are split as a shell
+    /// would.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub editor: Option<String>,
     /// The folder files were last picked from, where picking starts next time.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_folder: Option<PathBuf>,

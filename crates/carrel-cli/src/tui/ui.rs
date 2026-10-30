@@ -102,6 +102,7 @@ pub fn draw(frame: &mut Frame, app: &App, theme: Theme) {
         Tab::Browse => draw_browse(frame, app, theme, inner),
         Tab::Status => draw_report(frame, app, inner, Some(waiting_line(app))),
         Tab::Ingest => draw_ingest(frame, app, theme, inner),
+        Tab::Settings => draw_settings(frame, app, theme, inner),
     }
     draw_help_line(frame, app, theme, bottom);
     if app.help {
@@ -250,7 +251,7 @@ fn centered(area: Rect, width: u16, height: u16) -> Rect {
 
 fn draw_help(frame: &mut Frame, theme: Theme, area: Rect) {
     let rows = [
-        ("1 to 6, Tab, ←→", "switch screens"),
+        ("1 to 7, Tab, ←→", "switch screens"),
         (
             "i",
             "add files and folders to ingest, with your file picker or the built-in one",
@@ -302,6 +303,12 @@ fn draw_confirm(frame: &mut Frame, confirm: &Confirm, theme: Theme, area: Rect) 
             "A new change reverses it: items it moved go back, and the cards and documents it \
              changed return to how they were.",
             " undo   ",
+        ),
+        Confirm::Download { name, about } => (
+            " Download ",
+            format!("Download {name}?"),
+            about.as_str(),
+            " download   ",
         ),
         Confirm::Reject(ids) => (
             " Reject ",
@@ -413,6 +420,8 @@ fn draw_picker(frame: &mut Frame, picker: &Picker, theme: Theme, area: Rect) {
     let what = match picker.purpose {
         super::review::Purpose::Move(_) => "Move to",
         super::review::Purpose::Answer(_) => "They belong in",
+        super::review::Purpose::Setting(_) => "Set it to",
+        super::review::Purpose::Download => "Download",
     };
     let title = if picker.filter.is_empty() {
         format!(" {what} (type to narrow) ")
@@ -563,6 +572,7 @@ fn draw_input(frame: &mut Frame, input: &Input, theme: Theme, area: Rect) {
             " Search ",
             "Words to find in titles, tags and summaries:".to_owned(),
         ),
+        InputPurpose::Setting(key) => (" Settings ", format!("New value for {key}:")),
         InputPurpose::Ingest => (
             " Ingest ",
             "Files and folders to add, separated by spaces (drop them here, or paste):".to_owned(),
@@ -677,5 +687,51 @@ fn draw_browser(frame: &mut Frame, browser: &super::browser::Browser, theme: The
             .block(block),
         popup,
         &mut state,
+    );
+}
+
+fn draw_settings(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
+    let [list_area, detail_area] =
+        Layout::horizontal([Constraint::Percentage(45), Constraint::Percentage(55)]).areas(area);
+    let mut items = Vec::new();
+    let mut rows = Vec::new();
+    let mut device = None;
+    for (i, shown) in app.settings.iter().enumerate() {
+        let is_device = super::settings::is_device(shown.row);
+        if device != Some(is_device) {
+            device = Some(is_device);
+            items.push(ListItem::new(Line::from(Span::styled(
+                if is_device {
+                    "This device"
+                } else {
+                    "This archive (shared by every device)"
+                },
+                theme.dim(),
+            ))));
+            rows.push(None);
+        }
+        items.push(ListItem::new(format!(
+            "  {:22} {}",
+            shown.label, shown.value
+        )));
+        rows.push(Some(i));
+    }
+    let selected = rows.iter().position(|r| *r == Some(app.settings_chosen));
+    let mut state = ListState::default().with_selected(selected);
+    frame.render_stateful_widget(
+        List::new(items).highlight_style(theme.selected()),
+        list_area,
+        &mut state,
+    );
+    let detail: Vec<Line> = app
+        .settings
+        .get(app.settings_chosen)
+        .map(|s| s.detail.iter().map(|l| Line::from(l.as_str())).collect())
+        .unwrap_or_default();
+    frame.render_widget(
+        Paragraph::new(detail)
+            .wrap(Wrap { trim: false })
+            .block(Block::new().borders(ratatui::widgets::Borders::LEFT)),
+        detail_area,
     );
 }

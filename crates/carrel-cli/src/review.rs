@@ -292,19 +292,37 @@ fn decide(
     ))
 }
 
-/// The editor to open: `$VISUAL`, then `$EDITOR`, then `notepad` on Windows or `vi`. Its
-/// words are split on spaces, so `code --wait` works.
-fn editor() -> Vec<String> {
-    let chosen = ["VISUAL", "EDITOR"]
-        .iter()
-        .find_map(|v| std::env::var(v).ok().filter(|e| !e.trim().is_empty()))
-        .unwrap_or_else(|| if cfg!(windows) { "notepad" } else { "vi" }.to_owned());
-    chosen.split_whitespace().map(str::to_owned).collect()
+/// The editor to open: the `editor` preference, then `$VISUAL`, then `$EDITOR`, then
+/// `notepad` on Windows or `vi`. Its words are split as a shell would, so `code --wait` works.
+pub(crate) fn editor() -> (String, &'static str) {
+    if let Some(chosen) = crate::config::Prefs::load()
+        .ok()
+        .and_then(|p| p.editor)
+        .filter(|e| !e.trim().is_empty())
+    {
+        return (chosen, "Carrel's editor setting");
+    }
+    for var in ["VISUAL", "EDITOR"] {
+        if let Some(chosen) = std::env::var(var).ok().filter(|e| !e.trim().is_empty()) {
+            return (
+                chosen,
+                if var == "VISUAL" {
+                    "$VISUAL"
+                } else {
+                    "$EDITOR"
+                },
+            );
+        }
+    }
+    (
+        if cfg!(windows) { "notepad" } else { "vi" }.to_owned(),
+        "the system's default",
+    )
 }
 
 /// Opens `path` in the editor and waits for it to close.
 fn run_editor(path: &Path) -> Result<(), Failure> {
-    let words = editor();
+    let words = crate::paths::split_words(&editor().0);
     let (program, args) = words
         .split_first()
         .ok_or_else(|| Failure::new("no editor to open; set VISUAL or EDITOR"))?;

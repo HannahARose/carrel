@@ -669,3 +669,46 @@ fn ingest_queues_items_for_a_worker_and_the_queue_can_be_changed() {
     let out = sandbox.run_in(&root, &["ingest"]);
     assert!(String::from_utf8_lossy(&out.stderr).contains("--status"));
 }
+
+#[test]
+fn settings_are_listed_set_and_undone() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.path("archive");
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    let listed = sandbox.json(&root, &["settings"]);
+    assert_eq!(listed["archive"]["ingest.originals"], "move");
+
+    let set = sandbox.json(&root, &["settings", "set", "ingest.originals", "keep"]);
+    assert_eq!(
+        (set["from"].as_str(), set["to"].as_str()),
+        (Some("move"), Some("keep"))
+    );
+    assert_eq!(
+        sandbox.json(&root, &["settings"])["archive"]["ingest.originals"],
+        "keep"
+    );
+    let wrong = sandbox.run_in(&root, &["settings", "set", "ingest.originals", "copy"]);
+    assert!(String::from_utf8_lossy(&wrong.stderr).contains("move, keep"));
+    let commit = set["commit"].as_str().unwrap().to_owned();
+    sandbox.ok(&root, &["undo", &commit[..10]]);
+    assert_eq!(
+        sandbox.json(&root, &["settings"])["archive"]["ingest.originals"],
+        "move"
+    );
+
+    sandbox.ok(&root, &["settings", "set", "picker", "builtin"]);
+    assert_eq!(
+        sandbox.json(&root, &["settings"])["device"]["picker"],
+        "builtin"
+    );
+    sandbox.ok(&root, &["settings", "set", "editor", "nano"]);
+    assert_eq!(
+        sandbox.json(&root, &["settings"])["device"]["editor"],
+        "nano"
+    );
+    sandbox.ok(&root, &["settings", "set", "picker", ""]);
+    assert_eq!(
+        sandbox.json(&root, &["settings"])["device"]["picker"],
+        serde_json::Value::Null
+    );
+}

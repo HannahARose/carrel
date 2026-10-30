@@ -27,6 +27,10 @@ pub enum Purpose {
     Move(Vec<Id>),
     /// Answering this question with it.
     Answer(Id),
+    /// Setting this setting to it.
+    Setting(String),
+    /// Downloading this catalog model, after asking.
+    Download,
 }
 
 impl Picker {
@@ -192,10 +196,16 @@ impl App {
                     .map(|c| (*c).to_owned());
                 let purpose = picker.purpose.clone();
                 self.picker = None;
-                return to.map(|to| match purpose {
-                    Purpose::Move(ids) => Effect::Move { ids, to },
-                    Purpose::Answer(id) => Effect::Answer { id, answer: to },
-                });
+                let to = to?;
+                return match purpose {
+                    Purpose::Move(ids) => Some(Effect::Move { ids, to }),
+                    Purpose::Answer(id) => Some(Effect::Answer { id, answer: to }),
+                    Purpose::Setting(key) => Some(super::settings::set(&key, &to)),
+                    Purpose::Download => {
+                        self.confirm_download(&to);
+                        None
+                    }
+                };
             }
             _ => {}
         }

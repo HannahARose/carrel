@@ -16,6 +16,7 @@ mod progress;
 mod providers;
 mod questions;
 mod review;
+mod settings;
 mod tui;
 mod worker;
 
@@ -79,6 +80,12 @@ enum Command {
     /// destination in the background, saving proposals for `carrel review` as they're ready.
     /// Nothing is moved until a proposal is approved.
     Ingest(IngestArgs),
+    /// Show or change settings: this device's file picker and editor, and the archive's
+    /// shared settings, whose changes can be undone.
+    Settings {
+        #[command(subcommand)]
+        action: Option<SettingsAction>,
+    },
     /// Draft the items waiting in the intake queue on this device, until none are left.
     /// Adding to the queue starts one in the background, so this is rarely run by hand.
     Worker,
@@ -226,6 +233,20 @@ impl IngestArgs {
             change,
         }
     }
+}
+
+#[derive(Debug, Subcommand)]
+enum SettingsAction {
+    /// List the settings and their values.
+    List,
+    /// Change one: `picker` or `editor` for this device (empty to clear), or a shared one
+    /// such as `ingest.originals`.
+    Set {
+        /// The setting.
+        key: String,
+        /// Its new value.
+        value: String,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -428,6 +449,12 @@ fn main() -> ExitCode {
             ingest::command(cli.archive.as_deref(), &args.into_request(), cli.json)
         }
         Command::Worker => worker::run(cli.archive.as_deref()),
+        Command::Settings { action } => match action {
+            Some(SettingsAction::Set { key, value }) => {
+                settings::set(cli.archive.as_deref(), &key, &value)
+            }
+            _ => settings::list(cli.archive.as_deref()),
+        },
         Command::Review { all, action } => match action.unwrap_or(ReviewAction::List { all }) {
             ReviewAction::List { all } => review::list(cli.archive.as_deref(), all),
             ReviewAction::Show { id } => review::show(cli.archive.as_deref(), &id),
