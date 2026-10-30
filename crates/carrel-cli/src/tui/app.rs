@@ -99,6 +99,15 @@ pub enum Effect {
     },
     /// Approve every high-confidence proposal that isn't sensitive.
     ApproveAllHigh,
+    /// File this proposal linked to an archived item it duplicates.
+    Keep {
+        /// The proposal.
+        id: Id,
+        /// As a new version, or beside it.
+        kept: carrel_core::actions::Kept,
+        /// The archived item.
+        target: Id,
+    },
     /// Reject these proposals.
     Reject(Vec<Id>),
     /// Propose another collection for these proposals.
@@ -169,6 +178,10 @@ pub struct App {
     pub marked: BTreeSet<Id>,
     /// The chosen proposal in full, as `carrel review show` gives it.
     pub detail: Vec<String>,
+    /// The archived items the chosen proposal duplicates, side by side with it.
+    pub comparisons: Vec<carrel_core::actions::Comparison>,
+    /// The comparison shown.
+    pub compared: usize,
     /// The collection picker, while it's open.
     pub picker: Option<Picker>,
     /// Work running in the background, described for the owner.
@@ -246,6 +259,8 @@ impl App {
             chosen: 0,
             marked: BTreeSet::new(),
             detail: Vec::new(),
+            comparisons: Vec::new(),
+            compared: 0,
             picker: None,
             busy: None,
             asked: Vec::new(),
@@ -329,6 +344,19 @@ impl App {
     pub fn keys(&self) -> Vec<(&'static str, &'static str)> {
         if self.confirm.is_some() {
             return vec![("y", "yes"), ("n", "no")];
+        }
+        if self.tab == Tab::Review && !self.comparisons.is_empty() {
+            let mut keys = vec![("v", "file as version"), ("b", "keep both"), ("s", "skip")];
+            if self.comparisons.len() > 1 {
+                keys.push(("[ ]", "other match"));
+            }
+            keys.extend([
+                ("a", "approve"),
+                ("h", "hold"),
+                ("e", "edit"),
+                ("?", "help"),
+            ]);
+            return keys;
         }
         if self.tab == Tab::Review {
             // The decisions need the room; the screen keys are in ? help.

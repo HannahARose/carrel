@@ -16,7 +16,7 @@ The ingest design keeps v0.2 to cheap checks, with text similarity arriving with
 | **A newer version** | The names match apart from a version marker, and the new one's marker is later | "looks like a newer version" |
 | **Same title and date** | The drafted title matches an archived card's title (case and punctuation ignored) and the `created` dates are equal, or both are empty | "same title and date" |
 
-- **Normalizing a name** lowercases it, drops the extension's case, and removes the marks downloads and copies add: a trailing `(1)`, `copy` or `copy 2`, `-1` after a download, and trailing whitespace. `Report (1).PDF` and `report.pdf` match.
+- **Normalizing a name** lowercases it, drops the extension's case, and removes the marks downloads and copies add: a trailing `(1)`, `copy` or `copy 2`, and trailing whitespace. A trailing `-1` is left alone, since `chapter-1` is usually a real name. `Report (1).PDF` and `report.pdf` match.
 - **Version markers** are `v2`, `v3`, `version 2`, `rev 4`, `r4`, `draft 2`, `final` (later than any number), and a trailing date (`2026-10-30`, `20261030`). `thesis-v3.docx` is a newer version of `thesis-v2.docx`; `thesis-v2.docx` arriving after `v3` is still a likely duplicate, reported as "looks like an older version".
 - **Archived names** come from the card's `item` path, so an item the owner renamed in the archive matches by its new name. The original name isn't recorded today, so a renamed item won't match its original download.
 - **Exact duplicates win:** a candidate with the same checksum is an exact duplicate, as now, and isn't also listed as likely.
@@ -29,9 +29,11 @@ A new optional field on the review entry, beside `duplicate_of`:
 
 ```json
 "likely_duplicates": [
-  {"id": "0192…", "card": "Finance/Statements/2026-09 statement.pdf.md", "why": ["same file name"]}
+  {"id": "0192…", "card": "Finance/Statements/2026-09 statement.pdf.md", "why": ["same-name"]}
 ]
 ```
+
+`why` holds `same-name`, `newer-version`, `older-version` or `same-title-and-date`; the reasons shown to the owner are the phrases in the table above.
 
 The index that finds them extends the checksum index into an **item index**: each archived item's fingerprint, normalized name and normalized title with its date, rebuilt from the cards whenever ingest runs, as the checksum index is today. It's in memory only; writing it to `_System/index/` waits until building it is slow enough to matter.
 

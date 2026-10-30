@@ -129,13 +129,267 @@ pub fn proposals(archive: &Archive, ids: &[String]) -> Result<Vec<ReviewEntry>, 
 }
 
 /// Whether `entry` is approved by "approve all with high confidence": high confidence, not
-/// sensitive, not a duplicate, and nothing for the owner to settle.
+/// sensitive, not a duplicate or a likely one, and nothing for the owner to settle.
 #[must_use]
 pub fn is_high(entry: &ReviewEntry) -> bool {
     entry.state == State::Proposed
         && entry.destination.confidence == Confidence::High
         && entry.card.sensitivity < Sensitivity::Sensitive
         && entry.duplicate_of.is_none()
+        && entry.likely_duplicates.is_empty()
+}
+
+/// How the owner files an item that duplicates, or likely duplicates, an archived one
+/// (`docs/design/duplicates.md`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Kept {
+    /// As a new version of it: a `version-of` link.
+    AsVersion,
+    /// Beside it: a `related` link.
+    Both,
+}
+
+impl Kept {
+    /// The link type it adds.
+    #[must_use]
+    pub fn link_type(self) -> &'static str {
+        match self {
+            Self::AsVersion => "version-of",
+            Self::Both => "related",
+        }
+    }
+}
+
+/// The archived items `entry` duplicates or likely duplicates, with their card paths: the
+/// exact duplicate first.
+///
+/// # Errors
+///
+/// [`ActionError::Archive`] if the archive can't be listed.
+pub fn duplicates_of(
+    archive: &Archive,
+    entry: &ReviewEntry,
+) -> Result<Vec<(crate::card::Id, String)>, ActionError> {
+    let mut found: Vec<(crate::card::Id, String)> = Vec::new();
+    if let Some(id) = entry.duplicate_of {
+        let items = archive.items()?;
+        if let Some(item) = items.iter().find(|i| i.id == id) {
+            found.push((id, item.card.clone()));
+        }
+    }
+    for likely in &entry.likely_duplicates {
+        if !found.iter().any(|(id, _)| *id == likely.id) {
+            found.push((likely.id, likely.card.clone()));
+        }
+    }
+    Ok(found)
+}
+
+/// Links `entry`'s card to the archived item `target` as `kept` says, before it's filed.
+/// `target` is an identifier, or its start or end; when it's `None`, the item must duplicate
+/// exactly one archived item, which is used.
+///
+/// # Errors
+///
+/// [`ActionError::Invalid`] if `target` matches no archived item or several, or isn't given
+/// when there's more than one to choose from.
+pub fn keep(
+    archive: &Archive,
+    entry: &mut ReviewEntry,
+    kept: Kept,
+    target: Option<&str>,
+) -> Result<(), ActionError> {
+    let (id, card) = if let Some(target) = target {
+        let items = archive.items()?;
+        let wanted = target.to_lowercase();
+        let matches: Vec<_> = items
+            .iter()
+            .filter(|i| {
+                let id = i.id.0.to_string();
+                id.starts_with(&wanted) || id.ends_with(&wanted)
+            })
+            .collect();
+        match matches.as_slice() {
+            [one] => (one.id, one.card.clone()),
+            [] => return Err(ActionError::Invalid(format!("no archived item {target}"))),
+            _ => {
+                return Err(ActionError::Invalid(format!(
+                    "{target} matches several archived items; give more of the identifier"
+                )));
+            }
+        }
+    } else {
+        let found = duplicates_of(archive, entry)?;
+        match <[_; 1]>::try_from(found) {
+            Ok([one]) => one,
+            Err(found) if found.is_empty() => {
+                return Err(ActionError::Invalid(format!(
+                    "{} isn't a duplicate of anything; name the item to link to",
+                    short_id(entry.id)
+                )));
+            }
+            Err(_) => {
+                return Err(ActionError::Invalid(format!(
+                    "{} looks like a duplicate of several items; name the one to link to",
+                    short_id(entry.id)
+                )));
+            }
+        }
+    };
+    let link_type = crate::card::LinkType(kept.link_type().into());
+    entry.card.links.retain(|l| l.id != id);
+    entry.card.links.push(crate::card::Link {
+        link_type,
+        id,
+        path: Some(card),
+        note: None,
+        extra: crate::card::Extra::new(),
+    });
+    Ok(())
+}
+
+/// One row of a side-by-side comparison: a field of the proposal and of the archived item.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct Row {
+    /// The field, such as `title`.
+    pub label: &'static str,
+    /// The proposal's value.
+    pub proposed: String,
+    /// The archived item's value.
+    pub archived: String,
+    /// Whether they differ.
+    pub differs: bool,
+}
+
+/// A proposal beside an archived item it duplicates or likely duplicates.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct Comparison {
+    /// The archived item's identifier.
+    pub id: crate::card::Id,
+    /// Its card's path in the archive.
+    pub card: String,
+    /// Why it matched: "same checksum" for an exact duplicate, else the likely reasons.
+    pub why: Vec<String>,
+    /// The fields side by side.
+    pub rows: Vec<Row>,
+}
+
+/// The summary's first line, cut to about 80 characters.
+fn summary_start(summary: Option<&str>) -> String {
+    let line = summary.and_then(|s| s.lines().next()).unwrap_or("").trim();
+    if line.chars().count() > 80 {
+        let cut: String = line.chars().take(79).collect();
+        format!("{}…", cut.trim_end())
+    } else {
+        line.to_owned()
+    }
+}
+
+/// `entry` beside each archived item it duplicates or likely duplicates, the exact duplicate
+/// first. An archived card that can't be read is left out.
+///
+/// # Errors
+///
+/// [`ActionError::Archive`] if the archive can't be listed.
+pub fn compare(archive: &Archive, entry: &ReviewEntry) -> Result<Vec<Comparison>, ActionError> {
+    let mut comparisons = Vec::new();
+    for (id, card_path) in duplicates_of(archive, entry)? {
+        let Ok(text) = std::fs::read_to_string(archive.root().join(&card_path)) else {
+            continue;
+        };
+        let Ok(file) = crate::card_file::CardFile::parse(&text) else {
+            continue;
+        };
+        let card = file.card();
+        let why = if entry.duplicate_of == Some(id) {
+            vec!["same checksum".to_owned()]
+        } else {
+            entry
+                .likely_duplicates
+                .iter()
+                .find(|l| l.id == id)
+                .map(|l| l.why.iter().map(ToString::to_string).collect())
+                .unwrap_or_default()
+        };
+        let created = |dates: Option<&crate::card::Dates>| {
+            dates
+                .and_then(|d| d.created.as_ref())
+                .map(|d| d.0.clone())
+                .unwrap_or_default()
+        };
+        let tags = |tags: &[crate::card::Tag]| {
+            tags.iter()
+                .map(|t| t.0.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let folder = card_path.rsplit_once('/').map_or("", |(f, _)| f).to_owned();
+        let pairs = [
+            ("title", entry.card.title.clone(), card.title.clone()),
+            (
+                "created",
+                created(entry.card.dates.as_ref()),
+                created(card.dates.as_ref()),
+            ),
+            (
+                "file name",
+                entry
+                    .source
+                    .path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+                card.item.clone().unwrap_or_default(),
+            ),
+            (
+                "size",
+                crate::human_size(entry.source.size),
+                card.size.map(crate::human_size).unwrap_or_default(),
+            ),
+            ("collection", entry.destination.path.clone(), folder),
+            ("tags", tags(&entry.card.tags), tags(&card.tags)),
+            (
+                "summary",
+                summary_start(entry.card.summary.as_deref()),
+                summary_start(card.summary.as_deref()),
+            ),
+        ];
+        let rows = pairs
+            .into_iter()
+            .map(|(label, proposed, archived)| Row {
+                label,
+                differs: proposed != archived,
+                proposed,
+                archived,
+            })
+            .collect();
+        comparisons.push(Comparison {
+            id,
+            card: card_path,
+            why,
+            rows,
+        });
+    }
+    Ok(comparisons)
+}
+
+/// The link an approval adds when the owner didn't choose: `version-of` when the item only
+/// looks like a newer version of one archived item, and nothing otherwise.
+fn default_links(entry: &mut ReviewEntry) {
+    if !entry.card.links.is_empty() || entry.duplicate_of.is_some() {
+        return;
+    }
+    if let [likely] = entry.likely_duplicates.as_slice()
+        && likely.is_newer_version()
+    {
+        entry.card.links.push(crate::card::Link {
+            link_type: crate::card::LinkType(Kept::AsVersion.link_type().into()),
+            id: likely.id,
+            path: Some(likely.card.clone()),
+            note: None,
+            extra: crate::card::Extra::new(),
+        });
+    }
 }
 
 /// Every proposal [`is_high`] accepts.
@@ -165,7 +419,13 @@ pub fn decide(
         return Ok(Outcome::default());
     }
     let mut lease = DiskLock::for_archive(archive).acquire(holder, "ingest", DEFAULT_LEASE)?;
-    let decided = entries.into_iter().map(|e| (e, placement)).collect();
+    let decided = entries
+        .into_iter()
+        .map(|mut e| {
+            default_links(&mut e);
+            (e, placement)
+        })
+        .collect();
     let outcome = file_batch(archive, decided, &mut lease, holder.device, backups);
     lease.release()?;
     Ok(outcome?)

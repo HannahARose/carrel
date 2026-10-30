@@ -10,7 +10,7 @@ GitHub's hosted Mac runners have no Apple Intelligence and too little memory for
 
 A self-hosted runner runs whatever a workflow tells it to, on the owner's machine. So:
 
-- **Never for pull requests.** The jobs run only on a schedule, by manual dispatch, and on pushes to `dev` (code already reviewed and merged). No workflow with a `pull_request` or `pull_request_target` trigger may name the runner's label; `zizmor` and a check in `pr-checks.yml` refuse one that does.
+- **Never for pull requests.** The jobs run only on a schedule, by manual dispatch, and on pushes to `dev` (code already reviewed and merged). No workflow with a `pull_request` or `pull_request_target` trigger may name the runner's label; a check in CI's workflow audit refuses one that does.
 - **Its own label:** `carrel-on-device`, so no other job lands on it.
 - **Its own user account:** the runner runs as a standard (not administrator) macOS user, `carrel-ci`, with no access to the owner's files or keychain, and with its own models folder and test archives. The owner creates the account and registers the runner; the steps are in `docs/dev/on-device-runner.md`.
 - **Repository secrets aren't passed** to these jobs, and the checkout keeps no credentials (`persist-credentials: false`).
@@ -22,7 +22,7 @@ A new workflow, `.github/workflows/on-device.yml`:
 
 | Job | When | What | About how long |
 | --- | --- | --- | --- |
-| **On-device tests** | pushes to `dev`, and manual | The tests marked `#[ignore = "on-device: …"]` and the Swift provider tests that need Foundation Models: Apple's model, a llama.cpp model and (with #24) MLX, each drafting a few fixture items | 5 minutes |
+| **On-device tests** | pushes to `dev`, and manual | `scripts/on-device-tests.sh`: the tests that skip themselves unless pointed at a real provider or model (`CARREL_TEST_APPLE_PROVIDER`, `CARREL_TEST_LLAMA_MODELS`), the Swift provider tests, and a five-item benchmark that drafts with every installed model, MLX included once #24 lands | 5 minutes |
 | **Benchmark** | weekly, Sunday 03:00 local time, and manual | `carrel bench` over the full test set, for every installed model | 3–4 hours |
 
 - **Clean timings:** the benchmark job takes a lock the on-device tests also wait on, and a push to `dev` that arrives while it runs queues its tests until the benchmark finishes, so nothing compiles during a benchmark.
@@ -37,8 +37,8 @@ A new workflow, `.github/workflows/on-device.yml`:
 
 ## Building it
 
-1. Mark the on-device tests and make them runnable with one command (`scripts/on-device-tests.sh`).
-2. `on-device.yml` with both jobs, and the `pr-checks.yml` guard against `pull_request` jobs using the label.
+1. Make the on-device tests runnable with one command (`scripts/on-device-tests.sh`).
+2. `on-device.yml` with both jobs, and a guard in CI's workflow audit against `pull_request` workflows using the label.
 3. `carrel bench --compare PREVIOUS` for the comparison table and the regression check.
 4. `docs/dev/on-device-runner.md`: creating the account, registering the runner, installing models for it, and stopping it.
 5. The owner registers the runner, and a manual run of both jobs.

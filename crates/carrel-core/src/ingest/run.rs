@@ -13,7 +13,7 @@ use crate::ingest::questions::ask;
 use crate::ingest::route::{Route, Router, RoutingRules};
 use crate::ingest::sensitivity::{Assessment, assess};
 use crate::ingest::text::{ItemText, read};
-use crate::ingest::{Batch, Candidate, IngestError, IntakeOptions, Skipped, plan};
+use crate::ingest::{Batch, Candidate, IngestError, IntakeOptions, Skipped, plan_with_index};
 use crate::providers::Registry;
 use crate::questions::{QuestionEntry, QuestionQueue, mark_waiting};
 use crate::review::{ReviewEntry, ReviewError, ReviewQueue};
@@ -135,7 +135,7 @@ pub fn run_with_progress(
     device: Id,
     progress: &mut dyn FnMut(Progress<'_>),
 ) -> Result<Run, IngestError> {
-    let (candidates, skipped) = plan(archive, paths, options)?;
+    let (candidates, skipped, index) = plan_with_index(archive, paths, options)?;
     let names: Vec<String> = candidates.iter().map(name).collect();
     let total = candidates.len();
     let mut report = |stage: Stage, done: usize| {
@@ -217,6 +217,9 @@ pub fn run_with_progress(
         .collect();
     report(Stage::Rating, total);
     let mut entries = propose_all(&batch, &candidates, &texts, &drafts, &routes, &assessments);
+    for entry in entries.iter_mut().flatten() {
+        index.add_by_title(entry);
+    }
     let proposed: Vec<ReviewEntry> = entries.iter().flatten().cloned().collect();
     let questions = ask(archive, &collections, &glossary, &proposed);
     for entry in entries.iter_mut().flatten() {

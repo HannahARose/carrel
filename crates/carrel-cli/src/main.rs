@@ -342,6 +342,16 @@ enum ReviewAction {
         /// Approve every proposal with high confidence that isn't sensitive or a duplicate.
         #[arg(long)]
         all_high: bool,
+        /// File them as new versions of an archived item, with a `version-of` link. Give the
+        /// item's identifier, or leave it out when each is a duplicate of just one item.
+        #[arg(long, value_name = "ITEM", num_args = 0..=1, default_missing_value = "",
+              conflicts_with_all = ["all_high", "related_to"])]
+        as_version_of: Option<String>,
+        /// File them beside an archived item, with a `related` link. Give the item's
+        /// identifier, or leave it out when each is a duplicate of just one item.
+        #[arg(long, value_name = "ITEM", num_args = 0..=1, default_missing_value = "",
+              conflicts_with = "all_high")]
+        related_to: Option<String>,
     },
     /// File proposals' items in Holding, to be placed later.
     Hold {
@@ -368,6 +378,34 @@ enum ReviewAction {
         #[arg(required = true)]
         ids: Vec<String>,
     },
+}
+
+/// `carrel review` and its subcommands.
+fn review_command(
+    archive: Option<&Path>,
+    all: bool,
+    action: Option<ReviewAction>,
+) -> Result<Report, Failure> {
+    match action.unwrap_or(ReviewAction::List { all }) {
+        ReviewAction::List { all } => review::list(archive, all),
+        ReviewAction::Show { id } => review::show(archive, &id),
+        ReviewAction::Reject { ids } => review::reject(archive, &ids),
+        ReviewAction::Approve {
+            ids,
+            all_high,
+            as_version_of,
+            related_to,
+        } => review::approve(
+            archive,
+            &ids,
+            all_high,
+            as_version_of.as_deref(),
+            related_to.as_deref(),
+        ),
+        ReviewAction::Hold { ids } => review::hold(archive, &ids),
+        ReviewAction::Edit { id } => review::edit(archive, &id),
+        ReviewAction::MoveTo { id, collection } => review::move_to(archive, &id, &collection),
+    }
 }
 
 /// The version line, including the archive format this build writes.
@@ -456,19 +494,7 @@ fn main() -> ExitCode {
             }
             _ => settings::list(cli.archive.as_deref()),
         },
-        Command::Review { all, action } => match action.unwrap_or(ReviewAction::List { all }) {
-            ReviewAction::List { all } => review::list(cli.archive.as_deref(), all),
-            ReviewAction::Show { id } => review::show(cli.archive.as_deref(), &id),
-            ReviewAction::Reject { ids } => review::reject(cli.archive.as_deref(), &ids),
-            ReviewAction::Approve { ids, all_high } => {
-                review::approve(cli.archive.as_deref(), &ids, all_high)
-            }
-            ReviewAction::Hold { ids } => review::hold(cli.archive.as_deref(), &ids),
-            ReviewAction::Edit { id } => review::edit(cli.archive.as_deref(), &id),
-            ReviewAction::MoveTo { id, collection } => {
-                review::move_to(cli.archive.as_deref(), &id, &collection)
-            }
-        },
+        Command::Review { all, action } => review_command(cli.archive.as_deref(), all, action),
         Command::Rename { item, new_name } => {
             commands::rename(cli.archive.as_deref(), &item, new_name.as_deref())
         }

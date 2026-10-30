@@ -17,6 +17,7 @@ fn candidate(path: &std::path::Path, kind: Kind) -> Candidate {
         checksum: Checksum::of_bytes(b""),
         size: 0,
         duplicate_of: None,
+        likely: Vec::new(),
         same_as: None,
     }
 }

@@ -29,6 +29,7 @@ fn candidate(name: &str) -> Candidate {
         checksum: Checksum::of_bytes(b""),
         size: 10,
         duplicate_of: None,
+        likely: Vec::new(),
         same_as: None,
     }
 }

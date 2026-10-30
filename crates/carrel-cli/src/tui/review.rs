@@ -79,15 +79,24 @@ impl App {
 
     /// Reads the chosen proposal in full.
     pub(super) fn load_detail(&mut self) {
-        self.detail = match self.queue.get(self.chosen) {
+        let entry = self.queue.get(self.chosen);
+        self.detail = match entry {
             Some(entry) => {
-                match crate::review::show(Some(self.archive.root()), &entry.id.to_string()) {
+                match crate::review::detail(Some(self.archive.root()), &entry.id.to_string(), false)
+                {
                     Ok(report) => report.text.lines().map(str::to_owned).collect(),
                     Err(crate::Failure(e)) => vec![e],
                 }
             }
             None => Vec::new(),
         };
+        let shown = self.comparisons.get(self.compared).map(|c| c.id);
+        self.comparisons = entry
+            .and_then(|e| carrel_core::actions::compare(&self.archive, e).ok())
+            .unwrap_or_default();
+        self.compared = shown
+            .and_then(|id| self.comparisons.iter().position(|c| c.id == id))
+            .unwrap_or(0);
     }
 
     /// Moves the choice in the queue.
@@ -113,9 +122,18 @@ impl App {
 
     /// Handles a key on the Review screen.
     pub(super) fn review_key(&mut self, key: KeyEvent) -> Handled {
+        if matches!(key.code, KeyCode::Char('[' | ']')) && !self.comparisons.is_empty() {
+            let count = self.comparisons.len();
+            self.compared = if key.code == KeyCode::Char(']') {
+                (self.compared + 1) % count
+            } else {
+                (self.compared + count - 1) % count
+            };
+            return Handled::Yes(None);
+        }
         let decision = matches!(
             key.code,
-            KeyCode::Char('a' | 'h' | 'm' | 'x' | 'e' | 'A' | ' ')
+            KeyCode::Char('a' | 'h' | 'm' | 'x' | 'e' | 'A' | ' ' | 'v' | 'b' | 's')
         );
         if !decision {
             return Handled::No;
@@ -149,6 +167,30 @@ impl App {
                 holding: true,
             }),
             KeyCode::Char('A') => Some(Effect::ApproveAllHigh),
+            KeyCode::Char(c @ ('v' | 'b' | 's')) => {
+                let (Some(entry), Some(comparison)) = (
+                    self.queue.get(self.chosen),
+                    self.comparisons.get(self.compared),
+                ) else {
+                    self.message = Some("Not a duplicate of anything archived".into());
+                    return Handled::Yes(None);
+                };
+                match c {
+                    's' => {
+                        self.confirm = Some(Confirm::Reject(vec![entry.id]));
+                        None
+                    }
+                    _ => Some(Effect::Keep {
+                        id: entry.id,
+                        kept: if c == 'v' {
+                            carrel_core::actions::Kept::AsVersion
+                        } else {
+                            carrel_core::actions::Kept::Both
+                        },
+                        target: comparison.id,
+                    }),
+                }
+            }
             KeyCode::Char('x') => {
                 self.confirm = Some(Confirm::Reject(targets));
                 None

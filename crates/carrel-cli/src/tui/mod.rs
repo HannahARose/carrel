@@ -25,6 +25,11 @@ use crate::{Failure, Report};
 
 pub use app::App;
 use app::Effect;
+use carrel_core::actions::Kept;
+use carrel_core::card::Id;
+
+/// Work run in the background, with what it reports.
+type Work = Box<dyn FnOnce() -> Result<Report, Failure> + Send>;
 
 /// Opens the interactive mode on the archive commands would use, and returns when the owner
 /// quits. The terminal is restored however it ends.
@@ -157,7 +162,7 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
     let ids = |ids: &[carrel_core::card::Id]| -> Vec<String> {
         ids.iter().map(ToString::to_string).collect()
     };
-    let (busy, work): (String, Box<dyn FnOnce() -> Result<Report, Failure> + Send>) = match effect {
+    let (busy, work): (String, Work) = match effect {
         Effect::Undo(id) => {
             let result = crate::commands::undo(Some(&root), &id);
             finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
@@ -228,17 +233,18 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
                 if holding { "Holding" } else { "Filing" },
                 if count == 1 { "" } else { "s" }
             );
-            let work: Box<dyn FnOnce() -> Result<Report, Failure> + Send> = if holding {
+            let work: Work = if holding {
                 Box::new(move || crate::review::hold(Some(&root), &chosen))
             } else {
-                Box::new(move || crate::review::approve(Some(&root), &chosen, false))
+                Box::new(move || crate::review::approve(Some(&root), &chosen, false, None, None))
             };
             (busy, work)
         }
         Effect::ApproveAllHigh => (
             "Filing every high-confidence proposal…".into(),
-            Box::new(move || crate::review::approve(Some(&root), &[], true)),
+            Box::new(move || crate::review::approve(Some(&root), &[], true, None, None)),
         ),
+        Effect::Keep { id, kept, target } => keep(root, id, kept, target),
     };
     app.busy = Some(busy);
     let (send, receive) = std::sync::mpsc::channel();
@@ -295,6 +301,23 @@ fn queue(
             if n == 1 { "" } else { "s" }
         ),
     })
+}
+
+/// The work for [`Effect::Keep`]: filing a proposal linked to the archived item it duplicates.
+fn keep(root: PathBuf, id: Id, kept: Kept, target: Id) -> (String, Work) {
+    let busy = match kept {
+        Kept::AsVersion => "Filing it as a new version…",
+        Kept::Both => "Filing it beside the archived item…",
+    };
+    let target = target.to_string();
+    let work: Work = Box::new(move || {
+        let (version, related) = match kept {
+            Kept::AsVersion => (Some(target.as_str()), None),
+            Kept::Both => (None, Some(target.as_str())),
+        };
+        crate::review::approve(Some(&root), &[id.to_string()], false, version, related)
+    });
+    (busy.into(), work)
 }
 
 #[cfg(test)]
@@ -494,6 +517,52 @@ mod tests {
         }
         let archive = app.archive.clone();
         (dir, App::new(archive).unwrap())
+    }
+
+    #[test]
+    fn a_likely_duplicate_is_shown_beside_the_archived_item() {
+        use carrel_core::ingest::likely::{Likely, Why};
+        let (_dir, app) = sample(false);
+        let queue = carrel_core::review::ReviewQueue::of(&app.archive);
+        let (entries, _) = queue.list().unwrap();
+        let archived = app
+            .archive
+            .items()
+            .unwrap()
+            .into_iter()
+            .find(|i| i.card == "Projects/Hardware/parts-list.csv.md")
+            .unwrap();
+        let mut entry = entries[0].clone();
+        entry.likely_duplicates = vec![Likely {
+            id: archived.id,
+            card: archived.card.clone(),
+            why: vec![Why::NewerVersion],
+        }];
+        queue.save(&entry).unwrap();
+        let mut app = App::new(app.archive.clone()).unwrap();
+        app.key(key(KeyCode::Char('2')));
+        let chosen = app.queue.iter().position(|e| e.id == entry.id).unwrap();
+        app.chosen = chosen;
+        app.load_detail();
+
+        let text = screen(&app, 140, 40);
+        assert!(text.contains("likely duplicate"), "{text}");
+        assert!(
+            text.contains("Likely duplicate (looks like a newer version)"),
+            "{text}"
+        );
+        assert!(text.contains("parts-list.csv"), "{text}");
+        assert!(text.contains("file as version"), "the keys change: {text}");
+        assert_eq!(
+            app.key(key(KeyCode::Char('v'))),
+            Some(Effect::Keep {
+                id: entry.id,
+                kept: carrel_core::actions::Kept::AsVersion,
+                target: archived.id,
+            })
+        );
+        assert_eq!(app.key(key(KeyCode::Char('s'))), None);
+        assert!(screen(&app, 140, 40).contains("Reject 1 proposal?"));
     }
 
     #[test]

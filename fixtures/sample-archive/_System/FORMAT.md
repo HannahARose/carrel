@@ -614,7 +614,8 @@ A device only ever writes to its own inbox folder. The writer applies inbox file
 | `source` | Where the item is now: an absolute path on the device `device`, with its checksum (§2.6) and size, or the manifest's content checksum and total size for a folder or bundle |
 | `kind` | `file`, `folder` or `bundle`; a bundle also has `sealed` |
 | `duplicate_of` | The identifier of an archived item with the same checksum, if any |
-| `card` | The card fields to write (§5), except those programs fill in when archiving (`id`, `item`, `checksum`, `size`, `manifest`) |
+| `likely_duplicates` | Optional. Archived items it's likely a duplicate of, at most three: each with its `id`, its `card` path, and `why`, a list of `same-name`, `newer-version`, `older-version` and `same-title-and-date` |
+| `card` | The card fields to write (§5), except those programs fill in when archiving (`id`, `item`, `checksum`, `size`, `manifest`). In `links`, a `path` is relative to the archive root until the item is filed, when it's rewritten relative to the card |
 | `proposed_tags` | At most one tag outside the destination's vocabulary (§6.5); approving the entry adds it to the destination collection's `tags` |
 | `destination` | The collection proposed, its path when proposed, `confidence` (`high`, `medium` or `low`), the `reasons`, and `rule` when a routing rule (§7.4) decided |
 | `problems` | What validation or the owner needs to settle, as `{"stage", "message"}` objects |
