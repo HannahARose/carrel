@@ -57,6 +57,13 @@ Dates are ISO 8601 calendar dates (`2026-10-29`). Times are RFC 3339 timestamps 
 - Paths inside the archive are relative to the archive root, use `/` as the separator, and never start with `/` or contain `.` or `..` segments.
 - Names are compared case-insensitively, because the default file systems on Apple platforms are case-insensitive. Two siblings **must not** differ only by case.
 - Names **must not** contain `/`, `:`, control characters, or leading or trailing spaces, and **should** stay under 200 bytes.
+- **Portable names.** So an archive can move between macOS, Linux, Windows and exFAT drives, names **should** also:
+  - not contain `<`, `>`, `"`, `\`, `|`, `?` or `*`;
+  - not be a name Windows reserves for devices (`CON`, `PRN`, `AUX`, `NUL`, `COM1` to `COM9`, `LPT1` to `LPT9`), compared without case and ignoring everything from the first `.`, so `con.txt` is reserved too;
+  - not end with a `.`;
+  - keep paths from the archive root under 200 characters, which leaves room under Windows' 260-character limit in a typical location.
+
+  Programs **must** give everything they create a portable name. They **should** report existing names that aren't portable, with a portable suggestion, and **must not** rename items without the owner's approval.
 - In **Markdown link destinations**, paths are percent-encoded so they work in every Markdown reader: at least space as `%20`, `(` as `%28`, `)` as `%29`, `%` as `%25`, `#` as `%23`, `?` as `%3F`, `<` as `%3C` and `>` as `%3E`. For example, `[RFC 9562](RFC%209562.md)`. Paths in frontmatter and JSON (such as `links[].path` or `manifest.path`) are plain, unencoded paths.
 
 ### 2.6 Checksums

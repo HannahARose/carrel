@@ -18,6 +18,8 @@
 //! | [`listing`] | The generated listings: collections' contents and `ARCHIVE.md`'s collections | §6.2, §6.3 |
 //! | [`detect`] | Item kinds, sealing, and regenerable folders | §4, §7.5 |
 //! | [`manifest`] | Checksums, folder manifests and their diffs | §2.6, §7.7 |
+//! | [`names`] | Portable names: checking them, and suggesting portable ones | §2.5 |
+//! | [`rename`] | Renaming an item and its card together, with links and history following | §2.5, §8.2 |
 //! | [`history`] | The Git history of metadata, and undo | §8.1–§8.3 |
 //! | [`backup`] | Snapshots of contents with Kopia: setup, snapshot, verify, restore | §7.2, §8.2 |
 //! | [`coordinator`] | Which writer may change an archive: leases and the disk lock | §8.4 |
@@ -58,8 +60,10 @@ pub mod ingest;
 pub mod listing;
 pub mod local;
 pub mod manifest;
+pub mod names;
 pub mod providers;
 pub mod questions;
+pub mod rename;
 pub mod review;
 pub mod sections;
 

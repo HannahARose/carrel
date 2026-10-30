@@ -101,6 +101,14 @@ enum Command {
         /// The change's identifier, or its start.
         change: String,
     },
+    /// Rename an item and its card together, as when `carrel status` finds a name that won't
+    /// work on every system. Links to it follow, and the change can be undone.
+    Rename {
+        /// The item: its identifier, or its card's or contents' path.
+        item: String,
+        /// The new name; without one, the portable name `carrel status` suggests.
+        new_name: Option<String>,
+    },
     /// Back up the archive's contents with Kopia: set up, snapshot, list, verify or restore.
     Backup {
         #[command(subcommand)]
@@ -315,6 +323,9 @@ fn main() -> ExitCode {
                 review::move_to(cli.archive.as_deref(), &id, &collection)
             }
         },
+        Command::Rename { item, new_name } => {
+            commands::rename(cli.archive.as_deref(), &item, new_name.as_deref())
+        }
         Command::Backup { action } => match action {
             BackupAction::Setup { path, description } => {
                 backup::setup(cli.archive.as_deref(), &path, description.as_deref())
