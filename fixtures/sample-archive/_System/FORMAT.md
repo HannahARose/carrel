@@ -566,7 +566,7 @@ A device only ever writes to its own inbox folder. The writer applies inbox file
 
 ### 7.9 Queues
 
-`_System/queue/` holds pending work as one JSON file per entry, in subfolders `review/` (ingest and change proposals), `questions/` (questions for the owner), `tasks/` (work for a more capable device) and `proposals/` (restructure proposals). Entry schemas are defined alongside the features that use them and are versioned with this specification. Programs **must** preserve unknown keys in entries.
+`_System/queue/` holds pending work as one JSON file per entry, in subfolders `intake/` (items waiting to be ingested), `review/` (ingest and change proposals), `questions/` (questions for the owner), `tasks/` (work for a more capable device) and `proposals/` (restructure proposals). Entry schemas are defined alongside the features that use them and are versioned with this specification. Programs **must** preserve unknown keys in entries.
 
 #### Review entries
 
@@ -622,6 +622,31 @@ A device only ever writes to its own inbox folder. The writer applies inbox file
 | `sensitivity_reasons` | Why `card.sensitivity` is `sensitive` or `restricted`, in words that never quote what was found; absent otherwise |
 
 When an approved or held entry has been archived, programs remove the entry; the history commit (§8.2) records what was filed. A rejected entry is removed once the owner has seen the batch summary. Entries whose `source.device` is another device can't be archived there; they wait for that device.
+
+#### Intake entries
+
+Items added for ingest wait in `_System/queue/intake/`, one JSON file each, named for its `id`, until a program on their device has drafted their proposal:
+
+```json
+{
+  "carrel": "intake",
+  "format": "1.0",
+  "id": "01928f3d-1111-7aaa-8bbb-000000000001",
+  "path": "/Users/me/Downloads/parts-list.csv",
+  "device": "01928f3a-0000-7000-8000-00000000d001",
+  "added": "2026-10-30T14:02:11-04:00"
+}
+```
+
+| Key | Meaning |
+| --- | --- |
+| `path` | The item's absolute path on its device. Only that device processes the entry |
+| `device` | The device that has the item |
+| `added` | When it was added |
+| `order` | Its place in the queue, lower first, then by `id`; omitted when `0` |
+| `attempts`, `failure` | How many times processing it has failed, and why the last time; after two, it waits for the owner to retry it |
+
+Programs process entries one at a time, save each item's proposal to `review/` as soon as it's ready, and then remove the entry.
 
 #### Question entries
 

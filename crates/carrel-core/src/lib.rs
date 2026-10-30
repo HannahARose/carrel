@@ -59,6 +59,7 @@ pub mod documents;
 pub mod frontmatter;
 pub mod history;
 pub mod ingest;
+pub mod intake;
 pub mod listing;
 pub mod local;
 pub mod manifest;
