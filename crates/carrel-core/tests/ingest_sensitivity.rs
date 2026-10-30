@@ -63,7 +63,7 @@ fn sensitive_words_and_names_raise_the_floor_with_reasons_that_quote_nothing() {
 
     let plain = floor("Lamp notes.txt", "Solder the LED", Sensitivity::Personal);
     assert_eq!(plain.level, Sensitivity::Personal);
-    assert!(plain.reasons.is_empty());
+    assert_eq!(plain.reasons, Vec::<String>::new());
     assert_eq!(
         floor("a.txt", "", Sensitivity::Sensitive).level,
         Sensitivity::Sensitive,
