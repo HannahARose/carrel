@@ -5,6 +5,7 @@ Status: proposed. Issue #88.
 ## What it's for
 
 Reviewing a batch one command at a time is slow:
+
 - `carrel review` to list
 - `show` to read one
 - `move-to` when the destination is wrong
