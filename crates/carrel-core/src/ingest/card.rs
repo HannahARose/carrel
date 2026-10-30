@@ -443,7 +443,18 @@ pub fn draft(
     draft.tags.clear();
     draft.new_tag = None;
     draft.created = None;
-    draft.problems.push(if last_problems.is_empty() {
+    let declined: Vec<String> = draft
+        .attempts
+        .iter()
+        .filter(|a| a.result == "declined")
+        .map(|a| format!("{}/{}", a.provider, a.offer))
+        .collect();
+    draft.problems.push(if !declined.is_empty() && last_problems.is_empty() {
+        format!(
+            "{} declined to draft it (a safety refusal); write the card yourself, or add another model with `carrel models`",
+            declined.join(" and ")
+        )
+    } else if last_problems.is_empty() {
         "no model could draft a card".to_owned()
     } else {
         format!(
@@ -507,11 +518,7 @@ impl Asking<'_> {
             let completion = match provider.complete(&offer.id, &request) {
                 Ok(completion) => completion,
                 Err(error) => {
-                    let result = match error {
-                        crate::providers::ProviderError::Unsupported(_) => "unsupported",
-                        crate::providers::ProviderError::Unavailable(_) => "unavailable",
-                        _ => "failed",
-                    };
+                    let result = error.result();
                     draft
                         .attempts
                         .push(attempt(provider, offer, result, Some(error.to_string())));

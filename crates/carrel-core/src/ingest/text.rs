@@ -154,11 +154,7 @@ fn read_file(registry: &Registry, path: &Path) -> ItemText {
         path: path.to_owned(),
         media_type: media_type.clone(),
     };
-    let result_name = |e: &ProviderError| match e {
-        ProviderError::Unsupported(_) => "unsupported",
-        ProviderError::Unavailable(_) | ProviderError::NoProvider(_) => "unavailable",
-        _ => "failed",
-    };
+    let result_name = |e: &ProviderError| e.result();
     let to_attempt = |a: &crate::providers::Attempt| Attempt {
         stage: "text".into(),
         provider: a.source.provider.clone(),

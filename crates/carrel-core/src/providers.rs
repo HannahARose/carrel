@@ -166,6 +166,9 @@ pub enum ProviderError {
     Unsupported(String),
     /// The offer tried and couldn't (code 3).
     Failed(String),
+    /// The model declined the input, as a safety refusal (code 4). Carrel tries the next
+    /// provider, and records the refusal so the owner can see it.
+    Declined(String),
     /// The provider didn't follow the protocol, crashed or didn't answer in time.
     Protocol(String),
     /// No provider on this device offers what's needed.
@@ -181,7 +184,22 @@ impl ProviderError {
         match code {
             1 => Self::Unavailable(message),
             2 | -32601 => Self::Unsupported(message),
+            4 => Self::Declined(message),
             _ => Self::Failed(message),
+        }
+    }
+}
+
+impl ProviderError {
+    /// The attempt result it's recorded as (FORMAT.md §7.9): `unsupported`, `unavailable`,
+    /// `declined` or `failed`.
+    #[must_use]
+    pub fn result(&self) -> &'static str {
+        match self {
+            Self::Unsupported(_) => "unsupported",
+            Self::Unavailable(_) | Self::NoProvider(_) => "unavailable",
+            Self::Declined(_) => "declined",
+            Self::Failed(_) | Self::Protocol(_) => "failed",
         }
     }
 }
@@ -192,6 +210,7 @@ impl std::fmt::Display for ProviderError {
             Self::Unavailable(m) => write!(f, "unavailable: {m}"),
             Self::Unsupported(m) => write!(f, "unsupported: {m}"),
             Self::Failed(m) => write!(f, "failed: {m}"),
+            Self::Declined(m) => write!(f, "declined: {m}"),
             Self::Protocol(m) => write!(f, "provider error: {m}"),
             Self::NoProvider(c) => write!(f, "no provider on this device offers {}", c.as_str()),
         }

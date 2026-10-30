@@ -11,7 +11,7 @@ use crate::archive::{Archive, Collection};
 use crate::card::{Id, Kind, Tag};
 use crate::detect::NamePattern;
 use crate::frontmatter;
-use crate::providers::{Capability, CompletionRequest, Offer, Provider, ProviderError, Registry};
+use crate::providers::{Capability, CompletionRequest, Offer, Provider, Registry};
 use crate::review::{Attempt, Confidence};
 
 use super::Candidate;
@@ -393,11 +393,12 @@ impl<'a> Router<'a> {
             let (Some((pick, fit, reason)), Some((again, fit_again, _))) = (first, second) else {
                 // A model failure: stop at the level reached.
                 if chosen.is_none() {
-                    return self.holding(
-                        Confidence::Low,
-                        vec!["the model couldn't choose a collection".into()],
-                        attempts,
-                    );
+                    let why = if attempts.iter().any(|a| a.result == "declined") {
+                        "the model declined to choose a collection (a safety refusal)"
+                    } else {
+                        "the model couldn't choose a collection"
+                    };
+                    return self.holding(Confidence::Low, vec![why.into()], attempts);
                 }
                 break;
             };
@@ -551,11 +552,7 @@ impl<'a> Router<'a> {
                 }
             }
             Err(error) => {
-                let result = match error {
-                    ProviderError::Unsupported(_) => "unsupported",
-                    ProviderError::Unavailable(_) => "unavailable",
-                    _ => "failed",
-                };
+                let result = error.result();
                 attempts.push(stage(result, Some(error.to_string())));
                 None
             }

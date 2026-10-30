@@ -111,6 +111,7 @@ fn to_result<T: Serialize>(result: Result<T, ProviderError>) -> Result<Value, (i
         Ok(value) => Ok(serde_json::to_value(value).expect("results always serialize")),
         Err(ProviderError::Unavailable(m)) => Err((1, m)),
         Err(ProviderError::Unsupported(m)) => Err((2, m)),
+        Err(ProviderError::Declined(m)) => Err((4, m)),
         Err(ProviderError::Failed(m) | ProviderError::Protocol(m)) => Err((3, m)),
         Err(e @ ProviderError::NoProvider(_)) => Err((1, e.to_string())),
     }

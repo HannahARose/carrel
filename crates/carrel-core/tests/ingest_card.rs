@@ -346,3 +346,35 @@ fn a_summary_that_repeats_the_title_is_retried() {
     );
     assert_eq!(d.problems, Vec::<String>::new());
 }
+
+#[test]
+fn a_model_that_declines_is_named_so_the_owner_knows() {
+    let fixture = Fixture::new();
+    let refuses = Scripted::new(
+        "a",
+        100,
+        8192,
+        vec![Err(ProviderError::Declined(
+            "Apple's on-device model declined: Detected content likely to be unsafe".into(),
+        ))],
+    );
+    let registry = registry_of(vec![refuses]);
+    let d = draft(
+        &registry,
+        &fixture.context(),
+        &candidate("blood test results.txt"),
+        &text("Ferritin 18 ug/L"),
+    );
+    assert_eq!(d.attempts[0].result, "declined");
+    assert_eq!(d.problems.len(), 1);
+    assert!(
+        d.problems[0].contains("declined to draft it"),
+        "{:?}",
+        d.problems
+    );
+    assert_eq!(
+        ProviderError::from_code(4, "x".into()),
+        ProviderError::Declined("x".into())
+    );
+    assert_eq!(ProviderError::Declined("x".into()).result(), "declined");
+}

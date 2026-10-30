@@ -152,6 +152,9 @@ pub struct Outcome {
     pub valid: bool,
     /// Whether every model output passed validation the first time.
     pub first_try: bool,
+    /// Whether a model declined the item, as a safety refusal.
+    #[serde(default)]
+    pub declined: bool,
     /// What was left for the owner to settle.
     pub problems: Vec<String>,
     /// Model calls that didn't succeed, as `stage: result: message`.
@@ -210,6 +213,7 @@ pub fn outcomes(run: &Run) -> Vec<Outcome> {
                     && last.values().all(|r| *r == "ok")
                     && problems.is_empty(),
                 first_try: !last.is_empty() && failures.is_empty() && problems.is_empty(),
+                declined: failures.iter().any(|f| f.contains(": declined:")),
                 problems,
                 failures,
             }
@@ -233,6 +237,7 @@ pub enum Rating {
 
 /// One item's scores.
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[allow(clippy::struct_excessive_bools)] // independent yes-or-no scores, reported as they are
 pub struct ItemScore {
     /// The item's file name.
     pub item: String,
@@ -252,6 +257,8 @@ pub struct ItemScore {
     pub valid: bool,
     /// Whether every model output passed the first time.
     pub first_try: bool,
+    /// Whether a model declined it.
+    pub declined: bool,
 }
 
 /// A run's scores over every item.
@@ -263,6 +270,8 @@ pub struct Score {
     pub valid: f64,
     /// The share whose output was valid the first time.
     pub first_try: f64,
+    /// The share a model declined, as a safety refusal.
+    pub declined: f64,
     /// The routing score, as a share.
     pub routing: f64,
     /// The share rated exactly.
@@ -382,6 +391,7 @@ pub fn score(answers: &Answers, outcomes: &[Outcome], seconds: f64) -> (Score, V
                 tags_outside,
                 valid: outcome.valid,
                 first_try: outcome.first_try,
+                declined: outcome.declined,
             },
         ));
     }
@@ -395,6 +405,7 @@ pub fn score(answers: &Answers, outcomes: &[Outcome], seconds: f64) -> (Score, V
         items: items.len(),
         valid: share(&|s| s.valid),
         first_try: share(&|s| s.first_try),
+        declined: share(&|s| s.declined),
         routing: items.iter().map(|(_, s)| s.routing).sum::<f64>() / n,
         sensitivity_exact: share(&|s| s.sensitivity == Rating::Exact),
         under_rated: share(&under),
@@ -451,6 +462,7 @@ items:
             summary: None,
             valid: true,
             first_try: true,
+            declined: false,
             problems: Vec::new(),
             failures: Vec::new(),
         }
