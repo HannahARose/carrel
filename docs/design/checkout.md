@@ -1,6 +1,6 @@
 # Design: checkout, desk items and work sessions (v0.3)
 
-Status: proposed 2026-10-30. Issue #4.
+Status: accepted 2026-10-30, with the five recommendations below. Issue #4.
 
 ## What this adds
 
@@ -86,7 +86,7 @@ Proposals can be edited in the owner's editor already. v0.3 adds `carrel edit IT
 7. The Active screen; the user guide and command reference.
 8. The gate: a real project out and back.
 
-## Decisions to accept
+## Decisions (accepted 2026-10-30)
 
 1. **Sessions worked out afterwards** from modification times and commits whenever Carrel runs, until the background agent (v0.5) watches them live; same entries, same format. Recommended: no daemon to install, and nothing is lost between runs except edits that undo themselves.
 2. **The archive copy is locked by making it read-only,** besides Carrel refusing to change it, and restored on return or cancel. Recommended: it stops an editor saving into the archive by mistake, and it's undone by any tool if something goes wrong.
