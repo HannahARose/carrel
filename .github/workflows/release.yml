@@ -1,7 +1,8 @@
 name: Release
 
 # Builds the CLI for macOS, Linux and Windows and, for a v* tag on main, publishes a GitHub
-# release with an archive per platform, checksums and build provenance attestations. Each
+# release with an archive per platform, checksums and build provenance attestations, and
+# third-party license notices in every archive. Each
 # archive bundles carrel, the network helper, the llama.cpp provider and the pinned Kopia (and
 # on macOS the Apple provider), so nothing else needs installing.
 #
@@ -15,6 +16,9 @@ on:
     paths:
       - .github/workflows/release.yml
       - scripts/package-release.sh
+      - scripts/third-party-licenses.sh
+      - about.toml
+      - about.hbs
   workflow_dispatch:
 
 permissions:
@@ -59,9 +63,26 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
+  licenses:
+    # The third-party license notices every archive ships: each Rust crate's license, and the
+    # C libraries built into some of them.
+    name: License notices
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: cargo install --locked cargo-about --version 0.9.2 --features cli
+      - run: scripts/third-party-licenses.sh THIRD-PARTY-LICENSES.md
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: license-notices
+          path: THIRD-PARTY-LICENSES.md
+          if-no-files-found: error
+
   build:
     name: Build (${{ matrix.name }})
-    needs: version
+    needs: [version, licenses]
     strategy:
       fail-fast: false
       matrix:
@@ -133,7 +154,13 @@ jobs:
           if [ "$RUNNER_OS" = Windows ]; then exe=".exe"; fi
           "$BIN_DIR/carrel$exe" --version
           PATH="$PWD/$BIN_DIR:$PATH" "$BIN_DIR/carrel$exe" providers
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: license-notices
+          path: notices
       - name: Package
+        env:
+          THIRD_PARTY: notices/THIRD-PARTY-LICENSES.md
         run: scripts/package-release.sh "$NAME" "$BIN_DIR"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
