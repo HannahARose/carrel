@@ -4,13 +4,11 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::path::Path;
 
+use carrel_core::actions::{self, Edited};
 use carrel_core::archive::Archive;
 use carrel_core::backup::Backups;
-use carrel_core::card::Sensitivity;
-use carrel_core::coordinator::{Coordinator, DEFAULT_LEASE, DiskLock};
-use carrel_core::ingest::filing::{Filed, Placement, file_batch};
-use carrel_core::questions::redirect;
-use carrel_core::review::{Confidence, ReviewEntry, ReviewQueue, State, short_id};
+use carrel_core::ingest::filing::{Filed, Placement};
+use carrel_core::review::{ReviewEntry, ReviewQueue, State, short_id};
 use serde_json::{Value, json};
 
 use crate::commands::{holder, locate};
@@ -153,24 +151,17 @@ pub fn show(archive: Option<&Path>, id: &str) -> Result<Report, Failure> {
 /// `carrel review reject ID...`: the items stay where they are.
 pub fn reject(archive: Option<&Path>, ids: &[String]) -> Result<Report, Failure> {
     let archive = locate(archive)?;
-    let queue = ReviewQueue::of(&archive);
-    // Find them all first, so a typo changes nothing.
-    let mut entries = Vec::new();
-    for id in ids {
-        let entry = queue.find(id)?;
-        if !entry.state.is_open() {
-            return Err(Failure::new(format!(
-                "{} is already {}",
-                short_id(entry.id),
-                entry.state.as_str()
-            )));
-        }
-        entries.push(entry);
+    let entries = actions::proposals(&archive, ids)?;
+    // Approved and held proposals are on their way; rejecting is for those still undecided.
+    if let Some(entry) = entries.iter().find(|e| !e.state.is_open()) {
+        return Err(Failure::new(format!(
+            "{} is already {}",
+            short_id(entry.id),
+            entry.state.as_str()
+        )));
     }
     let mut text = String::new();
-    for mut entry in entries {
-        entry.state = State::Rejected;
-        queue.save(&entry)?;
+    for entry in actions::reject(&archive, entries)? {
         writeln!(
             text,
             "Rejected {}: {} stays where it is",
@@ -186,18 +177,9 @@ pub fn reject(archive: Option<&Path>, ids: &[String]) -> Result<Report, Failure>
 pub fn approve(archive: Option<&Path>, ids: &[String], all_high: bool) -> Result<Report, Failure> {
     let archive = locate(archive)?;
     let entries = if all_high {
-        let (entries, _) = ReviewQueue::of(&archive).list()?;
-        entries
-            .into_iter()
-            .filter(|e| {
-                e.state == State::Proposed
-                    && e.destination.confidence == Confidence::High
-                    && e.card.sensitivity < Sensitivity::Sensitive
-                    && e.duplicate_of.is_none()
-            })
-            .collect()
+        actions::all_high(&archive)?
     } else {
-        decidable(&archive, ids)?
+        actions::proposals(&archive, ids)?
     };
     decide(&archive, entries, Placement::Destination)
 }
@@ -205,7 +187,7 @@ pub fn approve(archive: Option<&Path>, ids: &[String], all_high: bool) -> Result
 /// `carrel review hold ID...`: files the items in Holding, to be placed later.
 pub fn hold(archive: Option<&Path>, ids: &[String]) -> Result<Report, Failure> {
     let archive = locate(archive)?;
-    let entries = decidable(&archive, ids)?;
+    let entries = actions::proposals(&archive, ids)?;
     decide(&archive, entries, Placement::Holding)
 }
 
@@ -213,70 +195,25 @@ pub fn hold(archive: Option<&Path>, ids: &[String]) -> Result<Report, Failure> {
 /// until the proposal is approved.
 pub fn move_to(archive: Option<&Path>, id: &str, collection: &str) -> Result<Report, Failure> {
     let archive = locate(archive)?;
-    let queue = ReviewQueue::of(&archive);
-    let mut entry = queue.find(id)?;
-    if matches!(entry.state, State::Rejected | State::Archived) {
-        return Err(Failure::new(format!(
-            "{} is already {}",
-            short_id(entry.id),
-            entry.state.as_str()
-        )));
-    }
-    let collections = archive.collections()?;
-    let wanted = collection.trim_matches('/');
-    let target = collections
-        .iter()
-        .find(|c| c.path.eq_ignore_ascii_case(wanted))
-        .ok_or_else(|| Failure::new(format!("no collection {wanted}")))?;
-    let dropped = redirect(
-        &archive,
-        &collections,
-        &mut entry,
-        target,
-        "chosen by the owner",
-    );
+    let moved = actions::move_to(&archive, id, collection)?;
     let mut text = format!(
         "{} will go to {} when approved\n",
-        short_id(entry.id),
-        target.path
+        short_id(moved.entry.id),
+        moved.to
     );
-    if !dropped.is_empty() {
+    if !moved.dropped.is_empty() {
         writeln!(
             text,
             "Tags {} don't apply in {}, so they were left off",
-            dropped.join(", "),
-            target.path
+            moved.dropped.join(", "),
+            moved.to
         )
         .unwrap();
     }
-    queue.save(&entry)?;
     Ok(Report::new(
         text,
-        serde_json::to_value(&entry).unwrap_or(Value::Null),
+        serde_json::to_value(&moved.entry).unwrap_or(Value::Null),
     ))
-}
-
-/// The proposals named by `ids`, all of them found before anything changes.
-fn decidable(archive: &Archive, ids: &[String]) -> Result<Vec<ReviewEntry>, Failure> {
-    if ids.is_empty() {
-        return Err(Failure::new("name the proposals to decide"));
-    }
-    let queue = ReviewQueue::of(archive);
-    let mut entries: Vec<ReviewEntry> = Vec::new();
-    for id in ids {
-        let entry = queue.find(id)?;
-        if matches!(entry.state, State::Rejected | State::Archived) {
-            return Err(Failure::new(format!(
-                "{} is already {}",
-                short_id(entry.id),
-                entry.state.as_str()
-            )));
-        }
-        if !entries.iter().any(|e| e.id == entry.id) {
-            entries.push(entry);
-        }
-    }
-    Ok(entries)
 }
 
 /// Files `entries` as one batch, holding the writer lease.
@@ -292,19 +229,14 @@ fn decide(
         ));
     }
     let identity = Identity::load_or_create()?;
-    let mut lease =
-        DiskLock::for_archive(archive).acquire(holder(&identity), "ingest", DEFAULT_LEASE)?;
-    let decided = entries.into_iter().map(|e| (e, placement)).collect();
     let (backups, note) = crate::backup::for_batch(archive);
-    let outcome = file_batch(
+    let outcome = actions::decide(
         archive,
-        decided,
-        &mut lease,
-        identity.device,
+        entries,
+        placement,
+        holder(&identity),
         backups.as_ref().map(|b| b as &dyn Backups),
-    );
-    lease.release()?;
-    let outcome = outcome?;
+    )?;
 
     let mut text = String::new();
     for filed in &outcome.filed {
@@ -357,5 +289,85 @@ fn decide(
             })).collect::<Vec<_>>(),
             "commit": outcome.commit,
         }),
+    ))
+}
+
+/// The editor to open: `$VISUAL`, then `$EDITOR`, then `notepad` on Windows or `vi`. Its
+/// words are split on spaces, so `code --wait` works.
+fn editor() -> Vec<String> {
+    let chosen = ["VISUAL", "EDITOR"]
+        .iter()
+        .find_map(|v| std::env::var(v).ok().filter(|e| !e.trim().is_empty()))
+        .unwrap_or_else(|| if cfg!(windows) { "notepad" } else { "vi" }.to_owned());
+    chosen.split_whitespace().map(str::to_owned).collect()
+}
+
+/// Opens `path` in the editor and waits for it to close.
+fn run_editor(path: &Path) -> Result<(), Failure> {
+    let words = editor();
+    let (program, args) = words
+        .split_first()
+        .ok_or_else(|| Failure::new("no editor to open; set VISUAL or EDITOR"))?;
+    let status = std::process::Command::new(program)
+        .args(args)
+        .arg(path)
+        .status()
+        .map_err(|e| Failure::new(format!("couldn't open the editor {program}: {e}")))?;
+    if !status.success() {
+        return Err(Failure::new(format!(
+            "the editor {program} exited with {status}; nothing changed"
+        )));
+    }
+    Ok(())
+}
+
+/// `carrel review edit ID`: opens the proposal's card in the editor, checks it when saved,
+/// and reopens it with the problems listed until it checks out or is left unchanged.
+pub fn edit(archive: Option<&Path>, id: &str) -> Result<Report, Failure> {
+    let archive = locate(archive)?;
+    let mut entry = actions::proposals(&archive, &[id.to_owned()])?
+        .pop()
+        .ok_or_else(|| Failure::new(format!("no proposal {id}")))?;
+    let file = std::env::temp_dir().join(format!("carrel-{}.yaml", entry.id));
+    let mut text = actions::draft_text(&archive, &entry, &[])?;
+    let result = loop {
+        std::fs::write(&file, &text).map_err(|e| Failure::io(&file, &e))?;
+        run_editor(&file)?;
+        let edited = std::fs::read_to_string(&file).map_err(|e| Failure::io(&file, &e))?;
+        if edited == text {
+            break "Nothing changed\n".to_owned();
+        }
+        match actions::apply_draft(&archive, &mut entry, &edited)? {
+            Edited::Unchanged => break "Nothing changed\n".to_owned(),
+            Edited::Changed => {
+                ReviewQueue::of(&archive).save(&entry)?;
+                break format!(
+                    "Saved the card for {} ({})\n",
+                    short_id(entry.id),
+                    entry.state.as_str()
+                );
+            }
+            Edited::Problems(problems) => {
+                // The owner's edits stay; the problems go on top, replacing earlier ones.
+                let mut again = String::new();
+                for problem in &problems {
+                    writeln!(again, "# To fix: {problem}").unwrap();
+                }
+                again.push_str("#\n");
+                for line in edited
+                    .lines()
+                    .skip_while(|l| l.starts_with("# To fix: ") || *l == "#")
+                {
+                    again.push_str(line);
+                    again.push('\n');
+                }
+                text = again;
+            }
+        }
+    };
+    let _ = std::fs::remove_file(&file);
+    Ok(Report::new(
+        result,
+        serde_json::to_value(&entry).unwrap_or(Value::Null),
     ))
 }

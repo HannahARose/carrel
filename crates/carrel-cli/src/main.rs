@@ -84,7 +84,7 @@ enum Command {
         #[arg(long)]
         dry_run: bool,
     },
-    /// Review proposals to file items: list, show, approve, hold, move or reject them.
+    /// Review proposals to file items: list, show, edit, approve, hold, move or reject them.
     Review {
         /// Include proposals already decided (with no subcommand).
         #[arg(long)]
@@ -194,6 +194,11 @@ enum ReviewAction {
         #[arg(required = true)]
         ids: Vec<String>,
     },
+    /// Edit a proposal's card in your editor ($VISUAL or $EDITOR) before approving it.
+    Edit {
+        /// The proposal's identifier, or its start or end.
+        id: String,
+    },
     /// Propose another collection for an item. It's filed there when approved.
     MoveTo {
         /// The proposal's identifier, or its start or end.
@@ -289,6 +294,7 @@ fn main() -> ExitCode {
                 review::approve(cli.archive.as_deref(), &ids, all_high)
             }
             ReviewAction::Hold { ids } => review::hold(cli.archive.as_deref(), &ids),
+            ReviewAction::Edit { id } => review::edit(cli.archive.as_deref(), &id),
             ReviewAction::MoveTo { id, collection } => {
                 review::move_to(cli.archive.as_deref(), &id, &collection)
             }

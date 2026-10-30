@@ -5,20 +5,18 @@
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
-use carrel_core::archive::Archive;
-use carrel_core::card::Id;
-use carrel_core::card::Kind;
-use carrel_core::coordinator::{Coordinator, DEFAULT_LEASE, DiskLock};
-use carrel_core::ingest::card::{Context, Draft, Glossary, Vocabulary, draft};
-use carrel_core::ingest::filing::{Outcome, Placement, file_batch, files_itself};
-use carrel_core::ingest::questions::ask;
-use carrel_core::ingest::route::{Route, Router, RoutingRules};
-use carrel_core::ingest::sensitivity::{Assessment, assess};
-use carrel_core::ingest::text::{ItemText, read};
-use carrel_core::ingest::{Batch, Candidate, IntakeOptions, plan};
-use carrel_core::providers::Registry;
-use carrel_core::questions::{QuestionEntry, QuestionQueue, mark_waiting};
-use carrel_core::review::{ReviewEntry, ReviewQueue, short_id};
+use carrel_core::actions::{self, Ingested};
+use carrel_core::backup::Backups;
+use carrel_core::card::{Id, Kind};
+use carrel_core::ingest::card::Draft;
+use carrel_core::ingest::filing::Outcome;
+use carrel_core::ingest::route::Route;
+use carrel_core::ingest::run::{Run, name};
+use carrel_core::ingest::sensitivity::Assessment;
+use carrel_core::ingest::text::ItemText;
+use carrel_core::ingest::{Candidate, IntakeOptions};
+use carrel_core::questions::QuestionEntry;
+use carrel_core::review::short_id;
 use serde_json::{Value, json};
 
 use crate::commands::locate;
@@ -32,104 +30,49 @@ pub fn ingest(
     dry_run: bool,
 ) -> Result<Report, Failure> {
     let archive = locate(archive)?;
-    let (candidates, skipped) = plan(&archive, paths, options)?;
     let (registry, _) = crate::providers::registry();
-    let rules = archive.rules()?;
-    // Duplicates won't be filed by default, so their text isn't needed yet.
     let identity = crate::config::Identity::load_or_create()?;
-    let collections = archive.collections()?;
-    let vocabulary = Vocabulary::of(&archive, &collections);
-    let glossary = Glossary::of(&archive);
-    let context = Context {
-        archive_name: &archive.doc().name,
-        vocabulary: &vocabulary,
-        glossary: &glossary,
-        device: identity.device,
-    };
-    let texts: Vec<Option<ItemText>> = candidates
-        .iter()
-        .map(|c| {
-            (c.duplicate_of.is_none() && c.same_as.is_none()).then(|| read(&registry, &rules, c))
-        })
-        .collect();
-    let drafts: Vec<Option<Draft>> = candidates
-        .iter()
-        .zip(&texts)
-        .map(|(c, t)| t.as_ref().map(|t| draft(&registry, &context, c, t)))
-        .collect();
+    let (backups, _) = crate::backup::for_batch(&archive);
+    let Ingested { run, filed } = actions::ingest(
+        &archive,
+        &registry,
+        paths,
+        options,
+        crate::commands::holder(&identity),
+        backups.as_ref().map(|b| b as &dyn Backups),
+        !dry_run,
+    )?;
+    Ok(report(&run, filed.as_ref(), dry_run))
+}
 
-    let routing_rules = RoutingRules::of(&archive, &collections);
-    let chooser = Router::new(&archive, &collections, &routing_rules);
-    let routes: Vec<Option<Route>> = candidates
-        .iter()
-        .zip(&drafts)
-        .map(|(c, d)| {
-            d.as_ref().map(|d| {
-                let source = c.path.parent().unwrap_or(&c.path);
-                chooser.route(&registry, c, source, d)
-            })
-        })
-        .collect();
-    let batch = Batch {
-        archive: &archive,
-        collections: &collections,
-        id: Id::new_v7(),
-        device: identity.device,
-    };
-    let assessments = assess_all(&registry, &batch, &candidates, &texts, &routes);
-    let mut entries: Vec<Option<ReviewEntry>> = candidates
-        .iter()
-        .zip(
-            texts
-                .iter()
-                .zip(&drafts)
-                .zip(routes.iter().zip(&assessments)),
-        )
-        .map(|(c, ((t, d), (r, s)))| match (t, d, r, s) {
-            (Some(t), Some(d), Some(r), Some(s)) => batch.propose(c, d, r, s, &t.attempts),
-            _ => None,
-        })
-        .collect();
-    let questions = ask_about(&archive, &collections, &glossary, &mut entries);
-    let mut auto_filed = None;
-    if !dry_run {
-        save(&archive, &entries, &questions)?;
-        auto_filed = file_by_rule(&archive, &entries, &routes, identity.device)?;
-    }
-
+/// An ingest run as a report: the plan for people, and everything as JSON.
+pub fn report(run: &Run, filed: Option<&Outcome>, dry_run: bool) -> Report {
     let mut out = render(
-        &candidates,
-        &texts,
-        &drafts,
-        &routes,
-        &assessments,
-        &skipped,
+        &run.candidates,
+        &run.texts,
+        &run.drafts,
+        &run.routes,
+        &run.assessments,
+        &run.skipped,
     );
-    for problem in &routing_rules.problems {
+    for problem in &run.routing_problems {
         writeln!(out, "warning: {problem}").unwrap();
     }
-    let saved = entries.iter().flatten().count();
-    closing(
-        &mut out,
-        auto_filed.as_ref(),
-        &questions,
-        saved,
-        dry_run,
-        batch.id,
-    );
+    let saved = run.entries.iter().flatten().count();
+    closing(&mut out, filed, &run.questions, saved, dry_run, run.batch);
 
-    let items = items_json(&candidates, &texts, &drafts);
-    Ok(Report::new(
+    let items = items_json(&run.candidates, &run.texts, &run.drafts);
+    Report::new(
         out,
         json!({
-            "batch": batch.id,
+            "batch": run.batch,
             "saved": !dry_run,
             "items": items,
-            "skipped": skipped.iter().map(|s| json!({"path": s.path, "reason": s.reason})).collect::<Vec<_>>(),
-            "proposals": entries.iter().flatten().collect::<Vec<_>>(),
-            "filed": auto_filed.as_ref().map(|o| o.filed.iter().map(|f| json!({"proposal": f.entry, "item": f.item, "path": f.path, "card": f.card})).collect::<Vec<_>>()).unwrap_or_default(),
+            "skipped": run.skipped.iter().map(|s| json!({"path": s.path, "reason": s.reason})).collect::<Vec<_>>(),
+            "proposals": run.entries.iter().flatten().collect::<Vec<_>>(),
+            "filed": filed.map(|o| o.filed.iter().map(|f| json!({"proposal": f.entry, "item": f.item, "path": f.path, "card": f.card})).collect::<Vec<_>>()).unwrap_or_default(),
         }),
-    ))
+    )
 }
 
 /// What was filed by rule, what was asked, and what was saved for review.
@@ -191,107 +134,6 @@ fn closing_lines(
         )
         .unwrap();
     }
-}
-
-/// Saves the batch's proposals and questions.
-fn save(
-    archive: &Archive,
-    entries: &[Option<ReviewEntry>],
-    questions: &[QuestionEntry],
-) -> Result<(), Failure> {
-    let queue = ReviewQueue::of(archive);
-    for entry in entries.iter().flatten() {
-        queue.save(entry)?;
-    }
-    let asked = QuestionQueue::of(archive);
-    for question in questions {
-        asked.save(question)?;
-    }
-    Ok(())
-}
-
-/// The questions the batch raises, with the proposals they name marked as waiting.
-fn ask_about(
-    archive: &Archive,
-    collections: &[carrel_core::archive::Collection],
-    glossary: &Glossary,
-    entries: &mut [Option<ReviewEntry>],
-) -> Vec<QuestionEntry> {
-    let proposed: Vec<ReviewEntry> = entries.iter().flatten().cloned().collect();
-    let questions = ask(archive, collections, glossary, &proposed);
-    for entry in entries.iter_mut().flatten() {
-        mark_waiting(entry, &questions);
-    }
-    questions
-}
-
-/// Files the proposals an owner rule marks `auto_file`, holding the writer lease.
-fn file_by_rule(
-    archive: &Archive,
-    entries: &[Option<ReviewEntry>],
-    routes: &[Option<Route>],
-    device: Id,
-) -> Result<Option<Outcome>, Failure> {
-    let chosen: Vec<(ReviewEntry, Placement)> = entries
-        .iter()
-        .zip(routes)
-        .filter_map(|(e, r)| match (e, r) {
-            (Some(e), Some(r)) if files_itself(e, r) => Some((e.clone(), Placement::Destination)),
-            _ => None,
-        })
-        .collect();
-    if chosen.is_empty() {
-        return Ok(None);
-    }
-    let identity = crate::config::Identity::load_or_create()?;
-    let mut lease = DiskLock::for_archive(archive).acquire(
-        crate::commands::holder(&identity),
-        "ingest",
-        DEFAULT_LEASE,
-    )?;
-    let (backups, _) = crate::backup::for_batch(archive);
-    let outcome = file_batch(
-        archive,
-        chosen,
-        &mut lease,
-        device,
-        backups
-            .as_ref()
-            .map(|b| b as &dyn carrel_core::backup::Backups),
-    );
-    lease.release()?;
-    Ok(Some(outcome?))
-}
-
-/// How sensitive each item that has text and a destination is.
-fn assess_all(
-    registry: &Registry,
-    batch: &Batch,
-    candidates: &[Candidate],
-    texts: &[Option<ItemText>],
-    routes: &[Option<Route>],
-) -> Vec<Option<Assessment>> {
-    candidates
-        .iter()
-        .zip(texts.iter().zip(routes))
-        .map(|(c, (t, r))| match (t, r) {
-            (Some(t), Some(r)) => Some(assess(
-                registry,
-                &name(c),
-                &t.text,
-                batch.default_sensitivity(r),
-            )),
-            _ => None,
-        })
-        .collect()
-}
-
-/// An item's file or folder name.
-fn name(candidate: &Candidate) -> String {
-    candidate.path.file_name().map_or_else(
-        || candidate.path.display().to_string(),
-        |n| n.to_string_lossy().into_owned(),
-    )
 }
 
 /// Each item as JSON.
