@@ -3,9 +3,8 @@
 use std::fmt::Write as _;
 use std::path::Path;
 
-use carrel_core::actions::{self, Ingested};
+use carrel_core::actions;
 use carrel_core::archive::Archive;
-use carrel_core::backup::Backups;
 use carrel_core::questions::{QuestionEntry, QuestionKind, QuestionQueue};
 use carrel_core::review::short_id;
 use serde_json::{Value, json};
@@ -79,21 +78,30 @@ fn teach(archive: &Archive, question: &QuestionEntry, fact: &str) -> Result<Repo
     let identity = Identity::load_or_create()?;
     let commit = actions::teach(archive, question, fact, holder(&identity))?;
     let mut text = format!("Added “{}” to the glossary\n", question.subject);
-    let (registry, _) = crate::providers::registry();
-    let (backups, _) = crate::backup::for_batch(archive);
-    if let Some(Ingested { run, filed }) = actions::redraft(
-        archive,
-        &registry,
-        question,
-        holder(&identity),
-        backups.as_ref().map(|b| b as &dyn Backups),
-    )? {
-        let report = crate::ingest::report(&run, filed.as_ref(), false);
-        write!(text, "\nDrafted again:\n{}", report.text).unwrap();
+    let queued = actions::requeue_waiting(archive, question, identity.device)?;
+    if !queued.is_empty() {
+        let started = crate::worker::start(archive)?;
+        writeln!(
+            text,
+            "Queued {} item{} to be drafted again with it; {}",
+            queued.len(),
+            if queued.len() == 1 { "" } else { "s" },
+            if started || crate::worker::running(archive)? {
+                "the worker drafts them in the background"
+            } else {
+                "run `carrel worker` to draft them"
+            }
+        )
+        .unwrap();
     }
     Ok(Report::new(
         text,
-        json!({"question": question.id, "glossary": question.subject, "commit": commit}),
+        json!({
+            "question": question.id,
+            "glossary": question.subject,
+            "commit": commit,
+            "requeued": queued.iter().map(|e| e.id).collect::<Vec<_>>(),
+        }),
     ))
 }
 

@@ -264,7 +264,7 @@ pub fn waiting(
 
 /// Answers a term question with `fact`: the glossary learns it as one history commit made as
 /// `holder`, and the question leaves the queue. Returns the commit. The waiting proposals
-/// still wait; [`redraft`] drafts them again.
+/// still wait; [`requeue_waiting`] queues them to be drafted again.
 ///
 /// # Errors
 ///
@@ -394,24 +394,25 @@ pub fn ingest(
     Ok(Ingested { run, filed })
 }
 
-/// Drafts the proposals waiting on a term question again, now that the glossary explains the
-/// term: those on `holder`'s device whose items are still there are removed and ingested
-/// afresh; the rest just stop waiting. Returns the new run, if anything was drafted.
+/// Puts the proposals waiting on a term question back on the intake queue, at the front, now
+/// that the glossary explains the term, so the worker drafts them again: those on `device`
+/// whose items are still there. The rest just stop waiting. Returns the entries queued.
+///
+/// The worker does the drafting, so only it loads a model, and the owner isn't kept waiting
+/// (`docs/dev/overhead.md`).
 ///
 /// # Errors
 ///
-/// As [`ingest`].
-pub fn redraft(
+/// [`ActionError`] if a queue can't be read or written, or the items can't be planned.
+pub fn requeue_waiting(
     archive: &Archive,
-    registry: &Registry,
     question: &QuestionEntry,
-    holder: Holder,
-    backups: Option<&dyn Backups>,
-) -> Result<Option<Ingested>, ActionError> {
+    device: crate::card::Id,
+) -> Result<Vec<crate::intake::IntakeEntry>, ActionError> {
     let queue = ReviewQueue::of(archive);
     let mut paths = Vec::new();
     for mut entry in waiting(archive, question)? {
-        if entry.source.device == holder.device && entry.source.path.exists() {
+        if entry.source.device == device && entry.source.path.exists() {
             queue.remove(entry.id)?;
             paths.push(entry.source.path.clone());
         } else {
@@ -420,22 +421,22 @@ pub fn redraft(
         }
     }
     if paths.is_empty() {
-        return Ok(None);
+        return Ok(Vec::new());
     }
-    let options = IntakeOptions {
+    let whole = IntakeOptions {
         each: false,
         whole: true,
     };
-    ingest(
-        archive,
-        registry,
-        &paths,
-        options,
-        holder,
-        backups,
-        &mut |_| {},
-    )
-    .map(Some)
+    let queued = crate::intake::add(archive, &paths, whole, device)?;
+    let mut entries = Vec::new();
+    for entry in queued.added {
+        entries.push(crate::intake::move_to_front(
+            archive,
+            &entry.id.to_string(),
+            device,
+        )?);
+    }
+    Ok(entries)
 }
 
 /// The card fields the owner edits in a proposal (`docs/design/interactive.md`).

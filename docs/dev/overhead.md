@@ -38,18 +38,14 @@ This is where separation costs the most.
 | The Apple provider | small; Apple's model is shared by the system, outside the process |
 | `carrel`, the worker, `carrel-fetch`, the extraction provider | tens of MB each |
 
-Each process that needs a model starts its own providers, and so loads its own copy of the model. Today that can mean two copies:
+Each process that needs a model starts its own providers, and so loads its own copy of the model. With a 4B model, two copies would be about 6.5 GB instead of 3.2 GB; with an 8B model, 11–12 GB, too much for a 16 GB machine. Apple's model doesn't have this cost, because the system shares it.
 
-- the **worker**, drafting the queue; and
-- the **interactive mode**, when you answer a term question, which drafts the waiting items again in that process.
+So in normal use only one process loads a model: the **worker**. Answering a term question used to draft its waiting items again inside the interactive mode, alongside the worker; now it puts them back on the queue, at the front, and the worker drafts them. The exceptions are `carrel ingest --wait` while a worker is idle (it drafts in the foreground, as a worker itself) and `carrel bench`, which measures models on purpose.
 
-With a 4B model that's about 6.5 GB instead of 3.2 GB while both run; with an 8B model, 11–12 GB. On a 36 GB Mac that's fine. On a 16 GB machine running an 8B model it isn't. Apple's model doesn't have this cost, because the system shares it.
+Further ways to save memory, for later:
 
-Ways to remove it, in order of how much they change:
-
-1. **Send redrafting through the queue.** Answering a question would queue the waiting items for the worker instead of drafting them in the interactive mode, so only the worker ever loads a model. Small, and it fits the design.
-2. **Unload when idle.** A provider could drop its model after a few minutes without requests.
-3. **One model host per device.** The Mac app's background agent (v0.5) is planned to own the models, with the CLI, the interactive mode and the worker as its clients. Every process would then share one copy.
+1. **Unload when idle.** A provider could drop its model after a few minutes without requests.
+2. **One model host per device.** The Mac app's background agent (v0.5) is planned to own the models, with the CLI, the interactive mode and the worker as its clients. Every process would then share one copy.
 
 ## Disk
 
