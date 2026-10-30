@@ -1,6 +1,6 @@
 # Design: on-device tests on a self-hosted Mac (v0.2)
 
-Status: proposed 2026-10-30. Issue #45.
+Status: accepted 2026-10-30, with the five recommendations below. Issue #45.
 
 ## What this adds
 
@@ -43,7 +43,7 @@ A new workflow, `.github/workflows/on-device.yml`:
 4. `docs/dev/on-device-runner.md`: creating the account, registering the runner, installing models for it, and stopping it.
 5. The owner registers the runner, and a manual run of both jobs.
 
-## Decisions to accept
+## Decisions (accepted 2026-10-30)
 
 1. **Only schedule, manual dispatch and pushes to `dev`, guarded by a check,** with a dedicated label, a standard user account and no secrets. Recommended.
 2. **On-device tests on every push to `dev`; the full benchmark weekly** (Sunday 03:00) and by hand, not on every push. Recommended: the benchmark takes hours and would hold the Mac.

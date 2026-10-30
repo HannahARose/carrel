@@ -1,6 +1,6 @@
 # Design: an MLX model provider (v0.2)
 
-Status: proposed 2026-10-30. Issue #24.
+Status: accepted 2026-10-30, with the five recommendations below. Issue #24.
 
 ## What this adds
 
@@ -50,7 +50,7 @@ On Linux, Windows and Intel Macs nothing changes: the llama.cpp provider fills t
 5. The `model` setting, in the CLI and the Settings tab.
 6. A benchmark run of the MLX builds, added to `docs/bench/`, and the release build.
 
-## Decisions to accept
+## Decisions (accepted 2026-10-30)
 
 1. **A separate program, `carrel-provider-mlx`, in its own Swift package built with `xcodebuild`,** rather than inside `carrel-provider-apple`. Recommended: MLX can't be built with plain `swift build`, and a separate process keeps the model's memory apart.
 2. **`mlx-swift-lm`, pinned,** added only after you approve the download. Recommended.

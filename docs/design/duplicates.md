@@ -1,6 +1,6 @@
 # Design: likely duplicates (v0.2)
 
-Status: proposed 2026-10-30. Issue #123, the rest of #31.
+Status: accepted 2026-10-30, with the five recommendations below. Issue #123, the rest of #31.
 
 ## What this adds
 
@@ -64,7 +64,7 @@ In review, a proposal with an exact or likely duplicate gets three choices besid
 4. The side-by-side pane in the Review tab and `carrel review show`.
 5. The user guide, the command reference, and FORMAT.md §7.9 for the new review entry field.
 
-## Decisions to accept
+## Decisions (accepted 2026-10-30)
 
 1. **Three cheap checks in v0.2:** same normalized name, a newer or older version by marker, and same title and date. Text similarity waits for embeddings in v0.4, as the ingest design says. Recommended.
 2. **Record likely duplicates on the review entry** (`likely_duplicates`, with reasons), with the index in memory rather than in `_System/index/` for now. Recommended: nothing to keep in sync, and the archive is read once per ingest already.
