@@ -1,12 +1,17 @@
 //! The interactive mode's state, and what keys and clicks do to it. Nothing here draws or
 //! touches the terminal, so it's tested directly.
 
+use std::collections::BTreeSet;
+
 use carrel_core::archive::Archive;
+use carrel_core::card::Id;
 use carrel_core::history::{Entry, History, HistoryError};
 use carrel_core::questions::QuestionQueue;
-use carrel_core::review::ReviewQueue;
+use carrel_core::review::{ReviewEntry, ReviewQueue};
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 
+use super::review::Handled;
+pub use super::review::Picker;
 use crate::Failure;
 
 /// The screens, in the order of their number keys.
@@ -60,6 +65,8 @@ pub enum Confirm {
         /// What it did, for people.
         summary: String,
     },
+    /// Rejecting these proposals, which history can't undo.
+    Reject(Vec<Id>),
 }
 
 /// Work the run loop does for the app: it needs the writer lease, which the app doesn't hold.
@@ -67,6 +74,26 @@ pub enum Confirm {
 pub enum Effect {
     /// Undo the change with this identifier.
     Undo(String),
+    /// File these proposals where proposed, or in Holding.
+    Decide {
+        /// The proposals.
+        ids: Vec<Id>,
+        /// Whether they go to Holding.
+        holding: bool,
+    },
+    /// Approve every high-confidence proposal that isn't sensitive.
+    ApproveAllHigh,
+    /// Reject these proposals.
+    Reject(Vec<Id>),
+    /// Propose another collection for these proposals.
+    Move {
+        /// The proposals.
+        ids: Vec<Id>,
+        /// The collection's path.
+        to: String,
+    },
+    /// Edit this proposal's card in the owner's editor.
+    Edit(Id),
 }
 
 /// The interactive mode's state.
@@ -91,6 +118,18 @@ pub struct App {
     pub selected: usize,
     /// Proposals and questions waiting for the owner.
     pub waiting: (usize, usize),
+    /// The review queue: everything not yet rejected or filed, by destination.
+    pub queue: Vec<ReviewEntry>,
+    /// The chosen proposal.
+    pub chosen: usize,
+    /// Proposals marked for a decision together.
+    pub marked: BTreeSet<Id>,
+    /// The chosen proposal in full, as `carrel review show` gives it.
+    pub detail: Vec<String>,
+    /// The collection picker, while it's open.
+    pub picker: Option<Picker>,
+    /// Work running in the background, described for the owner.
+    pub busy: Option<String>,
     /// A line for the owner about the last thing that happened.
     pub message: Option<String>,
     /// A question waiting for yes or no.
@@ -123,6 +162,12 @@ impl App {
             history: Vec::new(),
             selected: 0,
             waiting: (0, 0),
+            queue: Vec::new(),
+            chosen: 0,
+            marked: BTreeSet::new(),
+            detail: Vec::new(),
+            picker: None,
+            busy: None,
             message: None,
             confirm: None,
             help: false,
@@ -157,6 +202,7 @@ impl App {
             entries.iter().filter(|e| e.state.is_open()).count(),
             questions.len(),
         );
+        self.load_queue(entries);
         Ok(())
     }
 
@@ -176,7 +222,29 @@ impl App {
         if self.confirm.is_some() {
             return vec![("y", "yes"), ("n", "no")];
         }
+        if self.tab == Tab::Review {
+            // The decisions need the room; the screen keys are in ? help.
+            return vec![
+                ("a", "approve"),
+                ("h", "hold"),
+                ("m", "move"),
+                ("e", "edit"),
+                ("x", "reject"),
+                ("Space", "mark"),
+                ("A", "all high"),
+                ("?", "help"),
+                ("q", "quit"),
+            ];
+        }
         let mut keys = vec![("1-5", "screens")];
+        if self.picker.is_some() {
+            return vec![
+                ("↑↓", "choose"),
+                ("type", "filter"),
+                ("Enter", "move there"),
+                ("Esc", "cancel"),
+            ];
+        }
         match self.tab {
             Tab::History => keys.extend([("↑↓", "choose"), ("u", "undo")]),
             _ => keys.push(("↑↓", "scroll")),
@@ -185,8 +253,10 @@ impl App {
         keys
     }
 
-    fn move_by(&mut self, delta: i32) {
-        if self.tab == Tab::History {
+    pub(super) fn move_by(&mut self, delta: i32) {
+        if self.tab == Tab::Review {
+            self.choose(delta);
+        } else if self.tab == Tab::History {
             let last = self.history.len().saturating_sub(1);
             let next = i64::try_from(self.selected).unwrap_or(0) + i64::from(delta);
             self.selected = usize::try_from(next.max(0)).unwrap_or(0).min(last);
@@ -207,8 +277,11 @@ impl App {
             return None;
         }
         if let Some(confirm) = self.confirm.take() {
-            if let (KeyCode::Char('y' | 'Y'), Confirm::Undo { id, .. }) = (key.code, confirm) {
-                return Some(Effect::Undo(id));
+            if matches!(key.code, KeyCode::Char('y' | 'Y')) {
+                return Some(match confirm {
+                    Confirm::Undo { id, .. } => Effect::Undo(id),
+                    Confirm::Reject(ids) => Effect::Reject(ids),
+                });
             }
             self.message = Some("Nothing changed".into());
             return None;
@@ -217,7 +290,15 @@ impl App {
             self.help = false;
             return None;
         }
+        if self.picker.is_some() {
+            return self.picker_key(key);
+        }
         self.message = None;
+        if self.tab == Tab::Review
+            && let Handled::Yes(effect) = self.review_key(key)
+        {
+            return effect;
+        }
         match key.code {
             KeyCode::Char('q') | KeyCode::Esc => self.quit = true,
             KeyCode::Char('?') => self.help = true,
