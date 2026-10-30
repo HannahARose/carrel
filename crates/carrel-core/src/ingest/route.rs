@@ -169,8 +169,11 @@ fn matches(m: &Match, candidate: &Candidate, source: &Path) -> bool {
 }
 
 fn expand_home(path: &str) -> std::path::PathBuf {
-    match (path.strip_prefix("~/"), std::env::var_os("HOME")) {
-        (Some(rest), Some(home)) => Path::new(&home).join(rest),
+    let rest = path
+        .strip_prefix("~/")
+        .or_else(|| path.strip_prefix("~\\").filter(|_| cfg!(windows)));
+    match (rest, crate::local::home_dir()) {
+        (Some(rest), Some(home)) => home.join(rest),
         _ => std::path::PathBuf::from(path),
     }
 }

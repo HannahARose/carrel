@@ -1,0 +1,6 @@
+# Archives use LF line endings (FORMAT.md §2.1), so the sample archive, the specification and
+# every text file stay LF on Windows checkouts too.
+* text=auto eol=lf
+*.pdf binary
+*.png binary
+*.gguf binary

@@ -169,8 +169,22 @@ impl DiskLock {
     /// while a single device uses the archive.
     #[must_use]
     pub fn is_synced_folder(root: &Path) -> bool {
-        let text = root.to_string_lossy();
-        text.contains("/Library/Mobile Documents/") || text.contains("/Library/CloudStorage/")
+        let text = root.to_string_lossy().replace('\\', "/");
+        if text.contains("/Library/Mobile Documents/") || text.contains("/Library/CloudStorage/") {
+            return true;
+        }
+        // The folders sync clients make on Windows and Linux: OneDrive (also "OneDrive -
+        // Company"), Dropbox, Google Drive and iCloud for Windows.
+        root.components().any(|c| {
+            let name = c.as_os_str().to_string_lossy();
+            name == "OneDrive"
+                || name.starts_with("OneDrive - ")
+                || name == "Dropbox"
+                || name.starts_with("Dropbox (")
+                || name == "Google Drive"
+                || name == "My Drive"
+                || name == "iCloudDrive"
+        })
     }
 
     /// Removes the lock whatever its state, returning what it held. Only for when you are sure
@@ -256,7 +270,7 @@ impl DiskLock {
         let aside = self
             .path
             .with_file_name(format!("writer.lock.expired-{}", expired.token));
-        match std::fs::rename(&self.path, &aside) {
+        match rename_retrying(&self.path, &aside) {
             Ok(()) => {
                 let _ = std::fs::remove_file(&aside);
                 Ok(())
@@ -366,7 +380,7 @@ impl WriterLease {
             .path
             .with_file_name(format!("writer.lock.renew-{}", self.info.token));
         std::fs::write(&temp, text).map_err(io(&temp))?;
-        std::fs::rename(&temp, &self.path).map_err(io(&self.path))
+        rename_retrying(&temp, &self.path).map_err(io(&self.path))
     }
 
     /// Gives up the lease. A lease that was already lost is left alone.
@@ -393,5 +407,25 @@ impl WriterLease {
 impl Drop for WriterLease {
     fn drop(&mut self) {
         let _ = self.release_inner();
+    }
+}
+
+/// Renames `from` to `to`. On Windows a rename fails while another program (an antivirus
+/// scanner, a search indexer, or a reader of the lock) has either file open, so it's retried
+/// for up to a second.
+fn rename_retrying(from: &Path, to: &Path) -> std::io::Result<()> {
+    let mut attempts = 0;
+    loop {
+        match std::fs::rename(from, to) {
+            Err(e)
+                if cfg!(windows)
+                    && e.kind() == std::io::ErrorKind::PermissionDenied
+                    && attempts < 20 =>
+            {
+                attempts += 1;
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            result => return result,
+        }
     }
 }
