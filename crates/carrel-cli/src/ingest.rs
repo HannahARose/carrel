@@ -249,7 +249,16 @@ fn file_by_rule(
         "ingest",
         DEFAULT_LEASE,
     )?;
-    let outcome = file_batch(archive, chosen, &mut lease, device);
+    let (backups, _) = crate::backup::for_batch(archive);
+    let outcome = file_batch(
+        archive,
+        chosen,
+        &mut lease,
+        device,
+        backups
+            .as_ref()
+            .map(|b| b as &dyn carrel_core::backup::Backups),
+    );
     lease.release()?;
     Ok(Some(outcome?))
 }

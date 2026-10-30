@@ -1,6 +1,6 @@
 # Design: backups with Kopia (v0.2)
 
-Status: proposed. Issue #32.
+Status: accepted 2026-10-29, with the five recommendations below. Issue #32.
 
 ## What backups do
 
@@ -24,13 +24,14 @@ Backups give Carrel three things it promises elsewhere:
   - A folder on the same disk as the archive is allowed, but Carrel warns: it guards against mistakes, not against losing the disk.
   - A synced folder (iCloud Drive, Dropbox) is refused for the repository, since sync services can corrupt a repository being written.
 - **What the archive records:** `settings.json`'s `backups` (§7.2) holds the type (`kopia`), the repository's Kopia identifier, and a description such as "Backup drive". A drive mounts at different paths on different devices, so each device connects with `carrel backup setup` and keeps its own path.
+- **Who took it:** Kopia names snapshots by host and user, and host names can change with the network, so each device connects as its own device identifier, with the user `carrel`.
 - **What gets snapshotted:** the whole archive folder. Kopia's ignore policy leaves out regenerable folders (§4.3, from `rules/regenerable.yaml`), ignored files (§2.8), `_System/cache.nosync/`, `_System/index/` and the writer lock. History (`_System/history.git`) and manifests are included, so a snapshot is a complete, consistent archive.
 - **Retention:** Kopia's defaults (latest 10, plus hourly, daily, weekly, monthly and annual). Any snapshot that a history commit names is pinned, so undo always has its contents.
 
 ## The password
 
 - Kopia encrypts the repository with a password. **Carrel never stores it in the archive**, as FORMAT.md's first principle requires.
-- `carrel backup setup` asks for it once, hidden as it's typed, and hands it to Kopia only in the environment of the setup command. Kopia then keeps it in the operating system's keychain: Keychain on macOS, Credential Manager on Windows, and Secret Service on Linux where one is running. Where none is, Kopia keeps it in a file beside its configuration that only the owner can read, and Carrel says so.
+- `carrel backup setup` asks for it once, hidden as it's typed, and hands it to Kopia only in the environment of the setup command. If `KOPIA_PASSWORD` is already set, as in scripts and CI, Carrel uses it and Kopia doesn't store it, so it must be supplied the same way each time. Kopia then keeps it in the operating system's keychain: Keychain on macOS, Credential Manager on Windows, and Secret Service on Linux where one is running. Where none is, Kopia keeps it in a file beside its configuration that only the owner can read, and Carrel says so.
 - Setup says plainly that **a lost password means lost backups**, and suggests saving it in a password manager.
 
 ## When snapshots happen
@@ -53,9 +54,9 @@ Backups give Carrel three things it promises elsewhere:
 2. `carrel backup setup`, `now`, `list` and status in `carrel status`.
 3. A snapshot per approval batch, and the `Carrel-Snapshot` trailer.
 4. `verify` and `restore`.
-5. CI: a Kopia job on macOS, Ubuntu and Windows against a temporary filesystem repository.
+5. CI: a Kopia job on macOS and Ubuntu against a temporary filesystem repository. Windows joins with Windows support (#89).
 
-## Decisions to make
+## Decisions (accepted 2026-10-29)
 
 1. **Recommended: Kopia as an external program, found like providers, and bundled only in release builds and the Mac app.** The alternative is bundling it with every install, which `cargo install` can't do.
 2. **Recommended: snapshot the whole archive, with ignore rules,** rather than only the items a batch changed. Kopia only reads what changed, so it stays fast, and every snapshot is a consistent archive.

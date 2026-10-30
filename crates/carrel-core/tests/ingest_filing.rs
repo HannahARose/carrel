@@ -97,7 +97,7 @@ impl Setup {
         &mut self,
         decided: Vec<(ReviewEntry, Placement)>,
     ) -> carrel_core::ingest::filing::Outcome {
-        file_batch(&self.archive, decided, &mut self.lease, self.device).unwrap()
+        file_batch(&self.archive, decided, &mut self.lease, self.device, None).unwrap()
     }
 
     fn root(&self) -> &Path {
@@ -301,4 +301,103 @@ fn only_owner_rules_file_without_review_and_never_sensitive_items() {
         !files_itself(&entry, &route),
         "a model's choice never files itself"
     );
+}
+
+/// Backups that record what they were asked, and succeed or fail as told.
+struct FakeBackups {
+    fail: bool,
+    taken: std::sync::Mutex<Vec<String>>,
+}
+
+impl carrel_core::backup::Backups for FakeBackups {
+    fn describe(&self) -> String {
+        "fake".into()
+    }
+    fn snapshot(
+        &self,
+        _root: &Path,
+        description: &str,
+    ) -> Result<carrel_core::backup::Snapshot, carrel_core::backup::BackupError> {
+        if self.fail {
+            return Err(carrel_core::backup::BackupError::Unreachable(
+                "/Volumes/Backup".into(),
+            ));
+        }
+        self.taken.lock().unwrap().push(description.to_owned());
+        Ok(carrel_core::backup::Snapshot {
+            id: "abc123".into(),
+            time: "2026-10-29T12:00:00Z".into(),
+            description: Some(description.to_owned()),
+            pinned: true,
+            size: None,
+            files: None,
+        })
+    }
+    fn list(
+        &self,
+        _root: &Path,
+    ) -> Result<Vec<carrel_core::backup::Snapshot>, carrel_core::backup::BackupError> {
+        Ok(Vec::new())
+    }
+    fn verify(&self, _percent: u8) -> Result<String, carrel_core::backup::BackupError> {
+        Ok(String::new())
+    }
+    fn restore(
+        &self,
+        _snapshot: &str,
+        _path: &str,
+        _to: &Path,
+    ) -> Result<(), carrel_core::backup::BackupError> {
+        Ok(())
+    }
+}
+
+#[test]
+fn a_batch_is_snapshotted_and_its_commit_names_the_snapshot() {
+    let mut setup = Setup::new();
+    let path = setup.incoming("snap.txt", "snap\n");
+    let entry = setup.proposal(&path);
+    let backups = FakeBackups {
+        fail: false,
+        taken: std::sync::Mutex::new(Vec::new()),
+    };
+    let outcome = file_batch(
+        &setup.archive,
+        vec![(entry, Placement::Destination)],
+        &mut setup.lease,
+        setup.device,
+        Some(&backups),
+    )
+    .unwrap();
+    assert_eq!(outcome.snapshot.unwrap().id, "abc123");
+    assert_eq!(*backups.taken.lock().unwrap(), ["File “About snap.txt”"]);
+    let log = History::open(&setup.archive).unwrap().log().unwrap();
+    assert_eq!(log[0].snapshot.as_deref(), Some("kopia:abc123"));
+}
+
+#[test]
+fn an_unreachable_backup_never_stops_filing() {
+    let mut setup = Setup::new();
+    let path = setup.incoming("away.txt", "away\n");
+    let entry = setup.proposal(&path);
+    let backups = FakeBackups {
+        fail: true,
+        taken: std::sync::Mutex::new(Vec::new()),
+    };
+    let outcome = file_batch(
+        &setup.archive,
+        vec![(entry, Placement::Destination)],
+        &mut setup.lease,
+        setup.device,
+        Some(&backups),
+    )
+    .unwrap();
+    assert_eq!(outcome.filed.len(), 1);
+    assert!(outcome.commit.is_some(), "filed and committed anyway");
+    assert!(matches!(
+        outcome.snapshot_error,
+        Some(carrel_core::backup::BackupError::Unreachable(_))
+    ));
+    let log = History::open(&setup.archive).unwrap().log().unwrap();
+    assert_eq!(log[0].snapshot, None);
 }

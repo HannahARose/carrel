@@ -275,6 +275,7 @@ pub fn status(archive: Option<&Path>) -> Result<Report, Failure> {
     )
     .unwrap();
     text.push_str(&history_line(history.as_deref()));
+    text.push_str(&crate::backup::status_line(&archive, history.as_deref()));
     text.push_str(&writer_line(lock.as_ref(), this_device));
     if !problems.is_empty() {
         writeln!(text, "\n{} with problems:", plural(problems.len(), "card")).unwrap();
@@ -356,7 +357,7 @@ fn plural(n: usize, word: &str) -> String {
     }
 }
 
-fn local_time(seconds: i64) -> String {
+pub(crate) fn local_time(seconds: i64) -> String {
     jiff::Timestamp::from_second(seconds).map_or_else(
         |_| seconds.to_string(),
         |t| {
@@ -369,7 +370,7 @@ fn local_time(seconds: i64) -> String {
 
 /// Finds the item `query` names: an identifier, or the path of the item or its card
 /// (relative to the current folder, or to the archive root).
-fn find_item<'a>(
+pub(crate) fn find_item<'a>(
     archive: &Archive,
     items: &'a [ItemRef],
     query: &str,

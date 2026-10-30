@@ -185,11 +185,46 @@ jobs:
           cargo build -p carrel-provider-llama -p carrel-cli --locked
           CARREL_MODELS_DIR="$RUNNER_TEMP/models" PATH="$PWD/target/debug:$PATH" cargo run --locked --bin carrel -- providers
 
+  kopia:
+    # Backups against the real kopia program and a throwaway filesystem repository. Windows
+    # joins with Windows support (#89).
+    name: Kopia backups (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            asset: kopia-0.23.1-macOS-arm64
+            sha256: 19e6ed637221f4dfd46a46e978ec4c509c386b522d746db2cd6762b217478111
+          - os: ubuntu-latest
+            asset: kopia-0.23.1-linux-x64
+            sha256: 416d0f84a3dbb321a8b2d8f0997b1a0a6e915babe79ee76fa6e4d2bd1e1c5178
+    runs-on: ${{ matrix.os }}
+    env:
+      ASSET: ${{ matrix.asset }}
+      SHA256: ${{ matrix.sha256 }}
+      KOPIA_CHECK_FOR_UPDATES: "false"
+      CARREL_REQUIRE_KOPIA: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: Install Kopia
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/kopia.tar.gz" "https://github.com/kopia/kopia/releases/download/v0.23.1/$ASSET.tar.gz"
+          echo "$SHA256  $RUNNER_TEMP/kopia.tar.gz" | shasum -a 256 -c -
+          tar -xzf "$RUNNER_TEMP/kopia.tar.gz" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/$ASSET" >> "$GITHUB_PATH"
+      - run: kopia --version
+      - name: Tests
+        run: cargo test -p carrel-core --test backup_kopia --locked
+
   ok:
     # The single required check for branch protection. It passes only if every job above passed.
     name: CI passed
     if: always()
-    needs: [fmt, clippy, test, docs, swift, llama, deny, zizmor, hygiene]
+    needs: [fmt, clippy, test, docs, swift, llama, kopia, deny, zizmor, hygiene]
     runs-on: ubuntu-latest
     steps:
       - name: Check job results
