@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Packages one platform's release archive from already-built binaries: carrel, the network
-# helper (carrel-fetch), the llama.cpp provider, the pinned Kopia binary (downloaded and
+# helper (carrel-fetch), the llama.cpp and extraction providers, the pinned Kopia binary (downloaded and
 # checked against its SHA-256), and on macOS the Apple provider. Run by
 # .github/workflows/release.yml; it can be run by hand to check an archive.
 #
@@ -33,7 +33,7 @@ stage="dist/carrel-$VERSION-$name"
 rm -rf "$stage"
 mkdir -p "$stage"
 
-for program in carrel carrel-fetch carrel-provider-llama; do
+for program in carrel carrel-fetch carrel-provider-llama carrel-provider-extract; do
   cp "$bin_dir/$program$exe" "$stage/"
 done
 if [ -n "${APPLE_PROVIDER:-}" ]; then
@@ -72,6 +72,7 @@ helper, the providers and Kopia) beside the carrel program.
   carrel                  the command-line tool; run carrel --help
   carrel-fetch            the network helper, the only part that goes online
   carrel-provider-llama   local open models through llama.cpp; see carrel models
+  carrel-provider-extract PDF text, and OCR when Tesseract is installed
   kopia                   Kopia $kopia_version, for carrel backup
 EOF
 if [ -n "${APPLE_PROVIDER:-}" ]; then

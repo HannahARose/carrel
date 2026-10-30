@@ -6,6 +6,7 @@ members = [
     "crates/uniffi-bindgen",
     "crates/carrel-provider-llama",
     "crates/carrel-fetch",
+    "crates/carrel-provider-extract",
 ]
 resolver = "3"
 

@@ -20,6 +20,11 @@ ignore = [
     # build tool, to read uniffi.toml; it never reaches the apps or the CLI. Revisit when
     # UniFFI replaces it.
     { id = "RUSTSEC-2026-0374", reason = "build-time tool only (uniffi_bindgen)" },
+    # ttf-parser is unmaintained (no known vulnerability). lopdf uses it to read fonts embedded
+    # in PDFs, for pdf-extract in carrel-provider-extract only: a separate process with no
+    # network code, reading the owner's own files. Revisit if pdf-extract moves to skrifa or an
+    # advisory reports a vulnerability.
+    { id = "RUSTSEC-2026-0192", reason = "PDF fonts, inside the extraction provider process only" },
 ]
 
 [licenses]
