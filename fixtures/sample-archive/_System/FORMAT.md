@@ -368,6 +368,7 @@ Part of [Research](../_collection.md)
 - The Subcollections table is omitted when there are none; the Items table is omitted when the collection holds no items directly.
 - The Items column counts items directly in a collection; when subcollections hold more, the count reads like `3 (+4 in subcollections)`.
 - Item rows link to cards, subcollection rows to their `_collection.md`, and link text is the item's or collection's title.
+- Subcollection rows are sorted by path, and item rows by the date in the Added column (`dates.added`, or for a tombstone the date it was removed), then by title, so a listing rebuilt from the same cards is always the same.
 
 Changes to a design document itself are recorded in its collection's `CHANGELOG.md`.
 

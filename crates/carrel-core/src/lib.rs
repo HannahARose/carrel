@@ -14,6 +14,7 @@
 //! | [`card_file`] | Whole card files: edit fields without touching the owner's text | §5.3 |
 //! | [`frontmatter`] | Splitting any Markdown document into frontmatter and body | §2.2 |
 //! | [`sections`] | Managed sections, and comparing text while ignoring table padding | §5.3 |
+//! | [`listing`] | The generated listings: collections' contents and `ARCHIVE.md`'s collections | §6.2, §6.3 |
 //! | [`detect`] | Item kinds, sealing, and regenerable folders | §4, §7.5 |
 //! | [`manifest`] | Checksums, folder manifests and their diffs | §2.6, §7.7 |
 //! | [`history`] | The Git history of metadata, and undo | §8.1–§8.3 |
@@ -52,6 +53,7 @@ pub mod documents;
 pub mod frontmatter;
 pub mod history;
 pub mod ingest;
+pub mod listing;
 pub mod local;
 pub mod manifest;
 pub mod providers;
