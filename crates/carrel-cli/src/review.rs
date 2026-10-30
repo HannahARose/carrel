@@ -5,6 +5,7 @@ use std::fmt::Write as _;
 use std::path::Path;
 
 use carrel_core::archive::Archive;
+use carrel_core::backup::Backups;
 use carrel_core::card::Sensitivity;
 use carrel_core::coordinator::{Coordinator, DEFAULT_LEASE, DiskLock};
 use carrel_core::ingest::filing::{Filed, Placement, file_batch};
@@ -294,7 +295,14 @@ fn decide(
     let mut lease =
         DiskLock::for_archive(archive).acquire(holder(&identity), "ingest", DEFAULT_LEASE)?;
     let decided = entries.into_iter().map(|e| (e, placement)).collect();
-    let outcome = file_batch(archive, decided, &mut lease, identity.device);
+    let (backups, note) = crate::backup::for_batch(archive);
+    let outcome = file_batch(
+        archive,
+        decided,
+        &mut lease,
+        identity.device,
+        backups.as_ref().map(|b| b as &dyn Backups),
+    );
     lease.release()?;
     let outcome = outcome?;
 
@@ -324,9 +332,13 @@ fn decide(
             }
         }
     }
+    if let Some(line) = crate::backup::describe_outcome(&outcome, note.as_deref()) {
+        writeln!(text, "{line}").unwrap();
+    }
     Ok(Report::new(
         text,
         json!({
+            "snapshot": outcome.snapshot.as_ref().map(|s| s.id.clone()),
             "filed": outcome.filed.iter().map(|f| json!({
                 "proposal": f.entry,
                 "item": f.item,

@@ -4,6 +4,7 @@
 //! scripts. Errors go to standard error (as `{"error": "…"}` with `--json`) and exit with
 //! status 1; usage mistakes exit with status 2.
 
+mod backup;
 mod commands;
 mod config;
 mod ingest;
@@ -91,10 +92,49 @@ enum Command {
         #[command(subcommand)]
         action: Option<ReviewAction>,
     },
+    /// Back up the archive's contents with Kopia: set up, snapshot, list, verify or restore.
+    Backup {
+        #[command(subcommand)]
+        action: BackupAction,
+    },
     /// Questions ingest needs you to answer, most items first.
     Questions {
         #[command(subcommand)]
         action: Option<QuestionsAction>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum BackupAction {
+    /// Create a backup repository at PATH, or connect to the one there. An external drive is
+    /// safest. The password is asked for once and kept in this device's keychain.
+    Setup {
+        /// Where the repository is or will be.
+        path: PathBuf,
+        /// A name for it, such as "Backup drive".
+        #[arg(long)]
+        description: Option<String>,
+    },
+    /// Take a snapshot now.
+    Now,
+    /// List the snapshots, newest first, with the change each was taken with.
+    List,
+    /// Check the backups, reading back a share of the files.
+    Verify {
+        /// How much of the files' contents to read back, in percent.
+        #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u8).range(0..=100))]
+        percent: u8,
+    },
+    /// Restore an item's contents as they were, into a new folder beside the archive.
+    Restore {
+        /// The item: its identifier, or its card's or contents' path.
+        item: String,
+        /// The change to restore it as of (a history commit, or its start).
+        #[arg(long)]
+        at: Option<String>,
+        /// Where to restore it; it must not exist yet.
+        #[arg(long)]
+        to: Option<PathBuf>,
     },
 }
 
@@ -243,6 +283,17 @@ fn main() -> ExitCode {
             ReviewAction::Hold { ids } => review::hold(cli.archive.as_deref(), &ids),
             ReviewAction::MoveTo { id, collection } => {
                 review::move_to(cli.archive.as_deref(), &id, &collection)
+            }
+        },
+        Command::Backup { action } => match action {
+            BackupAction::Setup { path, description } => {
+                backup::setup(cli.archive.as_deref(), &path, description.as_deref())
+            }
+            BackupAction::Now => backup::now(cli.archive.as_deref()),
+            BackupAction::List => backup::list(cli.archive.as_deref()),
+            BackupAction::Verify { percent } => backup::verify(cli.archive.as_deref(), percent),
+            BackupAction::Restore { item, at, to } => {
+                backup::restore(cli.archive.as_deref(), &item, at.as_deref(), to.as_deref())
             }
         },
         Command::Questions { action } => match action.unwrap_or(QuestionsAction::List) {

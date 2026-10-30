@@ -449,7 +449,7 @@ Archive-level settings that every device follows. Version 1.0 defines:
 | `sessions.idle_minutes` | integer | `45` |
 | `reminders` | list of `idle`, `weekly`, `menu-bar`, `due-date` | `["idle", "weekly", "menu-bar"]` |
 | `embedding.model` | model identifier | chosen at creation |
-| `backups` | map describing the backup repository (location and type, never the password) | none |
+| `backups` | map describing the backup repository: `type` (`kopia`), `repository` (the backup system's identifier for it) and `description`. Never its path, which differs between devices, and never the password | none |
 | `ingest.originals` | `move` (the original is moved into the archive on approval) or `keep` (it's copied, and the original is left for the owner to delete) | `move` |
 
 Programs **must** preserve unknown keys.

@@ -17,6 +17,7 @@
 //! | [`detect`] | Item kinds, sealing, and regenerable folders | §4, §7.5 |
 //! | [`manifest`] | Checksums, folder manifests and their diffs | §2.6, §7.7 |
 //! | [`history`] | The Git history of metadata, and undo | §8.1–§8.3 |
+//! | [`backup`] | Snapshots of contents with Kopia: setup, snapshot, verify, restore | §7.2, §8.2 |
 //! | [`coordinator`] | Which writer may change an archive: leases and the disk lock | §8.4 |
 //! | [`ingest`] | Ingest: intake, text, cards, routing, sensitivity, and filing approved items | `docs/design/ingest.md` |
 //! | [`review`] | The review queue: proposals to file items, waiting for the owner | §7.9 |
@@ -42,6 +43,7 @@
 //! ```
 
 pub mod archive;
+pub mod backup;
 pub mod card;
 pub mod card_file;
 pub mod coordinator;

@@ -65,6 +65,17 @@ pub fn discover(folders: &[PathBuf]) -> Vec<Found> {
     found
 }
 
+/// The first executable named `name` (plus `.exe` on Windows) in `folders`, such as a tool
+/// Carrel runs that isn't a provider.
+#[must_use]
+pub fn find_program(name: &str, folders: &[PathBuf]) -> Option<PathBuf> {
+    let file = format!("{name}{}", std::env::consts::EXE_SUFFIX);
+    folders
+        .iter()
+        .map(|folder| folder.join(&file))
+        .find(|path| is_executable(path))
+}
+
 /// The folders Carrel looks in: the one holding the running program, then `PATH`.
 #[must_use]
 pub fn default_folders() -> Vec<PathBuf> {

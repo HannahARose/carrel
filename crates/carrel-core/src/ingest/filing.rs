@@ -168,6 +168,10 @@ pub struct Outcome {
     pub failed: Vec<(ReviewEntry, FilingError)>,
     /// The history commit, if anything was filed.
     pub commit: Option<String>,
+    /// The snapshot taken with the commit, when backups are set up and reachable.
+    pub snapshot: Option<crate::backup::Snapshot>,
+    /// Why no snapshot was taken, when backups are set up but failed.
+    pub snapshot_error: Option<crate::backup::BackupError>,
 }
 
 /// Why a batch couldn't be filed at all.
@@ -221,7 +225,9 @@ impl From<ArchiveError> for BatchError {
 
 /// Files decided proposals as one batch, holding `lease`: approved ones go to their
 /// destination, held ones to Holding. Items on other devices, and items that fail, are left in
-/// the queue. Everything filed is one history commit, with operation `ingest`.
+/// the queue. Everything filed is one history commit, with operation `ingest`. With `backups`,
+/// the archive is snapshotted first and the commit names the snapshot; a failed snapshot
+/// doesn't stop the commit (`docs/design/backups.md`).
 ///
 /// # Errors
 ///
@@ -232,6 +238,7 @@ pub fn file_batch(
     decided: Vec<(ReviewEntry, Placement)>,
     lease: &mut WriterLease,
     device: Id,
+    backups: Option<&dyn crate::backup::Backups>,
 ) -> Result<Outcome, BatchError> {
     let history = History::open(archive)?;
     let queue = ReviewQueue::of(archive);
@@ -289,6 +296,15 @@ pub fn file_batch(
     }
     change.body = Some(body);
     change.items = outcome.filed.iter().map(|f| f.item).collect();
+    if let Some(backups) = backups {
+        match backups.snapshot(archive.root(), &change.summary) {
+            Ok(snapshot) => {
+                change.snapshot = Some(snapshot.trailer());
+                outcome.snapshot = Some(snapshot);
+            }
+            Err(error) => outcome.snapshot_error = Some(error),
+        }
+    }
     outcome.commit = history.commit(archive, &change, lease)?;
     Ok(outcome)
 }
