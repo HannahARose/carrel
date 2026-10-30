@@ -432,6 +432,28 @@ impl Archive {
         Ok(found)
     }
 
+    /// The cards directly in `collection`, as each card's file name and fields, sorted by
+    /// name. Files that look like cards but don't parse are skipped.
+    ///
+    /// # Errors
+    ///
+    /// [`ArchiveError::Io`] if the folder or a card can't be read.
+    pub fn cards_in(
+        &self,
+        collection: &Collection,
+    ) -> Result<Vec<(String, crate::card::Card)>, ArchiveError> {
+        Ok(cards_in(&self.root.join(&collection.path))?
+            .into_iter()
+            .map(|(path, card)| {
+                let name = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                (name, card)
+            })
+            .collect())
+    }
+
     /// Every card in every collection, with the item it describes, sorted by card path.
     /// Cards that can't be parsed are skipped; checking cards is a separate job.
     ///
