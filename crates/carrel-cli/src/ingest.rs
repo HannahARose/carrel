@@ -5,9 +5,12 @@
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
+use carrel_core::archive::Archive;
 use carrel_core::card::Id;
 use carrel_core::card::Kind;
+use carrel_core::coordinator::{Coordinator, DEFAULT_LEASE, DiskLock};
 use carrel_core::ingest::card::{Context, Draft, Glossary, Vocabulary, draft};
+use carrel_core::ingest::filing::{Outcome, Placement, file_batch, files_itself};
 use carrel_core::ingest::route::{Route, Router, RoutingRules};
 use carrel_core::ingest::sensitivity::{Assessment, assess};
 use carrel_core::ingest::text::{ItemText, read};
@@ -85,11 +88,13 @@ pub fn ingest(
             _ => None,
         })
         .collect();
+    let mut auto_filed = None;
     if !dry_run {
         let queue = ReviewQueue::of(&archive);
         for entry in entries.iter().flatten() {
             queue.save(entry)?;
         }
+        auto_filed = file_by_rule(&archive, &entries, &routes, identity.device)?;
     }
 
     let mut out = render(
@@ -104,17 +109,7 @@ pub fn ingest(
         writeln!(out, "warning: {problem}").unwrap();
     }
     let saved = entries.iter().flatten().count();
-    if dry_run {
-        out.push_str("\nNothing has been saved (--dry-run).\n");
-    } else if saved > 0 {
-        writeln!(
-            out,
-            "\nSaved {saved} proposal{} (batch {}). Review them with `carrel review`; nothing moves until you approve.",
-            if saved == 1 { "" } else { "s" },
-            short_id(batch.id)
-        )
-        .unwrap();
-    }
+    closing(&mut out, auto_filed.as_ref(), saved, dry_run, batch.id);
 
     let items = items_json(&candidates, &texts, &drafts);
     Ok(Report::new(
@@ -125,8 +120,73 @@ pub fn ingest(
             "items": items,
             "skipped": skipped.iter().map(|s| json!({"path": s.path, "reason": s.reason})).collect::<Vec<_>>(),
             "proposals": entries.iter().flatten().collect::<Vec<_>>(),
+            "filed": auto_filed.as_ref().map(|o| o.filed.iter().map(|f| json!({"proposal": f.entry, "item": f.item, "path": f.path, "card": f.card})).collect::<Vec<_>>()).unwrap_or_default(),
         }),
     ))
+}
+
+/// What was filed by rule, and what was saved for review.
+fn closing(
+    out: &mut String,
+    auto_filed: Option<&Outcome>,
+    proposed: usize,
+    dry_run: bool,
+    batch: Id,
+) {
+    if let Some(outcome) = auto_filed {
+        for filed in &outcome.filed {
+            writeln!(
+                out,
+                "Filed {} in {} (a routing rule files it without review)",
+                filed.title, filed.path
+            )
+            .unwrap();
+        }
+        for (entry, error) in &outcome.failed {
+            writeln!(out, "Not filed {}: {error}", entry.card.title).unwrap();
+        }
+    }
+    let saved = proposed - auto_filed.map_or(0, |o| o.filed.len());
+    if dry_run {
+        out.push_str("\nNothing has been saved (--dry-run).\n");
+    } else if saved > 0 {
+        writeln!(
+            out,
+            "\nSaved {saved} proposal{} (batch {}). Review them with `carrel review`; nothing moves until you approve.",
+            if saved == 1 { "" } else { "s" },
+            short_id(batch)
+        )
+        .unwrap();
+    }
+}
+
+/// Files the proposals an owner rule marks `auto_file`, holding the writer lease.
+fn file_by_rule(
+    archive: &Archive,
+    entries: &[Option<ReviewEntry>],
+    routes: &[Option<Route>],
+    device: Id,
+) -> Result<Option<Outcome>, Failure> {
+    let chosen: Vec<(ReviewEntry, Placement)> = entries
+        .iter()
+        .zip(routes)
+        .filter_map(|(e, r)| match (e, r) {
+            (Some(e), Some(r)) if files_itself(e, r) => Some((e.clone(), Placement::Destination)),
+            _ => None,
+        })
+        .collect();
+    if chosen.is_empty() {
+        return Ok(None);
+    }
+    let identity = crate::config::Identity::load_or_create()?;
+    let mut lease = DiskLock::for_archive(archive).acquire(
+        crate::commands::holder(&identity),
+        "ingest",
+        DEFAULT_LEASE,
+    )?;
+    let outcome = file_batch(archive, chosen, &mut lease, device);
+    lease.release()?;
+    Ok(Some(outcome?))
 }
 
 /// How sensitive each item that has text and a destination is.

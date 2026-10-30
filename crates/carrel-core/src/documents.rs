@@ -147,9 +147,40 @@ pub struct Settings {
     /// The backup repository's location and type (never the password).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backups: Option<Value>,
+    /// Ingest behavior.
+    #[serde(default, skip_serializing_if = "IngestSettings::is_default")]
+    pub ingest: IngestSettings,
     /// Keys this version doesn't know.
     #[serde(flatten)]
     pub extra: Extra,
+}
+
+/// Ingest settings (FORMAT.md §7.2).
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct IngestSettings {
+    /// What happens to an item's original when its proposal is approved.
+    #[serde(default)]
+    pub originals: Originals,
+    /// Keys this version doesn't know.
+    #[serde(flatten)]
+    pub extra: Extra,
+}
+
+impl IngestSettings {
+    fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+/// What happens to an item's original when it's filed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Originals {
+    /// The original is moved into the archive.
+    #[default]
+    Move,
+    /// It's copied, and the original is left for the owner to delete.
+    Keep,
 }
 
 /// Reminders on by default (FORMAT.md §7.2).
@@ -238,6 +269,7 @@ impl Default for Settings {
             reminders: default_reminders(),
             embedding: None,
             backups: None,
+            ingest: IngestSettings::default(),
             extra: Extra::new(),
         }
     }

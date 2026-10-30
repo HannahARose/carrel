@@ -143,7 +143,7 @@ pub fn init(
     ))
 }
 
-fn holder(identity: &Identity) -> Holder {
+pub(crate) fn holder(identity: &Identity) -> Holder {
     Holder {
         person: identity.person,
         device: identity.device,

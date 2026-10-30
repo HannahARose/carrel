@@ -82,7 +82,7 @@ enum Command {
         #[arg(long)]
         dry_run: bool,
     },
-    /// Review proposals to file items: list them, show one, or reject them.
+    /// Review proposals to file items: list, show, approve, hold, move or reject them.
     Review {
         /// Include proposals already decided (with no subcommand).
         #[arg(long)]
@@ -104,6 +104,28 @@ enum ReviewAction {
     Show {
         /// The proposal's identifier, or its start or end.
         id: String,
+    },
+    /// Approve proposals: file the items where proposed, as one history commit.
+    Approve {
+        /// The proposals' identifiers, or their starts or ends.
+        #[arg(required_unless_present = "all_high", conflicts_with = "all_high")]
+        ids: Vec<String>,
+        /// Approve every proposal with high confidence that isn't sensitive or a duplicate.
+        #[arg(long)]
+        all_high: bool,
+    },
+    /// File proposals' items in Holding, to be placed later.
+    Hold {
+        /// The proposals' identifiers, or their starts or ends.
+        #[arg(required = true)]
+        ids: Vec<String>,
+    },
+    /// Propose another collection for an item. It's filed there when approved.
+    MoveTo {
+        /// The proposal's identifier, or its start or end.
+        id: String,
+        /// The collection's path, such as `Projects/Hardware`.
+        collection: String,
     },
     /// Reject proposals; their items stay where they are.
     Reject {
@@ -189,6 +211,13 @@ fn main() -> ExitCode {
             ReviewAction::List { all } => review::list(cli.archive.as_deref(), all),
             ReviewAction::Show { id } => review::show(cli.archive.as_deref(), &id),
             ReviewAction::Reject { ids } => review::reject(cli.archive.as_deref(), &ids),
+            ReviewAction::Approve { ids, all_high } => {
+                review::approve(cli.archive.as_deref(), &ids, all_high)
+            }
+            ReviewAction::Hold { ids } => review::hold(cli.archive.as_deref(), &ids),
+            ReviewAction::MoveTo { id, collection } => {
+                review::move_to(cli.archive.as_deref(), &id, &collection)
+            }
         },
     };
     match result {
