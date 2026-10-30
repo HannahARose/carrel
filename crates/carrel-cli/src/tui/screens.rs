@@ -33,6 +33,22 @@ pub enum InputPurpose {
     Ingest,
     /// A new value for this setting.
     Setting(String),
+    /// The folder for a backup repository, new or existing.
+    BackupRepository,
+    /// The repository's password; for a new one, typed twice. Shown as dots.
+    BackupPassword {
+        /// The repository.
+        repository: std::path::PathBuf,
+        /// Whether it's being created, rather than connected to.
+        new: bool,
+        /// The first typing, when this is the second.
+        first: Option<super::backups::Secret>,
+    },
+    /// The item to restore as of this change's snapshot.
+    RestoreItem {
+        /// The history commit.
+        at: String,
+    },
 }
 
 impl Input {
@@ -43,7 +59,15 @@ impl Input {
             InputPurpose::Search => "words to find",
             InputPurpose::Ingest => "paths to ingest (or drop files here)",
             InputPurpose::Setting(_) => "the new value",
+            InputPurpose::BackupRepository => "the backup folder (drop it here)",
+            InputPurpose::BackupPassword { .. } => "the password",
+            InputPurpose::RestoreItem { .. } => "the item to restore",
         }
+    }
+
+    /// Whether what's typed is shown as dots.
+    pub fn masked(&self) -> bool {
+        matches!(self.purpose, InputPurpose::BackupPassword { .. })
     }
 }
 
@@ -147,6 +171,14 @@ impl App {
                         self.browse_in_items = self.search.is_some();
                         self.browse_item = 0;
                         self.load_items();
+                    }
+                    InputPurpose::BackupPassword { .. } => {
+                        // A password is taken as typed, spaces and all.
+                        return self.backup_input(input.purpose, input.text);
+                    }
+                    purpose @ (InputPurpose::BackupRepository
+                    | InputPurpose::RestoreItem { .. }) => {
+                        return self.backup_input(purpose, text);
                     }
                 }
             }

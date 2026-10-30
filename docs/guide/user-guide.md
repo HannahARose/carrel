@@ -167,6 +167,7 @@ History keeps the cards; [Kopia](https://kopia.io) keeps the files. After `carre
 - `carrel backup verify` checks the repository, reading back a sample of the files.
 - `carrel backup restore ITEM [--at CHANGE]` restores an item as it was, into a new folder beside the archive. It never overwrites anything.
 - The password is asked for once and kept in your keychain. Losing it means losing the backups, so keep it in a password manager too.
+- The interactive mode's Backups screen (`8`) does the same: it lists the snapshots with their changes (from history, so it works with the drive unplugged), and `n` takes a snapshot, `v` verifies, `r` restores an item as of the chosen snapshot, and `s` sets up or connects a repository, with the password typed as dots.
 
 If the backup drive isn't connected, filing still works; the next snapshot covers what was missed.
 

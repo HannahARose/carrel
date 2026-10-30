@@ -103,6 +103,7 @@ pub fn draw(frame: &mut Frame, app: &App, theme: Theme) {
         Tab::Status => draw_report(frame, app, inner, Some(waiting_line(app))),
         Tab::Ingest => draw_ingest(frame, app, theme, inner),
         Tab::Settings => draw_settings(frame, app, theme, inner),
+        Tab::Backups => draw_backups(frame, app, theme, inner),
     }
     draw_help_line(frame, app, theme, bottom);
     if app.help {
@@ -251,7 +252,7 @@ fn centered(area: Rect, width: u16, height: u16) -> Rect {
 
 fn draw_help(frame: &mut Frame, theme: Theme, area: Rect) {
     let rows = [
-        ("1 to 7, Tab, ←→", "switch screens"),
+        ("1 to 8, Tab, ←→", "switch screens"),
         (
             "i",
             "add files and folders to ingest, with your file picker or the built-in one",
@@ -273,6 +274,10 @@ fn draw_help(frame: &mut Frame, theme: Theme, area: Rect) {
             "collections or items; search; clear it (Browse)",
         ),
         ("u", "undo the chosen change (History)"),
+        (
+            "n  v  r  s",
+            "snapshot now, verify, restore an item, set up (Backups)",
+        ),
         ("x  t  r", "remove, move to the front, retry (Ingest)"),
         (
             "e  w",
@@ -651,23 +656,117 @@ fn draw_input(frame: &mut Frame, input: &Input, theme: Theme, area: Rect) {
             " Ingest ",
             "Files and folders to add, separated by spaces (drop them here, or paste):".to_owned(),
         ),
+        InputPurpose::BackupRepository => (
+            " Backups ",
+            "The folder for the backup repository: an existing one to connect to, or a new one \
+             (an external drive is safest):"
+                .to_owned(),
+        ),
+        InputPurpose::BackupPassword { new, first, .. } => (
+            " Backups ",
+            match (new, first.is_some()) {
+                (true, false) => format!("{} New password:", crate::backup::PASSWORD_WARNING),
+                (true, true) => "The same password again:".to_owned(),
+                (false, _) => "The repository's password:".to_owned(),
+            },
+        ),
+        InputPurpose::RestoreItem { .. } => (
+            " Restore ",
+            "The item to restore as of this snapshot (its identifier, or its card's or \
+             contents' path). It goes in a new folder beside the archive; nothing in the \
+             archive changes:"
+                .to_owned(),
+        ),
+    };
+    let shown = if input.masked() {
+        "•".repeat(input.text.chars().count())
+    } else {
+        input.text.clone()
     };
     let lines = vec![
         Line::from(above),
         Line::from(""),
         Line::from(vec![
             Span::styled("> ", theme.key()),
-            Span::raw(input.text.clone()),
+            Span::raw(shown),
             Span::styled("▏", theme.key()),
         ]),
     ];
-    let popup = centered(area, 70, 6);
+    let popup = centered(area, 70, 8);
     frame.render_widget(Clear, popup);
     frame.render_widget(
         Paragraph::new(lines)
             .wrap(Wrap { trim: false })
             .block(Block::bordered().title(title)),
         popup,
+    );
+}
+
+fn draw_backups(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
+    let status = crate::backup::status_line(&app.archive, Some(&app.history));
+    let snapshots = app.snapshots();
+    let [top, rest] = Layout::vertical([Constraint::Length(2), Constraint::Min(0)]).areas(area);
+    frame.render_widget(Paragraph::new(status.trim_end().to_owned()), top);
+    if !app.backups_set_up() {
+        frame.render_widget(
+            Paragraph::new(vec![
+                Line::from("Backups keep every version of the archive's files, encrypted, in a"),
+                Line::from("Kopia repository, best on an external drive. Once set up, a snapshot"),
+                Line::from("is taken with every batch you approve."),
+                Line::from(""),
+                Line::from(Span::styled("s to set them up", theme.dim())),
+            ]),
+            rest,
+        );
+        return;
+    }
+    if snapshots.is_empty() {
+        frame.render_widget(
+            Paragraph::new(Span::styled("No snapshot yet; n to take one", theme.dim())),
+            rest,
+        );
+        return;
+    }
+    let [list_area, detail_area] =
+        Layout::horizontal([Constraint::Percentage(55), Constraint::Percentage(45)]).areas(rest);
+    let items: Vec<ListItem> = snapshots
+        .iter()
+        .map(|e| {
+            ListItem::new(format!(
+                "{}  {}",
+                crate::commands::local_time(e.time),
+                e.summary
+            ))
+        })
+        .collect();
+    let chosen = app.backup_chosen.min(snapshots.len() - 1);
+    let mut state = ListState::default().with_selected(Some(chosen));
+    frame.render_stateful_widget(
+        List::new(items).highlight_style(theme.selected()),
+        list_area,
+        &mut state,
+    );
+    let entry = snapshots[chosen];
+    let mut lines = vec![
+        Line::from(entry.summary.clone()).style(Style::new().add_modifier(Modifier::BOLD)),
+        Line::from(format!("change {}", &entry.id[..entry.id.len().min(12)])),
+    ];
+    if let Some(snapshot) = &entry.snapshot {
+        lines.push(Line::from(format!("snapshot {snapshot}")));
+    }
+    if !entry.items.is_empty() {
+        lines.push(Line::from(format!("{} item(s) changed", entry.items.len())));
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "r to restore an item as of this snapshot",
+        theme.dim(),
+    )));
+    frame.render_widget(
+        Paragraph::new(lines)
+            .wrap(Wrap { trim: false })
+            .block(Block::new().borders(ratatui::widgets::Borders::LEFT)),
+        detail_area,
     );
 }
 

@@ -2,6 +2,7 @@
 //! `carrel tui`. Everything it does is also a command.
 
 mod app;
+mod backups;
 mod browser;
 mod intake;
 mod review;
@@ -240,6 +241,10 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
             };
             (busy, work)
         }
+        effect @ (Effect::BackupNow
+        | Effect::BackupVerify
+        | Effect::BackupRestore { .. }
+        | Effect::BackupSetup { .. }) => backup_work(root, effect),
         Effect::ApproveAllHigh => (
             "Filing every high-confidence proposal…".into(),
             Box::new(move || crate::review::approve(Some(&root), &[], true, None, None)),
@@ -301,6 +306,34 @@ fn queue(
             if n == 1 { "" } else { "s" }
         ),
     })
+}
+
+/// The work for the Backups screen's effects, which `carrel backup` does.
+fn backup_work(root: PathBuf, effect: Effect) -> (String, Work) {
+    match effect {
+        Effect::BackupNow => (
+            "Taking a snapshot…".into(),
+            Box::new(move || crate::backup::now(Some(&root))),
+        ),
+        Effect::BackupVerify => (
+            "Checking the backups…".into(),
+            Box::new(move || crate::backup::verify(Some(&root), backups::VERIFY_PERCENT)),
+        ),
+        Effect::BackupRestore { item, at } => (
+            format!("Restoring {item}…"),
+            Box::new(move || crate::backup::restore(Some(&root), &item, Some(&at), None)),
+        ),
+        Effect::BackupSetup {
+            repository,
+            password,
+        } => (
+            "Setting up backups…".into(),
+            Box::new(move || {
+                crate::backup::setup(Some(&root), &repository, None, Some(&password.0))
+            }),
+        ),
+        _ => unreachable!("only backup effects come here"),
+    }
 }
 
 /// The work for [`Effect::Keep`]: filing a proposal linked to the archived item it duplicates.
@@ -563,6 +596,66 @@ mod tests {
         );
         assert_eq!(app.key(key(KeyCode::Char('s'))), None);
         assert!(screen(&app, 140, 40).contains("Reject 1 proposal?"));
+    }
+
+    #[test]
+    fn backups_are_set_up_with_a_masked_password_typed_twice() {
+        let (_dir, mut app) = sample(false);
+        app.key(key(KeyCode::Char('8')));
+        assert_eq!(app.tab, Tab::Backups);
+        let text = screen(&app, 120, 30);
+        assert!(text.contains("No backups set up"), "{text}");
+        assert!(text.contains("s to set them up"), "{text}");
+        assert_eq!(app.key(key(KeyCode::Char('n'))), None);
+        assert!(app.message.as_deref().unwrap().contains("aren't set up"));
+
+        let repository = app.archive.root().parent().unwrap().join("backups");
+        app.key(key(KeyCode::Char('s')));
+        for c in repository.to_str().unwrap().chars() {
+            app.key(key(KeyCode::Char(c)));
+        }
+        app.key(key(KeyCode::Enter));
+        for c in "hunter 2".chars() {
+            app.key(key(KeyCode::Char(c)));
+        }
+        let text = screen(&app, 120, 30);
+        assert!(text.contains("New password"), "{text}");
+        assert!(
+            text.contains("••••••••"),
+            "the password is shown as dots: {text}"
+        );
+        assert!(!text.contains("hunter"), "{text}");
+        assert!(text.contains("Keep it in a password"), "{text}");
+        app.key(key(KeyCode::Enter));
+        for c in "hunter 3".chars() {
+            app.key(key(KeyCode::Char(c)));
+        }
+        assert_eq!(app.key(key(KeyCode::Enter)), None, "they don't match");
+        assert!(app.message.as_deref().unwrap().contains("don't match"));
+
+        app.key(key(KeyCode::Char('s')));
+        for c in repository.to_str().unwrap().chars() {
+            app.key(key(KeyCode::Char(c)));
+        }
+        app.key(key(KeyCode::Enter));
+        for c in "pw".chars() {
+            app.key(key(KeyCode::Char(c)));
+        }
+        app.key(key(KeyCode::Enter));
+        for c in "pw".chars() {
+            app.key(key(KeyCode::Char(c)));
+        }
+        match app.key(key(KeyCode::Enter)) {
+            Some(Effect::BackupSetup {
+                repository: given,
+                password,
+            }) => {
+                assert_eq!(given, repository);
+                assert_eq!(password.0, "pw");
+                assert_eq!(format!("{password:?}"), "Secret(…)", "never printed");
+            }
+            other => panic!("{other:?}"),
+        }
     }
 
     #[test]
