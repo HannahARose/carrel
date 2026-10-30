@@ -63,6 +63,8 @@ public enum ProviderError: Error, Equatable {
     case unsupported(String)
     /// The offer tried and couldn't (code 3).
     case failed(String)
+    /// The model declined the input, as a safety refusal (code 4).
+    case declined(String)
     /// A malformed request (JSON-RPC's -32602).
     case invalidParams(String)
     /// An unknown method (JSON-RPC's -32601).
@@ -73,6 +75,7 @@ public enum ProviderError: Error, Equatable {
         case .unavailable: 1
         case .unsupported: 2
         case .failed: 3
+        case .declined: 4
         case .invalidParams: -32602
         case .unknownMethod: -32601
         }
@@ -80,8 +83,8 @@ public enum ProviderError: Error, Equatable {
 
     var message: String {
         switch self {
-        case .unavailable(let m), .unsupported(let m), .failed(let m), .invalidParams(let m),
-            .unknownMethod(let m):
+        case .unavailable(let m), .unsupported(let m), .failed(let m), .declined(let m),
+            .invalidParams(let m), .unknownMethod(let m):
             m
         }
     }

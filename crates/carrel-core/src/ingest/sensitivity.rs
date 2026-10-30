@@ -9,7 +9,7 @@ use regex::Regex;
 use serde_json::json;
 
 use crate::card::Sensitivity;
-use crate::providers::{Capability, CompletionRequest, ProviderError, Registry};
+use crate::providers::{Capability, CompletionRequest, Registry};
 use crate::review::Attempt;
 
 /// How much of an item's text the floor rules read, in bytes.
@@ -334,11 +334,7 @@ pub fn assess(registry: &Registry, name: &str, text: &str, default: Sensitivity)
             }
         }
         Err(error) => {
-            let result = match error {
-                ProviderError::Unsupported(_) => "unsupported",
-                ProviderError::Unavailable(_) => "unavailable",
-                _ => "failed",
-            };
+            let result = error.result();
             assessment
                 .attempts
                 .push(attempt(result, Some(error.to_string())));

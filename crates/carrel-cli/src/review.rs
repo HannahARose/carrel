@@ -136,6 +136,33 @@ pub fn show(archive: Option<&Path>, id: &str) -> Result<Report, Failure> {
             writeln!(text, "  {reason}").unwrap();
         }
     }
+    let declined: Vec<_> = entry
+        .attempts
+        .iter()
+        .filter(|a| a.result == "declined")
+        .collect();
+    if !declined.is_empty() {
+        writeln!(text, "\nDeclined (a model's safety refusal):").unwrap();
+        for attempt in declined {
+            writeln!(
+                text,
+                "  {}: {}/{} declined it{}",
+                attempt.stage,
+                attempt.provider,
+                attempt.offer,
+                if entry
+                    .attempts
+                    .iter()
+                    .any(|a| a.stage == attempt.stage && a.result == "ok")
+                {
+                    "; another model did it instead"
+                } else {
+                    ""
+                }
+            )
+            .unwrap();
+        }
+    }
     if !entry.problems.is_empty() {
         writeln!(text, "\nTo settle:").unwrap();
         for problem in &entry.problems {

@@ -10,9 +10,9 @@ import FoundationModels
 /// Apple's on-device language model (`SystemLanguageModel`).
 ///
 /// Answers that must follow a JSON Schema use guided generation. Schemas, prompts or content the
-/// model can't handle (too long for its context, blocked by its guardrails, an unsupported
-/// language or schema feature) are reported as unsupported, so Carrel falls back to another
-/// model instead of failing.
+/// model can't handle (too long for its context, an unsupported language or schema feature)
+/// are reported as unsupported, and content its guardrails refuse as declined, so Carrel falls
+/// back to another model instead of failing, and can tell the owner it was refused.
 public struct FoundationModel: TextModel {
     public init() {}
 
@@ -140,7 +140,7 @@ public struct FoundationModel: TextModel {
         case .contextSizeExceeded:
             return .unsupported("too long for Apple's on-device model: \(why)")
         case .guardrailViolation, .refusal:
-            return .unsupported("Apple's on-device model declined: \(why)")
+            return .declined("Apple's on-device model declined: \(why)")
         case .unsupportedCapability, .unsupportedTranscriptContent, .unsupportedGenerationGuide,
             .unsupportedLanguageOrLocale:
             return .unsupported(why)
@@ -159,7 +159,7 @@ public struct FoundationModel: TextModel {
         case .exceededContextWindowSize:
             return .unsupported("too long for Apple's on-device model: \(why)")
         case .guardrailViolation, .refusal:
-            return .unsupported("Apple's on-device model declined: \(why)")
+            return .declined("Apple's on-device model declined: \(why)")
         case .unsupportedLanguageOrLocale, .unsupportedGuide:
             return .unsupported(why)
         case .assetsUnavailable:

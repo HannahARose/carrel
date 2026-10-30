@@ -323,17 +323,18 @@ fn results_json(measured: &[Measured], answers: &Answers) -> Value {
 /// The summary: one row per model, and whether it meets the bar.
 fn summary_table(measured: &[Measured]) -> String {
     let mut text = String::from(
-        "| Model | Valid | First try | Routing | Sensitivity exact | Under-rated | Restricted under | Dates | Tags found | Extra tags | s/item | Meets the bar |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n",
+        "| Model | Valid | First try | Declined | Routing | Sensitivity exact | Under-rated | Restricted under | Dates | Tags found | Extra tags | s/item | Meets the bar |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n",
     );
     for m in measured {
         let s = &m.score;
         let short = s.shortfalls(&BAR);
         writeln!(
             text,
-            "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {:.1} | {} |",
+            "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {:.1} | {} |",
             m.model.label,
             percent(s.valid),
             percent(s.first_try),
+            percent(s.declined),
             percent(s.routing),
             percent(s.sensitivity_exact),
             percent(s.under_rated),

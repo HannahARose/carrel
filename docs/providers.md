@@ -140,6 +140,7 @@ Providers report failures as JSON-RPC errors. Besides the standard codes (such a
 | `1` | **Unavailable:** the offer can't be used right now | Tries the next provider |
 | `2` | **Unsupported:** this input isn't one the offer handles | Tries the next provider |
 | `3` | **Failed:** the offer tried and couldn't | Tries the next provider, and reports the error if none succeeds |
+| `4` | **Declined:** the model refused this input, as a safety refusal | Tries the next provider, and shows the owner that the model declined it |
 | `-32601` | **Method not found:** the provider is older than the method, or doesn't offer it | Treats it as unsupported; the provider stays in use |
 
 `message` says what went wrong, in plain words.
