@@ -49,6 +49,7 @@ impl Sandbox {
             .args(args)
             .current_dir(cwd)
             .env("CARREL_CONFIG_DIR", self.path("config"))
+            .env("CARREL_WORKER", "off")
             .output()
             .unwrap()
     }
@@ -396,7 +397,7 @@ fn ingest_reports_kinds_sizes_and_duplicates_without_changing_anything() {
         "a dry run saves nothing"
     );
 
-    let report = sandbox.json(&root, &["ingest", "--each", downloads_arg]);
+    let report = sandbox.json(&root, &["ingest", "--wait", "--each", downloads_arg]);
     let items = report["items"].as_array().unwrap();
     assert_eq!(items.len(), 2);
     let csv = items
@@ -525,7 +526,7 @@ fn undo_reverses_a_change_by_its_identifier() {
     // A change worth undoing: an item filed in Holding.
     let item = sandbox.path("note.txt");
     std::fs::write(&item, "a note\n").unwrap();
-    let ingested = sandbox.json(&root, &["ingest", item.to_str().unwrap()]);
+    let ingested = sandbox.json(&root, &["ingest", "--wait", item.to_str().unwrap()]);
     let proposal = ingested["proposals"][0]["id"].as_str().unwrap().to_owned();
     sandbox.ok(&root, &["review", "hold", &proposal]);
     let filed = sandbox.json(&root, &["log"])[0]["id"]
@@ -607,4 +608,64 @@ fn collection_new_creates_a_collection_to_route_into() {
     assert!(String::from_utf8_lossy(&out.stderr).contains("already exists"));
     let out = sandbox.run_in(&root, &["collection", "new", "Travel", "--tag", "flights"]);
     assert!(String::from_utf8_lossy(&out.stderr).contains("name=meaning"));
+}
+
+#[test]
+fn ingest_queues_items_for_a_worker_and_the_queue_can_be_changed() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    let a = sandbox.path("a note.txt");
+    let b = sandbox.path("b note.txt");
+    std::fs::write(&a, "first\n").unwrap();
+    std::fs::write(&b, "second\n").unwrap();
+
+    let planned = sandbox.json(&root, &["ingest", "--dry-run", a.to_str().unwrap()]);
+    assert_eq!(planned["queued"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        sandbox.json(&root, &["ingest", "--status"])["waiting"],
+        serde_json::json!([]),
+        "a dry run queues nothing"
+    );
+
+    let queued = sandbox.json(&root, &["ingest", a.to_str().unwrap(), b.to_str().unwrap()]);
+    assert_eq!(queued["queued"].as_array().unwrap().len(), 2);
+    assert_eq!(queued["worker_started"], false, "CARREL_WORKER is off here");
+    let status = sandbox.json(&root, &["ingest", "--status"]);
+    assert_eq!(status["running"], false);
+    let waiting = status["waiting"].as_array().unwrap();
+    assert_eq!(waiting.len(), 2);
+
+    let second = waiting[1]["id"].as_str().unwrap().to_owned();
+    sandbox.ok(&root, &["ingest", "--first", &second]);
+    let first = &sandbox.json(&root, &["ingest", "--status"])["waiting"][0];
+    assert_eq!(first["id"].as_str().unwrap(), second);
+    sandbox.ok(&root, &["ingest", "--remove", &second]);
+    assert_eq!(
+        sandbox.json(&root, &["ingest", "--status"])["waiting"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+
+    let worked = sandbox.json(&root, &["worker"]);
+    assert_eq!(worked["done"], 1);
+    assert_eq!(
+        sandbox.json(&root, &["ingest", "--status"])["waiting"],
+        serde_json::json!([])
+    );
+    let proposals = sandbox.json(&root, &["review"])["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| {
+            e["source"]["path"]
+                .as_str()
+                .is_some_and(|p| p.ends_with("a note.txt"))
+        })
+        .count();
+    assert_eq!(proposals, 1);
+
+    let out = sandbox.run_in(&root, &["ingest"]);
+    assert!(String::from_utf8_lossy(&out.stderr).contains("--status"));
 }

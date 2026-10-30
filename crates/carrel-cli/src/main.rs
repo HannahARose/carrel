@@ -15,6 +15,7 @@ mod providers;
 mod questions;
 mod review;
 mod tui;
+mod worker;
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -72,22 +73,13 @@ enum Command {
     },
     /// List the providers on this device (text models, text extraction) and which are used.
     Providers,
-    /// Propose filing files and folders: each gets a drafted card and a destination, saved
-    /// as a proposal for `carrel review`. Nothing is moved until a proposal is approved.
-    Ingest {
-        /// The files and folders. Each is one item.
-        #[arg(required = true)]
-        paths: Vec<PathBuf>,
-        /// Ingest each entry inside a folder as its own item.
-        #[arg(long, conflicts_with = "whole")]
-        each: bool,
-        /// Ingest a folder as one item even when its name suggests a pile, such as Downloads.
-        #[arg(long)]
-        whole: bool,
-        /// Show what would be proposed without saving anything.
-        #[arg(long)]
-        dry_run: bool,
-    },
+    /// Add files and folders to the intake queue. A worker drafts each one's card and
+    /// destination in the background, saving proposals for `carrel review` as they're ready.
+    /// Nothing is moved until a proposal is approved.
+    Ingest(IngestArgs),
+    /// Draft the items waiting in the intake queue on this device, until none are left.
+    /// Adding to the queue starts one in the background, so this is rarely run by hand.
+    Worker,
     /// Review proposals to file items: list, show, edit, approve, hold, move or reject them.
     Review {
         /// Include proposals already decided (with no subcommand).
@@ -178,6 +170,60 @@ enum ModelsAction {
         #[arg(long)]
         yes: bool,
     },
+}
+
+#[derive(Debug, clap::Args)]
+#[allow(clippy::struct_excessive_bools)] // each is a command-line flag
+struct IngestArgs {
+    /// The files and folders. Each is one item.
+    paths: Vec<PathBuf>,
+    /// Ingest each entry inside a folder as its own item.
+    #[arg(long, conflicts_with = "whole")]
+    each: bool,
+    /// Ingest a folder as one item even when its name suggests a pile, such as Downloads.
+    #[arg(long)]
+    whole: bool,
+    /// Show what would be added, at once, without queueing anything or running a model.
+    #[arg(long, conflicts_with = "wait")]
+    dry_run: bool,
+    /// Stay until the items are drafted, showing progress, and report each.
+    #[arg(long)]
+    wait: bool,
+    /// Show the worker and what's waiting in the queue on this device.
+    #[arg(long, conflicts_with_all = ["dry_run", "wait", "remove", "first", "retry"])]
+    status: bool,
+    /// Take a waiting item off the queue, by its identifier or its start.
+    #[arg(long, value_name = "ID", conflicts_with_all = ["first", "retry"])]
+    remove: Option<String>,
+    /// Move a waiting item to the front of the queue.
+    #[arg(long, value_name = "ID", conflicts_with = "retry")]
+    first: Option<String>,
+    /// Try a failed item again.
+    #[arg(long, value_name = "ID")]
+    retry: Option<String>,
+}
+
+impl IngestArgs {
+    fn into_request(self) -> ingest::Request {
+        let change = self
+            .remove
+            .map(|id| (ingest::Change::Remove, id))
+            .or(self.first.map(|id| (ingest::Change::First, id)))
+            .or(self.retry.map(|id| (ingest::Change::Retry, id)));
+        ingest::Request {
+            paths: self.paths,
+            options: ingest::Options {
+                intake: carrel_core::ingest::IntakeOptions {
+                    each: self.each,
+                    whole: self.whole,
+                },
+                dry_run: self.dry_run,
+                wait: self.wait,
+            },
+            status: self.status,
+            change,
+        }
+    }
 }
 
 #[derive(Debug, Subcommand)]
@@ -376,18 +422,10 @@ fn main() -> ExitCode {
         Command::Show { item } => commands::show(cli.archive.as_deref(), &item),
         Command::Log { max_count } => commands::log(cli.archive.as_deref(), max_count),
         Command::Providers => Ok(providers::list()),
-        Command::Ingest {
-            paths,
-            each,
-            whole,
-            dry_run,
-        } => ingest::ingest(
-            cli.archive.as_deref(),
-            &paths,
-            carrel_core::ingest::IntakeOptions { each, whole },
-            dry_run,
-            cli.json,
-        ),
+        Command::Ingest(args) => {
+            ingest::command(cli.archive.as_deref(), &args.into_request(), cli.json)
+        }
+        Command::Worker => worker::run(cli.archive.as_deref()),
         Command::Review { all, action } => match action.unwrap_or(ReviewAction::List { all }) {
             ReviewAction::List { all } => review::list(cli.archive.as_deref(), all),
             ReviewAction::Show { id } => review::show(cli.archive.as_deref(), &id),
