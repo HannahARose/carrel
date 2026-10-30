@@ -85,7 +85,7 @@ Backups need [Kopia](https://kopia.io), beside `carrel` or on `PATH`.
 | Command | What it does |
 | --- | --- |
 | `carrel settings` | Lists this device's preferences and the archive's shared settings. |
-| `carrel settings set KEY VALUE` | Changes one. `picker` and `editor` are this device's (an empty value clears them). `ingest.originals`, `signals.crowded_items` and `outside_edits` are shared by every device, and each change can be undone from History. |
+| `carrel settings set KEY VALUE` | Changes one. `picker`, `editor` and `model` are this device's (an empty value, or `default`, clears them); `model` takes `provider/offer`, the offer alone, or a provider such as `apple`, and must be one that's available. `ingest.originals`, `signals.crowded_items` and `outside_edits` are shared by every device, and each change can be undone from History. |
 
 ## The interactive mode
 

@@ -711,4 +711,17 @@ fn settings_are_listed_set_and_undone() {
         sandbox.json(&root, &["settings"])["device"]["picker"],
         serde_json::Value::Null
     );
+
+    // A model must be one that's available; nothing is saved otherwise.
+    let missing = sandbox.run_in(&root, &["settings", "set", "model", "llama/nope.gguf"]);
+    assert!(!missing.status.success());
+    assert!(
+        String::from_utf8_lossy(&missing.stderr).contains("no text model llama/nope.gguf"),
+        "{}",
+        String::from_utf8_lossy(&missing.stderr)
+    );
+    let device = &sandbox.json(&root, &["settings"])["device"];
+    assert_eq!(device["model"], serde_json::Value::Null);
+    assert!(device["model_in_use"].is_string());
+    sandbox.ok(&root, &["settings", "set", "model", "default"]);
 }

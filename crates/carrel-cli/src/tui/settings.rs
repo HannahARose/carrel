@@ -17,6 +17,8 @@ pub enum Row {
     Picker,
     /// This device's editor.
     Editor,
+    /// The text model that drafts cards on this device.
+    Model,
     /// Models for local providers.
     Models,
     /// The worker that drafts queued items.
@@ -43,7 +45,10 @@ pub struct Shown {
 /// Whether a row is this device's or the archive's.
 #[must_use]
 pub fn is_device(row: Row) -> bool {
-    matches!(row, Row::Picker | Row::Editor | Row::Models | Row::Worker)
+    matches!(
+        row,
+        Row::Picker | Row::Editor | Row::Model | Row::Models | Row::Worker
+    )
 }
 
 impl App {
@@ -54,6 +59,7 @@ impl App {
         let mut rows = vec![
             picker_row(&prefs),
             editor_row(),
+            model_row(&prefs),
             models_row(),
             self.worker_row(),
         ];
@@ -166,6 +172,21 @@ impl App {
                         .unwrap_or_default(),
                 });
             }
+            Row::Model => {
+                let (registry, _) = crate::providers::registry();
+                let mut choices = vec!["default".to_owned()];
+                choices.extend(
+                    crate::providers::text_models(&registry)
+                        .iter()
+                        .map(crate::providers::TextModel::name),
+                );
+                self.picker = Some(Picker {
+                    collections: choices,
+                    filter: String::new(),
+                    chosen: 0,
+                    purpose: Purpose::Setting("model".into()),
+                });
+            }
             Row::Models => {
                 let available: Vec<String> = carrel_core::models::CATALOG
                     .iter()
@@ -258,6 +279,28 @@ fn editor_row() -> Shown {
         detail: vec![
             "Opens when you edit a proposal's card (e in Review).".into(),
             "Enter to set one for Carrel; leave it empty to use $VISUAL or $EDITOR.".into(),
+        ],
+    }
+}
+
+fn model_row(prefs: &crate::config::Prefs) -> Shown {
+    Shown {
+        row: Row::Model,
+        label: "Model".into(),
+        value: prefs
+            .model
+            .clone()
+            .unwrap_or_else(|| "Carrel's choice".into()),
+        detail: vec![
+            "The text model that drafts cards, routes and rates items on this device.".into(),
+            "Unset, Carrel uses the best available: Apple's on-device model where there is one, \
+             then local models."
+                .into(),
+            String::new(),
+            "Enter to choose one of the available models, or default to let Carrel choose. \
+             If the chosen model goes away, Carrel uses the next best."
+                .into(),
+            "The benchmark's results (docs/bench/) say how each model does.".into(),
         ],
     }
 }

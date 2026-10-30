@@ -190,6 +190,7 @@ The Settings screen (`7`), or `carrel settings`, shows two kinds:
 
 - **File picker** for choosing what to ingest: yazi, lf, nnn, ranger, vifm or fzf if one's installed, any command you give (with `{out}` for the file it writes chosen paths to), or the built-in browser. Settings suggests pickers you could install; Carrel never installs anything.
 - **Editor** for cards, before `$VISUAL` and `$EDITOR`.
+- **Model** that drafts cards, routes and rates items, as `provider/offer` (such as `llama/qwen3.5-4b`), or `default` to let Carrel choose: Apple's on-device model where there is one, then local models. If the chosen model isn't available, for example because its file was removed, Carrel uses the next best. `carrel settings` shows which is in use.
 
 **This archive**, kept in `_System/settings.json` and shared by every device that opens it:
 

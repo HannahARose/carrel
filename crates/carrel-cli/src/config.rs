@@ -70,6 +70,10 @@ pub struct Prefs {
     /// would.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub editor: Option<String>,
+    /// The text model that drafts cards on this device, as `provider/offer` (such as
+    /// `llama/qwen3.5-4b`). Unset, Carrel uses the best available by priority.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
     /// The folder files were last picked from, where picking starts next time.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_folder: Option<PathBuf>,
