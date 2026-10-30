@@ -72,8 +72,8 @@ fn the_queue_saves_lists_finds_and_removes_entries() {
         first.id,
         "so is the short id"
     );
-    assert!(matches!(queue.find("01"), Err(ReviewError::Ambiguous(_))));
-    assert!(matches!(queue.find("ffff"), Err(ReviewError::NotFound(_))));
+    assert!(matches!(queue.find("01"), Err(ReviewError::Ambiguous(..))));
+    assert!(matches!(queue.find("ffff"), Err(ReviewError::NotFound(..))));
 
     let mut changed = found.clone();
     changed.state = State::Rejected;
@@ -87,7 +87,7 @@ fn the_queue_saves_lists_finds_and_removes_entries() {
     assert_eq!(queue.list().unwrap().0.len(), 1);
     assert!(matches!(
         queue.remove(first.id),
-        Err(ReviewError::NotFound(_))
+        Err(ReviewError::NotFound(..))
     ));
     let leftovers: Vec<PathBuf> = std::fs::read_dir(archive.root().join(REVIEW_DIR))
         .unwrap()

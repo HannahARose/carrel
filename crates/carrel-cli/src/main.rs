@@ -8,6 +8,7 @@ mod commands;
 mod config;
 mod ingest;
 mod providers;
+mod questions;
 mod review;
 
 use std::path::{Path, PathBuf};
@@ -89,6 +90,31 @@ enum Command {
         all: bool,
         #[command(subcommand)]
         action: Option<ReviewAction>,
+    },
+    /// Questions ingest needs you to answer, most items first.
+    Questions {
+        #[command(subcommand)]
+        action: Option<QuestionsAction>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum QuestionsAction {
+    /// List the questions waiting for an answer.
+    List,
+    /// Answer a question: what a term means, or which collection its items belong in. Items
+    /// waiting on a term are drafted again with the answer.
+    Answer {
+        /// The question's identifier, or its start or end.
+        id: String,
+        /// The answer: a sentence for a term, or a collection's path.
+        #[arg(required = true, num_args = 1..)]
+        answer: Vec<String>,
+    },
+    /// Dismiss a question; its items stop waiting on it.
+    Dismiss {
+        /// The question's identifier, or its start or end.
+        id: String,
     },
 }
 
@@ -218,6 +244,13 @@ fn main() -> ExitCode {
             ReviewAction::MoveTo { id, collection } => {
                 review::move_to(cli.archive.as_deref(), &id, &collection)
             }
+        },
+        Command::Questions { action } => match action.unwrap_or(QuestionsAction::List) {
+            QuestionsAction::List => questions::list(cli.archive.as_deref()),
+            QuestionsAction::Answer { id, answer } => {
+                questions::answer(cli.archive.as_deref(), &id, &answer)
+            }
+            QuestionsAction::Dismiss { id } => questions::dismiss(cli.archive.as_deref(), &id),
         },
     };
     match result {

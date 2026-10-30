@@ -5,11 +5,11 @@ use std::fmt::Write as _;
 use std::path::Path;
 
 use carrel_core::archive::Archive;
-use carrel_core::card::{Extra, Sensitivity};
+use carrel_core::card::Sensitivity;
 use carrel_core::coordinator::{Coordinator, DEFAULT_LEASE, DiskLock};
 use carrel_core::ingest::filing::{Filed, Placement, file_batch};
-use carrel_core::ingest::route::tags_for;
-use carrel_core::review::{Confidence, Destination, ReviewEntry, ReviewQueue, State, short_id};
+use carrel_core::questions::redirect;
+use carrel_core::review::{Confidence, ReviewEntry, ReviewQueue, State, short_id};
 use serde_json::{Value, json};
 
 use crate::commands::{holder, locate};
@@ -227,14 +227,13 @@ pub fn move_to(archive: Option<&Path>, id: &str, collection: &str) -> Result<Rep
         .iter()
         .find(|c| c.path.eq_ignore_ascii_case(wanted))
         .ok_or_else(|| Failure::new(format!("no collection {wanted}")))?;
-    let tags = tags_for(&archive, &collections, &target.path, &entry.card.tags);
-    let dropped: Vec<&str> = entry
-        .card
-        .tags
-        .iter()
-        .filter(|t| !tags.contains(t))
-        .map(|t| t.0.as_str())
-        .collect();
+    let dropped = redirect(
+        &archive,
+        &collections,
+        &mut entry,
+        target,
+        "chosen by the owner",
+    );
     let mut text = format!(
         "{} will go to {} when approved\n",
         short_id(entry.id),
@@ -248,19 +247,6 @@ pub fn move_to(archive: Option<&Path>, id: &str, collection: &str) -> Result<Rep
             target.path
         )
         .unwrap();
-    }
-    entry.card.tags = tags;
-    entry.destination = Destination {
-        collection: target.doc.id,
-        path: target.path.clone(),
-        confidence: Confidence::High,
-        reasons: vec!["chosen by the owner".into()],
-        rule: None,
-        extra: Extra::new(),
-    };
-    entry.problems.retain(|p| p.stage != "route");
-    if entry.state == State::NeedsOwner && entry.problems.is_empty() {
-        entry.state = State::Proposed;
     }
     queue.save(&entry)?;
     Ok(Report::new(
