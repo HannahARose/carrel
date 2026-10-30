@@ -227,12 +227,31 @@ fn guidance(archive: &Archive, collection: &Collection) -> String {
     let body = frontmatter::split(&document).map_or(document.as_str(), |s| s.body);
     for wanted in ["Purpose and scope", "Not here"] {
         if let Some(section) = heading_section(body, wanted) {
+            let section = without_comments(section);
             let section = section.trim();
             let cut = &section[..section.floor_char_boundary(SECTION_BUDGET)];
-            writeln!(text, "{wanted}: {}", cut.replace('\n', " ")).unwrap();
+            if !cut.is_empty() {
+                writeln!(text, "{wanted}: {}", cut.replace('\n', " ")).unwrap();
+            }
         }
     }
     text
+}
+
+/// `text` without HTML comments, such as a new design document's prompts to the owner, so a
+/// model never takes a placeholder for guidance.
+fn without_comments(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(start) = rest.find("<!--") {
+        out.push_str(&rest[..start]);
+        match rest[start..].find("-->") {
+            Some(end) => rest = &rest[start + end + 3..],
+            None => return out,
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 /// The text under `## {heading}`, up to the next heading of that level or a managed section.
@@ -622,4 +641,19 @@ pub fn tags_for(
         .filter(|t| applicable.contains(&t.0))
         .cloned()
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::without_comments;
+
+    #[test]
+    fn placeholders_in_comments_are_not_guidance() {
+        assert_eq!(
+            without_comments("Receipts.\n<!-- What doesn't belong. -->\nAnd invoices."),
+            "Receipts.\n\nAnd invoices."
+        );
+        assert_eq!(without_comments("<!-- only a prompt -->"), "");
+        assert_eq!(without_comments("text <!-- unclosed"), "text ");
+    }
 }

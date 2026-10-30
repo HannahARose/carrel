@@ -52,6 +52,7 @@ pub mod backup;
 pub mod bench;
 pub mod card;
 pub mod card_file;
+pub mod collections;
 pub mod coordinator;
 pub mod detect;
 pub mod documents;

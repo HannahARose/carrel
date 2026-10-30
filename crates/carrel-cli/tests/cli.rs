@@ -580,3 +580,31 @@ fn models_lists_the_catalog_and_asks_before_downloading() {
     let out = sandbox.run_in(&here, &["models", "remove", "mine", "--yes"]);
     assert!(String::from_utf8_lossy(&out.stderr).contains("isn't downloaded"));
 }
+
+#[test]
+fn collection_new_creates_a_collection_to_route_into() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.path("archive");
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    let created = sandbox.json(
+        &root,
+        &[
+            "collection",
+            "new",
+            "Finances",
+            "--description",
+            "Bank accounts and tax",
+            "--tag",
+            "tax=Income tax",
+        ],
+    );
+    assert_eq!(created["path"], "Finances");
+    assert!(root.join("Finances/_collection.md").is_file());
+    let status = sandbox.json(&root, &["status"]);
+    assert_eq!(status["collections"], 2, "Holding and Finances");
+
+    let out = sandbox.run_in(&root, &["collection", "new", "Finances"]);
+    assert!(String::from_utf8_lossy(&out.stderr).contains("already exists"));
+    let out = sandbox.run_in(&root, &["collection", "new", "Travel", "--tag", "flights"]);
+    assert!(String::from_utf8_lossy(&out.stderr).contains("name=meaning"));
+}
