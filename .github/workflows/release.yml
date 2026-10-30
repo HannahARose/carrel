@@ -105,7 +105,7 @@ jobs:
       - name: Build (Linux and Windows)
         if: runner.os != 'macOS'
         run: |
-          cargo build --release --locked -p carrel-cli -p carrel-fetch -p carrel-provider-llama
+          cargo build --release --locked -p carrel-cli -p carrel-fetch -p carrel-provider-llama -p carrel-provider-extract
           echo "BIN_DIR=target/release" >> "$GITHUB_ENV"
       - name: Build (macOS, universal)
         if: runner.os == 'macOS'
@@ -113,10 +113,10 @@ jobs:
           rustup target add x86_64-apple-darwin
           for target in aarch64-apple-darwin x86_64-apple-darwin; do
             cargo build --release --locked --target "$target" \
-              -p carrel-cli -p carrel-fetch -p carrel-provider-llama
+              -p carrel-cli -p carrel-fetch -p carrel-provider-llama -p carrel-provider-extract
           done
           mkdir -p target/universal
-          for program in carrel carrel-fetch carrel-provider-llama; do
+          for program in carrel carrel-fetch carrel-provider-llama carrel-provider-extract; do
             lipo -create -output "target/universal/$program" \
               "target/aarch64-apple-darwin/release/$program" \
               "target/x86_64-apple-darwin/release/$program"

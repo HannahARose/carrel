@@ -30,7 +30,7 @@ Every document is analyzed on your own devices. Nothing is sent anywhere unless 
 
 ## Install
 
-From v0.2, each [release](https://github.com/HannahARose/carrel/releases) has an archive for macOS (Apple silicon and Intel), Linux (x86_64 and arm64) and Windows (x86_64), with `SHA256SUMS` and build provenance attestations. An archive holds `carrel` and everything it runs: the network helper, the llama.cpp provider, Kopia for backups, and on macOS the Apple provider. Put them together in a folder on your `PATH`.
+From v0.2, each [release](https://github.com/HannahARose/carrel/releases) has an archive for macOS (Apple silicon and Intel), Linux (x86_64 and arm64) and Windows (x86_64), with `SHA256SUMS` and build provenance attestations. An archive holds `carrel` and everything it runs: the network helper, the llama.cpp provider, the extraction provider (PDF text, and OCR when [Tesseract](https://tesseract-ocr.github.io) is installed), Kopia for backups, and on macOS the Apple provider. Put them together in a folder on your `PATH`.
 
 To check a download came from this repository's release workflow:
 
