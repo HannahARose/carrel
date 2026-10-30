@@ -431,7 +431,7 @@ dependencies = [
 
 [[package]]
 name = "carrel-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "carrel-core",
  "clap",
@@ -446,7 +446,7 @@ dependencies = [
 
 [[package]]
 name = "carrel-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "git2",
  "indexmap",
@@ -465,7 +465,7 @@ dependencies = [
 
 [[package]]
 name = "carrel-fetch"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "carrel-core",
  "fs4",
@@ -478,7 +478,7 @@ dependencies = [
 
 [[package]]
 name = "carrel-ffi"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "carrel-core",
  "thiserror 2.0.21",
@@ -487,7 +487,7 @@ dependencies = [
 
 [[package]]
 name = "carrel-provider-extract"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "carrel-core",
  "pdf-extract",
@@ -497,7 +497,7 @@ dependencies = [
 
 [[package]]
 name = "carrel-provider-llama"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "carrel-core",
  "llama-cpp-2",
@@ -3359,7 +3359,7 @@ dependencies = [
 
 [[package]]
 name = "uniffi-bindgen"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "uniffi",
 ]
