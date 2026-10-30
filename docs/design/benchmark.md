@@ -1,6 +1,6 @@
 # Design: the model benchmark (v0.2)
 
-Status: draft for the owner. Issue #33.
+Status: accepted 2026-10-30, with the five recommendations below. Issue #33.
 
 ## What it's for
 
@@ -63,7 +63,7 @@ If none qualifies at a size, nothing is recommended there, and `carrel models` s
 3. `carrel bench`, with the side-by-side report.
 4. A first run on the owner's Mac, committed under `docs/bench/`, and the `recommended` flags set from it.
 
-## Decisions for the owner
+## Decisions (accepted 2026-10-30)
 
 1. **A synthetic test set of about 60 documents** in its own archive of about a dozen collections, plus a few public-domain or CC BY texts, instead of real documents. Recommended: it can be public and shared, and the hard cases can be chosen on purpose.
 2. **Score through the real ingest stages** with automatic scores for routing, sensitivity, dates, tags and validity, with titles and summaries left to a side-by-side report. Recommended.

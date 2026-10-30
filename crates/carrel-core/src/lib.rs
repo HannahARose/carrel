@@ -49,6 +49,7 @@
 pub mod actions;
 pub mod archive;
 pub mod backup;
+pub mod bench;
 pub mod card;
 pub mod card_file;
 pub mod coordinator;

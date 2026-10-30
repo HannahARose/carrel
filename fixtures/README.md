@@ -51,3 +51,17 @@ It reports every problem it finds, one per line:
 - the `ARCHIVE.md` and collection listings, and that every card can be reached from `ARCHIVE.md`
 - nothing left uncataloged
 - valid JSON and YAML under `_System`, and an exact copy of `FORMAT.md`
+
+## `bench/`
+
+The test set for the model benchmark ([docs/design/benchmark.md](../docs/design/benchmark.md)): what `carrel bench` ingests with each model, and what it scores them against.
+
+- **`archive/`:** an archive with thirteen collections and Holding, whose design documents sometimes overlap on purpose (Receipts and Manuals, Health and Insurance, Reading and Research). It has no routing rules, so models make every choice.
+- **`items/`:** 65 short documents of the kinds a Downloads folder holds. Every person, address and number in them is invented; the card number, IBAN and social security number are well-known example values. Some are hard on purpose: they fit two collections, belong in Holding, or are sensitive because of one line.
+- **`answers.yaml`:** each item's acceptable destinations, expected sensitivity, date and tags.
+
+`crates/carrel-core/tests/bench.rs` checks on every test run that the three agree: every item has an answer, every destination and tag exists, and no expected level is below what the sensitivity rules alone give. To run the benchmark itself (it needs a text model, and takes minutes per model):
+
+```bash
+cargo run -p carrel-cli -- bench --out bench-results
+```

@@ -5,6 +5,7 @@
 //! status 1; usage mistakes exit with status 2.
 
 mod backup;
+mod bench;
 mod commands;
 mod config;
 mod ingest;
@@ -119,6 +120,24 @@ enum Command {
     Questions {
         #[command(subcommand)]
         action: Option<QuestionsAction>,
+    },
+    /// Measure text models on the benchmark's test set, for choosing defaults
+    /// (`docs/design/benchmark.md`).
+    #[command(hide = true)]
+    Bench {
+        /// A model to measure, as `provider/offer` or the offer alone; repeat for more.
+        /// Defaults to every available text model.
+        #[arg(long = "model", value_name = "MODEL")]
+        models: Vec<String>,
+        /// The test set: a folder with `archive`, `items` and `answers.yaml`.
+        #[arg(long, default_value = "fixtures/bench")]
+        corpus: PathBuf,
+        /// Where to write `results.json` and `report.md`.
+        #[arg(long, default_value = "bench-results")]
+        out: PathBuf,
+        /// Use only the first N items, for a quick check.
+        #[arg(long, value_name = "N")]
+        limit: Option<usize>,
     },
     /// Models for local providers: list them, or download or remove one. Nothing is
     /// downloaded unless asked for.
@@ -374,6 +393,12 @@ fn main() -> ExitCode {
             }
             QuestionsAction::Dismiss { id } => questions::dismiss(cli.archive.as_deref(), &id),
         },
+        Command::Bench {
+            models,
+            corpus,
+            out,
+            limit,
+        } => bench::bench(&corpus, &models, &out, limit),
         Command::Models { action } => match action.unwrap_or(ModelsAction::List) {
             ModelsAction::List => models::list(),
             ModelsAction::Download { name, yes } => models::download(&name, yes, cli.json),
