@@ -16,8 +16,17 @@ pub struct Picker {
     pub filter: String,
     /// The chosen one, among those that match.
     pub chosen: usize,
-    /// The proposals to move.
-    pub ids: Vec<Id>,
+    /// What the choice is for.
+    pub purpose: Purpose,
+}
+
+/// What a collection is being chosen for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Purpose {
+    /// Moving these proposals there.
+    Move(Vec<Id>),
+    /// Answering this question with it.
+    Answer(Id),
 }
 
 impl Picker {
@@ -148,7 +157,7 @@ impl App {
                             collections: collections.into_iter().map(|c| c.path).collect(),
                             filter: String::new(),
                             chosen: 0,
-                            ids: targets,
+                            purpose: Purpose::Move(targets),
                         });
                     }
                     Err(e) => self.message = Some(e.to_string()),
@@ -181,9 +190,12 @@ impl App {
                     .matching()
                     .get(picker.chosen)
                     .map(|c| (*c).to_owned());
-                let ids = picker.ids.clone();
+                let purpose = picker.purpose.clone();
                 self.picker = None;
-                return to.map(|to| Effect::Move { ids, to });
+                return to.map(|to| match purpose {
+                    Purpose::Move(ids) => Effect::Move { ids, to },
+                    Purpose::Answer(id) => Effect::Answer { id, answer: to },
+                });
             }
             _ => {}
         }
