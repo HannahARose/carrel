@@ -32,6 +32,7 @@ public actor Loaded {
 
     private var current: (name: String, container: ModelContainer)?
     private var tokenizers: [String: any MLXLMCommon.Tokenizer] = [:]
+    private var biases: [String: Biases] = [:]
     private var lastUse = ContinuousClock.now
     private var idleTask: Task<Void, Never>?
 
@@ -58,6 +59,20 @@ public actor Loaded {
         let tokenizer = try await LocalTokenizerLoader().load(from: folder.url)
         tokenizers[folder.name] = tokenizer
         return tokenizer
+    }
+
+    /// The token biases guided generation uses for `name`'s tokenizer, worked out once: they
+    /// scan the whole vocabulary.
+    func biases(for name: String, tokenizer: any MLXLMCommon.Tokenizer) -> Biases {
+        if let cached = biases[name] {
+            return cached
+        }
+        let (whitespace, whitespaceTokenIDs) = WhitespaceTokenBias.compute(tokenizer: tokenizer)
+        let made = Biases(
+            closing: ClosingTokenBias.compute(tokenizer: tokenizer, eosTokenId: tokenizer.eosTokenId),
+            whitespace: whitespace, whitespaceTokenIDs: whitespaceTokenIDs)
+        biases[name] = made
+        return made
     }
 
     /// Drops the loaded model and returns its memory to the system.
@@ -93,6 +108,22 @@ public actor Loaded {
 
     fileprivate func touch() {
         lastUse = .now
+    }
+}
+
+/// Nudges for guided generation, as `mlx-swift-lm`'s own Foundation Models adapter uses them:
+/// against long runs of whitespace, which a JSON grammar allows and small models fall into,
+/// and toward closing the JSON as the answer nears its token limit, so it ends rather than
+/// being cut off.
+final class Biases: @unchecked Sendable {
+    let closing: MLXArray
+    let whitespace: MLXArray
+    let whitespaceTokenIDs: Set<Int>
+
+    init(closing: MLXArray, whitespace: MLXArray, whitespaceTokenIDs: Set<Int>) {
+        self.closing = closing
+        self.whitespace = whitespace
+        self.whitespaceTokenIDs = whitespaceTokenIDs
     }
 }
 
@@ -141,15 +172,14 @@ public struct MLXModel: TextModel {
         } catch {
             throw .unavailable("can't load \(folder.name): \(error)")
         }
-        let (name, limit) = (folder.name, context)
-        let schema: String? = request.schema.flatMap { value in
-            (try? JSONSerialization.data(withJSONObject: value.any, options: [.sortedKeys]))
-                .flatMap { String(data: $0, encoding: .utf8) }
-        }
+        let (name, limit, loaded) = (folder.name, context, loaded)
+        let schema = request.schema.map(SchemaText.write)
         let text: String
         do {
             text = try await container.perform { context in
-                try await Self.generate(request, schema: schema, context: context, name: name, limit: limit)
+                try await Self.generate(
+                    request, schema: schema, context: context, name: name, limit: limit,
+                    loaded: loaded)
             }
         } catch let error as ProviderError {
             throw error
@@ -177,7 +207,7 @@ public struct MLXModel: TextModel {
     /// Runs `request` in the loaded model's context: constrained to `schema` when given.
     static func generate(
         _ request: CompletionRequest, schema: String?, context: ModelContext, name: String,
-        limit: Int
+        limit: Int, loaded: Loaded
     ) async throws -> String {
         var messages: [Chat.Message] = []
         if let system = request.system {
@@ -216,10 +246,18 @@ public struct MLXModel: TextModel {
         let constraint = try GrammarConstraint(
             tokenizer: grammarTokenizer, jsonSchema: schema, fastForward: true,
             hostTokenizer: tokenizer)
+        let biases = await loaded.biases(for: name, tokenizer: tokenizer)
+        // The reserves near the limit where the closing nudge starts, then where closing is
+        // forced: worked out from the schema, as the library's adapter does.
+        let structural = CompletionReserve.estimate(schemaJSON: schema, tokenizer: tokenizer)
         var output = ""
         try GuidedGenerationLoop.run(
             input: input, context: context, constraint: constraint, maxTokens: maxTokens,
-            vocabSize: grammarTokenizer.vocabSize
+            vocabSize: grammarTokenizer.vocabSize,
+            completionReserve: max(structural * 3, maxTokens / 4),
+            hardReserve: structural * 8,
+            closingBias: biases.closing, whitespaceBias: biases.whitespace,
+            whitespaceTokenIDs: biases.whitespaceTokenIDs
         ) { delta in
             output += delta
             return true
@@ -227,3 +265,82 @@ public struct MLXModel: TextModel {
         return output
     }
 }
+
+/// A JSON Schema as text, with each object's properties in the order the model should write
+/// them. Guided generation writes fields in the order the schema lists them, and the order
+/// matters: a model that writes the summary before the title, say, tends to fall back to the
+/// file name for the title. The request's order is lost when it's parsed, but `required`, a
+/// list, keeps it, so properties follow `required`, then any others by name.
+enum SchemaText {
+    static func write(_ value: CarrelAppleProviders.JSONValue) -> String {
+        var out = ""
+        append(value, to: &out)
+        return out
+    }
+
+    static func append(_ value: CarrelAppleProviders.JSONValue, to out: inout String) {
+        switch value {
+        case .null: out += "null"
+        case .bool(let b): out += b ? "true" : "false"
+        case .number(let n):
+            out += n.rounded() == n && abs(n) < 1e15 ? String(Int(n)) : String(n)
+        case .string(let s): out += quoted(s)
+        case .array(let items):
+            out += "["
+            for (i, item) in items.enumerated() {
+                if i > 0 { out += "," }
+                append(item, to: &out)
+            }
+            out += "]"
+        case .object(let members):
+            let order = keys(of: members)
+            out += "{"
+            for (i, key) in order.enumerated() {
+                if i > 0 { out += "," }
+                out += quoted(key) + ":"
+                if key == "properties", case .object(let properties)? = members[key] {
+                    appendProperties(properties, order: requiredOrder(members), to: &out)
+                } else if let member = members[key] {
+                    append(member, to: &out)
+                }
+            }
+            out += "}"
+        }
+    }
+
+    /// An object's keys: `type` first, so the schema reads naturally, then by name.
+    static func keys(of members: [String: CarrelAppleProviders.JSONValue]) -> [String] {
+        members.keys.sorted { a, b in
+            a == "type" ? b != "type" : b == "type" ? false : a < b
+        }
+    }
+
+    static func requiredOrder(_ members: [String: CarrelAppleProviders.JSONValue]) -> [String] {
+        guard case .array(let required)? = members["required"] else { return [] }
+        return required.compactMap { if case .string(let s) = $0 { s } else { nil } }
+    }
+
+    static func appendProperties(
+        _ properties: [String: CarrelAppleProviders.JSONValue], order: [String], to out: inout String
+    ) {
+        let listed = order.filter { properties[$0] != nil }
+        let rest = properties.keys.filter { !listed.contains($0) }.sorted()
+        out += "{"
+        for (i, key) in (listed + rest).enumerated() {
+            if i > 0 { out += "," }
+            out += quoted(key) + ":"
+            if let property = properties[key] {
+                append(property, to: &out)
+            }
+        }
+        out += "}"
+    }
+
+    static func quoted(_ s: String) -> String {
+        let data = (try? JSONSerialization.data(withJSONObject: [s], options: [.fragmentsAllowed])) ?? Data()
+        let array = String(data: data, encoding: .utf8) ?? "[\"\"]"
+        return String(array.dropFirst().dropLast())
+    }
+}
+
+
