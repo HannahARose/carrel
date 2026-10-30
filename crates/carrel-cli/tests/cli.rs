@@ -442,3 +442,46 @@ fn ingest_reports_kinds_sizes_and_duplicates_without_changing_anything() {
         "the sample's one and the new one"
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn review_edit_opens_the_editor_and_saves_a_card_that_checks_out() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    let editor = sandbox.path("editor.sh");
+    std::fs::write(
+        &editor,
+        "#!/bin/sh\nawk '{sub(/^title: .*/, \"title: Edited by hand\")}1' \"$1\" > \"$1.new\" && mv \"$1.new\" \"$1\"\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&editor, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let run = |editor: &str| {
+        std::process::Command::new(env!("CARGO_BIN_EXE_carrel"))
+            .args(["review", "edit", "00000001"])
+            .current_dir(&root)
+            .env("CARREL_CONFIG_DIR", sandbox.path("config"))
+            .env_remove("VISUAL")
+            .env("EDITOR", editor)
+            .output()
+            .unwrap()
+    };
+    let out = run(editor.to_str().unwrap());
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout),
+        "Saved the card for 00000001 (proposed)\n"
+    );
+    let shown = sandbox.json(&root, &["review", "show", "00000001"]);
+    assert_eq!(shown["card"]["title"], "Edited by hand");
+
+    // An editor that saves nothing changes nothing.
+    let out = run("true");
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "Nothing changed\n");
+    let out = run("false");
+    assert!(!out.status.success(), "a failed editor is an error");
+}

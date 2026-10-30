@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::path::Path;
 
-use carrel_core::actions;
+use carrel_core::actions::{self, Edited};
 use carrel_core::archive::Archive;
 use carrel_core::backup::Backups;
 use carrel_core::ingest::filing::{Filed, Placement};
@@ -289,5 +289,85 @@ fn decide(
             })).collect::<Vec<_>>(),
             "commit": outcome.commit,
         }),
+    ))
+}
+
+/// The editor to open: `$VISUAL`, then `$EDITOR`, then `notepad` on Windows or `vi`. Its
+/// words are split on spaces, so `code --wait` works.
+fn editor() -> Vec<String> {
+    let chosen = ["VISUAL", "EDITOR"]
+        .iter()
+        .find_map(|v| std::env::var(v).ok().filter(|e| !e.trim().is_empty()))
+        .unwrap_or_else(|| if cfg!(windows) { "notepad" } else { "vi" }.to_owned());
+    chosen.split_whitespace().map(str::to_owned).collect()
+}
+
+/// Opens `path` in the editor and waits for it to close.
+fn run_editor(path: &Path) -> Result<(), Failure> {
+    let words = editor();
+    let (program, args) = words
+        .split_first()
+        .ok_or_else(|| Failure::new("no editor to open; set VISUAL or EDITOR"))?;
+    let status = std::process::Command::new(program)
+        .args(args)
+        .arg(path)
+        .status()
+        .map_err(|e| Failure::new(format!("couldn't open the editor {program}: {e}")))?;
+    if !status.success() {
+        return Err(Failure::new(format!(
+            "the editor {program} exited with {status}; nothing changed"
+        )));
+    }
+    Ok(())
+}
+
+/// `carrel review edit ID`: opens the proposal's card in the editor, checks it when saved,
+/// and reopens it with the problems listed until it checks out or is left unchanged.
+pub fn edit(archive: Option<&Path>, id: &str) -> Result<Report, Failure> {
+    let archive = locate(archive)?;
+    let mut entry = actions::proposals(&archive, &[id.to_owned()])?
+        .pop()
+        .ok_or_else(|| Failure::new(format!("no proposal {id}")))?;
+    let file = std::env::temp_dir().join(format!("carrel-{}.yaml", entry.id));
+    let mut text = actions::draft_text(&archive, &entry, &[])?;
+    let result = loop {
+        std::fs::write(&file, &text).map_err(|e| Failure::io(&file, &e))?;
+        run_editor(&file)?;
+        let edited = std::fs::read_to_string(&file).map_err(|e| Failure::io(&file, &e))?;
+        if edited == text {
+            break "Nothing changed\n".to_owned();
+        }
+        match actions::apply_draft(&archive, &mut entry, &edited)? {
+            Edited::Unchanged => break "Nothing changed\n".to_owned(),
+            Edited::Changed => {
+                ReviewQueue::of(&archive).save(&entry)?;
+                break format!(
+                    "Saved the card for {} ({})\n",
+                    short_id(entry.id),
+                    entry.state.as_str()
+                );
+            }
+            Edited::Problems(problems) => {
+                // The owner's edits stay; the problems go on top, replacing earlier ones.
+                let mut again = String::new();
+                for problem in &problems {
+                    writeln!(again, "# To fix: {problem}").unwrap();
+                }
+                again.push_str("#\n");
+                for line in edited
+                    .lines()
+                    .skip_while(|l| l.starts_with("# To fix: ") || *l == "#")
+                {
+                    again.push_str(line);
+                    again.push('\n');
+                }
+                text = again;
+            }
+        }
+    };
+    let _ = std::fs::remove_file(&file);
+    Ok(Report::new(
+        result,
+        serde_json::to_value(&entry).unwrap_or(Value::Null),
     ))
 }
