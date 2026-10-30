@@ -349,7 +349,8 @@ enum ReviewAction {
         #[arg(required = true)]
         ids: Vec<String>,
     },
-    /// Edit a proposal's card in your editor ($VISUAL or $EDITOR) before approving it.
+    /// Edit a proposal's card in your editor (the `editor` setting, $VISUAL or $EDITOR)
+    /// before approving it.
     Edit {
         /// The proposal's identifier, or its start or end.
         id: String,

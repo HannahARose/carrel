@@ -6,7 +6,7 @@ Carrel is a personal archivist with native apps for macOS, iPadOS and iOS and a 
 
 Every document is analyzed on your own devices. Nothing is sent anywhere unless you explicitly opt in.
 
-> **Status:** [v0.1.0](https://github.com/HannahARose/carrel/releases/tag/v0.1.0) is out: the archive format, Rust core and first `carrel` commands. Next: ingest from the CLI (v0.2). The Mac app follows in v0.5.
+> **Status:** v0.2 is nearly done: ingest from the `carrel` CLI and its interactive mode, on macOS, Linux and Windows, with review, questions, history and undo, backups and local models. [v0.1.0](https://github.com/HannahARose/carrel/releases/tag/v0.1.0) is the latest release. The Mac app follows in v0.5. New here? Start with [Getting started](docs/guide/getting-started.md).
 
 ## Principles
 
@@ -40,12 +40,16 @@ gh attestation verify carrel-0.2.0-linux-x86_64.tar.gz --repo HannahARose/carrel
 
 The binaries aren't signed yet (that comes with the Mac app), so on macOS a browser download needs `xattr -d com.apple.quarantine` on each program before it runs; downloads with `curl` or `gh release download` don't. Then download a model for drafting cards with `carrel models`, unless your Mac has Apple's on-device model.
 
-## Architecture (planned)
+Until then, build from source as [Getting started](docs/guide/getting-started.md#1-install) describes.
+
+## Architecture
 
 - **Core:** Rust, shared by the apps and the CLI; builds on macOS, Linux and Windows.
 - **Apps:** SwiftUI for macOS, iPadOS and iOS, using the core through generated Swift bindings (UniFFI).
 - **Providers:** models and text extraction come from separate provider programs: Apple's Foundation Models, MLX, PDFKit and Vision on Apple devices, and portable ones (llama.cpp, a Rust PDF reader, Tesseract) elsewhere.
-- **Sync:** iCloud Drive, with a CloudKit lock so only one device writes history at a time.
+- **Sync (planned, v2.0):** iCloud Drive, with a CloudKit lock so only one device writes history at a time.
+
+[docs/dev/architecture.md](docs/dev/architecture.md) explains how it's built today, with diagrams.
 
 ## Roadmap
 
@@ -67,6 +71,17 @@ Details are on the [wiki's Roadmap page](https://github.com/HannahARose/carrel/w
 
 ## Documentation
 
+**Using Carrel:**
+
+- **[Getting started](docs/guide/getting-started.md):** from installing to your first filed items.
+- **[User guide](docs/guide/user-guide.md):** each part of Carrel, and how to use it.
+- **[Commands](docs/guide/commands.md):** every command, option and key.
+
+**Working on Carrel:**
+
+- **[Architecture](docs/dev/architecture.md):** the parts, how they communicate, what they keep on disk, and the main flows.
+- **[Code map](docs/dev/code-map.md):** where each part is in the code, linked to the code documentation.
+- **[What separating the parts costs](docs/dev/overhead.md):** measured time, memory and disk.
 - **[Wiki](https://github.com/HannahARose/carrel/wiki):** design, archive format overview, roadmap, development setup and workflow.
 - **[Code documentation](https://hrose.me/carrel/):** every module, type and function, built from the `dev` branch on each change.
 - **[FORMAT.md](FORMAT.md):** the archive format specification.
