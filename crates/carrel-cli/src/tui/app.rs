@@ -3,15 +3,16 @@
 
 use std::collections::BTreeSet;
 
-use carrel_core::archive::Archive;
+use carrel_core::archive::{Archive, Collection};
 use carrel_core::card::Id;
 use carrel_core::history::{Entry, History, HistoryError};
-use carrel_core::questions::QuestionQueue;
+use carrel_core::questions::{QuestionEntry, QuestionQueue};
 use carrel_core::review::{ReviewEntry, ReviewQueue};
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 
 use super::review::Handled;
 pub use super::review::Picker;
+pub use super::screens::Input;
 use crate::Failure;
 
 /// The screens, in the order of their number keys.
@@ -94,6 +95,15 @@ pub enum Effect {
     },
     /// Edit this proposal's card in the owner's editor.
     Edit(Id),
+    /// Answer this question.
+    Answer {
+        /// The question.
+        id: Id,
+        /// A sentence for a term, or a collection's path.
+        answer: String,
+    },
+    /// Dismiss this question.
+    Dismiss(Id),
 }
 
 /// The interactive mode's state.
@@ -102,14 +112,8 @@ pub struct App {
     pub archive: Archive,
     /// The current screen.
     pub tab: Tab,
-    /// Each screen's text, for the screens that show a report.
+    /// What `carrel status` shows.
     pub status: Vec<String>,
-    /// The review queue as `carrel review` lists it.
-    pub review: Vec<String>,
-    /// The question queue as `carrel questions` lists it.
-    pub questions: Vec<String>,
-    /// Collections and their items.
-    pub browse: Vec<String>,
     /// How far each report screen is scrolled.
     pub scroll: [u16; 5],
     /// The history, newest first.
@@ -130,6 +134,26 @@ pub struct App {
     pub picker: Option<Picker>,
     /// Work running in the background, described for the owner.
     pub busy: Option<String>,
+    /// The questions, most items first.
+    pub asked: Vec<QuestionEntry>,
+    /// The chosen question.
+    pub asked_chosen: usize,
+    /// The collections, for Browse.
+    pub collections: Vec<Collection>,
+    /// Browse's chosen collection.
+    pub browse_collection: usize,
+    /// The chosen collection's cards, or what a search found, as card paths and titles.
+    pub browse_items: Vec<(String, String)>,
+    /// Browse's chosen item.
+    pub browse_item: usize,
+    /// Whether Browse's keys move among items rather than collections.
+    pub browse_in_items: bool,
+    /// The search shown in Browse, if any.
+    pub search: Option<String>,
+    /// The chosen item's card in full, as `carrel show` gives it.
+    pub card: Vec<String>,
+    /// A line being typed, while it's open.
+    pub input: Option<Input>,
     /// A line for the owner about the last thing that happened.
     pub message: Option<String>,
     /// A question waiting for yes or no.
@@ -155,9 +179,6 @@ impl App {
             archive,
             tab: Tab::Status,
             status: Vec::new(),
-            review: Vec::new(),
-            questions: Vec::new(),
-            browse: Vec::new(),
             scroll: [0; 5],
             history: Vec::new(),
             selected: 0,
@@ -168,6 +189,16 @@ impl App {
             detail: Vec::new(),
             picker: None,
             busy: None,
+            asked: Vec::new(),
+            asked_chosen: 0,
+            collections: Vec::new(),
+            browse_collection: 0,
+            browse_items: Vec::new(),
+            browse_item: 0,
+            browse_in_items: false,
+            search: None,
+            card: Vec::new(),
+            input: None,
             message: None,
             confirm: None,
             help: false,
@@ -187,9 +218,6 @@ impl App {
         let root_path = self.archive.root().to_owned();
         let root = Some(root_path.as_path());
         self.status = lines(&crate::commands::status(root)?.text);
-        self.review = lines(&crate::review::list(root, false)?.text);
-        self.questions = lines(&crate::questions::list(root)?.text);
-        self.browse = browse(&self.archive)?;
         self.history = match History::open(&self.archive) {
             Ok(history) => history.log()?,
             Err(HistoryError::NotInitialized) => Vec::new(),
@@ -203,6 +231,8 @@ impl App {
             questions.len(),
         );
         self.load_queue(entries);
+        self.load_questions(questions);
+        self.load_browse()?;
         Ok(())
     }
 
@@ -210,10 +240,7 @@ impl App {
     pub fn report(&self) -> &[String] {
         match self.tab {
             Tab::Status => &self.status,
-            Tab::Review => &self.review,
-            Tab::Questions => &self.questions,
-            Tab::Browse => &self.browse,
-            Tab::History => &[],
+            _ => &[],
         }
     }
 
@@ -237,16 +264,31 @@ impl App {
             ];
         }
         let mut keys = vec![("1-5", "screens")];
+        if let Some(input) = &self.input {
+            return vec![
+                ("type", input.prompt()),
+                ("Enter", "done"),
+                ("Esc", "cancel"),
+            ];
+        }
         if self.picker.is_some() {
             return vec![
                 ("↑↓", "choose"),
                 ("type", "filter"),
-                ("Enter", "move there"),
+                ("Enter", "choose it"),
                 ("Esc", "cancel"),
             ];
         }
         match self.tab {
             Tab::History => keys.extend([("↑↓", "choose"), ("u", "undo")]),
+            Tab::Questions => {
+                keys.extend([("↑↓", "choose"), ("Enter", "answer"), ("d", "dismiss")]);
+            }
+            Tab::Browse => keys.extend([
+                ("↑↓", "choose"),
+                ("←→", "collections/items"),
+                ("/", "search"),
+            ]),
             _ => keys.push(("↑↓", "scroll")),
         }
         keys.extend([("^R", "refresh"), ("?", "help"), ("q", "quit")]);
@@ -256,6 +298,10 @@ impl App {
     pub(super) fn move_by(&mut self, delta: i32) {
         if self.tab == Tab::Review {
             self.choose(delta);
+        } else if self.tab == Tab::Questions {
+            self.asked_chosen = step(self.asked_chosen, delta, self.asked.len());
+        } else if self.tab == Tab::Browse {
+            self.browse_move(delta);
         } else if self.tab == Tab::History {
             let last = self.history.len().saturating_sub(1);
             let next = i64::try_from(self.selected).unwrap_or(0) + i64::from(delta);
@@ -290,13 +336,20 @@ impl App {
             self.help = false;
             return None;
         }
+        if self.input.is_some() {
+            return self.input_key(key);
+        }
         if self.picker.is_some() {
             return self.picker_key(key);
         }
         self.message = None;
-        if self.tab == Tab::Review
-            && let Handled::Yes(effect) = self.review_key(key)
-        {
+        let handled = match self.tab {
+            Tab::Review => self.review_key(key),
+            Tab::Questions => self.questions_key(key),
+            Tab::Browse => self.browse_key(key),
+            _ => Handled::No,
+        };
+        if let Handled::Yes(effect) = handled {
             return effect;
         }
         match key.code {
@@ -351,33 +404,10 @@ impl App {
     }
 }
 
-/// Collections and their items, one line each, indented by depth.
-fn browse(archive: &Archive) -> Result<Vec<String>, Failure> {
-    let mut out = Vec::new();
-    let collections = archive.collections()?;
-    let items = archive.items()?;
-    for collection in &collections {
-        let depth = collection.path.matches('/').count();
-        let indent = "  ".repeat(depth);
-        let mine: Vec<_> = items
-            .iter()
-            .filter(|i| {
-                i.card
-                    .rsplit_once('/')
-                    .is_some_and(|(folder, _)| folder == collection.path)
-            })
-            .collect();
-        out.push(format!(
-            "{indent}{}  ({} item{})",
-            collection.doc.title,
-            mine.len(),
-            if mine.len() == 1 { "" } else { "s" }
-        ));
-        for item in mine {
-            let name = item.card.rsplit('/').next().unwrap_or(&item.card);
-            let name = name.strip_suffix(".md").unwrap_or(name);
-            out.push(format!("{indent}    {name}"));
-        }
-    }
-    Ok(out)
+/// `index` moved by `delta` within `len` items.
+pub(super) fn step(index: usize, delta: i32, len: usize) -> usize {
+    let next = i64::try_from(index).unwrap_or(0) + i64::from(delta);
+    usize::try_from(next.max(0))
+        .unwrap_or(0)
+        .min(len.saturating_sub(1))
 }
