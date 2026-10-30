@@ -201,6 +201,9 @@ pub struct ReviewEntry {
     /// Every provider call made for it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub attempts: Vec<Attempt>,
+    /// Why the card's sensitivity is what it is, when it's sensitive or restricted.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sensitivity_reasons: Vec<String>,
     /// Keys this version doesn't know.
     #[serde(flatten)]
     pub extra: Extra,
