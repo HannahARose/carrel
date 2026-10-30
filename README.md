@@ -6,7 +6,7 @@ Carrel is a personal archivist with native apps for macOS, iPadOS and iOS and a 
 
 Every document is analyzed on your own devices. Nothing is sent anywhere unless you explicitly opt in.
 
-> **Status:** v0.2 is nearly done: ingest from the `carrel` CLI and its interactive mode, on macOS, Linux and Windows, with review, questions, history and undo, backups and local models. [v0.1.0](https://github.com/HannahARose/carrel/releases/tag/v0.1.0) is the latest release. The Mac app follows in v0.5. New here? Start with [Getting started](docs/guide/getting-started.md).
+> **Status:** [v0.2.0](https://github.com/HannahARose/carrel/releases/tag/v0.2.0) is the latest release: ingest from the `carrel` CLI and its interactive mode, on macOS, Linux and Windows, with review, questions, history and undo, backups and local models. v0.3 adds checking items out and editing cards; the Mac app follows in v0.5. New here? Start with [Getting started](docs/guide/getting-started.md).
 
 ## Principles
 
@@ -30,7 +30,7 @@ Every document is analyzed on your own devices. Nothing is sent anywhere unless 
 
 ## Install
 
-From v0.2, each [release](https://github.com/HannahARose/carrel/releases) has an archive for macOS (Apple silicon and Intel), Linux (x86_64 and arm64) and Windows (x86_64), with `SHA256SUMS` and build provenance attestations. An archive holds `carrel` and everything it runs: the network helper, the llama.cpp provider, the extraction provider (PDF text, and OCR when [Tesseract](https://tesseract-ocr.github.io) is installed), Kopia for backups, and on macOS the Apple provider. Put them together in a folder on your `PATH`.
+From v0.2, each [release](https://github.com/HannahARose/carrel/releases) has an archive for macOS (Apple silicon and Intel), Linux (x86_64 and arm64) and Windows (x86_64), with `SHA256SUMS` and build provenance attestations. An archive holds `carrel` and everything it runs: the network helper, the llama.cpp provider, the extraction provider (PDF text, and OCR when [Tesseract](https://tesseract-ocr.github.io) is installed), Kopia for backups, and on macOS the Apple provider and, for Apple silicon, the MLX provider. Put them together in a folder on your `PATH`.
 
 To check a download came from this repository's release workflow:
 
