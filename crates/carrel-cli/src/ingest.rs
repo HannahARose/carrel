@@ -11,11 +11,13 @@ use carrel_core::card::Kind;
 use carrel_core::coordinator::{Coordinator, DEFAULT_LEASE, DiskLock};
 use carrel_core::ingest::card::{Context, Draft, Glossary, Vocabulary, draft};
 use carrel_core::ingest::filing::{Outcome, Placement, file_batch, files_itself};
+use carrel_core::ingest::questions::ask;
 use carrel_core::ingest::route::{Route, Router, RoutingRules};
 use carrel_core::ingest::sensitivity::{Assessment, assess};
 use carrel_core::ingest::text::{ItemText, read};
 use carrel_core::ingest::{Batch, Candidate, IntakeOptions, plan};
 use carrel_core::providers::Registry;
+use carrel_core::questions::{QuestionEntry, QuestionQueue, mark_waiting};
 use carrel_core::review::{ReviewEntry, ReviewQueue, short_id};
 use serde_json::{Value, json};
 
@@ -75,7 +77,7 @@ pub fn ingest(
         device: identity.device,
     };
     let assessments = assess_all(&registry, &batch, &candidates, &texts, &routes);
-    let entries: Vec<Option<ReviewEntry>> = candidates
+    let mut entries: Vec<Option<ReviewEntry>> = candidates
         .iter()
         .zip(
             texts
@@ -88,12 +90,10 @@ pub fn ingest(
             _ => None,
         })
         .collect();
+    let questions = ask_about(&archive, &collections, &glossary, &mut entries);
     let mut auto_filed = None;
     if !dry_run {
-        let queue = ReviewQueue::of(&archive);
-        for entry in entries.iter().flatten() {
-            queue.save(entry)?;
-        }
+        save(&archive, &entries, &questions)?;
         auto_filed = file_by_rule(&archive, &entries, &routes, identity.device)?;
     }
 
@@ -109,7 +109,14 @@ pub fn ingest(
         writeln!(out, "warning: {problem}").unwrap();
     }
     let saved = entries.iter().flatten().count();
-    closing(&mut out, auto_filed.as_ref(), saved, dry_run, batch.id);
+    closing(
+        &mut out,
+        auto_filed.as_ref(),
+        &questions,
+        saved,
+        dry_run,
+        batch.id,
+    );
 
     let items = items_json(&candidates, &texts, &drafts);
     Ok(Report::new(
@@ -125,8 +132,34 @@ pub fn ingest(
     ))
 }
 
-/// What was filed by rule, and what was saved for review.
+/// What was filed by rule, what was asked, and what was saved for review.
 fn closing(
+    out: &mut String,
+    auto_filed: Option<&Outcome>,
+    questions: &[QuestionEntry],
+    proposed: usize,
+    dry_run: bool,
+    batch: Id,
+) {
+    if !questions.is_empty() {
+        out.push_str("\nQuestions (answer them with `carrel questions answer`):\n");
+        for question in questions {
+            writeln!(
+                out,
+                "  {}  {} ({} item{})",
+                short_id(question.id),
+                question.question,
+                question.items.len(),
+                if question.items.len() == 1 { "" } else { "s" }
+            )
+            .unwrap();
+        }
+    }
+    closing_lines(out, auto_filed, proposed, dry_run, batch);
+}
+
+/// What was filed by rule, and how many proposals were saved.
+fn closing_lines(
     out: &mut String,
     auto_filed: Option<&Outcome>,
     proposed: usize,
@@ -158,6 +191,38 @@ fn closing(
         )
         .unwrap();
     }
+}
+
+/// Saves the batch's proposals and questions.
+fn save(
+    archive: &Archive,
+    entries: &[Option<ReviewEntry>],
+    questions: &[QuestionEntry],
+) -> Result<(), Failure> {
+    let queue = ReviewQueue::of(archive);
+    for entry in entries.iter().flatten() {
+        queue.save(entry)?;
+    }
+    let asked = QuestionQueue::of(archive);
+    for question in questions {
+        asked.save(question)?;
+    }
+    Ok(())
+}
+
+/// The questions the batch raises, with the proposals they name marked as waiting.
+fn ask_about(
+    archive: &Archive,
+    collections: &[carrel_core::archive::Collection],
+    glossary: &Glossary,
+    entries: &mut [Option<ReviewEntry>],
+) -> Vec<QuestionEntry> {
+    let proposed: Vec<ReviewEntry> = entries.iter().flatten().cloned().collect();
+    let questions = ask(archive, collections, glossary, &proposed);
+    for entry in entries.iter_mut().flatten() {
+        mark_waiting(entry, &questions);
+    }
+    questions
 }
 
 /// Files the proposals an owner rule marks `auto_file`, holding the writer lease.

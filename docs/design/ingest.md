@@ -122,6 +122,10 @@ When several items in a batch depend on the same unknown (a project name, an acr
 
 v0.2 asks only two kinds of question: what a recurring unknown term is, and which collection a cluster of low-confidence items belongs in.
 
+- **Terms** come from item names, without a model, so a batch always asks the same questions. A term is a hyphenated run (`scope-ds` in `scope-ds-plan.pdf`) or a word that looks like an identifier: an acronym, letters mixed with digits, or `CamelCase`. It's asked about when it appears in at least two names and the glossary, the tag vocabularies, the collections' names and the archive's name don't already explain it.
+- **Where items go** is asked only about a term the glossary already explains, when at least two of its items still have low confidence. A new term is asked about first, since its answer often settles the placement.
+- `carrel questions` lists the questions, `answer ID ...` answers one, and `dismiss ID` drops it. Answering a term adds the fact to the glossary as one history commit and drafts its items again; answering a collection points its items there.
+
 ### 11. Proposals and review
 
 Each item's proposal is a JSON file, `_System/queue/review/<proposal-id>.json`, specified in FORMAT.md §7.9:

@@ -600,6 +600,34 @@ A device only ever writes to its own inbox folder. The writer applies inbox file
 
 When an approved or held entry has been archived, programs remove the entry; the history commit (§8.2) records what was filed. A rejected entry is removed once the owner has seen the batch summary. Entries whose `source.device` is another device can't be archived there; they wait for that device.
 
+#### Question entries
+
+When several items depend on the same unknown, a program asks the owner one question instead of guessing on each. Each question is a JSON file in `_System/queue/questions/`, named for its `id`:
+
+```json
+{
+  "carrel": "question",
+  "format": "1.0",
+  "id": "01a18701-0500-776a-9867-08f000000002",
+  "batch": "01a18701-0500-776a-9867-08f0000000b1",
+  "created": "2026-10-29T16:20:05-07:00",
+  "kind": "term",
+  "subject": "scope-ds",
+  "question": "What is “scope-ds”?",
+  "items": ["01a18701-0500-776a-9867-08f000000001"]
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `kind` | `term` (what a recurring term means; the answer becomes a glossary fact, §7.3) or `collection` (which collection the items belong in; the answer is a collection's path) |
+| `subject` | The term the question is about, as it appears in the items' names |
+| `question` | The question in words |
+| `items` | The review entries waiting on the answer. Programs mark each with a problem whose `stage` is `question`, and set it to `needs-owner` |
+| `choices` | For a `collection` question, the collections' paths to choose from |
+
+Once a question is answered or dismissed, programs remove it and clear the problem from its items. Items waiting on a term are drafted again with the new fact.
+
 ### 7.10 Devices
 
 `_System/devices/<device-id>/device.json` records a device's name, type and capability profile. `desk.json` lists the desk items tracked on that device with their local paths. Paths in `desk.json` are only meaningful on that device.

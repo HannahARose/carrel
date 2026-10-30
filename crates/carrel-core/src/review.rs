@@ -209,7 +209,7 @@ pub struct ReviewEntry {
     pub extra: Extra,
 }
 
-/// Why the queue couldn't be read or written.
+/// Why a queue couldn't be read or written.
 #[derive(Debug)]
 pub enum ReviewError {
     /// A file operation failed.
@@ -226,10 +226,10 @@ pub enum ReviewError {
         /// What's wrong.
         message: String,
     },
-    /// No entry matches.
-    NotFound(String),
-    /// Several entries start with the identifier given.
-    Ambiguous(String),
+    /// No entry matches: what kind of entry, and the identifier given.
+    NotFound(&'static str, String),
+    /// Several entries match the identifier given: what kind, and the identifier.
+    Ambiguous(&'static str, String),
     /// The archive uses a newer format and must not be changed.
     ReadOnly,
 }
@@ -239,8 +239,10 @@ impl std::fmt::Display for ReviewError {
         match self {
             Self::Io { path, source } => write!(f, "{}: {source}", path.display()),
             Self::Invalid { path, message } => write!(f, "{}: {message}", path.display()),
-            Self::NotFound(id) => write!(f, "no proposal {id}"),
-            Self::Ambiguous(id) => write!(f, "several proposals start with {id}; give more of it"),
+            Self::NotFound(what, id) => write!(f, "no {what} {id}"),
+            Self::Ambiguous(what, id) => {
+                write!(f, "several {what}s match {id}; give more of it")
+            }
             Self::ReadOnly => f.write_str("the archive uses a newer format and is read-only"),
         }
     }
@@ -262,20 +264,60 @@ fn io(path: &Path) -> impl FnOnce(std::io::Error) -> ReviewError + '_ {
     }
 }
 
-/// An archive's review queue.
-#[derive(Debug, Clone)]
-pub struct ReviewQueue {
-    dir: PathBuf,
-    read_only: bool,
+/// An entry kept in one of the queues in `_System/queue/` (FORMAT.md §7.9), one JSON file
+/// per entry named for its identifier.
+pub trait QueueEntry: Serialize + serde::de::DeserializeOwned {
+    /// The queue's folder, relative to the archive root.
+    const DIR: &'static str;
+    /// What an entry is called in messages, such as `proposal`.
+    const NOUN: &'static str;
+    /// The entry's identifier.
+    fn id(&self) -> Id;
+    /// What's wrong with the entry beyond its shape, if anything.
+    ///
+    /// # Errors
+    ///
+    /// A message saying what's wrong.
+    fn check(&self) -> Result<(), String> {
+        Ok(())
+    }
 }
 
-impl ReviewQueue {
-    /// The review queue of `archive`.
+impl QueueEntry for ReviewEntry {
+    const DIR: &'static str = REVIEW_DIR;
+    const NOUN: &'static str = "proposal";
+
+    fn id(&self) -> Id {
+        self.id
+    }
+
+    fn check(&self) -> Result<(), String> {
+        if self.proposed_tags.len() > 1 {
+            return Err("at most one proposed tag is allowed".into());
+        }
+        Ok(())
+    }
+}
+
+/// One of an archive's queues.
+#[derive(Debug, Clone)]
+pub struct Queue<T> {
+    dir: PathBuf,
+    read_only: bool,
+    entries: std::marker::PhantomData<T>,
+}
+
+/// The review queue: proposals to file items.
+pub type ReviewQueue = Queue<ReviewEntry>;
+
+impl<T: QueueEntry> Queue<T> {
+    /// The queue of `archive`.
     #[must_use]
     pub fn of(archive: &Archive) -> Self {
         Self {
-            dir: archive.root().join(REVIEW_DIR),
+            dir: archive.root().join(T::DIR),
             read_only: archive.access() == crate::Access::ReadOnly,
+            entries: std::marker::PhantomData,
         }
     }
 
@@ -288,7 +330,7 @@ impl ReviewQueue {
     /// # Errors
     ///
     /// [`ReviewError::Io`] if the queue folder can't be read.
-    pub fn list(&self) -> Result<(Vec<ReviewEntry>, Vec<ReviewError>), ReviewError> {
+    pub fn list(&self) -> Result<(Vec<T>, Vec<ReviewError>), ReviewError> {
         let entries = match std::fs::read_dir(&self.dir) {
             Ok(entries) => entries,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
@@ -312,7 +354,7 @@ impl ReviewQueue {
             }
         }
         // Identifiers are `UUIDv7`s, so they sort by creation time.
-        good.sort_by_key(|e: &ReviewEntry| e.id.0);
+        good.sort_by_key(|e: &T| e.id().0);
         Ok((good, bad))
     }
 
@@ -323,18 +365,18 @@ impl ReviewQueue {
     /// # Errors
     ///
     /// [`ReviewError::NotFound`], [`ReviewError::Ambiguous`], or an error reading the queue.
-    pub fn find(&self, id: &str) -> Result<ReviewEntry, ReviewError> {
+    pub fn find(&self, id: &str) -> Result<T, ReviewError> {
         let wanted = id.to_ascii_lowercase();
         let (entries, _) = self.list()?;
         let mut matches = entries.into_iter().filter(|e| {
-            let full = e.id.to_string();
+            let full = e.id().to_string();
             full.starts_with(&wanted) || full.ends_with(&wanted)
         });
         let first = matches
             .next()
-            .ok_or_else(|| ReviewError::NotFound(id.to_owned()))?;
+            .ok_or_else(|| ReviewError::NotFound(T::NOUN, id.to_owned()))?;
         if matches.next().is_some() {
-            return Err(ReviewError::Ambiguous(id.to_owned()));
+            return Err(ReviewError::Ambiguous(T::NOUN, id.to_owned()));
         }
         Ok(first)
     }
@@ -349,13 +391,13 @@ impl ReviewQueue {
     /// # Panics
     ///
     /// Never: entries always serialize.
-    pub fn save(&self, entry: &ReviewEntry) -> Result<(), ReviewError> {
+    pub fn save(&self, entry: &T) -> Result<(), ReviewError> {
         if self.read_only {
             return Err(ReviewError::ReadOnly);
         }
         std::fs::create_dir_all(&self.dir).map_err(io(&self.dir))?;
-        let path = self.path(entry.id);
-        let temp = self.dir.join(format!(".{}.json.tmp", entry.id));
+        let path = self.path(entry.id());
+        let temp = self.dir.join(format!(".{}.json.tmp", entry.id()));
         let text = serde_json::to_string_pretty(entry).expect("entries always serialize") + "\n";
         std::fs::write(&temp, text).map_err(io(&temp))?;
         std::fs::rename(&temp, &path).map_err(io(&path))
@@ -374,7 +416,7 @@ impl ReviewQueue {
         match std::fs::remove_file(&path) {
             Ok(()) => Ok(()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                Err(ReviewError::NotFound(id.to_string()))
+                Err(ReviewError::NotFound(T::NOUN, id.to_string()))
             }
             Err(e) => Err(io(&path)(e)),
         }
@@ -389,13 +431,13 @@ pub fn short_id(id: Id) -> String {
     full[full.len() - 8..].to_owned()
 }
 
-fn read(path: &Path) -> Result<ReviewEntry, ReviewError> {
+fn read<T: QueueEntry>(path: &Path) -> Result<T, ReviewError> {
     let text = std::fs::read_to_string(path).map_err(io(path))?;
-    let entry: ReviewEntry = serde_json::from_str(&text).map_err(|e| ReviewError::Invalid {
+    let entry: T = serde_json::from_str(&text).map_err(|e| ReviewError::Invalid {
         path: path.to_owned(),
         message: e.to_string(),
     })?;
-    let expected = format!("{}.json", entry.id);
+    let expected = format!("{}.json", entry.id());
     if path
         .file_name()
         .is_some_and(|n| n.to_string_lossy() != expected)
@@ -405,11 +447,9 @@ fn read(path: &Path) -> Result<ReviewEntry, ReviewError> {
             message: format!("the file is named for another entry; expected {expected}"),
         });
     }
-    if entry.proposed_tags.len() > 1 {
-        return Err(ReviewError::Invalid {
-            path: path.to_owned(),
-            message: "at most one proposed tag is allowed".into(),
-        });
-    }
+    entry.check().map_err(|message| ReviewError::Invalid {
+        path: path.to_owned(),
+        message,
+    })?;
     Ok(entry)
 }
