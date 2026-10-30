@@ -12,7 +12,7 @@ use crate::card::Sensitivity;
 use crate::coordinator::{Coordinator, CoordinatorError, DEFAULT_LEASE, DiskLock, Holder};
 use crate::history::{Change, History, HistoryError, Operation};
 use crate::ingest::filing::{BatchError, Outcome, Placement, file_batch};
-use crate::ingest::run::{Run, run};
+use crate::ingest::run::{Progress, Run, run_with_progress};
 use crate::ingest::{IngestError, IntakeOptions};
 use crate::providers::Registry;
 use crate::questions::{QuestionEntry, QuestionQueue, add_fact, clear_waiting, redirect};
@@ -361,7 +361,8 @@ pub struct Ingested {
 }
 
 /// Runs ingest over `paths` as `holder` and saves the proposals and questions, then files
-/// those an owner rule marks `auto_file`. With `save` false nothing is saved or filed.
+/// those an owner rule marks `auto_file`, calling `progress` as it goes. For a dry run that
+/// saves nothing, use [`run_with_progress`] alone.
 ///
 /// # Errors
 ///
@@ -373,12 +374,9 @@ pub fn ingest(
     options: IntakeOptions,
     holder: Holder,
     backups: Option<&dyn Backups>,
-    save: bool,
+    progress: &mut dyn FnMut(Progress<'_>),
 ) -> Result<Ingested, ActionError> {
-    let run = run(archive, registry, paths, options, holder.device)?;
-    if !save {
-        return Ok(Ingested { run, filed: None });
-    }
+    let run = run_with_progress(archive, registry, paths, options, holder.device, progress)?;
     run.save(archive)?;
     let chosen = run.filed_by_rule();
     let filed = if chosen.is_empty() {
@@ -428,7 +426,16 @@ pub fn redraft(
         each: false,
         whole: true,
     };
-    ingest(archive, registry, &paths, options, holder, backups, true).map(Some)
+    ingest(
+        archive,
+        registry,
+        &paths,
+        options,
+        holder,
+        backups,
+        &mut |_| {},
+    )
+    .map(Some)
 }
 
 /// The card fields the owner edits in a proposal (`docs/design/interactive.md`).

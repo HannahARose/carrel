@@ -53,6 +53,59 @@ pub fn name(candidate: &Candidate) -> String {
     )
 }
 
+/// A stage of an ingest run. Each goes through every item before the next starts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Stage {
+    /// Reading each item's text.
+    Reading,
+    /// Drafting each card with a model.
+    Drafting,
+    /// Choosing each item's collection.
+    Routing,
+    /// Rating each item's sensitivity.
+    Rating,
+}
+
+impl Stage {
+    /// How many stages a run has.
+    pub const COUNT: usize = 4;
+
+    /// The stage's place in the run, from 1.
+    #[must_use]
+    pub fn number(self) -> usize {
+        match self {
+            Self::Reading => 1,
+            Self::Drafting => 2,
+            Self::Routing => 3,
+            Self::Rating => 4,
+        }
+    }
+
+    /// What it does, for a progress line.
+    #[must_use]
+    pub fn describe(self) -> &'static str {
+        match self {
+            Self::Reading => "Reading",
+            Self::Drafting => "Drafting cards",
+            Self::Routing => "Choosing collections",
+            Self::Rating => "Rating sensitivity",
+        }
+    }
+}
+
+/// How far a run has got: `done` of `total` items through `stage`, and the one starting now.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Progress<'a> {
+    /// The stage.
+    pub stage: Stage,
+    /// Items finished in this stage.
+    pub done: usize,
+    /// Items in the run.
+    pub total: usize,
+    /// The item being worked on, or `None` once the stage is finished.
+    pub item: Option<&'a str>,
+}
+
 /// Runs ingest over `paths` on `device`, using `registry`'s providers. Nothing is saved; see
 /// [`Run::save`].
 ///
@@ -66,13 +119,34 @@ pub fn run(
     options: IntakeOptions,
     device: Id,
 ) -> Result<Run, IngestError> {
+    run_with_progress(archive, registry, paths, options, device, &mut |_| {})
+}
+
+/// [`run`], calling `progress` as each item starts and as each stage finishes.
+///
+/// # Errors
+///
+/// As [`run`].
+pub fn run_with_progress(
+    archive: &Archive,
+    registry: &Registry,
+    paths: &[PathBuf],
+    options: IntakeOptions,
+    device: Id,
+    progress: &mut dyn FnMut(Progress<'_>),
+) -> Result<Run, IngestError> {
     let (candidates, skipped) = plan(archive, paths, options)?;
-    let rules = archive.rules().map_err(|e| {
-        IngestError::Archive(crate::archive::ArchiveError::Invalid {
-            path: e.path,
-            message: e.message,
-        })
-    })?;
+    let names: Vec<String> = candidates.iter().map(name).collect();
+    let total = candidates.len();
+    let mut report = |stage: Stage, done: usize| {
+        progress(Progress {
+            stage,
+            done,
+            total,
+            item: names.get(done).map(String::as_str),
+        });
+    };
+    let rules = rules_of(archive)?;
     let collections = archive.collections()?;
     let vocabulary = Vocabulary::of(archive, &collections);
     let glossary = Glossary::of(archive);
@@ -85,28 +159,39 @@ pub fn run(
     // Duplicates won't be filed by default, so their text isn't needed yet.
     let texts: Vec<Option<ItemText>> = candidates
         .iter()
-        .map(|c| {
+        .enumerate()
+        .map(|(i, c)| {
+            report(Stage::Reading, i);
             (c.duplicate_of.is_none() && c.same_as.is_none()).then(|| read(registry, &rules, c))
         })
         .collect();
+    report(Stage::Reading, total);
     let drafts: Vec<Option<Draft>> = candidates
         .iter()
         .zip(&texts)
-        .map(|(c, t)| t.as_ref().map(|t| draft(registry, &context, c, t)))
+        .enumerate()
+        .map(|(i, (c, t))| {
+            report(Stage::Drafting, i);
+            t.as_ref().map(|t| draft(registry, &context, c, t))
+        })
         .collect();
+    report(Stage::Drafting, total);
 
     let routing_rules = RoutingRules::of(archive, &collections);
     let chooser = Router::new(archive, &collections, &routing_rules);
     let routes: Vec<Option<Route>> = candidates
         .iter()
         .zip(&drafts)
-        .map(|(c, d)| {
+        .enumerate()
+        .map(|(i, (c, d))| {
+            report(Stage::Routing, i);
             d.as_ref().map(|d| {
                 let source = c.path.parent().unwrap_or(&c.path);
                 chooser.route(registry, c, source, d)
             })
         })
         .collect();
+    report(Stage::Routing, total);
     let batch = Batch {
         archive,
         collections: &collections,
@@ -116,29 +201,22 @@ pub fn run(
     let assessments: Vec<Option<Assessment>> = candidates
         .iter()
         .zip(texts.iter().zip(&routes))
-        .map(|(c, (t, r))| match (t, r) {
-            (Some(t), Some(r)) => Some(assess(
-                registry,
-                &name(c),
-                &t.text,
-                batch.default_sensitivity(r),
-            )),
-            _ => None,
+        .enumerate()
+        .map(|(i, (c, (t, r)))| {
+            report(Stage::Rating, i);
+            match (t, r) {
+                (Some(t), Some(r)) => Some(assess(
+                    registry,
+                    &name(c),
+                    &t.text,
+                    batch.default_sensitivity(r),
+                )),
+                _ => None,
+            }
         })
         .collect();
-    let mut entries: Vec<Option<ReviewEntry>> = candidates
-        .iter()
-        .zip(
-            texts
-                .iter()
-                .zip(&drafts)
-                .zip(routes.iter().zip(&assessments)),
-        )
-        .map(|(c, ((t, d), (r, s)))| match (t, d, r, s) {
-            (Some(t), Some(d), Some(r), Some(s)) => batch.propose(c, d, r, s, &t.attempts),
-            _ => None,
-        })
-        .collect();
+    report(Stage::Rating, total);
+    let mut entries = propose_all(&batch, &candidates, &texts, &drafts, &routes, &assessments);
     let proposed: Vec<ReviewEntry> = entries.iter().flatten().cloned().collect();
     let questions = ask(archive, &collections, &glossary, &proposed);
     for entry in entries.iter_mut().flatten() {
@@ -156,6 +234,35 @@ pub fn run(
         questions,
         routing_problems: routing_rules.problems.clone(),
     })
+}
+
+/// The archive's rules, or why they can't be read.
+fn rules_of(archive: &Archive) -> Result<crate::detect::Rules, IngestError> {
+    archive.rules().map_err(|e| {
+        IngestError::Archive(crate::archive::ArchiveError::Invalid {
+            path: e.path,
+            message: e.message,
+        })
+    })
+}
+
+/// Each item's proposal, for those that have everything a proposal needs.
+fn propose_all(
+    batch: &Batch<'_>,
+    candidates: &[Candidate],
+    texts: &[Option<ItemText>],
+    drafts: &[Option<Draft>],
+    routes: &[Option<Route>],
+    assessments: &[Option<Assessment>],
+) -> Vec<Option<ReviewEntry>> {
+    candidates
+        .iter()
+        .zip(texts.iter().zip(drafts).zip(routes.iter().zip(assessments)))
+        .map(|(c, ((t, d), (r, s)))| match (t, d, r, s) {
+            (Some(t), Some(d), Some(r), Some(s)) => batch.propose(c, d, r, s, &t.attempts),
+            _ => None,
+        })
+        .collect()
 }
 
 impl Run {

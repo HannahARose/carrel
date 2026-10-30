@@ -10,6 +10,7 @@ mod commands;
 mod config;
 mod ingest;
 mod models;
+mod progress;
 mod providers;
 mod questions;
 mod review;
@@ -138,6 +139,10 @@ enum Command {
         /// Use only the first N items, for a quick check.
         #[arg(long, value_name = "N")]
         limit: Option<usize>,
+        /// Discard results saved in `--out` by an earlier run, instead of carrying on from them.
+        /// Use it after changing prompts, checks or models.
+        #[arg(long)]
+        fresh: bool,
     },
     /// Models for local providers: list them, or download or remove one. Nothing is
     /// downloaded unless asked for.
@@ -358,6 +363,7 @@ fn main() -> ExitCode {
             &paths,
             carrel_core::ingest::IntakeOptions { each, whole },
             dry_run,
+            cli.json,
         ),
         Command::Review { all, action } => match action.unwrap_or(ReviewAction::List { all }) {
             ReviewAction::List { all } => review::list(cli.archive.as_deref(), all),
@@ -398,7 +404,8 @@ fn main() -> ExitCode {
             corpus,
             out,
             limit,
-        } => bench::bench(&corpus, &models, &out, limit),
+            fresh,
+        } => bench::bench(&corpus, &models, &out, limit, fresh, cli.json),
         Command::Models { action } => match action.unwrap_or(ModelsAction::List) {
             ModelsAction::List => models::list(),
             ModelsAction::Download { name, yes } => models::download(&name, yes, cli.json),

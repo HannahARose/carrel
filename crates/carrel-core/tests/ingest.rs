@@ -221,3 +221,38 @@ fn duplicates_of_archived_items_and_within_a_batch_are_marked() {
     assert_eq!(candidates[by_name("one.txt")].same_as, None);
     assert_eq!(candidates[by_name("one.txt")].duplicate_of, None);
 }
+
+#[test]
+fn a_run_reports_each_item_as_it_starts_and_each_stage_as_it_ends() {
+    use carrel_core::ingest::run::{Stage, run_with_progress};
+    use carrel_core::providers::Registry;
+
+    let (_dir, archive, incoming) = setup();
+    let a = incoming.join("a.txt");
+    let b = incoming.join("b.txt");
+    std::fs::write(&a, "first\n").unwrap();
+    std::fs::write(&b, "second\n").unwrap();
+    let mut seen = Vec::new();
+    run_with_progress(
+        &archive,
+        &Registry::with_built_ins(),
+        &[a, b],
+        IntakeOptions::default(),
+        carrel_core::card::Id::new_v7(),
+        &mut |p| seen.push((p.stage, p.done, p.total, p.item.map(str::to_owned))),
+    )
+    .unwrap();
+    let item = |s: &str| Some(s.to_owned());
+    let mut expected = Vec::new();
+    for stage in [
+        Stage::Reading,
+        Stage::Drafting,
+        Stage::Routing,
+        Stage::Rating,
+    ] {
+        expected.push((stage, 0, 2, item("a.txt")));
+        expected.push((stage, 1, 2, item("b.txt")));
+        expected.push((stage, 2, 2, None));
+    }
+    assert_eq!(seen, expected);
+}
