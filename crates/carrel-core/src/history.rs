@@ -363,6 +363,10 @@ impl History {
             config.set_bool("core.bare", false)?;
             // Paths are compared as written; the archive spec handles case rules itself.
             config.set_bool("core.precomposeunicode", true)?;
+            // Metadata is stored exactly as written: LF line endings (FORMAT.md §2.1), whatever
+            // the person's own Git settings say. Windows needs long paths for deep archives.
+            config.set_bool("core.autocrlf", false)?;
+            config.set_bool("core.longpaths", true)?;
         }
         let info_dir = git_dir.join("info");
         std::fs::create_dir_all(&info_dir).map_err(io(&info_dir))?;

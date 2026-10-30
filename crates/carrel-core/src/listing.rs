@@ -281,6 +281,14 @@ mod tests {
     use super::relative;
 
     #[test]
+    fn link_destinations_encode_what_would_break_a_link_or_a_table() {
+        assert_eq!(
+            super::link_destination("a b (1) #2?<x>|100%.md"),
+            "a%20b%20%281%29%20%232%3F%3Cx%3E%7C100%25.md"
+        );
+    }
+
+    #[test]
     fn relative_links_climb_to_the_common_folder() {
         assert_eq!(relative("Projects", "ARCHIVE.md"), "../ARCHIVE.md");
         assert_eq!(

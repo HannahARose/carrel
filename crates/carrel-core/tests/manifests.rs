@@ -76,23 +76,24 @@ fn symbolic_links_are_recorded_not_followed() {
 #[test]
 fn tsv_round_trips_including_awkward_names() {
     let dir = tempfile::tempdir().unwrap();
+    // Windows can't hold a tab or line feed in a name, so those are checked elsewhere.
+    let control = !cfg!(windows);
     write(&dir.path().join("100% done.md"), "a");
-    write(&dir.path().join("tab\tname"), "b");
-    write(&dir.path().join("new\nline"), "c");
+    if control {
+        write(&dir.path().join("tab\tname"), "b");
+        write(&dir.path().join("new\nline"), "c");
+    }
     write(&dir.path().join("café/naïve.txt"), "d");
     let m = Manifest::build(dir.path(), Id::new_v7(), &Rules::default(), None).unwrap();
     let tsv = m.to_tsv();
     assert!(tsv.starts_with(&format!("# carrel manifest 1.0\tid={}\n", m.item)));
     assert_eq!(
         tsv.lines().count(),
-        5,
+        if control { 5 } else { 3 },
         "one header and one line per file:\n{tsv}"
     );
-    assert!(
-        tsv.contains("100%25 done.md\t")
-            && tsv.contains("tab%09name\t")
-            && tsv.contains("new%0Aline\t")
-    );
+    assert!(tsv.contains("100%25 done.md\t"));
+    assert!(!control || (tsv.contains("tab%09name\t") && tsv.contains("new%0Aline\t")));
     assert_eq!(Manifest::parse(&tsv).unwrap(), m);
     let mut content = String::new();
     for e in &m.entries {
@@ -344,4 +345,12 @@ fn large_trees_rebuild_quickly() {
         "100,000 files: full build {full:?}, incremental {incremental:?}, write+parse {io:?}, {} KB",
         tsv.len() / 1024
     );
+}
+
+#[test]
+fn paths_with_tabs_and_line_breaks_encode_onto_one_line() {
+    use carrel_core::manifest::{decode_path, encode_path};
+    let awkward = "a\tb\nc\rd%e";
+    assert_eq!(encode_path(awkward), "a%09b%0Ac%0Dd%25e");
+    assert_eq!(decode_path(&encode_path(awkward)).as_deref(), Some(awkward));
 }

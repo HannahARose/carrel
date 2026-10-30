@@ -350,18 +350,20 @@ fn plain_git_can_read_the_history() {
 
 #[test]
 fn archives_opened_by_a_relative_path_record_history() {
-    let dir = tempfile::tempdir().unwrap();
-    let parent = dir.path().canonicalize().unwrap();
+    // Inside the build's own temporary folder, which is on the same drive as the current
+    // folder on Windows too, so a relative path between them exists.
+    let dir = tempfile::tempdir_in(env!("CARGO_TARGET_TMPDIR")).unwrap();
     let cwd = std::env::current_dir().unwrap();
-    // Relative to the current folder, however deep the temporary folder is.
-    let relative: PathBuf = cwd
-        .components()
-        .skip(1)
-        .map(|_| "..")
-        .collect::<PathBuf>()
-        .join(parent.strip_prefix("/").unwrap())
-        .join("Relative");
+    let target: Vec<_> = dir.path().components().collect();
+    let here: Vec<_> = cwd.components().collect();
+    let common = target.iter().zip(&here).take_while(|(a, b)| a == b).count();
+    let relative: PathBuf =
+        std::iter::repeat_n(std::path::Component::ParentDir, here.len() - common)
+            .chain(target[common..].iter().copied())
+            .collect::<PathBuf>()
+            .join("Relative");
     assert!(relative.is_relative());
+    assert!(relative.starts_with(".."), "{}", relative.display());
     let archive = Archive::init(&relative, &InitOptions::new("Relative")).unwrap();
     assert!(archive.root().is_absolute());
     let (lease, _, _) = writer(&archive);
