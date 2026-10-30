@@ -1,0 +1,21 @@
+# Third-party licenses
+
+Carrel's programs include the open-source software listed here, under these licenses. Carrel itself is licensed under the Mozilla Public License 2.0 (see `LICENSE`), and Kopia, bundled beside it, under the Apache License 2.0 (see `LICENSE-kopia`).
+
+## Overview
+
+{{#each overview}}
+- {{name}}: {{count}} {{#if (eq count 1)}}crate{{else}}crates{{/if}}
+{{/each}}
+
+## Rust crates
+{{#each licenses}}
+
+### {{name}}
+
+Used by: {{#each used_by}}{{crate.name}} {{crate.version}}{{#unless @last}}, {{/unless}}{{/each}}
+
+```text
+{{{text}}}
+```
+{{/each}}

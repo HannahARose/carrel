@@ -14,6 +14,7 @@
 #   KOPIA_SHA256    the archive's SHA-256, from Kopia's checksums.txt
 #   KOPIA_ARCHIVE   tar.gz or zip
 #   APPLE_PROVIDER  optional: the built carrel-provider-apple, for macOS
+#   THIRD_PARTY     optional: the license notices from scripts/third-party-licenses.sh
 #
 # The archive is written to dist/carrel-VERSION-NAME.tar.gz (.zip on Windows).
 set -euo pipefail
@@ -61,6 +62,9 @@ curl -sSfL -o "$stage/LICENSE-kopia" \
   "https://raw.githubusercontent.com/kopia/kopia/v$kopia_version/LICENSE"
 
 cp LICENSE "$stage/LICENSE"
+if [ -n "${THIRD_PARTY:-}" ]; then
+  cp "$THIRD_PARTY" "$stage/THIRD-PARTY-LICENSES.md"
+fi
 cp README.md "$stage/README.md"
 cat > "$stage/INSTALL.txt" <<EOF
 Carrel $VERSION for $name
