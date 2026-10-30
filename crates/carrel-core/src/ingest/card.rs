@@ -222,9 +222,11 @@ pub fn schema(vocabulary: &Vocabulary) -> Value {
         "title": {"type": "string", "description": "A short, specific title for the item, not just its file name"},
         "summary": {"type": "string", "description": "One to three sentences saying what the item is"},
         "new_tag": {"type": "string", "description": "Only if none of the tags fit: one new tag, lowercase, with words joined by -"},
-        "created": {"type": "string", "description": "When the item was made, as YYYY-MM-DD, only if the text says"}
+        "created": {"type": "string", "description": "When the item was made, as YYYY-MM-DD, or an empty string if the text doesn't say"}
     });
-    let mut required = vec!["title", "summary"];
+    // The date is required, with an empty string for none: models constrained by a grammar
+    // otherwise end the answer before optional fields and never give one.
+    let mut required = vec!["title", "summary", "created"];
     if !vocabulary.tags.is_empty() {
         let names: Vec<&str> = vocabulary.tags.iter().map(|(t, _)| t.0.as_str()).collect();
         properties["tags"] = json!({
