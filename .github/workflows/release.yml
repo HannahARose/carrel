@@ -1,0 +1,177 @@
+name: Release
+
+# Builds the CLI for macOS, Linux and Windows and, for a v* tag on main, publishes a GitHub
+# release with an archive per platform, checksums and build provenance attestations. Each
+# archive bundles carrel, the network helper, the llama.cpp provider and the pinned Kopia (and
+# on macOS the Apple provider), so nothing else needs installing.
+#
+# Pull requests that change the release build run everything except publishing.
+
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - .github/workflows/release.yml
+      - scripts/package-release.sh
+  workflow_dispatch:
+
+permissions:
+  contents: read # check out the code
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  KOPIA_VERSION: 0.23.1
+
+jobs:
+  version:
+    # The version to build: the crates' version, which a tag must match, on main.
+    name: Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - id: version
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          version="$(cargo metadata --no-deps --format-version 1 --locked \
+            | jq -r '.packages[] | select(.name == "carrel-cli") | .version')"
+          if [ "$REF_TYPE" = tag ]; then
+            if [ "$REF_NAME" != "v$version" ]; then
+              echo "::error::tag $REF_NAME doesn't match the crates' version $version"
+              exit 1
+            fi
+            if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+              echo "::error::releases are tagged on main; $REF_NAME isn't"
+              exit 1
+            fi
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build (${{ matrix.name }})
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos-universal
+            os: macos-latest
+            kopia: kopia-0.23.1-macOS-universal
+            sha256: f67d9dd81a0f5169ad6579ba4c4a91fbaf4978f42defa52946a2f2277f7d55a8
+            archive: tar.gz
+          - name: linux-x86_64
+            os: ubuntu-latest
+            kopia: kopia-0.23.1-linux-x64
+            sha256: 416d0f84a3dbb321a8b2d8f0997b1a0a6e915babe79ee76fa6e4d2bd1e1c5178
+            archive: tar.gz
+          - name: linux-arm64
+            os: ubuntu-24.04-arm
+            kopia: kopia-0.23.1-linux-arm64
+            sha256: a4ffbc019e0b0f932e2632054e73ec521dc1e80172a00095369c53ecf4e5a6cb
+            archive: tar.gz
+          - name: windows-x86_64
+            os: windows-latest
+            kopia: kopia-0.23.1-windows-x64
+            sha256: f0369d9657dbe47a1b8b6ff4e308c5958a4813b405d4e32ae9d81b3f2b3d8251
+            archive: zip
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      KOPIA_ASSET: ${{ matrix.kopia }}
+      KOPIA_SHA256: ${{ matrix.sha256 }}
+      KOPIA_ARCHIVE: ${{ matrix.archive }}
+      NAME: ${{ matrix.name }}
+      # The oldest macOS the binaries run on.
+      MACOSX_DEPLOYMENT_TARGET: "15.0"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build (Linux and Windows)
+        if: runner.os != 'macOS'
+        run: |
+          cargo build --release --locked -p carrel-cli -p carrel-fetch -p carrel-provider-llama
+          echo "BIN_DIR=target/release" >> "$GITHUB_ENV"
+      - name: Build (macOS, universal)
+        if: runner.os == 'macOS'
+        run: |
+          rustup target add x86_64-apple-darwin
+          for target in aarch64-apple-darwin x86_64-apple-darwin; do
+            cargo build --release --locked --target "$target" \
+              -p carrel-cli -p carrel-fetch -p carrel-provider-llama
+          done
+          mkdir -p target/universal
+          for program in carrel carrel-fetch carrel-provider-llama; do
+            lipo -create -output "target/universal/$program" \
+              "target/aarch64-apple-darwin/release/$program" \
+              "target/x86_64-apple-darwin/release/$program"
+          done
+          swift build -c release --arch arm64 --arch x86_64 \
+            --package-path apple/CarrelProviders --product carrel-provider-apple
+          bin="$(swift build -c release --arch arm64 --arch x86_64 \
+            --package-path apple/CarrelProviders --show-bin-path)"
+          echo "APPLE_PROVIDER=$bin/carrel-provider-apple" >> "$GITHUB_ENV"
+          echo "BIN_DIR=target/universal" >> "$GITHUB_ENV"
+      - name: Check the binaries run
+        run: |
+          exe=""
+          if [ "$RUNNER_OS" = Windows ]; then exe=".exe"; fi
+          "$BIN_DIR/carrel$exe" --version
+          PATH="$PWD/$BIN_DIR:$PATH" "$BIN_DIR/carrel$exe" providers
+      - name: Package
+        run: scripts/package-release.sh "$NAME" "$BIN_DIR"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: carrel-${{ matrix.name }}
+          path: dist/carrel-*
+          if-no-files-found: error
+
+  publish:
+    name: Publish
+    if: github.ref_type == 'tag'
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the release
+      id-token: write # sign the attestations
+      attestations: write # store the attestations
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum carrel-* > SHA256SUMS && cat SHA256SUMS
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/carrel-*
+      - name: Create the release
+        run: |
+          # Versions such as 0.2.0-beta.1 are pre-releases (CONTRIBUTING.md, Versioning).
+          prerelease=""
+          case "$VERSION" in *-*) prerelease="--prerelease" ;; esac
+          gh release create "$TAG" dist/* $prerelease \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Carrel $VERSION" \
+            --generate-notes \
+            --verify-tag

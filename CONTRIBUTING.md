@@ -50,6 +50,14 @@ Both `main` and `dev` are protected: changes arrive only through pull requests, 
 
 Versions stay at 0.x, one minor per roadmap phase, until 1.0, the first release meant for daily use. Pre-releases use `-alpha.N`, `-beta.N` (including TestFlight builds) and `-rc.N`. The apps and CLI share one version. The archive format is versioned separately in `FORMAT.md` and aims never to break compatibility.
 
+## Releasing
+
+1. Set the version in the workspace `Cargo.toml` and merge it to `dev`, then `dev` to `main`.
+2. Tag `main` as `vVERSION` (for example `v0.2.0`) and push the tag.
+3. `.github/workflows/release.yml` checks the tag matches the crates' version and is on `main`, builds every platform's archive, and publishes the release with checksums and attestations. Versions with a `-` are marked as pre-releases.
+
+Pull requests that change the release workflow or `scripts/package-release.sh` run every build without publishing.
+
 ## Privacy
 
 Never attach private documents to issues or pull requests. Describe the file instead, and use test fixtures with public or invented content.
