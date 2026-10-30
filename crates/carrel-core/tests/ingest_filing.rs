@@ -199,6 +199,8 @@ fn a_taken_name_gets_a_number_and_the_card_says_why() {
     assert!(changelog.contains("(parts-list%20%282%29.csv.md)"));
 }
 
+// Windows can't create these names, so no item from there could have them.
+#[cfg(not(windows))]
 #[test]
 fn names_that_arent_portable_are_filed_under_portable_ones() {
     let mut setup = Setup::new();
