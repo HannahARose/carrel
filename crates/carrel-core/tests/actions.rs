@@ -207,3 +207,62 @@ fn answers_teach_the_glossary_or_place_the_items_and_dismissing_frees_them() {
     actions::dismiss(&s.archive, &again).unwrap();
     assert!(queue.find(&again.id.to_string()).is_err());
 }
+
+#[test]
+fn an_edited_card_is_checked_and_becomes_the_owners() {
+    let s = setup();
+    let mut entry = s.proposal("lamp.stl", Confidence::Medium);
+    entry.card.sensitivity = Sensitivity::Personal;
+    entry.card.generated = s.sample.card.generated.clone();
+    entry.state = State::NeedsOwner;
+    entry.problems = vec![carrel_core::review::Problem {
+        stage: "card".into(),
+        message: "no text model on this device; write the card by hand".into(),
+    }];
+    let text = actions::draft_text(&s.archive, &entry, &[]).unwrap();
+    assert!(text.contains("# Tags that apply there: 3d-printing"));
+    assert_eq!(
+        actions::apply_draft(&s.archive, &mut entry.clone(), &text).unwrap(),
+        actions::Edited::Unchanged
+    );
+
+    let lower = text.replace("sensitivity: personal", "sensitivity: public");
+    let bad_date = text.replace(
+        "title: lamp.stl",
+        "title: lamp.stl\ndates:\n  created: 2026-13-40",
+    );
+    for (edited, expected) in [
+        (lower, "sensitivity can't go below personal"),
+        (bad_date, "dates.created “2026-13-40” isn't a date"),
+        (
+            text.replace("title: lamp.stl", "title: ' '"),
+            "the title is empty",
+        ),
+        (format!("{text}\nnot_a_field: 1\n"), "the YAML isn't valid"),
+    ] {
+        match actions::apply_draft(&s.archive, &mut entry.clone(), &edited).unwrap() {
+            actions::Edited::Problems(problems) => {
+                assert!(problems[0].starts_with(expected), "{problems:?}");
+            }
+            other => panic!("{other:?} for {edited}"),
+        }
+    }
+
+    let good = text
+        .replace("title: lamp.stl", "title: Lamp diffuser")
+        .replace("sensitivity: personal", "sensitivity: sensitive");
+    assert_eq!(
+        actions::apply_draft(&s.archive, &mut entry, &good).unwrap(),
+        actions::Edited::Changed
+    );
+    assert_eq!(entry.card.title, "Lamp diffuser");
+    assert_eq!(entry.card.sensitivity, Sensitivity::Sensitive);
+    assert_eq!(entry.state, State::Proposed, "the owner settled the card");
+    assert!(entry.problems.is_empty(), "{:?}", entry.problems);
+    let fields = &entry.card.generated.as_ref().unwrap().fields;
+    assert!(!fields.contains(&"title".to_owned()) && !fields.contains(&"sensitivity".to_owned()));
+    assert!(
+        fields.contains(&"summary".to_owned()),
+        "the model's summary is still the model's"
+    );
+}

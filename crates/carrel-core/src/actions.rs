@@ -3,6 +3,7 @@
 //! The commands, the interactive mode and the apps all make them through these functions and
 //! only differ in how they show the results.
 
+use std::fmt::Write as _;
 use std::path::PathBuf;
 
 use crate::archive::{Archive, ArchiveError, Collection};
@@ -428,4 +429,249 @@ pub fn redraft(
         whole: true,
     };
     ingest(archive, registry, &paths, options, holder, backups, true).map(Some)
+}
+
+/// The card fields the owner edits in a proposal (`docs/design/interactive.md`).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DraftFields {
+    title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    summary: Option<String>,
+    #[serde(default)]
+    tags: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    dates: Option<crate::card::Dates>,
+    sensitivity: Sensitivity,
+}
+
+/// Problems the owner settles by editing the card themselves.
+const SETTLED_BY_EDITING: [&str; 3] = ["card", "sensitivity", "route"];
+
+fn level_name(level: Sensitivity) -> String {
+    serde_json::to_value(level)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_owned))
+        .unwrap_or_default()
+}
+
+/// A proposal's card as YAML for the owner to edit, with comments saying what applies, and
+/// `problems` from an earlier attempt listed first.
+///
+/// # Errors
+///
+/// [`ActionError::Archive`] if the collections can't be read.
+///
+/// # Panics
+///
+/// Never: the fields always serialize.
+pub fn draft_text(
+    archive: &Archive,
+    entry: &ReviewEntry,
+    problems: &[String],
+) -> Result<String, ActionError> {
+    let collections = archive.collections()?;
+    let vocabulary = applicable_tags(archive, &collections, &entry.destination.path);
+    let mut tags: Vec<String> = entry.card.tags.iter().map(|t| t.0.clone()).collect();
+    tags.extend(entry.proposed_tags.iter().map(|t| t.0.clone()));
+    let fields = DraftFields {
+        title: entry.card.title.clone(),
+        summary: entry.card.summary.clone(),
+        tags,
+        dates: entry.card.dates.clone(),
+        sensitivity: entry.card.sensitivity,
+    };
+    let mut text = String::new();
+    for problem in problems {
+        writeln!(text, "# To fix: {problem}").unwrap();
+    }
+    if !problems.is_empty() {
+        text.push_str("#\n");
+    }
+    write!(
+        text,
+        "# The card for proposal {}, going to {}.\n\
+         # Save to keep your changes; save it unchanged to change nothing.\n\
+         # Tags that apply there: {}. One new tag may be added; approving adds it there.\n\
+         # Sensitivity: {} or higher.\n",
+        short_id(entry.id),
+        entry.destination.path,
+        if vocabulary.is_empty() {
+            "none".to_owned()
+        } else {
+            vocabulary.join(", ")
+        },
+        level_name(entry.card.sensitivity),
+    )
+    .unwrap();
+    text.push_str(&serde_saphyr::to_string(&fields).expect("draft fields always serialize"));
+    Ok(text)
+}
+
+/// The tag names that apply at `path`.
+fn applicable_tags(archive: &Archive, collections: &[Collection], path: &str) -> Vec<String> {
+    let all: Vec<crate::card::Tag> = crate::ingest::card::Vocabulary::of(archive, collections)
+        .tags
+        .into_iter()
+        .map(|(t, _)| t)
+        .collect();
+    crate::ingest::route::tags_for(archive, collections, path, &all)
+        .into_iter()
+        .map(|t| t.0)
+        .collect()
+}
+
+/// What the owner's edit did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Edited {
+    /// Nothing changed.
+    Unchanged,
+    /// The proposal's card changed; the proposal needs saving.
+    Changed,
+    /// The edit doesn't check out, for these reasons; the proposal is as it was.
+    Problems(Vec<String>),
+}
+
+/// The edited fields, checked: title, summary, tags in the vocabulary and the new one.
+struct Checked {
+    title: String,
+    summary: Option<String>,
+    tags: Vec<crate::card::Tag>,
+    new_tags: Vec<crate::card::Tag>,
+    dates: Option<crate::card::Dates>,
+    sensitivity: Sensitivity,
+}
+
+fn check_fields(
+    fields: DraftFields,
+    vocabulary: &[String],
+    floor: Sensitivity,
+) -> Result<Checked, Vec<String>> {
+    let mut problems = Vec::new();
+    let title = fields.title.trim().to_owned();
+    if title.is_empty() {
+        problems.push("the title is empty".to_owned());
+    }
+    let summary = fields
+        .summary
+        .map(|s| s.split_whitespace().collect::<Vec<_>>().join(" "))
+        .filter(|s| !s.is_empty());
+    let mut tags = Vec::new();
+    let mut new_tags = Vec::new();
+    for name in &fields.tags {
+        let tag = crate::card::Tag(name.trim().to_owned());
+        if !tag.is_well_formed() {
+            problems.push(format!(
+                "the tag “{name}” isn't lowercase words joined by - (FORMAT.md §6.5)"
+            ));
+        } else if vocabulary.contains(&tag.0) {
+            if !tags.contains(&tag) {
+                tags.push(tag);
+            }
+        } else if !new_tags.contains(&tag) {
+            new_tags.push(tag);
+        }
+    }
+    if new_tags.len() > 1 {
+        let names: Vec<&str> = new_tags.iter().map(|t| t.0.as_str()).collect();
+        problems.push(format!(
+            "only one new tag may be added, not {}",
+            names.join(", ")
+        ));
+    }
+    if let Some(dates) = &fields.dates {
+        for (field, date) in [
+            ("created", &dates.created),
+            ("modified", &dates.modified),
+            ("added", &dates.added),
+            ("worked", &dates.worked),
+            ("document", &dates.document),
+        ] {
+            if let Some(date) = date
+                && !date.is_valid()
+            {
+                problems.push(format!(
+                    "dates.{field} “{}” isn't a date (2026-10-29) or a time with an offset",
+                    date.0
+                ));
+            }
+        }
+    }
+    if fields.sensitivity < floor {
+        problems.push(format!(
+            "sensitivity can't go below {}, what was found",
+            level_name(floor)
+        ));
+    }
+    if !problems.is_empty() {
+        return Err(problems);
+    }
+    Ok(Checked {
+        title,
+        summary,
+        tags,
+        new_tags,
+        dates: fields.dates,
+        sensitivity: fields.sensitivity,
+    })
+}
+
+/// Applies the owner's edited `text` to `entry`, checking it first.
+///
+/// # Errors
+///
+/// [`ActionError::Archive`] if the collections can't be read.
+pub fn apply_draft(
+    archive: &Archive,
+    entry: &mut ReviewEntry,
+    text: &str,
+) -> Result<Edited, ActionError> {
+    let fields: DraftFields = match serde_saphyr::from_str(text) {
+        Ok(fields) => fields,
+        Err(e) => return Ok(Edited::Problems(vec![format!("the YAML isn't valid: {e}")])),
+    };
+    let collections = archive.collections()?;
+    let vocabulary = applicable_tags(archive, &collections, &entry.destination.path);
+    let checked = match check_fields(fields, &vocabulary, entry.card.sensitivity) {
+        Ok(checked) => checked,
+        Err(problems) => return Ok(Edited::Problems(problems)),
+    };
+
+    let card = &entry.card;
+    let changed: Vec<&str> = [
+        ("title", checked.title != card.title),
+        ("summary", checked.summary != card.summary),
+        (
+            "tags",
+            checked.tags != card.tags || checked.new_tags != entry.proposed_tags,
+        ),
+        ("dates", checked.dates != card.dates),
+        ("sensitivity", checked.sensitivity != card.sensitivity),
+    ]
+    .into_iter()
+    .filter_map(|(field, differs)| differs.then_some(field))
+    .collect();
+    if changed.is_empty() {
+        return Ok(Edited::Unchanged);
+    }
+    entry.card.title = checked.title;
+    entry.card.summary = checked.summary;
+    entry.card.tags = checked.tags;
+    entry.proposed_tags = checked.new_tags;
+    entry.card.dates = checked.dates;
+    entry.card.sensitivity = checked.sensitivity;
+    // Fields the owner wrote are no longer a model's.
+    if let Some(generated) = &mut entry.card.generated {
+        generated.fields.retain(|f| !changed.contains(&f.as_str()));
+        if generated.fields.is_empty() {
+            entry.card.generated = None;
+        }
+    }
+    entry
+        .problems
+        .retain(|p| !SETTLED_BY_EDITING.contains(&p.stage.as_str()));
+    if entry.state == State::NeedsOwner && entry.problems.is_empty() {
+        entry.state = State::Proposed;
+    }
+    Ok(Edited::Changed)
 }
