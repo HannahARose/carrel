@@ -154,8 +154,9 @@ Each item's proposal is a JSON file, `_System/queue/review/<proposal-id>.json`, 
   - `hold`
   - `reject`
 
-  The interactive mode (#88) offers the same actions.
-- Approving many at once makes one commit per batch.
+  The interactive mode (#88) offers the same actions. `edit` comes with it, since editing a draft wants a screen rather than a command.
+- Approving many at once makes one commit per batch. `--all-high` leaves out sensitive items, duplicates and anything that needs the owner.
+- An item on another device stays approved until that device files it. An item that's gone or changed since it was proposed goes back to `needs-owner`, saying why.
 
 ### 12. Archive
 

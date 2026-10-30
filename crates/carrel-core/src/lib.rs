@@ -18,7 +18,7 @@
 //! | [`manifest`] | Checksums, folder manifests and their diffs | §2.6, §7.7 |
 //! | [`history`] | The Git history of metadata, and undo | §8.1–§8.3 |
 //! | [`coordinator`] | Which writer may change an archive: leases and the disk lock | §8.4 |
-//! | [`ingest`] | Ingest stages before any model: intake, kind, fingerprint, duplicates | `docs/design/ingest.md` |
+//! | [`ingest`] | Ingest: intake, text, cards, routing, sensitivity, and filing approved items | `docs/design/ingest.md` |
 //! | [`review`] | The review queue: proposals to file items, waiting for the owner | §7.9 |
 //! | [`local`] | Where this device keeps its own data: configuration and models | none |
 //! | [`providers`] | Text models and text extraction from providers, native or portable | `docs/providers.md` |
