@@ -127,6 +127,12 @@ pub fn extension(path: &Path) -> String {
 /// What would read `media_type`, when Carrel knows.
 #[must_use]
 pub fn hint(media_type: &str) -> Option<&'static str> {
+    if matches!(
+        media_type,
+        "application/x-7z-compressed" | "application/vnd.rar"
+    ) {
+        return Some("install 7-Zip (7zz or 7z) or unar to open and expand it");
+    }
     if media_type.starts_with("image/") || media_type == "application/pdf" {
         return Some(if cfg!(target_os = "macos") {
             "the Apple provider (carrel-provider-apple) reads it"
@@ -134,8 +140,30 @@ pub fn hint(media_type: &str) -> Option<&'static str> {
             "install Tesseract for OCR"
         });
     }
+    if MODELS.contains(&media_type) && cfg!(target_os = "macos") {
+        return Some("the Apple provider (carrel-provider-apple) reads it");
+    }
+    if ["model/step", "model/iges"].contains(&media_type) {
+        return Some(
+            "the portable extraction provider (carrel-provider-extract) reads its details; to draw it, install OpenCascade and build carrel-provider-cad",
+        );
+    }
+    if ["model/3mf", "text/x-gcode"].contains(&media_type) {
+        return Some(
+            "the portable extraction provider (carrel-provider-extract) reads its details",
+        );
+    }
     None
 }
+
+/// The 3D model types the Apple provider reads, through `ModelIO`.
+const MODELS: [&str; 5] = [
+    "model/stl",
+    "model/obj",
+    "model/ply",
+    "model/vnd.usdz+zip",
+    "model/vnd.usd",
+];
 
 #[cfg(test)]
 mod tests {
@@ -169,6 +197,22 @@ mod tests {
             Unreadable::load(&dir.path().join("missing.json")),
             Unreadable::default()
         );
+    }
+
+    #[test]
+    fn models_are_read_by_the_apple_provider_on_a_mac() {
+        assert_eq!(
+            hint("model/stl").is_some(),
+            cfg!(target_os = "macos"),
+            "{:?}",
+            hint("model/stl")
+        );
+        assert!(
+            hint("model/step")
+                .unwrap()
+                .contains("carrel-provider-extract")
+        );
+        assert_eq!(hint("application/x-unknown"), None);
     }
 
     #[test]

@@ -299,6 +299,12 @@ pub fn process(
             });
         }
     };
+    let mut run = run;
+    if let Some(card) = crate::desk::carried_card(&entry.extra) {
+        for proposal in run.entries.iter_mut().flatten() {
+            crate::desk::carry(proposal, &card);
+        }
+    }
     run.save(archive)?;
     let new: Vec<Id> = run.entries.iter().flatten().map(|e| e.id).collect();
     let questions = ask_with_waiting(archive, &new)?;

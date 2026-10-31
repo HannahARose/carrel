@@ -397,6 +397,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
 
 [[package]]
+name = "bzip2"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f3a53fac24f34a81bc9954b5d6cfce0c21e18ec6959f44f56e8e90e4bb7c346c"
+dependencies = [
+ "libbz2-rs-sys",
+]
+
+[[package]]
 name = "camino"
 version = "1.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -431,7 +440,7 @@ dependencies = [
 
 [[package]]
 name = "carrel-cli"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "carrel-core",
  "clap",
@@ -442,30 +451,39 @@ dependencies = [
  "serde_json",
  "tempfile",
  "uuid",
+ "zip",
 ]
 
 [[package]]
 name = "carrel-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
+ "bzip2",
+ "crc32fast",
+ "filetime",
+ "flate2",
  "git2",
  "indexmap",
  "jiff",
  "jsonschema",
+ "lzma-rust2",
  "proptest",
  "regex",
+ "ruzstd",
  "schemars",
  "serde",
  "serde-saphyr",
  "serde_json",
  "sha2 0.11.1",
+ "tar",
  "tempfile",
  "uuid",
+ "zip",
 ]
 
 [[package]]
 name = "carrel-fetch"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "carrel-core",
  "fs4",
@@ -478,7 +496,7 @@ dependencies = [
 
 [[package]]
 name = "carrel-ffi"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "carrel-core",
  "thiserror 2.0.21",
@@ -486,24 +504,39 @@ dependencies = [
 ]
 
 [[package]]
-name = "carrel-provider-extract"
-version = "0.2.0"
+name = "carrel-provider-cad"
+version = "0.3.0"
 dependencies = [
  "carrel-core",
- "pdf-extract",
+ "carrel-provider-extract",
+ "cc",
+ "crc32fast",
+ "flate2",
  "serde_json",
  "tempfile",
 ]
 
 [[package]]
+name = "carrel-provider-extract"
+version = "0.3.0"
+dependencies = [
+ "carrel-core",
+ "pdf-extract",
+ "serde_json",
+ "tempfile",
+ "zip",
+]
+
+[[package]]
 name = "carrel-provider-llama"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "carrel-core",
  "llama-cpp-2",
  "minijinja",
  "minijinja-contrib",
  "serde_json",
+ "tempfile",
  "tracing-subscriber",
 ]
 
@@ -1056,6 +1089,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "filetime"
+version = "0.2.29"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c287a33c7f0a620c38e641e7f60827713987b3c0f26e8ddc9462cc69cf75759"
+dependencies = [
+ "cfg-if",
+ "libc",
+]
+
+[[package]]
 name = "find-msvc-tools"
 version = "0.1.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1538,6 +1581,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "20870f649af7073d53e38067b2a84312175d56ea15217e1b15bc83506ec50afb"
 
 [[package]]
+name = "libbz2-rs-sys"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32f454fd6831a29c0e827ed075bca2a15be201bd57f4168f0fd1041124eab17e"
+
+[[package]]
 name = "libc"
 version = "0.2.191"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1680,6 +1729,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ef9ac18847474e638e3702b76c65d4eb93428471a74778ef0f1be711717f89b5"
 dependencies = [
  "hashbrown",
+]
+
+[[package]]
+name = "lzma-rust2"
+version = "0.24.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "490750560fa7851fbbf5d3ab1a8750f09350ed361ed8aed85b1e1e40587812ee"
+dependencies = [
+ "sha2 0.11.1",
 ]
 
 [[package]]
@@ -2618,6 +2676,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruzstd"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "69e4ce4a039f42bf25920b95667e4d789e98749ab11bbb8d2c2936f788421bb5"
+dependencies = [
+ "twox-hash",
+]
+
+[[package]]
 name = "ryu"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2984,6 +3051,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tar"
+version = "0.4.46"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f6221d9a6003c78398e3b239969f352578258df48c8eb051caadae0015bc840"
+dependencies = [
+ "filetime",
+ "libc",
+]
+
+[[package]]
 name = "tempfile"
 version = "3.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3259,6 +3336,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d2df906b07856748fa3f6e0ad0cbaa047052d4a7dd609e231c4f72cee8c36f31"
 
 [[package]]
+name = "twox-hash"
+version = "2.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "86a801b3cea342a06d468c8710662aa29e5e05e4f5c0d62f00bbb7f2ad7941c2"
+
+[[package]]
 name = "type1-encoding-parser"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3266,6 +3349,12 @@ checksum = "fa10c302f5a53b7ad27fd42a3996e23d096ba39b5b8dd6d9e683a05b01bee749"
 dependencies = [
  "pom",
 ]
+
+[[package]]
+name = "typed-path"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9ce898823d8cd0f028662d2f349694b1af0a5cc9be83f1d213a00d3147445e1e"
 
 [[package]]
 name = "typenum"
@@ -3359,7 +3448,7 @@ dependencies = [
 
 [[package]]
 name = "uniffi-bindgen"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "uniffi",
 ]
@@ -3906,6 +3995,24 @@ name = "zeroize"
 version = "1.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e13084392c5e4bc371903e2935a5eaeed24905a7511356b883835e18a78f6879"
+
+[[package]]
+name = "zip"
+version = "9.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1156b39d142a34b999c2310a50455e0cb3760bf7efad0122f796d813bee26ccb"
+dependencies = [
+ "bzip2",
+ "crc32fast",
+ "flate2",
+ "getrandom 0.4.3",
+ "indexmap",
+ "jiff",
+ "memchr",
+ "nix 0.31.3",
+ "typed-path",
+ "windows-sys 0.61.2",
+]
 
 [[package]]
 name = "zlib-rs"

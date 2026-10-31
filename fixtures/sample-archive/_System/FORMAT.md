@@ -183,9 +183,11 @@ Fields are owned by programs unless marked as owner fields. Optional fields are 
 | `location` | string | for `physical`, `external` | Where the item is, in words or as a path or URI |
 | `url` | string | for `url` | The resource's address |
 | `checked_out` | map | no | Present while checked out (§9.1) |
+| `snapshots` | `return-only` | no | Snapshot the working copy only at checkout and return, not after each work session (§9.1), as for large data (owner may set) |
 | `generated` | map | no | Provenance of program-written fields (§5.6) |
 | `placement` | map | no | How sure filing was of the item's collection, when it wasn't (§5.8) |
 | `removed` | map | for `tombstone` | §10 |
+| `expanded_from` | map | no | The compressed file the item was expanded from when it was filed or with `carrel expand`: its `name`, `size` and `checksum` (§2.6) |
 
 Programs **must** preserve fields they don't recognize when rewriting a card.
 
@@ -237,7 +239,7 @@ An entry written by a program and not yet approved is a pending callout, so it s
 > Added a phase-response analysis and regenerated figure 4.
 ```
 
-Approving an entry turns the callout into a normal entry. Text the owner adds to an entry is preserved when entries are combined.
+Approving an entry turns the callout into a normal entry. The owner may approve one by hand, by turning it into a level-3 heading or into a callout of another type whose title starts with the date (`> [!done] 2026-10-29 · 2h 10m`); programs **should** notice such approvals and **must** keep the entry as the owner wrote it. Text the owner adds to an entry is preserved when entries are combined.
 
 ### 5.6 Provenance
 
@@ -355,6 +357,7 @@ id: 01928f3a-bbbb-7ccc-8ddd-000000000002
 title: "Projects"
 description: "Things being made: code, notes and data"   # one line, used in listings
 item_template: project          # optional: a card template name for this collection's items
+compressed_files: keep          # optional: expand, keep or ask; overrides settings.json (§7.2)
 tags:                           # this collection's tag vocabulary
   - name: simulation
     description: "Numerical models and simulation code"
@@ -479,6 +482,7 @@ Archive-level settings that every device follows. Version 1.0 defines:
 | `backups` | map describing the backup repository: `type` (`kopia`), `repository` (the backup system's identifier for it) and `description`. Never its path, which differs between devices, and never the password | none |
 | `ingest.originals` | `move` (the original is moved into the archive on approval) or `keep` (it's copied, and the original is left for the owner to delete) | `move` |
 | `signals.crowded_items` | integer: how many loose items make a collection with no subcollections crowded, as a restructure signal | `30` |
+| `compressed_files` | `expand` (a compressed file, such as a zip, is expanded when its proposal is approved, so what it holds can be browsed), `keep` (it's filed as it is) or `ask` (the owner decides for each one in Review). A collection's own `compressed_files` (§6.3) and a routing rule's `keep_compressed` (§7.4) take precedence; software, encrypted, split and unreadable archives are kept, and unsafe or very large expansions ask, whatever the setting | `expand` |
 
 Programs **must** preserve unknown keys.
 
@@ -509,7 +513,7 @@ rules:
     auto_file: false
 ```
 
-`match` keys: `extension`, `name` (a regular expression on the item's name), `marker` (a file present in a folder's top level), `source` (the folder the item came from). All keys in one `match` must hold. `auto_file: true` files matches without review.
+`match` keys: `extension`, `name` (a regular expression on the item's name), `marker` (a file present in a folder's top level, or at the top level of what a compressed file would expand to), `source` (the folder the item came from). All keys in one `match` must hold. `auto_file: true` files matches without review. `keep_compressed: true` keeps matching compressed files compressed rather than expanding them (§7.2).
 
 ### 7.5 `rules/markers.yaml` and `rules/regenerable.yaml`
 
@@ -626,6 +630,8 @@ A device only ever writes to its own inbox folder. The writer applies inbox file
 | `problems` | What validation or the owner needs to settle, as `{"stage", "message"}` objects |
 | `attempts` | Every provider call made for the entry: `stage`, `provider`, `offer`, `result` (`ok`, `unsupported`, `unavailable`, `declined` (a model's safety refusal) or `failed`) and an optional `message` |
 | `sensitivity_reasons` | Why `card.sensitivity` is `sensitive` or `restricted`, in words that never quote what was found; absent otherwise |
+| `desk_card` | Optional. For a desk item being archived (§9.4), its desk card's absolute path: the filed card keeps that card's `id` and body |
+| `compressed` | Optional, for a compressed file. `format` (`zip`, `tar`, `tar-gz`, `tar-bz2`, `tar-xz`, `tar-zst`, `gz`, `bz2`, `xz`, `zst`, `7z` or `rar`); `action`: `expand` (on approval, what it holds is filed in its place, with `expanded_from` on the card, and the compressed file goes to the system Trash), `keep` or `ask` (the entry needs the owner); `reason` for keeping or asking; `by_owner` when the owner chose the action, which lifts the size limits; and when known, what expanding makes: `files`, `size`, `kind`, `sealed` and `name` |
 
 When an approved or held entry has been archived, programs remove the entry; the history commit (§8.2) records what was filed. A rejected entry is removed once the owner has seen the batch summary. Entries whose `source.device` is another device can't be archived there; they wait for that device.
 
@@ -651,6 +657,7 @@ Items added for ingest wait in `_System/queue/intake/`, one JSON file each, name
 | `added` | When it was added |
 | `order` | Its place in the queue, lower first, then by `id`; omitted when `0` |
 | `attempts`, `failure` | How many times processing it has failed, and why the last time; after two, it waits for the owner to retry it |
+| `desk_card` | Optional. For a desk item being archived (§9.4), its desk card's absolute path. The proposal gets the card's fields and the same key |
 
 Programs process entries one at a time, save each item's proposal to `review/` as soon as it's ready, and then remove the entry.
 
@@ -792,6 +799,8 @@ checked_out:
 
 The archive copy **must not** be modified while `checked_out` is present, except by the return that removes it.
 
+Where backups are set up (`backups`, §7.2), programs **may** snapshot the working copy of a checked-out or desk item (§9.4) after each work session. They **must not** when its card has `snapshots: return-only`.
+
 ### 9.2 `Active/`
 
 `Active/` is generated by programs and contains no owner content:
@@ -800,13 +809,15 @@ The archive copy **must not** be modified while `checked_out` is present, except
 - `Active/Checked out/<title>.md`: one note per checked-out item, linking to its card and its working location. Names are made unique by adding the start of the item's `id` when two titles collide.
 - `Active/On desk/<title>.md`: mirrors of desk-item cards (§9.4), named the same way and refreshed while the archive is available. Owner notes written in a mirror's body are copied back to the desk card.
 
+A mirror's frontmatter is `carrel: desk-mirror`, the desk card's `id`, `card` (its absolute path on its device) and `mirrored` (the checksum, §2.6, of the card's notes when the mirror was written). Its body is a managed section `mirror` (§5.3) that programs write, followed by the desk card's body. The **notes** are a body without the `mirror` section and with the history section's content left out, table padding normalized. When a mirror's notes no longer match `mirrored`, the owner edited them there: programs copy them to the desk card, keeping the card's history section, or, if the card's notes changed too, add them to the card before its history section, so nothing is lost. A mirror of a desk card the device can't read, such as another device's, is left as it is.
+
 ### 9.3 Journal
 
 `Journal/<year>/<year>-<month>.md` lists the month's approved work sessions across all items, newest first, each linking to its card. Journal files are generated from cards and may be regenerated at any time.
 
 ### 9.4 Desk items
 
-A desk item is tracked but stored outside the archive. Its card (with `carrel: card`) lives beside it on the device's desk and follows §5. The device's `desk.json` (§7.10) lists it, and `Active/On desk/` holds a mirror of its card.
+A desk item is tracked but stored outside the archive. Its card (with `carrel: card`) lives beside it on the device's desk and follows §5. The device's `desk.json` (§7.10) lists it, and `Active/On desk/` holds a mirror of its card. When it's archived, its proposal (§7.9) names the desk card in `desk_card`; the filed card keeps the desk card's `id` and body, history included, and programs then remove the desk card.
 
 ## 10. Removal
 

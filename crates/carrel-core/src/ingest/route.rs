@@ -59,6 +59,10 @@ pub struct Rule {
     /// Whether matching items skip review. Sensitive items wait regardless.
     #[serde(default)]
     pub auto_file: bool,
+    /// Whether matching compressed files stay compressed rather than being expanded
+    /// (`docs/design/compressed.md`).
+    #[serde(default)]
+    pub keep_compressed: bool,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -146,15 +150,21 @@ fn matches(m: &Match, candidate: &Candidate, source: &Path) -> bool {
         return false;
     }
     if let Some(marker) = &m.marker {
-        if candidate.kind == Kind::File {
-            return false;
-        }
         let pattern = NamePattern(marker.clone());
-        let found = std::fs::read_dir(&candidate.path).is_ok_and(|entries| {
-            entries
-                .filter_map(Result::ok)
-                .any(|e| pattern.matches(&e.file_name().to_string_lossy()))
-        });
+        // A compressed file's markers are those of what expanding it makes.
+        let found =
+            if let Some(listing) = candidate.inside.as_ref().and_then(|i| i.listing.as_ref()) {
+                !matches!(listing.shape(), crate::compressed::Shape::OneFile(_))
+                    && listing.top_level().iter().any(|n| pattern.matches(n))
+            } else if candidate.kind == Kind::File {
+                false
+            } else {
+                std::fs::read_dir(&candidate.path).is_ok_and(|entries| {
+                    entries
+                        .filter_map(Result::ok)
+                        .any(|e| pattern.matches(&e.file_name().to_string_lossy()))
+                })
+            };
         if !found {
             return false;
         }
@@ -196,6 +206,8 @@ pub struct Route {
     pub rule: Option<String>,
     /// Whether the rule lets the item skip review.
     pub auto_file: bool,
+    /// Whether the rule keeps compressed files compressed.
+    pub keep_compressed: bool,
     /// Every model call made.
     pub attempts: Vec<Attempt>,
 }
@@ -374,6 +386,7 @@ impl<'a> Router<'a> {
             reasons,
             rule: None,
             auto_file: false,
+            keep_compressed: false,
             attempts,
         }
     }
@@ -534,6 +547,7 @@ impl<'a> Router<'a> {
                 reasons: vec![format!("routing rule \u{201c}{}\u{201d}", rule.name)],
                 rule: Some(rule.name.clone()),
                 auto_file: rule.auto_file,
+                keep_compressed: rule.keep_compressed,
                 attempts: Vec::new(),
             });
         }
@@ -554,6 +568,7 @@ impl<'a> Router<'a> {
             reasons,
             rule: None,
             auto_file: false,
+            keep_compressed: false,
             attempts,
         }
     }

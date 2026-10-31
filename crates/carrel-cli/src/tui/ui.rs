@@ -8,8 +8,10 @@ use ratatui::widgets::{Block, Clear, List, ListItem, ListState, Paragraph, Wrap}
 
 use carrel_core::card::Sensitivity;
 use carrel_core::review::{ReviewEntry, State};
+use carrel_core::search::{Found, Hit};
 
 use super::app::{App, Confirm, Input, Picker, Tab};
+use super::item::{Pane, Relation, Row};
 use super::screens::InputPurpose;
 
 /// The smallest terminal the interactive mode lays out in.
@@ -98,6 +100,7 @@ pub fn draw(frame: &mut Frame, app: &App, theme: Theme) {
     match app.tab {
         Tab::History => draw_history(frame, app, theme, inner),
         Tab::Review => draw_review(frame, app, theme, inner),
+        Tab::Active => draw_active(frame, app, theme, inner),
         Tab::Questions => draw_questions(frame, app, theme, inner),
         Tab::Browse => draw_browse(frame, app, theme, inner),
         Tab::Status => draw_report(frame, app, inner, Some(waiting_line(app))),
@@ -228,7 +231,7 @@ fn draw_help_line(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
     if let Some(worker) = app.worker_line() {
         spans.push(Span::styled(format!(" {worker}  ·"), theme.key()));
     }
-    if let Some(note) = app.marked_note() {
+    if let Some(note) = app.marked_note().or_else(|| app.active_marked_note()) {
         spans.push(Span::raw(format!(" {note}  ·")));
     }
     if let Some(message) = &app.message {
@@ -255,7 +258,7 @@ fn centered(area: Rect, width: u16, height: u16) -> Rect {
 
 fn draw_help(frame: &mut Frame, theme: Theme, area: Rect) {
     let rows = [
-        ("1 to 8, Tab, ←→", "switch screens"),
+        ("1 to 9, Tab, ←→", "switch screens"),
         (
             "i",
             "add files and folders to ingest, with your file picker or the built-in one",
@@ -271,13 +274,26 @@ fn draw_help(frame: &mut Frame, theme: Theme, area: Rect) {
             "a duplicate: file as a version, keep both, skip; other matches (Review)",
         ),
         (
+            "z",
+            "unpack a zip when it's approved, or keep it compressed (Review)",
+        ),
+        (
             "Space  A",
             "mark several; approve all high-confidence (Review)",
         ),
+        ("r  o  x", "return, open, cancel checkout (Active)"),
+        (
+            "a  e  c  d  Space",
+            "approve, edit, combine, drop; mark (Active)",
+        ),
         ("Enter  d", "answer or dismiss a question (Questions)"),
         (
-            "←→  c  /  Esc",
-            "collections or items; correct an item; search; clear it (Browse)",
+            "←→  e  c  /  Esc",
+            "collections, items, an item; edit, correct; search; clear (Browse)",
+        ),
+        (
+            "u  Enter",
+            "undo the item's chosen change; go to a related item (Browse)",
         ),
         ("u", "undo the chosen change (History)"),
         (
@@ -358,19 +374,20 @@ fn draw_confirm(frame: &mut Frame, confirm: &Confirm, theme: Theme, area: Rect) 
             " Undo ",
             format!("Undo “{summary}”?"),
             "A new change reverses it: items it moved go back, and the cards and documents it \
-             changed return to how they were.",
+             changed return to how they were."
+                .to_owned(),
             " undo   ",
         ),
         Confirm::Download { name, about } => (
             " Download ",
             format!("Download {name}?"),
-            about.as_str(),
+            about.clone(),
             " download   ",
         ),
         Confirm::Learn { about, fact } => (
             " Glossary ",
             format!("Add “{about}” to the glossary?"),
-            fact.as_str(),
+            fact.clone(),
             " add it   ",
         ),
         Confirm::Reject(ids) => (
@@ -381,14 +398,28 @@ fn draw_confirm(frame: &mut Frame, confirm: &Confirm, theme: Theme, area: Rect) 
                 if ids.len() == 1 { "" } else { "s" }
             ),
             "The items stay where they are. Rejecting isn't a change to the archive, so History \
-             can't undo it; ingest them again to propose them anew.",
+             can't undo it; ingest them again to propose them anew."
+                .to_owned(),
             " reject   ",
         ),
+        Confirm::Return { title, changes, .. } => (
+            " Return ",
+            format!("Return “{title}”, replacing the archive copy?"),
+            changes.trim_end().to_owned(),
+            " return it   ",
+        ),
+        Confirm::CancelCheckout { title, .. } => (
+            " Cancel checkout ",
+            format!("Cancel the checkout of “{title}”?"),
+            "The archive copy is unlocked as it was, and the working copy's changes aren't \
+             brought back; the working copy stays where it is."
+                .to_owned(),
+            " cancel it   ",
+        ),
     };
-    let lines = vec![
-        Line::from(question),
-        Line::from(""),
-        Line::from(explanation),
+    let mut lines = vec![Line::from(question), Line::from("")];
+    lines.extend(explanation.lines().map(|l| Line::from(l.to_owned())));
+    lines.extend([
         Line::from(""),
         Line::from(vec![
             Span::styled("y", theme.key()),
@@ -396,12 +427,27 @@ fn draw_confirm(frame: &mut Frame, confirm: &Confirm, theme: Theme, area: Rect) 
             Span::styled("n", theme.key()),
             Span::raw(" keep it"),
         ]),
-    ];
-    let popup = centered(area, 64, 9);
+    ]);
+    let width = if matches!(confirm, Confirm::Return { .. }) {
+        area.width.saturating_sub(8).clamp(64, 100)
+    } else {
+        64
+    };
+    // Long lines wrap, so leave room for them.
+    let wrapped: usize = lines
+        .iter()
+        .map(|l| {
+            l.width()
+                .div_ceil(usize::from(width.saturating_sub(4)).max(1))
+                .max(1)
+        })
+        .sum();
+    let height = u16::try_from(wrapped + 2).unwrap_or(u16::MAX).max(9);
+    let popup = centered(area, width, height);
     frame.render_widget(Clear, popup);
     frame.render_widget(
         Paragraph::new(lines)
-            .wrap(Wrap { trim: true })
+            .wrap(Wrap { trim: false })
             .block(Block::bordered().title(title)),
         popup,
     );
@@ -643,10 +689,11 @@ fn draw_browse(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
         })
         .collect();
     // The pane the arrows move in is highlighted; the other keeps its choice dimly.
-    let (tree_style, items_style) = if app.browse_in_items {
-        (Style::new().add_modifier(Modifier::BOLD), theme.selected())
-    } else {
-        (theme.selected(), Style::new().add_modifier(Modifier::BOLD))
+    let bold = Style::new().add_modifier(Modifier::BOLD);
+    let (tree_style, items_style) = match app.browse_pane {
+        Pane::Collections => (theme.selected(), bold),
+        Pane::Items => (bold, theme.selected()),
+        Pane::Item => (bold, bold),
     };
     let mut tree_state = ListState::default().with_selected(Some(app.browse_collection));
     frame.render_stateful_widget(
@@ -654,10 +701,11 @@ fn draw_browse(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
         tree_area,
         &mut tree_state,
     );
-    let title = match &app.search {
-        Some(words) => format!(" Found for “{words}” (Esc clears) "),
-        None => String::new(),
-    };
+    let title = app
+        .search
+        .as_ref()
+        .map(|typed| app.search_title(typed))
+        .unwrap_or_default();
     let items: Vec<ListItem> = if app.browse_items.is_empty() {
         vec![ListItem::new(if app.search.is_some() {
             "Nothing found"
@@ -667,16 +715,17 @@ fn draw_browse(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
     } else {
         app.browse_items
             .iter()
-            .map(|(path, title)| {
-                if app.search.is_some() {
-                    ListItem::new(format!(
-                        "{title}  ({})",
-                        path.rsplit_once('/').map_or("", |p| p.0)
-                    ))
-                } else {
-                    ListItem::new(title.as_str())
-                }
-            })
+            .enumerate()
+            .map(
+                |(i, (_, title))| match app.searched.hit(i).map(|h| &h.found) {
+                    Some(Found::Item(item)) => ListItem::new(format!(
+                        "{title}{}  ({})",
+                        sensitivity_mark(item.sensitivity),
+                        item.collection
+                    )),
+                    _ => ListItem::new(title.as_str()),
+                },
+            )
             .collect()
     };
     let mut items_state = ListState::default().with_selected(Some(app.browse_item));
@@ -689,12 +738,98 @@ fn draw_browse(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
         items_area,
         &mut items_state,
     );
-    let lines: Vec<Line> = app.card.iter().map(|l| Line::from(l.as_str())).collect();
-    frame.render_widget(
-        Paragraph::new(lines)
-            .wrap(Wrap { trim: false })
-            .block(Block::new().borders(ratatui::widgets::Borders::LEFT)),
-        card_area,
+    draw_item(frame, app, theme, card_area);
+}
+
+/// The chosen item: its card, then its changes and related items, which the owner moves
+/// among in the item's own pane.
+/// How a search result is marked when the item is sensitive or restricted.
+fn sensitivity_mark(sensitivity: Sensitivity) -> &'static str {
+    match sensitivity {
+        Sensitivity::Restricted => "  [restricted]",
+        Sensitivity::Sensitive => "  [sensitive]",
+        _ => "",
+    }
+}
+
+/// Why a search result came back: where it matched, and the passage with the words marked.
+fn why_lines(hit: &Hit, theme: Theme) -> Vec<Line<'static>> {
+    let why: Vec<String> = hit.why.iter().map(ToString::to_string).collect();
+    let mut lines = vec![Line::styled(
+        format!("Matched: {}", why.join(", ")),
+        theme.dim(),
+    )];
+    if let Some(passage) = &hit.passage {
+        let marked = theme
+            .key()
+            .add_modifier(Modifier::BOLD | Modifier::UNDERLINED);
+        let mut spans = Vec::new();
+        let mut at = 0;
+        for range in &passage.highlights {
+            spans.push(Span::raw(passage.text[at..range.start].to_owned()));
+            spans.push(Span::styled(passage.text[range.clone()].to_owned(), marked));
+            at = range.end;
+        }
+        spans.push(Span::raw(passage.text[at..].to_owned()));
+        lines.push(Line::from(spans));
+    }
+    lines.push(Line::from(""));
+    lines
+}
+
+fn draw_item(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
+    let view = &app.item;
+    let block = Block::new().borders(ratatui::widgets::Borders::LEFT);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    let bold = Style::new().add_modifier(Modifier::BOLD);
+    // Headings aren't rows; `selected` is the chosen row's place among these.
+    let mut rows: Vec<ListItem> = Vec::new();
+    let mut selected = None;
+    if !view.history.is_empty() {
+        rows.push(ListItem::new(Line::styled("History", bold)));
+    }
+    for (i, row) in view.rows().into_iter().enumerate() {
+        if let (Row::Related(_), true) = (row, i == view.history.len()) {
+            rows.push(ListItem::new(Line::styled("Related", bold)));
+        }
+        if i == view.chosen {
+            selected = Some(rows.len());
+        }
+        rows.push(ListItem::new(match row {
+            Row::Change(entry) => format!(
+                "{}  {}",
+                crate::commands::local_time(entry.time),
+                entry.summary
+            ),
+            Row::Related(related) => match &related.relation {
+                Relation::Link(how) => format!("{how}  {}", related.title),
+            },
+        }));
+    }
+    let list_height = u16::try_from(rows.len())
+        .unwrap_or(u16::MAX)
+        .min(inner.height / 2);
+    let [card_area, list_area] =
+        Layout::vertical([Constraint::Min(0), Constraint::Length(list_height)]).areas(inner);
+    let mut lines: Vec<Line> = Vec::new();
+    if app.search.is_some()
+        && let Some(hit) = app.searched.hit(app.browse_item)
+    {
+        lines.extend(why_lines(hit, theme));
+    }
+    lines.extend(view.text.iter().map(|l| Line::from(l.as_str())));
+    frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), card_area);
+    let highlight = if app.browse_pane == Pane::Item {
+        theme.selected()
+    } else {
+        Style::new()
+    };
+    let mut state = ListState::default().with_selected(selected);
+    frame.render_stateful_widget(
+        List::new(rows).highlight_style(highlight),
+        list_area,
+        &mut state,
     );
 }
 
@@ -703,7 +838,7 @@ fn draw_input(frame: &mut Frame, input: &Input, theme: Theme, area: Rect) {
         InputPurpose::Answer { question, .. } => (" Answer ", question.clone()),
         InputPurpose::Search => (
             " Search ",
-            "Words to find in titles, tags and summaries:".to_owned(),
+            "Words to find, and filters such as tag:receipts, kind:file, after:2025-01:".to_owned(),
         ),
         InputPurpose::Setting(key) => (" Settings ", format!("New value for {key}:")),
         InputPurpose::Ingest => (
@@ -968,4 +1103,151 @@ fn draw_settings(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
             .block(Block::new().borders(ratatui::widgets::Borders::LEFT)),
         detail_area,
     );
+}
+
+fn draw_active(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
+    use super::active::{Kind, Row};
+    if app.active.is_empty() {
+        frame.render_widget(
+            Paragraph::new(vec![
+                Line::from("Nothing is checked out or on the desk."),
+                Line::from(""),
+                Line::from(Span::styled(
+                    "Check an item out with `carrel checkout ITEM`, or track a folder where it is \
+                     with `carrel desk add PATH`.",
+                    theme.dim(),
+                )),
+            ])
+            .wrap(Wrap { trim: false }),
+            area,
+        );
+        return;
+    }
+    let [list_area, detail_area] =
+        Layout::horizontal([Constraint::Percentage(45), Constraint::Percentage(55)]).areas(area);
+    let items: Vec<ListItem> = app
+        .active_rows()
+        .into_iter()
+        .map(|row| match row {
+            Row::Item(i) => {
+                let item = &app.active[i];
+                let kind = match item.kind {
+                    Kind::CheckedOut => "out ",
+                    Kind::Desk => "desk",
+                };
+                let pending = match item.pending.len() {
+                    0 => String::new(),
+                    n => format!(", {n} pending"),
+                };
+                ListItem::new(format!("{kind}  {}  ({}{pending})", item.title, item.state))
+            }
+            Row::Entry(i, n) => {
+                let item = &app.active[i];
+                let entry = &item.pending[n - 1];
+                let mark = if app.active_marked.contains(&(item.id, n)) {
+                    "■"
+                } else {
+                    " "
+                };
+                ListItem::new(format!(
+                    "    {mark} {n}. {}{}  {}",
+                    entry.date,
+                    entry
+                        .duration
+                        .as_ref()
+                        .map(|d| format!(" · {d}"))
+                        .unwrap_or_default(),
+                    entry.lines.first().map_or("", String::as_str)
+                ))
+            }
+        })
+        .collect();
+    let mut state = ListState::default().with_selected(Some(app.active_chosen));
+    frame.render_stateful_widget(
+        List::new(items).highlight_style(theme.selected()),
+        list_area,
+        &mut state,
+    );
+    let lines = app.active_item().map(active_detail).unwrap_or_default();
+    frame.render_widget(
+        Paragraph::new(lines)
+            .wrap(Wrap { trim: false })
+            .block(Block::new().borders(ratatui::widgets::Borders::LEFT)),
+        detail_area,
+    );
+}
+
+/// The chosen active item in full: where it is, since when, what changed, and its pending
+/// entries numbered.
+fn active_detail(item: &super::active::ActiveItem) -> Vec<Line<'static>> {
+    use super::active::Kind;
+    let bold = Style::new().add_modifier(Modifier::BOLD);
+    let mut lines = vec![Line::from(item.title.clone()).style(bold)];
+    match item.kind {
+        Kind::CheckedOut => {
+            lines.push(Line::from(format!(
+                "Working copy: {}",
+                item.working.display()
+            )));
+            lines.push(Line::from(format!("Checked out {}", item.since)));
+            if let Some(due) = &item.due {
+                lines.push(Line::from(format!("Due {due}")));
+            }
+        }
+        Kind::Desk => {
+            lines.push(Line::from(format!(
+                "On the desk at {}",
+                item.working.display()
+            )));
+            lines.push(Line::from(format!("Card: {}", item.card.display())));
+            lines.push(Line::from(format!("Added {}", item.since)));
+        }
+    }
+    lines.push(Line::from(format!("State: {}", item.state)));
+    if let Some(diff) = item.diff.as_ref().filter(|d| !d.is_empty()) {
+        lines.push(Line::from(""));
+        let counts: Vec<String> = [
+            (diff.changed.len(), "changed"),
+            (diff.added.len(), "added"),
+            (diff.removed.len(), "removed"),
+            (diff.renamed.len(), "renamed"),
+        ]
+        .into_iter()
+        .filter(|(n, _)| *n > 0)
+        .map(|(n, what)| format!("{n} {what}"))
+        .collect();
+        lines.push(Line::from(format!("Files: {}", counts.join(", "))));
+        let shown = diff
+            .changed
+            .iter()
+            .map(|p| format!("  changed  {p}"))
+            .chain(diff.added.iter().map(|p| format!("  added    {p}")))
+            .chain(diff.removed.iter().map(|p| format!("  removed  {p}")))
+            .chain(
+                diff.renamed
+                    .iter()
+                    .map(|(a, b)| format!("  renamed  {a} → {b}")),
+            );
+        lines.extend(shown.take(8).map(Line::from));
+    }
+    lines.push(Line::from(""));
+    if item.pending.is_empty() {
+        lines.push(Line::from("No pending history entries"));
+    } else {
+        lines.push(Line::from("Pending history entries:").style(bold));
+        for (n, entry) in item.pending.iter().enumerate() {
+            lines.push(Line::from(format!(
+                "{}. {}{}",
+                n + 1,
+                entry.date,
+                entry
+                    .duration
+                    .as_ref()
+                    .map(|d| format!(" · {d}"))
+                    .unwrap_or_default()
+            )));
+            lines.extend(entry.lines.iter().map(|l| Line::from(format!("   {l}"))));
+        }
+    }
+    lines
 }

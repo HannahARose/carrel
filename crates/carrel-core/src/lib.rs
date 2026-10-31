@@ -17,6 +17,7 @@
 //! | [`sections`] | Managed sections, and comparing text while ignoring table padding | §5.3 |
 //! | [`listing`] | The generated listings: collections' contents and `ARCHIVE.md`'s collections | §6.2, §6.3 |
 //! | [`detect`] | Item kinds, sealing, and regenerable folders | §4, §7.5 |
+//! | [`compressed`] | Reading inside compressed files, and expanding them | §5.2, `docs/design/compressed.md` |
 //! | [`manifest`] | Checksums, folder manifests and their diffs | §2.6, §7.7 |
 //! | [`names`] | Portable names: checking them, and suggesting portable ones | §2.5 |
 //! | [`rename`] | Renaming an item and its card together, with links and history following | §2.5, §8.2 |
@@ -25,6 +26,7 @@
 //! | [`coordinator`] | Which writer may change an archive: leases and the disk lock | §8.4 |
 //! | [`ingest`] | Ingest: intake, text, cards, routing, sensitivity, and filing approved items | `docs/design/ingest.md` |
 //! | [`review`] | The review queue: proposals to file items, waiting for the owner | §7.9 |
+//! | [`search`] | Search: the word index, the text cache, filters and results | §7.11, §7.12, `docs/design/search.md` |
 //! | [`questions`] | Questions for the owner, and the glossary their answers teach | §7.3, §7.9 |
 //! | [`local`] | Where this device keeps its own data: configuration and models | none |
 //! | [`providers`] | Text models and text extraction from providers, native or portable | `docs/providers.md` |
@@ -55,12 +57,14 @@ pub mod card;
 pub mod card_file;
 pub mod checkout;
 pub mod collections;
+pub mod compressed;
 pub mod coordinator;
 pub mod correct;
 pub mod desk;
 pub mod detect;
 pub mod documents;
 pub mod entries;
+pub mod finder;
 pub mod formats;
 pub mod frontmatter;
 pub mod history;
@@ -69,16 +73,19 @@ pub mod intake;
 pub mod listing;
 pub mod local;
 pub mod manifest;
+pub mod mirrors;
 pub mod models;
 pub mod names;
 pub mod providers;
 pub mod questions;
 pub mod rename;
 pub mod review;
+pub mod search;
 pub mod sections;
 pub mod sessions;
 pub mod settings;
 pub mod signals;
+pub mod trash;
 
 /// The version of the archive format this build reads and writes (`FORMAT.md`).
 pub const FORMAT_VERSION: FormatVersion = FormatVersion { major: 1, minor: 0 };

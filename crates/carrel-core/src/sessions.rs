@@ -14,15 +14,14 @@ use std::time::{Duration, SystemTime};
 use serde::{Deserialize, Serialize};
 
 use crate::archive::Archive;
-use crate::card::Id;
+use crate::backup::{BackupError, Backups, Snapshot};
+use crate::card::{Id, Snapshots};
 use crate::card_file::CardFile;
 use crate::coordinator::WriterLease;
+use crate::desk::Desk;
 use crate::detect::{Rules, is_ignored};
 use crate::entries::HistoryEntry;
 use crate::history::{Change, History, HistoryError, Operation};
-
-/// How long without changes ends a session, unless the archive sets `sessions.idle_minutes`.
-pub const IDLE_MINUTES: u64 = 45;
 
 /// A stretch of work on one item.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -207,11 +206,15 @@ fn commits(path: &Path, since: SystemTime) -> Vec<(SystemTime, Moment)> {
 }
 
 /// When each item on this device was last looked at for sessions, by item identifier: the
-/// end of the last session written, or when it was checked out.
+/// end of the last session written, or when it was checked out or put on the desk.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Scanned {
     /// Seconds since 1970, by item.
     pub items: BTreeMap<String, u64>,
+    /// When sessions were last looked for at all, in seconds since 1970, so running Carrel
+    /// often looks only every few minutes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub looked: Option<u64>,
 }
 
 impl Scanned {
@@ -245,6 +248,15 @@ impl Scanned {
         )
     }
 
+    /// Whether it's been at least `every` since sessions were last looked for, as of `now`.
+    #[must_use]
+    pub fn due(&self, every: Duration, now: SystemTime) -> bool {
+        self.looked.is_none_or(|looked| {
+            now.duration_since(SystemTime::UNIX_EPOCH + Duration::from_secs(looked))
+                .is_ok_and(|since| since >= every)
+        })
+    }
+
     /// When `item` was last looked at, or `otherwise` the first time.
     #[must_use]
     pub fn since(&self, item: &str, otherwise: SystemTime) -> SystemTime {
@@ -264,13 +276,52 @@ impl Scanned {
     }
 }
 
-/// What recording found: the items that got entries, with how many, and the commit.
+/// One item that got new entries.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecordedItem {
+    /// Its card's identifier.
+    pub id: Id,
+    /// Its title.
+    pub title: String,
+    /// How many sessions were found.
+    pub sessions: usize,
+    /// The working copy: where it's checked out to, or where the desk item is.
+    pub working: PathBuf,
+    /// Whether its working copy is snapshotted after sessions: not with `snapshots:
+    /// return-only` on the card.
+    pub snapshot: bool,
+}
+
+/// An item whose pending entries the owner approved by hand.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ApprovedByHand {
+    /// Its card's identifier.
+    pub id: Id,
+    /// Its title.
+    pub title: String,
+    /// How many entries.
+    pub entries: usize,
+}
+
+/// What recording found: the items that got entries, entries approved by hand, and the
+/// commit.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Recorded {
-    /// Each item with new entries: its identifier, title and how many.
-    pub items: Vec<(Id, String, usize)>,
-    /// The history commit, when anything was written.
+    /// Each item with new entries.
+    pub items: Vec<RecordedItem>,
+    /// The items with pending entries the owner approved by hand, noticed and recorded.
+    pub approved_by_hand: Vec<ApprovedByHand>,
+    /// The history commit, when anything in the archive was written. Desk items' cards are
+    /// beside them, outside the history, so recording only those commits nothing.
     pub commit: Option<String>,
+}
+
+impl Recorded {
+    /// How many sessions were found, on all the items.
+    #[must_use]
+    pub fn sessions(&self) -> usize {
+        self.items.iter().map(|i| i.sessions).sum()
+    }
 }
 
 /// Why sessions couldn't be recorded.
@@ -293,9 +344,53 @@ impl std::fmt::Display for SessionError {
 
 impl std::error::Error for SessionError {}
 
-/// Finds the finished work sessions on every item checked out on this device (the lease's)
-/// since each was last looked at, adds a pending history entry for each, and commits them as
-/// one `session` change. Items whose working copy is missing are skipped.
+/// An item worked on away from the archive copy: checked out to this device, or on its desk.
+struct Tracked {
+    id: Id,
+    card: PathBuf,
+    working: PathBuf,
+    /// When it was checked out or put on the desk: where looking starts the first time.
+    from: SystemTime,
+}
+
+/// The items checked out to `device` and on its desk.
+fn tracked(archive: &Archive, device: Id, now: SystemTime) -> Result<Vec<Tracked>, SessionError> {
+    let fail = |e: &dyn std::fmt::Display| SessionError::Archive(e.to_string());
+    let parse_time = |t: &str| t.parse::<jiff::Timestamp>().map_or(now, SystemTime::from);
+    let mut found = Vec::new();
+    for item in archive.items().map_err(|e| fail(&e))? {
+        let card = archive.root().join(&item.card);
+        let Some(out) = std::fs::read_to_string(&card)
+            .ok()
+            .and_then(|t| CardFile::parse(&t).ok())
+            .and_then(|f| f.card().checked_out.clone())
+        else {
+            continue;
+        };
+        if out.device == device {
+            found.push(Tracked {
+                id: item.id,
+                card,
+                working: PathBuf::from(&out.to),
+                from: parse_time(&out.since.0),
+            });
+        }
+    }
+    for entry in Desk::load(archive, device).map_err(|e| fail(&e))?.items {
+        found.push(Tracked {
+            id: entry.id,
+            card: entry.card,
+            working: entry.path,
+            from: parse_time(&entry.added.0),
+        });
+    }
+    Ok(found)
+}
+
+/// Finds the finished work sessions on every item checked out to this device (the lease's)
+/// or on its desk, since each was last looked at, adds a pending history entry for each, and
+/// commits them as one `session` change. Items whose working copy or card is missing are
+/// skipped. Snapshots are left to [`snapshot`], after the lease is released.
 ///
 /// # Errors
 ///
@@ -304,34 +399,21 @@ pub fn record(archive: &Archive, lease: &WriterLease) -> Result<Recorded, Sessio
     let fail = |e: &dyn std::fmt::Display| SessionError::Archive(e.to_string());
     let device = lease.info().device;
     let rules = archive.rules().map_err(|e| fail(&e))?;
-    let idle = Duration::from_mins(IDLE_MINUTES);
+    let idle = Duration::from_mins(u64::from(archive.settings().sessions.idle_minutes));
     let now = SystemTime::now();
     let state_path = Scanned::path(&archive.doc().id.to_string());
     let mut scanned = state_path.as_deref().map(Scanned::load).unwrap_or_default();
     let mut recorded = Recorded::default();
-    for item in archive.items().map_err(|e| fail(&e))? {
-        let path = archive.root().join(&item.card);
-        let Ok(text) = std::fs::read_to_string(&path) else {
+    for item in tracked(archive, device, now)? {
+        let Ok(text) = std::fs::read_to_string(&item.card) else {
             continue;
         };
         let Ok(mut file) = CardFile::parse(&text) else {
             continue;
         };
-        let Some(out) = file.card().checked_out.clone() else {
-            continue;
-        };
-        if out.device != device {
-            continue;
-        }
-        let working = PathBuf::from(&out.to);
-        let checked_out = out
-            .since
-            .0
-            .parse::<jiff::Timestamp>()
-            .map_or(now, SystemTime::from);
         let key = item.id.to_string();
-        let since = scanned.since(&key, checked_out);
-        let Ok(sessions) = find(&working, &rules, since, idle, now) else {
+        let since = scanned.since(&key, item.from);
+        let Ok(sessions) = find(&item.working, &rules, since, idle, now) else {
             continue;
         };
         let Some(last) = sessions.last().map(|s| s.end) else {
@@ -343,33 +425,197 @@ pub fn record(archive: &Archive, lease: &WriterLease) -> Result<Recorded, Sessio
         }
         file.set_history(&log).map_err(|e| fail(&e))?;
         let text = file.to_text().map_err(|e| fail(&e))?;
-        let temp = path.with_extension("md.tmp-sessions");
+        let temp = item.card.with_extension("md.tmp-sessions");
         std::fs::write(&temp, text).map_err(|e| fail(&e))?;
-        std::fs::rename(&temp, &path).map_err(|e| fail(&e))?;
+        std::fs::rename(&temp, &item.card).map_err(|e| fail(&e))?;
         scanned.mark(&key, last);
-        recorded
-            .items
-            .push((item.id, file.card().title.clone(), sessions.len()));
+        recorded.items.push(RecordedItem {
+            id: item.id,
+            title: file.card().title.clone(),
+            sessions: sessions.len(),
+            working: item.working,
+            snapshot: file.card().snapshots != Some(Snapshots::ReturnOnly),
+        });
     }
-    if recorded.items.is_empty() {
-        return Ok(recorded);
-    }
-    let count: usize = recorded.items.iter().map(|(_, _, n)| n).sum();
-    let mut change = Change::new(
-        Operation::Session,
-        format!("Record {count} work session(s)"),
-        lease.info().person,
-        device,
+    scanned.looked = Some(
+        now.duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs(),
     );
-    change.items = recorded.items.iter().map(|(id, _, _)| *id).collect();
-    recorded.commit = History::open(archive)
-        .map_err(SessionError::History)?
-        .commit(archive, &change, lease)
-        .map_err(SessionError::History)?;
+    commit_what_was_found(archive, lease, &mut recorded)?;
     if let Some(path) = state_path {
         scanned.save(&path).map_err(|e| fail(&e))?;
     }
     Ok(recorded)
+}
+
+/// Notices entries approved by hand, brings `Active/` and the Journal up to date, and commits
+/// that with the sessions `recorded` found, as one `session` change. Without history, only
+/// sessions found regenerate `Active/`, and nothing is committed.
+fn commit_what_was_found(
+    archive: &Archive,
+    lease: &WriterLease,
+    recorded: &mut Recorded,
+) -> Result<(), SessionError> {
+    let fail = |e: &dyn std::fmt::Display| SessionError::Archive(e.to_string());
+    let history = match History::open(archive) {
+        Ok(history) => history,
+        Err(HistoryError::NotInitialized) if recorded.items.is_empty() => return Ok(()),
+        Err(e) => return Err(SessionError::History(e)),
+    };
+    recorded.approved_by_hand = approved_by_hand(archive, &history)?;
+    // Always, so the Journal catches up even when another change took in an approval first.
+    let regenerated = crate::active::regenerate(archive).map_err(|e| fail(&e))?;
+    let approved: usize = recorded.approved_by_hand.iter().map(|a| a.entries).sum();
+    let mut said = Vec::new();
+    if !recorded.items.is_empty() {
+        said.push(format!("Record {} work session(s)", recorded.sessions()));
+    }
+    if approved > 0 {
+        let entries = if approved == 1 { "entry" } else { "entries" };
+        said.push(format!(
+            "{} {approved} history {entries} approved by hand",
+            if said.is_empty() { "Note" } else { "note" }
+        ));
+    }
+    if said.is_empty() {
+        if regenerated.changed.is_empty() {
+            return Ok(());
+        }
+        said.push("Bring Active/ and the Journal up to date".to_owned());
+    }
+    let mut change = Change::new(
+        Operation::Session,
+        said.join("; "),
+        lease.info().person,
+        lease.info().device,
+    );
+    change.items = recorded.items.iter().map(|i| i.id).collect();
+    for a in &recorded.approved_by_hand {
+        if !change.items.contains(&a.id) {
+            change.items.push(a.id);
+        }
+    }
+    recorded.commit = history
+        .commit(archive, &change, lease)
+        .map_err(SessionError::History)?;
+    Ok(())
+}
+
+/// The archive's cards whose pending entries were approved by hand since history last
+/// recorded them (FORMAT.md §5.5): the callout turned into a normal entry, in Obsidian say.
+/// The cards are left exactly as the owner wrote them.
+///
+/// # Errors
+///
+/// [`SessionError`] if the archive can't be listed or history read.
+pub fn approved_by_hand(
+    archive: &Archive,
+    history: &History,
+) -> Result<Vec<ApprovedByHand>, SessionError> {
+    let fail = |e: &dyn std::fmt::Display| SessionError::Archive(e.to_string());
+    let counts = |text: &str| {
+        let log = CardFile::parse(text).ok()?.history().ok()?;
+        let pending = log.pending().len();
+        Some((pending, log.entries.len() - pending))
+    };
+    let mut found = Vec::new();
+    for item in archive.items().map_err(|e| fail(&e))? {
+        let Some(before) = history
+            .committed(&item.card)
+            .map_err(SessionError::History)?
+        else {
+            continue;
+        };
+        let Ok(now) = std::fs::read_to_string(archive.root().join(&item.card)) else {
+            continue;
+        };
+        if now == before {
+            continue;
+        }
+        let (Some((pending_before, approved_before)), Some((pending_now, approved_now))) =
+            (counts(&before), counts(&now))
+        else {
+            continue;
+        };
+        // Each approval takes a pending entry away and adds an approved one; editing or
+        // removing entries by hand changes one count without the other.
+        let entries = pending_before
+            .saturating_sub(pending_now)
+            .min(approved_now.saturating_sub(approved_before));
+        if entries > 0 {
+            let title = CardFile::parse(&now)
+                .map(|f| f.card().title.clone())
+                .unwrap_or_default();
+            found.push(ApprovedByHand {
+                id: item.id,
+                title,
+                entries,
+            });
+        }
+    }
+    Ok(found)
+}
+
+/// The description of a session snapshot of item `id`'s working copy, which
+/// [`is_session_snapshot`] recognizes.
+#[must_use]
+pub fn snapshot_description(title: &str, id: Id) -> String {
+    format!("Work session on “{title}” ({id})")
+}
+
+/// Whether `snapshot` is a session snapshot of item `id`'s working copy.
+#[must_use]
+pub fn is_session_snapshot(snapshot: &Snapshot, id: Id) -> bool {
+    snapshot
+        .description
+        .as_deref()
+        .is_some_and(|d| d.starts_with("Work session on ") && d.ends_with(&format!("({id})")))
+}
+
+/// The session snapshots of item `id`'s working copy at `working` taken since `since`, as
+/// when it was checked out: what a return can offer to forget. Oldest first.
+///
+/// # Errors
+///
+/// [`BackupError`] listing them.
+pub fn snapshots_since(
+    backups: &dyn Backups,
+    working: &Path,
+    id: Id,
+    since: SystemTime,
+) -> Result<Vec<Snapshot>, BackupError> {
+    let since = jiff::Timestamp::try_from(since).unwrap_or(jiff::Timestamp::MIN);
+    Ok(backups
+        .list(working)?
+        .into_iter()
+        .filter(|s| {
+            is_session_snapshot(s, id)
+                && s.time
+                    .parse::<jiff::Timestamp>()
+                    .is_ok_and(|time| time >= since)
+        })
+        .collect())
+}
+
+/// Takes a snapshot of the working copy of each item [`record`] found sessions on, except
+/// those whose cards say `snapshots: return-only`: the state when Carrel noticed, which for
+/// most work is the state when the session ended. Each item's outcome, in order.
+pub fn snapshot(
+    recorded: &Recorded,
+    backups: &dyn Backups,
+) -> Vec<(Id, Result<Snapshot, BackupError>)> {
+    recorded
+        .items
+        .iter()
+        .filter(|i| i.snapshot && i.working.exists())
+        .map(|i| {
+            (
+                i.id,
+                backups.snapshot(&i.working, &snapshot_description(&i.title, i.id)),
+            )
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -456,6 +702,91 @@ mod tests {
         );
     }
 
+    /// Backups that remember what they snapshotted, and list it back.
+    #[derive(Default)]
+    struct Remembered {
+        taken: std::sync::Mutex<Vec<(PathBuf, Snapshot)>>,
+    }
+
+    impl Backups for Remembered {
+        fn describe(&self) -> String {
+            "remembered".into()
+        }
+        fn snapshot(&self, root: &Path, description: &str) -> Result<Snapshot, BackupError> {
+            let mut taken = self.taken.lock().unwrap();
+            let snapshot = Snapshot {
+                id: format!("s{}", taken.len()),
+                time: jiff::Timestamp::now().to_string(),
+                description: Some(description.to_owned()),
+                pinned: true,
+                size: None,
+                files: None,
+            };
+            taken.push((root.to_owned(), snapshot.clone()));
+            Ok(snapshot)
+        }
+        fn list(&self, root: &Path) -> Result<Vec<Snapshot>, BackupError> {
+            Ok(self
+                .taken
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|(r, _)| r == root)
+                .map(|(_, s)| s.clone())
+                .collect())
+        }
+        fn verify(&self, _percent: u8) -> Result<String, BackupError> {
+            Ok(String::new())
+        }
+        fn restore(&self, _snapshot: &str, _path: &str, _to: &Path) -> Result<(), BackupError> {
+            Ok(())
+        }
+        fn forget(&self, _snapshot: &str) -> Result<(), BackupError> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn working_copies_are_snapshotted_unless_return_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let (project, dataset) = (dir.path().join("project"), dir.path().join("dataset"));
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::create_dir_all(&dataset).unwrap();
+        let item = |working: &Path, snapshot| RecordedItem {
+            id: Id::new_v7(),
+            title: "Lamp".into(),
+            sessions: 1,
+            working: working.to_owned(),
+            snapshot,
+        };
+        let recorded = Recorded {
+            items: vec![item(&project, true), item(&dataset, false)],
+            ..Recorded::default()
+        };
+        let backups = Remembered::default();
+        let taken = snapshot(&recorded, &backups);
+        assert_eq!(taken.len(), 1, "not the return-only dataset");
+        assert_eq!(taken[0].0, recorded.items[0].id);
+
+        let id = recorded.items[0].id;
+        let before = SystemTime::now() - Duration::from_hours(1);
+        backups.snapshot(&project, "Returned “Lamp”").unwrap();
+        let found = snapshots_since(&backups, &project, id, before).unwrap();
+        assert_eq!(found.len(), 1, "only the session snapshot: {found:?}");
+        assert!(is_session_snapshot(&found[0], id));
+        assert!(
+            !is_session_snapshot(&found[0], Id::new_v7()),
+            "another item's"
+        );
+        let later = SystemTime::now() + Duration::from_hours(1);
+        assert!(
+            snapshots_since(&backups, &project, id, later)
+                .unwrap()
+                .is_empty(),
+            "not from before the checkout"
+        );
+    }
+
     #[test]
     fn what_was_scanned_is_remembered() {
         let dir = tempfile::tempdir().unwrap();
@@ -465,6 +796,10 @@ mod tests {
         scanned.mark("x", at(90));
         scanned.save(&path).unwrap();
         assert_eq!(Scanned::load(&path).since("x", at(1)), at(90));
+        assert!(scanned.due(Duration::from_mins(5), at(90)), "never looked");
+        scanned.looked = Some(1_800_000_000 + 90 * 60);
+        assert!(!scanned.due(Duration::from_mins(5), at(94)));
+        assert!(scanned.due(Duration::from_mins(5), at(95)));
         scanned.mark("y", at(90) + Duration::from_millis(400));
         assert_eq!(
             scanned.since("y", at(1)),

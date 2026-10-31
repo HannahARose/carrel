@@ -212,6 +212,14 @@ pub struct Entry {
     pub time: i64,
 }
 
+impl Entry {
+    /// Whether this change touched `item`: it names the item, or moved it.
+    #[must_use]
+    pub fn touches(&self, item: Id) -> bool {
+        self.items.contains(&item) || self.moves.iter().any(|m| m.item == item)
+    }
+}
+
 /// Why a history operation failed.
 #[derive(Debug)]
 pub enum HistoryError {
@@ -494,6 +502,24 @@ impl History {
         }
     }
 
+    /// The text of the metadata file at `path` (relative to the archive root) as last
+    /// committed, or `None` if it isn't in the last commit or isn't text.
+    ///
+    /// # Errors
+    ///
+    /// A Git error.
+    pub fn committed(&self, path: &str) -> Result<Option<String>, HistoryError> {
+        let Some(head) = self.head_commit()? else {
+            return Ok(None);
+        };
+        let tree = head.tree()?;
+        let Ok(entry) = tree.get_path(Path::new(path)) else {
+            return Ok(None);
+        };
+        let blob = self.repo.find_blob(entry.id())?;
+        Ok(std::str::from_utf8(blob.content()).ok().map(str::to_owned))
+    }
+
     /// The history, newest first.
     ///
     /// # Errors
@@ -511,6 +537,18 @@ impl History {
             let commit = self.repo.find_commit(oid?)?;
             entries.push(entry_from(&commit));
         }
+        Ok(entries)
+    }
+
+    /// Every change that touched `item`, from its filing to its latest correction or return,
+    /// newest first.
+    ///
+    /// # Errors
+    ///
+    /// A Git error.
+    pub fn item_log(&self, item: Id) -> Result<Vec<Entry>, HistoryError> {
+        let mut entries = self.log()?;
+        entries.retain(|e| e.touches(item));
         Ok(entries)
     }
 

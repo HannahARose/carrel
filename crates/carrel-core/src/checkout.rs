@@ -5,7 +5,9 @@
 //! The lock is the files' own permissions: while an item is out, its archive copy is
 //! read-only, so an editor opened on it by mistake can't save, and anything (Finder, `chmod`)
 //! can undo it if something goes wrong. Carrel itself also refuses to change an item whose
-//! card says it's checked out.
+//! card says it's checked out. On macOS the working copy also carries a "Checked Out" Finder
+//! tag ([`crate::finder::CHECKED_OUT`]) while it's out, so it shows in Finder; it's a nicety,
+//! so failing to set or clear it never stops a checkout or return.
 
 use std::path::{Path, PathBuf};
 
@@ -105,8 +107,8 @@ pub fn manifest_path(archive: &Archive, item: Id) -> PathBuf {
 /// Checks `item` out into the folder `destination`, holding `lease` (`docs/design/checkout.md`):
 /// saves what it holds now, copies it (under a free name, checked against what was saved),
 /// records `checked_out` on its card, with the commit a Git repository is at, makes the
-/// archive copy read-only, and commits it all as one `checkout`. If any step fails, what was
-/// done is undone.
+/// archive copy read-only, commits it all as one `checkout`, and on macOS tags the working
+/// copy "Checked Out" in Finder. If any step fails, what was done is undone.
 ///
 /// # Errors
 ///
@@ -196,12 +198,15 @@ pub fn check_out(
         Ok(History::open(archive)?.commit(archive, &change, lease)?)
     })();
     match result {
-        Ok(commit) => Ok(CheckedOut {
-            item: item.id,
-            title,
-            working,
-            commit,
-        }),
+        Ok(commit) => {
+            let _ = crate::finder::add_tag(&working, crate::finder::CHECKED_OUT);
+            Ok(CheckedOut {
+                item: item.id,
+                title,
+                working,
+                commit,
+            })
+        }
         Err(e) => {
             let _ = unlock(&source);
             let _ = write_card(&card_path, &original);
@@ -350,7 +355,8 @@ fn git_since(path: &Path, head: &str) -> (Vec<String>, bool) {
 /// are backups, then the working copy written beside the archive copy, checked, and swapped
 /// in; the card's `checked_out` removed, its checksum or manifest updated and the entry
 /// approved; the lock released; and one `return` commit. The working copy is left where it
-/// is: deleting it is the owner's choice, made afterwards.
+/// is, without its "Checked Out" Finder tag: deleting it is the owner's choice, made
+/// afterwards. The owner's other tags come back with it.
 ///
 /// # Errors
 ///
@@ -392,8 +398,10 @@ pub fn finish_return(
     // Write the new copy beside the old, check it, then swap the two.
     let incoming = archived.with_file_name(format!(".carrel-return-{}", plan.item));
     let outgoing = archived.with_file_name(format!(".carrel-old-{}", plan.item));
+    let _ = crate::finder::remove_tag(&plan.working, crate::finder::CHECKED_OUT);
     crate::ingest::filing::copy(&plan.working, &incoming)
         .map_err(|e| CheckoutError::Card(e.to_string()))?;
+    let _ = crate::finder::remove_tag(&incoming, crate::finder::CHECKED_OUT);
     let same = if plan.working.is_dir() {
         snapshot(&plan.working, plan.item, &rules)?
             .diff(&snapshot(&incoming, plan.item, &rules)?)
@@ -460,7 +468,7 @@ pub fn finish_return(
 
 /// Cancels `item`'s checkout, holding `lease`: the archive copy is unlocked as it was, the
 /// card's `checked_out` removed, and the working copy left where it is, with its changes not
-/// brought back. One `return` commit.
+/// brought back and its "Checked Out" Finder tag removed. One `return` commit.
 ///
 /// # Errors
 ///
@@ -475,9 +483,10 @@ pub fn cancel_checkout(
     let text = std::fs::read_to_string(&card_path).map_err(io(&card_path))?;
     let mut file = CardFile::parse(&text).map_err(|e| CheckoutError::Card(e.to_string()))?;
     let title = file.card().title.clone();
-    if file.card().checked_out.is_none() {
+    let Some(out) = &file.card().checked_out else {
         return Err(CheckoutError::Card(format!("{title} isn't checked out")));
-    }
+    };
+    let working = PathBuf::from(&out.to);
     if let Some(contents) = &item.item {
         unlock(&root.join(contents))?;
     }
@@ -495,7 +504,9 @@ pub fn cancel_checkout(
     );
     change.items = vec![item.id];
     refresh_active(archive)?;
-    Ok(History::open(archive)?.commit(archive, &change, lease)?)
+    let commit = History::open(archive)?.commit(archive, &change, lease)?;
+    let _ = crate::finder::remove_tag(&working, crate::finder::CHECKED_OUT);
+    Ok(commit)
 }
 
 /// Rebuilds `Active/` and the Journal, so the change that follows records them too.

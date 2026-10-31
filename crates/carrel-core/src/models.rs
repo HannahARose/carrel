@@ -38,6 +38,46 @@ pub struct Model {
     pub recommended: bool,
     /// The same model converted for MLX, for `carrel-provider-mlx` (`docs/design/mlx.md`).
     pub mlx: Option<MlxBuild>,
+    /// For an embedding model, how to use it; `None` for a text model.
+    pub embedding: Option<Embedding>,
+}
+
+/// How to use an embedding model (`docs/design/search.md`). Every provider that runs the
+/// model uses it the same way, so vectors from different devices can be compared.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct Embedding {
+    /// How many numbers each vector has.
+    pub dimensions: usize,
+    /// The longest text it reads, in tokens; longer texts are cut.
+    pub context_tokens: u32,
+    /// How the vectors of a text's tokens become the text's one vector.
+    pub pooling: Pooling,
+    /// What goes before a search query, as the model was trained.
+    pub query_prefix: &'static str,
+    /// What goes before a text to be found.
+    pub document_prefix: &'static str,
+}
+
+/// How an embedding model pools its tokens' vectors into one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Pooling {
+    /// The mean of every token's vector.
+    Mean,
+    /// The last token's vector.
+    Last,
+}
+
+impl Embedding {
+    /// `text` with the prefix for `purpose`.
+    #[must_use]
+    pub fn prompt(&self, text: &str, purpose: crate::providers::Purpose) -> String {
+        let prefix = match purpose {
+            crate::providers::Purpose::Query => self.query_prefix,
+            crate::providers::Purpose::Document => self.document_prefix,
+        };
+        format!("{prefix}{text}")
+    }
 }
 
 /// A model converted for MLX: a folder of files rather than one, each pinned like a GGUF file.
@@ -94,6 +134,12 @@ impl Model {
     pub fn file_name(&self) -> String {
         format!("{}.gguf", self.name)
     }
+
+    /// Whether its file is pinned to a commit, size and SHA-256, so it can be downloaded.
+    #[must_use]
+    pub fn is_pinned(&self) -> bool {
+        !self.revision.is_empty() && !self.sha256.is_empty() && self.size > 0
+    }
 }
 
 /// The models Carrel can download. Each is open weights under a permissive license, not gated
@@ -148,6 +194,7 @@ pub const CATALOG: &[Model] = &[
                 },
             ],
         }),
+        embedding: None,
     },
     Model {
         name: "qwen3.5-4b",
@@ -196,6 +243,7 @@ pub const CATALOG: &[Model] = &[
                 },
             ],
         }),
+        embedding: None,
     },
     Model {
         name: "gemma-4-e4b",
@@ -249,6 +297,7 @@ pub const CATALOG: &[Model] = &[
                 },
             ],
         }),
+        embedding: None,
     },
     Model {
         name: "granite-4.2-8b",
@@ -297,6 +346,7 @@ pub const CATALOG: &[Model] = &[
                 },
             ],
         }),
+        embedding: None,
     },
     Model {
         name: "qwen3.5-9b",
@@ -350,8 +400,64 @@ pub const CATALOG: &[Model] = &[
                 },
             ],
         }),
+        embedding: None,
+    },
+    // The embedding models aren't pinned yet: their commits, sizes and SHA-256s are filled in
+    // from the Hub, and until then they can't be downloaded.
+    Model {
+        name: "embeddinggemma-300m",
+        title: "EmbeddingGemma 300M, Q8_0",
+        repository: "ggml-org/embeddinggemma-300M-GGUF",
+        revision: "",
+        file: "embeddinggemma-300M-Q8_0.gguf",
+        size: 0,
+        sha256: "",
+        license: "Gemma",
+        memory_gb: 2,
+        recommended: false,
+        mlx: None,
+        embedding: Some(Embedding {
+            dimensions: 768,
+            context_tokens: 2048,
+            pooling: Pooling::Mean,
+            query_prefix: "task: search result | query: ",
+            document_prefix: "title: none | text: ",
+        }),
+    },
+    Model {
+        name: "qwen3-embedding-0.6b",
+        title: "Qwen3-Embedding 0.6B, Q8_0",
+        repository: "Qwen/Qwen3-Embedding-0.6B-GGUF",
+        revision: "",
+        file: "Qwen3-Embedding-0.6B-Q8_0.gguf",
+        size: 0,
+        sha256: "",
+        license: "Apache-2.0",
+        memory_gb: 2,
+        recommended: false,
+        mlx: None,
+        embedding: Some(Embedding {
+            dimensions: 1024,
+            context_tokens: 8192,
+            pooling: Pooling::Last,
+            query_prefix: "Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery:",
+            document_prefix: "",
+        }),
     },
 ];
+
+/// The embedding model new archives use (`docs/design/search.md`).
+pub const DEFAULT_EMBEDDING_MODEL: &str = "embeddinggemma-300m";
+
+/// The catalog's embedding models, the default first.
+pub fn embedding_models() -> impl Iterator<Item = &'static Model> {
+    CATALOG.iter().filter(|m| m.embedding.is_some())
+}
+
+/// The catalog's text models.
+pub fn text_models() -> impl Iterator<Item = &'static Model> {
+    CATALOG.iter().filter(|m| m.embedding.is_none())
+}
 
 /// The hosts a catalog download may reach: Hugging Face, and its CDN, which it redirects to.
 pub const ALLOWED_HOSTS: &[&str] = &["huggingface.co", ".hf.co"];
@@ -440,6 +546,8 @@ pub enum ModelError {
     NotDownloaded(String),
     /// The model has no MLX build in the catalog.
     NoMlx(String),
+    /// The model's file isn't pinned to a size and SHA-256 yet, so it can't be checked.
+    Unpinned(String),
     /// Reading or writing the models folder failed.
     Io(std::io::Error),
 }
@@ -462,6 +570,10 @@ impl std::fmt::Display for ModelError {
             ),
             Self::NotDownloaded(name) => write!(f, "{name} isn't downloaded"),
             Self::NoMlx(name) => write!(f, "{name} has no MLX build; download it as GGUF instead"),
+            Self::Unpinned(name) => write!(
+                f,
+                "{name}'s file isn't pinned to a checksum yet, so it can't be downloaded safely"
+            ),
             Self::Io(e) => write!(f, "{e}"),
         }
     }
@@ -781,8 +893,9 @@ pub fn network_log() -> Option<PathBuf> {
 ///
 /// # Errors
 ///
-/// [`ModelError::Fetch`] if the download stops, [`ModelError::Mismatch`] if the file isn't
-/// the one expected, or [`ModelError::Io`].
+/// [`ModelError::Unpinned`] if the catalog doesn't pin its file yet, [`ModelError::Fetch`] if
+/// the download stops, [`ModelError::Mismatch`] if the file isn't the one expected, or
+/// [`ModelError::Io`].
 pub fn download(
     model: &Model,
     dir: &Path,
@@ -790,6 +903,9 @@ pub fn download(
     log: Option<&Path>,
     progress: &mut dyn FnMut(u64, u64),
 ) -> Result<PathBuf, ModelError> {
+    if !model.is_pinned() {
+        return Err(ModelError::Unpinned(model.name.to_owned()));
+    }
     std::fs::create_dir_all(dir)?;
     let part = part_path(model, dir);
     let request = FetchRequest {
@@ -912,6 +1028,13 @@ mod tests {
     #[test]
     fn the_catalog_is_pinned_and_permissive() {
         for model in CATALOG {
+            if !model.is_pinned() {
+                // Only the embedding models may wait for their pins, and then with nothing
+                // half-filled.
+                assert!(model.embedding.is_some(), "{} isn't pinned", model.name);
+                assert_eq!((model.revision, model.sha256, model.size), ("", "", 0));
+                continue;
+            }
             assert_eq!(model.revision.len(), 40, "{}", model.name);
             assert_eq!(model.sha256.len(), 64, "{}", model.name);
             assert!(
@@ -920,8 +1043,10 @@ mod tests {
                     .bytes()
                     .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
             );
+            // EmbeddingGemma, chosen in docs/design/search.md, is under Google's Gemma terms.
             assert!(
-                ["Apache-2.0", "MIT"].contains(&model.license),
+                ["Apache-2.0", "MIT"].contains(&model.license)
+                    || (model.license == "Gemma" && model.embedding.is_some()),
                 "{}",
                 model.name
             );
@@ -942,6 +1067,13 @@ mod tests {
                 }
             }
         }
+        let default = find(DEFAULT_EMBEDDING_MODEL).expect("the default is in the catalog");
+        assert!(default.embedding.is_some());
+        assert_eq!(embedding_models().next(), Some(default));
+        assert_eq!(
+            text_models().count() + embedding_models().count(),
+            CATALOG.len()
+        );
         let mut names: Vec<_> = CATALOG.iter().map(|m| m.name).collect();
         names.sort_unstable();
         names.dedup();
@@ -996,6 +1128,41 @@ mod tests {
         assert!(matches!(error, ModelError::Mismatch { .. }), "{error}");
         assert_eq!(installed(dir.path()).unwrap(), []);
         assert!(!part_path(&model, dir.path()).exists());
+    }
+
+    #[test]
+    fn an_unpinned_model_is_never_downloaded() {
+        let dir = tempfile::tempdir().unwrap();
+        let unpinned = Model {
+            revision: "",
+            sha256: "",
+            size: 0,
+            ..CATALOG[0]
+        };
+        let error = download(
+            &unpinned,
+            dir.path(),
+            &Writes(b"anything".to_vec()),
+            None,
+            &mut |_, _| {},
+        )
+        .unwrap_err();
+        assert!(matches!(error, ModelError::Unpinned(_)), "{error}");
+        assert!(!part_path(&unpinned, dir.path()).exists());
+    }
+
+    #[test]
+    fn embedding_prompts_say_what_the_text_is_for() {
+        use crate::providers::Purpose;
+        let gemma = find(DEFAULT_EMBEDDING_MODEL).unwrap().embedding.unwrap();
+        assert_eq!(
+            gemma.prompt("the lease", Purpose::Query),
+            "task: search result | query: the lease"
+        );
+        assert_eq!(
+            gemma.prompt("A lease.", Purpose::Document),
+            "title: none | text: A lease."
+        );
     }
 
     #[test]

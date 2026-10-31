@@ -22,6 +22,8 @@ pub enum Tab {
     Status,
     /// The review queue.
     Review,
+    /// What's checked out and on the desk, and their pending history entries.
+    Active,
     /// The question queue.
     Questions,
     /// Collections and their items.
@@ -38,9 +40,10 @@ pub enum Tab {
 
 impl Tab {
     /// Every tab, in order.
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::Status,
         Self::Review,
+        Self::Active,
         Self::Questions,
         Self::Browse,
         Self::History,
@@ -54,6 +57,7 @@ impl Tab {
         match self {
             Self::Status => "Status",
             Self::Review => "Review",
+            Self::Active => "Active",
             Self::Questions => "Questions",
             Self::Browse => "Browse",
             Self::History => "History",
@@ -105,6 +109,22 @@ pub enum Confirm {
         name: String,
         /// What it is, its size and license, and where it goes.
         about: String,
+    },
+    /// Returning this checkout, replacing the archive copy.
+    Return {
+        /// The item.
+        id: Id,
+        /// Its title.
+        title: String,
+        /// What changed and the history entry it adds, as `carrel return` shows them.
+        changes: String,
+    },
+    /// Cancelling this checkout, leaving the working copy's changes out.
+    CancelCheckout {
+        /// The item.
+        id: Id,
+        /// Its title.
+        title: String,
     },
     /// Adding a fact a correction stated to the glossary.
     Learn {
@@ -161,6 +181,13 @@ pub enum Effect {
     },
     /// Reject these proposals.
     Reject(Vec<Id>),
+    /// Expand these compressed files when they're approved, or keep them compressed.
+    Compressed {
+        /// The proposals.
+        ids: Vec<Id>,
+        /// Expand or keep.
+        choice: carrel_core::compressed::plan::Choice,
+    },
     /// Propose another collection for these proposals.
     Move {
         /// The proposals.
@@ -170,6 +197,16 @@ pub enum Effect {
     },
     /// Edit this proposal's card in the owner's editor.
     Edit(Id),
+    /// Edit this filed item's card, by its card's path, in the owner's editor.
+    EditItem(String),
+    /// Edit an active item's pending history entry in the owner's editor, as
+    /// `carrel sessions edit` does.
+    EditEntry {
+        /// The item, as `carrel sessions` names it.
+        item: String,
+        /// The entry's number.
+        number: usize,
+    },
     /// A step of correcting a card in words.
     Correction(Step),
     /// Answer this question.
@@ -205,6 +242,21 @@ pub enum Effect {
     },
     /// Download this catalog model.
     Download(String),
+    /// Return this checkout, as `carrel return --yes` does.
+    Return(Id),
+    /// Cancel this checkout, as `carrel return --discard --yes` does.
+    CancelCheckout(Id),
+    /// Open this working copy or desk item in the system's own app for it.
+    Open(std::path::PathBuf),
+    /// Decide an active item's pending history entries, as `carrel sessions` does.
+    Entries {
+        /// The item, as `carrel sessions` names it.
+        item: String,
+        /// The entries' numbers; none means all of them.
+        numbers: Vec<usize>,
+        /// Approve, combine or drop them.
+        decision: crate::sessions::Decision,
+    },
     /// Take a backup snapshot now.
     BackupNow,
     /// Check the backups, reading back a share of the files.
@@ -234,7 +286,7 @@ pub struct App {
     /// What `carrel status` shows.
     pub status: Vec<String>,
     /// How far each report screen is scrolled.
-    pub scroll: [u16; 7],
+    pub scroll: [u16; Tab::ALL.len()],
     /// The history, newest first.
     pub history: Vec<Entry>,
     /// The selected change.
@@ -257,6 +309,12 @@ pub struct App {
     pub picker: Option<Picker>,
     /// Work running in the background, described for the owner.
     pub busy: Option<String>,
+    /// What's checked out, then what's on this device's desk.
+    pub active: Vec<super::active::ActiveItem>,
+    /// The chosen row of the Active list: an item or one of its pending entries.
+    pub active_chosen: usize,
+    /// Pending entries marked for a decision together.
+    pub active_marked: super::active::Marks,
     /// The questions, most items first.
     pub asked: Vec<QuestionEntry>,
     /// The chosen question.
@@ -269,12 +327,14 @@ pub struct App {
     pub browse_items: Vec<(String, String)>,
     /// Browse's chosen item.
     pub browse_item: usize,
-    /// Whether Browse's keys move among items rather than collections.
-    pub browse_in_items: bool,
+    /// Where Browse's arrows move: collections, items, or the chosen item's view.
+    pub browse_pane: super::item::Pane,
     /// The search shown in Browse, if any.
     pub search: Option<String>,
-    /// The chosen item's card in full, as `carrel show` gives it.
-    pub card: Vec<String>,
+    /// What it found, and why.
+    pub searched: super::search::Searched,
+    /// The chosen item: its card, its changes and related items.
+    pub item: super::item::ItemView,
     /// A line being typed, while it's open.
     pub input: Option<Input>,
     /// A line for the owner about the last thing that happened.
@@ -331,7 +391,7 @@ impl App {
             archive,
             tab: Tab::Status,
             status: Vec::new(),
-            scroll: [0; 7],
+            scroll: [0; Tab::ALL.len()],
             history: Vec::new(),
             selected: 0,
             waiting: (0, 0),
@@ -344,15 +404,19 @@ impl App {
             picker: None,
             correction: None,
             busy: None,
+            active: Vec::new(),
+            active_chosen: 0,
+            active_marked: BTreeSet::new(),
             asked: Vec::new(),
             asked_chosen: 0,
             collections: Vec::new(),
             browse_collection: 0,
             browse_items: Vec::new(),
             browse_item: 0,
-            browse_in_items: false,
+            browse_pane: super::item::Pane::Collections,
             search: None,
-            card: Vec::new(),
+            searched: super::search::Searched::default(),
+            item: super::item::ItemView::default(),
             input: None,
             message: None,
             confirm: None,
@@ -417,6 +481,7 @@ impl App {
         self.load_browse()?;
         self.load_intake();
         self.load_settings();
+        self.load_active();
         Ok(())
     }
 
@@ -445,7 +510,7 @@ impl App {
             return keys;
         }
         // The decisions need the room; the screen keys are in ? help.
-        vec![
+        let mut keys = vec![
             ("a", "approve"),
             ("h", "hold"),
             ("m", "move"),
@@ -456,7 +521,20 @@ impl App {
             ("A", "all high"),
             ("?", "help"),
             ("q", "quit"),
-        ]
+        ];
+        if let Some(plan) = self
+            .queue
+            .get(self.chosen)
+            .and_then(|e| e.compressed.as_ref())
+        {
+            let label = if plan.action == carrel_core::compressed::plan::Choice::Expand {
+                "keep compressed"
+            } else {
+                "expand"
+            };
+            keys.insert(3, ("z", label));
+        }
+        keys
     }
 
     /// The keys the current screen answers to, for the help line.
@@ -478,7 +556,7 @@ impl App {
         if self.tab == Tab::Review {
             return self.review_keys();
         }
-        let mut keys = vec![("1-8", "screens")];
+        let mut keys = vec![("1-9", "screens")];
         if self.picker.is_some() {
             return vec![
                 ("↑↓", "choose"),
@@ -504,6 +582,10 @@ impl App {
                 ("/", "type a path"),
                 ("Esc", "cancel"),
             ];
+        }
+        // After the pop-ups that open on any screen, whose keys come first.
+        if self.tab == Tab::Active {
+            return self.active_keys();
         }
         if self.tab == Tab::Ingest && self.planned.is_some() {
             return vec![
@@ -533,13 +615,7 @@ impl App {
             Tab::Questions => {
                 keys.extend([("↑↓", "choose"), ("Enter", "answer"), ("d", "dismiss")]);
             }
-            Tab::Browse => {
-                keys.extend([("↑↓", "choose"), ("←→", "collections/items")]);
-                if self.browse_in_items {
-                    keys.push(("c", "correct"));
-                }
-                keys.push(("/", "search"));
-            }
+            Tab::Browse => keys.extend(self.browse_keys()),
             _ => keys.push(("↑↓", "scroll")),
         }
         keys.extend([("^R", "refresh"), ("?", "help"), ("q", "quit")]);
@@ -549,6 +625,8 @@ impl App {
     pub(super) fn move_by(&mut self, delta: i32) {
         if self.tab == Tab::Review {
             self.choose(delta);
+        } else if self.tab == Tab::Active {
+            self.active_move(delta);
         } else if self.tab == Tab::Questions {
             self.asked_chosen = step(self.asked_chosen, delta, self.asked.len());
         } else if self.tab == Tab::Browse {
@@ -593,6 +671,8 @@ impl App {
                     Confirm::Undo { id, .. } => Effect::Undo(id),
                     Confirm::Reject(ids) => Effect::Reject(ids),
                     Confirm::Download { name, .. } => Effect::Download(name),
+                    Confirm::Return { id, .. } => Effect::Return(id),
+                    Confirm::CancelCheckout { id, .. } => Effect::CancelCheckout(id),
                     Confirm::Learn { about, fact } => {
                         Effect::Correction(Step::Learn { about, fact })
                     }
@@ -618,6 +698,7 @@ impl App {
         self.message = None;
         let handled = match self.tab {
             Tab::Review => self.review_key(key),
+            Tab::Active => self.active_key(key),
             Tab::Questions => self.questions_key(key),
             Tab::Browse => self.browse_key(key),
             Tab::Ingest => self.intake_key(key),
@@ -638,7 +719,7 @@ impl App {
                 });
             }
             KeyCode::Char('i') => return self.start_ingest(),
-            KeyCode::Char(c @ '1'..='8') => {
+            KeyCode::Char(c @ '1'..='9') => {
                 self.tab = Tab::ALL[usize::from(c as u8 - b'1')];
             }
             KeyCode::Tab | KeyCode::Right => {

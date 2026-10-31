@@ -7,6 +7,7 @@ use std::path::Path;
 use carrel_core::actions::{self, Edited};
 use carrel_core::archive::Archive;
 use carrel_core::backup::Backups;
+use carrel_core::compressed::plan::Choice;
 use carrel_core::ingest::filing::{Filed, Placement};
 use carrel_core::review::{ReviewEntry, ReviewQueue, State, short_id};
 use serde_json::{Value, json};
@@ -49,6 +50,12 @@ pub fn list(archive: Option<&Path>, all: bool) -> Result<Report, Failure> {
             let sensitivity = sensitivity_name(entry);
             if sensitivity != "public" && sensitivity != "personal" {
                 flags.push(sensitivity);
+            }
+            match entry.compressed.as_ref().map(|p| p.action) {
+                Some(Choice::Expand) => flags.push("expands".into()),
+                Some(Choice::Keep) => flags.push("kept compressed".into()),
+                Some(Choice::Ask) => flags.push("expand?".into()),
+                None => {}
             }
             if entry.duplicate_of.is_some() {
                 flags.push("duplicate".into());
@@ -109,6 +116,9 @@ pub(crate) fn detail(archive: Option<&Path>, id: &str, compare: bool) -> Result<
     if let Some(rule) = &entry.destination.rule {
         row("rule", rule);
     }
+    if let Some(plan) = &entry.compressed {
+        row("compressed", &plan.describe(&entry.destination.path));
+    }
     row("sensitivity", &sensitivity_name(&entry));
     if !entry.card.tags.is_empty() {
         let tags: Vec<&str> = entry.card.tags.iter().map(|t| t.0.as_str()).collect();
@@ -151,6 +161,22 @@ pub(crate) fn detail(archive: Option<&Path>, id: &str, compare: bool) -> Result<
             writeln!(text, "  {reason}").unwrap();
         }
     }
+    write_declined(&mut text, &entry);
+    if !entry.problems.is_empty() {
+        writeln!(text, "\nTo settle:").unwrap();
+        for problem in &entry.problems {
+            writeln!(text, "  {}: {}", problem.stage, problem.message).unwrap();
+        }
+    }
+    let mut json = serde_json::to_value(&entry).unwrap_or(Value::Null);
+    if let Value::Object(map) = &mut json {
+        map.insert("comparisons".into(), json!(comparisons));
+    }
+    Ok(Report::new(text, json))
+}
+
+/// The models that declined the proposal, a safety refusal, and whether another stepped in.
+fn write_declined(text: &mut String, entry: &ReviewEntry) {
     let declined: Vec<_> = entry
         .attempts
         .iter()
@@ -178,17 +204,6 @@ pub(crate) fn detail(archive: Option<&Path>, id: &str, compare: bool) -> Result<
             .unwrap();
         }
     }
-    if !entry.problems.is_empty() {
-        writeln!(text, "\nTo settle:").unwrap();
-        for problem in &entry.problems {
-            writeln!(text, "  {}: {}", problem.stage, problem.message).unwrap();
-        }
-    }
-    let mut json = serde_json::to_value(&entry).unwrap_or(Value::Null);
-    if let Value::Object(map) = &mut json {
-        map.insert("comparisons".into(), json!(comparisons));
-    }
-    Ok(Report::new(text, json))
 }
 
 /// Each archived item `entry` duplicates beside it, and how to decide.
@@ -340,6 +355,33 @@ pub fn move_to(archive: Option<&Path>, id: &str, collection: &str) -> Result<Rep
     ))
 }
 
+/// `carrel review expand ID...` and `carrel review keep-compressed ID...`: say whether
+/// compressed files are expanded when approved or kept as they are.
+pub fn choose_compressed(
+    archive: Option<&Path>,
+    ids: &[String],
+    choice: Choice,
+) -> Result<Report, Failure> {
+    let archive = locate(archive)?;
+    let entries = actions::proposals(&archive, ids)?;
+    let mut text = String::new();
+    let mut saved = Vec::new();
+    for entry in entries {
+        let entry = actions::choose_compressed(&archive, &entry.id.to_string(), choice)?;
+        let plan = entry.compressed.as_ref().expect("a compressed file");
+        writeln!(
+            text,
+            "{} {}: {} when approved",
+            short_id(entry.id),
+            entry.card.title,
+            plan.describe(&entry.destination.path)
+        )
+        .unwrap();
+        saved.push(entry);
+    }
+    Ok(Report::new(text, json!({ "entries": saved })))
+}
+
 /// Files `entries` as one batch, holding the writer lease.
 fn decide(
     archive: &Archive,
@@ -365,6 +407,17 @@ fn decide(
     let mut text = String::new();
     for filed in &outcome.filed {
         writeln!(text, "Filed {} in {}", filed.title, filed.path).unwrap();
+        if let Some(from) = &filed.expanded_from {
+            let name = from.file_name().unwrap_or_default().to_string_lossy();
+            match &filed.trash_problem {
+                None => writeln!(text, "  expanded from {name}, which is now in the Trash"),
+                Some(problem) => writeln!(
+                    text,
+                    "  expanded from {name}, which was left where it was: {problem}"
+                ),
+            }
+            .unwrap();
+        }
     }
     for (entry, error) in &outcome.failed {
         writeln!(
@@ -378,7 +431,7 @@ fn decide(
     let kept: Vec<&Filed> = outcome
         .filed
         .iter()
-        .filter(|f| f.kept_original.is_some())
+        .filter(|f| f.kept_original.is_some() && f.trash_problem.is_none())
         .collect();
     if !kept.is_empty() {
         text.push_str("\nThe originals were copied, not moved (ingest.originals is keep); delete them when you're ready:\n");
@@ -405,6 +458,8 @@ fn decide(
                 "path": f.path,
                 "card": f.card,
                 "kept_original": f.kept_original,
+                "expanded_from": f.expanded_from,
+                "trash_problem": f.trash_problem,
             })).collect::<Vec<_>>(),
             "failed": outcome.failed.iter().map(|(e, error)| json!({
                 "proposal": e.id,
@@ -445,7 +500,7 @@ pub(crate) fn editor() -> (String, &'static str) {
 }
 
 /// Opens `path` in the editor and waits for it to close.
-fn run_editor(path: &Path) -> Result<(), Failure> {
+pub(crate) fn run_editor(path: &Path) -> Result<(), Failure> {
     let words = crate::paths::split_words(&editor().0);
     let (program, args) = words
         .split_first()

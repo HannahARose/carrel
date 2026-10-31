@@ -6,6 +6,7 @@ use carrel_core::questions::{QuestionEntry, QuestionKind};
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 
 use super::app::{App, Effect, step};
+use super::item::Pane;
 use super::review::{Handled, Picker, Purpose};
 
 /// A line being typed.
@@ -27,7 +28,7 @@ pub enum InputPurpose {
         /// The question in words, shown above the line.
         question: String,
     },
-    /// Words to find in titles, tags and summaries.
+    /// What to search for: words, and filters such as `tag:receipts`.
     Search,
     /// Files and folders to ingest.
     Ingest,
@@ -67,7 +68,7 @@ impl Input {
     pub fn prompt(&self) -> &'static str {
         match &self.purpose {
             InputPurpose::Answer { .. } => "what it is",
-            InputPurpose::Search => "words to find",
+            InputPurpose::Search => "words and filters",
             InputPurpose::Ingest => "paths to ingest (or drop files here)",
             InputPurpose::Setting(_) => "the new value",
             InputPurpose::BackupRepository => "the backup folder (drop it here)",
@@ -182,7 +183,11 @@ impl App {
                     }
                     InputPurpose::Search => {
                         self.search = (!text.is_empty()).then_some(text);
-                        self.browse_in_items = self.search.is_some();
+                        self.browse_pane = if self.search.is_some() {
+                            Pane::Items
+                        } else {
+                            Pane::Collections
+                        };
                         self.browse_item = 0;
                         self.load_items();
                     }
@@ -226,20 +231,11 @@ impl App {
 
     /// The items Browse lists: the chosen collection's, or those the search finds anywhere.
     pub(super) fn load_items(&mut self) {
-        self.browse_items = match &self.search {
-            Some(words) => self.find(words),
-            None => self
-                .collections
-                .get(self.browse_collection)
-                .and_then(|c| {
-                    self.archive.cards_in(c).ok().map(|cards| {
-                        cards
-                            .into_iter()
-                            .map(|(name, card)| (format!("{}/{name}", c.path), card.title))
-                            .collect()
-                    })
-                })
-                .unwrap_or_default(),
+        self.browse_items = if let Some(typed) = self.search.clone() {
+            self.find(&typed)
+        } else {
+            self.searched = super::search::Searched::default();
+            self.collection_items()
         };
         self.browse_item = self
             .browse_item
@@ -247,74 +243,69 @@ impl App {
         self.load_card();
     }
 
-    /// The cards whose title, tags or summary contain every word, ignoring case.
-    fn find(&self, words: &str) -> Vec<(String, String)> {
-        let words: Vec<String> = words.split_whitespace().map(str::to_lowercase).collect();
-        let mut found = Vec::new();
-        for collection in &self.collections {
-            let Ok(cards) = self.archive.cards_in(collection) else {
-                continue;
-            };
-            for (name, card) in cards {
-                let text = format!(
-                    "{} {} {}",
-                    card.title,
-                    card.summary.as_deref().unwrap_or(""),
-                    card.tags
-                        .iter()
-                        .map(|t| t.0.as_str())
-                        .collect::<Vec<_>>()
-                        .join(" ")
-                )
-                .to_lowercase();
-                if words.iter().all(|w| text.contains(w)) {
-                    found.push((format!("{}/{name}", collection.path), card.title));
-                }
+    /// The chosen collection's cards, as card paths and titles.
+    fn collection_items(&self) -> Vec<(String, String)> {
+        self.collections
+            .get(self.browse_collection)
+            .and_then(|c| {
+                self.archive.cards_in(c).ok().map(|cards| {
+                    cards
+                        .into_iter()
+                        .map(|(name, card)| (format!("{}/{name}", c.path), card.title))
+                        .collect()
+                })
+            })
+            .unwrap_or_default()
+    }
+
+    /// Moves the choice among collections, items, or the chosen item's rows.
+    pub(super) fn browse_move(&mut self, delta: i32) {
+        match self.browse_pane {
+            Pane::Item => self.item_move(delta),
+            Pane::Items => {
+                self.browse_item = step(self.browse_item, delta, self.browse_items.len());
+                self.load_card();
+            }
+            Pane::Collections => {
+                self.browse_collection =
+                    step(self.browse_collection, delta, self.collections.len());
+                self.browse_item = 0;
+                self.load_items();
             }
         }
-        found
     }
 
-    /// Reads the chosen item's card in full.
-    pub(super) fn load_card(&mut self) {
-        self.card = match self.browse_items.get(self.browse_item) {
-            Some((path, _)) => match crate::commands::show(Some(self.archive.root()), path) {
-                Ok(report) => report.text.lines().map(str::to_owned).collect(),
-                Err(crate::Failure(e)) => vec![e],
-            },
-            None => Vec::new(),
-        };
-    }
-
-    /// Moves the choice among collections or items.
-    pub(super) fn browse_move(&mut self, delta: i32) {
-        if self.browse_in_items {
-            self.browse_item = step(self.browse_item, delta, self.browse_items.len());
-            self.load_card();
-        } else {
-            self.browse_collection = step(self.browse_collection, delta, self.collections.len());
-            self.browse_item = 0;
-            self.load_items();
-        }
-    }
-
-    /// Handles a key on the Browse screen: ←→ move between collections and items, `c`
-    /// corrects the chosen item in words, `/` searches, and Esc clears a search.
+    /// Handles a key on the Browse screen: ←→ move between collections, items and the chosen
+    /// item's view, `e` and `c` edit or correct the chosen item, `/` searches, and Esc clears a
+    /// search.
     pub(super) fn browse_key(&mut self, key: KeyEvent) -> Handled {
+        if self.browse_pane == Pane::Item
+            && let Handled::Yes(effect) = self.item_key(key)
+        {
+            return Handled::Yes(effect);
+        }
+        let on_item = self.browse_pane != Pane::Collections;
         match key.code {
             // Here ←→ move between the panes; Tab still switches screens.
-            KeyCode::Right | KeyCode::Enter | KeyCode::Char('l') => {
-                if !self.browse_in_items && !self.browse_items.is_empty() {
-                    self.browse_in_items = true;
+            KeyCode::Right | KeyCode::Enter | KeyCode::Char('l') => match self.browse_pane {
+                Pane::Collections if !self.browse_items.is_empty() => {
+                    self.browse_pane = Pane::Items;
                     self.load_card();
                 }
-            }
+                Pane::Items if self.item.card.is_some() => self.browse_pane = Pane::Item,
+                _ => {}
+            },
             KeyCode::Left | KeyCode::Char('h') => {
                 if self.search.is_none() {
-                    self.browse_in_items = false;
+                    self.browse_pane = Pane::Collections;
                 }
             }
-            KeyCode::Char('c') if self.browse_in_items => {
+            KeyCode::Char('e') if on_item => {
+                if let Some((card, _)) = self.browse_items.get(self.browse_item) {
+                    return Handled::Yes(Some(Effect::EditItem(card.clone())));
+                }
+            }
+            KeyCode::Char('c') if on_item => {
                 if let Some((card, _)) = self.browse_items.get(self.browse_item) {
                     self.input = Some(Input {
                         purpose: InputPurpose::Correct(Correcting::Item(card.clone())),
@@ -330,7 +321,7 @@ impl App {
             }
             KeyCode::Esc if self.search.is_some() => {
                 self.search = None;
-                self.browse_in_items = false;
+                self.browse_pane = Pane::Collections;
                 self.load_items();
             }
             _ => return Handled::No,

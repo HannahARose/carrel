@@ -45,6 +45,7 @@ fn the_apple_provider_reads_pdfs_through_the_registry() {
         .extract(&ExtractionRequest {
             path: pdf,
             media_type: "application/pdf".into(),
+            context: None,
         })
         .unwrap();
     assert_eq!(source.provider, "apple");
@@ -112,6 +113,7 @@ fn scanned_pdfs_fall_back_from_pdfkit_to_vision() {
         .extract(&ExtractionRequest {
             path: scan,
             media_type: "application/pdf".into(),
+            context: None,
         })
         .unwrap();
     assert_eq!(
@@ -130,4 +132,33 @@ fn scanned_pdfs_fall_back_from_pdfkit_to_vision() {
         attempts[0].error,
         carrel_core::providers::ProviderError::Unsupported(_)
     ));
+}
+
+#[test]
+fn the_apple_provider_reads_3d_models() {
+    let Some(apple) = start() else { return };
+    let mut registry = Registry::with_built_ins();
+    registry.add(Box::new(apple));
+    let dir = tempfile::tempdir().unwrap();
+    let model = dir.path().join("cube.obj");
+    std::fs::write(
+        &model,
+        "v 0 0 0\nv 20 0 0\nv 0 20 0\nv 20 20 0\nv 0 0 20\nv 20 0 20\nv 0 20 20\nv 20 20 20\n\
+         f 1 3 2\nf 2 3 4\nf 5 6 7\nf 6 8 7\nf 1 2 5\nf 2 6 5\nf 3 7 4\nf 4 7 8\nf 1 5 3\nf 3 5 7\nf 2 4 6\nf 4 8 6\n",
+    )
+    .unwrap();
+    let request = ExtractionRequest {
+        media_type: carrel_core::ingest::text::media_type(&model),
+        path: model,
+        context: None,
+    };
+    let (extraction, source, _) = registry.extract(&request).unwrap();
+    assert_eq!(source.offer, "model3d");
+    assert!(
+        extraction
+            .text
+            .starts_with("3D model: OBJ, 20 × 20 × 20 (mm, as stored), 12 triangles, 1 part"),
+        "{}",
+        extraction.text
+    );
 }

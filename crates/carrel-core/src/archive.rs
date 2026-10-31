@@ -54,16 +54,21 @@ pub struct InitOptions {
     pub allow_existing_files: bool,
     /// The creation time; defaults to now in the local time zone.
     pub now: Option<DateOrTime>,
+    /// The search embedding model every device will use (FORMAT.md §7.2), or `None` to choose
+    /// it later.
+    pub embedding_model: Option<String>,
 }
 
 impl InitOptions {
-    /// Options for a new, empty archive named `name`, created now.
+    /// Options for a new, empty archive named `name`, created now, searched with the default
+    /// embedding model ([`DEFAULT_EMBEDDING_MODEL`](crate::models::DEFAULT_EMBEDDING_MODEL)).
     #[must_use]
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
             allow_existing_files: false,
             now: None,
+            embedding_model: Some(crate::models::DEFAULT_EMBEDDING_MODEL.to_owned()),
         }
     }
 }
@@ -180,7 +185,7 @@ impl Archive {
     /// Creates a new archive at `root` (creating the folder if needed) and opens it.
     ///
     /// The new archive has `archive.json`, `ARCHIVE.md`, `README.md`, settings with FORMAT.md's
-    /// defaults, a copy of FORMAT.md, empty glossary and rules, a `Holding` collection, and an
+    /// defaults and the chosen embedding model, a copy of FORMAT.md, empty glossary and rules, a `Holding` collection, and an
     /// empty `Active` section. The history repository is created separately.
     ///
     /// # Errors
@@ -236,11 +241,12 @@ impl Archive {
             tags: Vec::new(),
             extra: crate::card::Extra::new(),
         };
+        let mut settings = Settings::default();
+        if let Some(model) = &options.embedding_model {
+            settings.set_embedding_model(model);
+        }
         create_file(&root.join("_System/archive.json"), &json(&info))?;
-        create_file(
-            &root.join("_System/settings.json"),
-            &json(&Settings::default()),
-        )?;
+        create_file(&root.join("_System/settings.json"), &json(&settings))?;
         create_file(&root.join("_System/FORMAT.md"), FORMAT_SPEC)?;
         create_file(&root.join("_System/glossary.md"), "# Glossary\n")?;
         create_file(&root.join("_System/rules/routing.yaml"), "rules: []\n")?;

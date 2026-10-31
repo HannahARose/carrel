@@ -49,6 +49,7 @@ impl Sandbox {
             .args(args)
             .current_dir(cwd)
             .env("CARREL_CONFIG_DIR", self.path("config"))
+            .env("CARREL_TRASH_DIR", self.path("Trash"))
             .env("CARREL_WORKER", "off")
             .output()
             .unwrap()
@@ -106,6 +107,39 @@ fn init_creates_an_archive_with_history_recorded_by_this_device() {
         "already an archive with history"
     );
     assert!(String::from_utf8_lossy(&again.stderr).contains("history has started"));
+}
+
+#[test]
+fn status_shows_what_was_changed_or_worked_on_lately() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    let recent = &sandbox.json(&root, &["status"])["recent"];
+    assert_eq!(
+        recent,
+        &json!([{
+            "kind": "work",
+            "date": "2026-10-27",
+            "item": "01a18701-0500-776a-9867-080924eb019c",
+            "title": "oscillator-sim",
+            "duration": "45m",
+            "summary": "Set up the project and the basic Euler integration loop.",
+        }]),
+        "approved sessions only, not pending ones"
+    );
+
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    let recent = &sandbox.json(&root, &["status"])["recent"];
+    assert_eq!(
+        recent[0]["kind"], "change",
+        "today's change first: {recent}"
+    );
+    assert_eq!(recent[1]["kind"], "work");
+    let text = sandbox.ok(&root, &["status"]);
+    assert!(text.contains("\nRecent:\n"), "{text}");
+    assert!(
+        text.contains("  2026-10-27        Worked on “oscillator-sim” for 45m: Set up the project"),
+        "{text}"
+    );
 }
 
 #[test]
@@ -191,6 +225,8 @@ fn show_finds_items_by_id_card_or_item_path() {
         report.contains("part-of Projects/Hardware/lamp-build.md"),
         "{report}"
     );
+
+    assert_eq!(by_item["history"], Value::Null, "no history started");
 
     let missing = sandbox.run_in(&root, &["show", "nothing-here", "--json"]);
     assert_eq!(missing.status.code(), Some(1));
@@ -727,6 +763,28 @@ fn settings_are_listed_set_and_undone() {
 }
 
 #[test]
+fn show_lists_the_changes_that_touched_the_item() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    let desk = sandbox.path("desk");
+    let item = "Projects/Hardware/parts-list.csv";
+    sandbox.ok(&root, &["checkout", item, "--to", desk.to_str().unwrap()]);
+    let log = sandbox.json(&root, &["log"]);
+    let history = &sandbox.json(&root, &["show", item])["history"];
+    assert_eq!(history.as_array().unwrap().len(), 1, "{history}");
+    assert_eq!(history[0]["id"], log[0]["id"]);
+    assert_eq!(history[0]["operation"], "checkout");
+    let shown = sandbox.ok(&root, &["show", item]);
+    assert!(
+        shown.contains("History (1 change; undo one with `carrel undo CHANGE`):"),
+        "{shown}"
+    );
+    let other = &sandbox.json(&root, &["show", "Projects/Hardware/lamp-build.md"])["history"];
+    assert_eq!(other, &json!([]), "a change touches only its own items");
+}
+
+#[test]
 fn checkout_copies_an_item_out_and_locks_the_archive_copy() {
     let sandbox = Sandbox::new();
     let root = sandbox.sample();
@@ -846,6 +904,47 @@ fn returns_and_cancels(sandbox: &Sandbox, root: &Path, desk: &Path, working: &Pa
     std::fs::write(&archived, "and again\n").unwrap();
 }
 
+#[cfg(target_os = "macos")]
+#[test]
+fn a_checked_out_working_copy_is_tagged_in_finder_until_it_comes_back() {
+    use carrel_core::finder::{CHECKED_OUT, add_tag, tags};
+
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    let item = "Projects/Hardware/parts-list.csv";
+    let archived = root.join(item);
+    add_tag(&archived, "Red\n6").unwrap();
+    let desk = sandbox.path("desk");
+    let out = sandbox.json(&root, &["checkout", item, "--to", desk.to_str().unwrap()]);
+    let working = PathBuf::from(out["working"].as_str().unwrap());
+    assert_eq!(tags(&working).unwrap(), ["Red\n6", CHECKED_OUT]);
+    assert_eq!(
+        tags(&archived).unwrap(),
+        ["Red\n6"],
+        "only the working copy"
+    );
+
+    std::fs::write(&working, "changed,on,the,desk\n").unwrap();
+    sandbox.ok(&root, &["return", item, "--yes"]);
+    assert_eq!(tags(&working).unwrap(), ["Red\n6"], "the owner's tag stays");
+    assert_eq!(
+        tags(&archived).unwrap(),
+        ["Red\n6"],
+        "the tag doesn't come back into the archive"
+    );
+
+    let out = sandbox.json(&root, &["checkout", item, "--to", desk.to_str().unwrap()]);
+    let working = PathBuf::from(out["working"].as_str().unwrap());
+    assert!(tags(&working).unwrap().contains(&CHECKED_OUT.to_owned()));
+    sandbox.ok(&root, &["return", item, "--discard", "--yes"]);
+    assert_eq!(
+        tags(&working).unwrap(),
+        ["Red\n6"],
+        "cancelling removes it too"
+    );
+}
+
 #[test]
 fn desk_items_get_a_card_beside_them_and_stay_where_they_are() {
     let sandbox = Sandbox::new();
@@ -889,6 +988,25 @@ fn desk_items_get_a_card_beside_them_and_stay_where_they_are() {
         1
     );
 
+    let mirror = root.join("Active/On desk/Budget app.md");
+    let mirrored = std::fs::read_to_string(&mirror).unwrap();
+    std::fs::write(
+        &mirror,
+        mirrored.replace(
+            "<!-- /carrel:mirror -->\n",
+            "<!-- /carrel:mirror -->\nTry the new chart crate.\n",
+        ),
+    )
+    .unwrap();
+    let listed = sandbox.json(&root, &["desk"]);
+    assert_eq!(listed["copied"].as_array().unwrap().len(), 1, "{listed}");
+    assert!(
+        std::fs::read_to_string(&card)
+            .unwrap()
+            .contains("Try the new chart crate."),
+        "notes written in the mirror go to the card"
+    );
+
     let again = sandbox.run_in(&root, &["desk", "add", project.to_str().unwrap()]);
     assert!(String::from_utf8_lossy(&again.stderr).contains("already on the desk"));
     let inside = sandbox.run_in(
@@ -899,8 +1017,113 @@ fn desk_items_get_a_card_beside_them_and_stay_where_they_are() {
 
     sandbox.ok(&root, &["desk", "remove", project.to_str().unwrap()]);
     assert!(card.exists(), "the card stays unless asked");
+    assert!(!mirror.exists(), "the mirror goes with it");
     assert_eq!(sandbox.json(&root, &["desk"])["items"], json!([]));
     assert!(project.join("src/main.rs").exists());
+}
+
+#[test]
+fn a_desk_items_card_is_drafted_and_archiving_it_keeps_the_card() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    let bin = sandbox.path("bin");
+    std::fs::create_dir(&bin).unwrap();
+    std::fs::copy(
+        echo_provider(),
+        bin.join(format!(
+            "carrel-provider-echo-card{}",
+            std::env::consts::EXE_SUFFIX
+        )),
+    )
+    .unwrap();
+    let with_model = |args: &[&str]| {
+        let out = std::process::Command::new(env!("CARGO_BIN_EXE_carrel"))
+            .args(args)
+            .arg("--json")
+            .current_dir(&root)
+            .env("PATH", &bin)
+            .env("CARREL_CONFIG_DIR", sandbox.path("config"))
+            .env("CARREL_WORKER", "off")
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "carrel {args:?} failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        serde_json::from_slice::<Value>(&out.stdout).unwrap()
+    };
+    let notes = sandbox.path("Desktop/lamp notes.txt");
+    std::fs::create_dir_all(notes.parent().unwrap()).unwrap();
+    std::fs::write(&notes, "Wiring the desk lamp: a 5 V supply and two LEDs.\n").unwrap();
+
+    let added = with_model(&["desk", "add", notes.to_str().unwrap()]);
+    let card = PathBuf::from(added["card"].as_str().unwrap());
+    let text = std::fs::read_to_string(&card).unwrap();
+    assert!(text.contains("title: Echoed card"), "{text}");
+    assert!(text.contains("- draft"), "{text}");
+    assert!(text.contains("model: echo/1"), "{text}");
+    // The owner renames it; archiving keeps their title, not a new draft's.
+    std::fs::write(
+        &card,
+        text.replace("title: Echoed card", "title: Lamp wiring notes"),
+    )
+    .unwrap();
+
+    let archived = sandbox.json(&root, &["desk", "archive", notes.to_str().unwrap()]);
+    assert_eq!(archived["worker_started"], false, "{archived}");
+    assert_eq!(sandbox.json(&root, &["desk"])["items"], json!([]));
+    assert!(card.exists(), "the card waits beside it until it's filed");
+    sandbox.ok(&root, &["worker"]);
+    let proposals = sandbox.json(&root, &["review"]);
+    let proposal = proposals["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["card"]["title"] == "Lamp wiring notes")
+        .unwrap_or_else(|| panic!("no proposal with the desk card's title: {proposals}"));
+    sandbox.ok(&root, &["review", "hold", proposal["id"].as_str().unwrap()]);
+    let filed = std::fs::read_to_string(root.join("Holding/lamp notes.txt.md")).unwrap();
+    assert!(filed.contains("title: Lamp wiring notes"), "{filed}");
+    assert!(
+        filed.contains(&format!("id: {}", added["id"].as_str().unwrap())),
+        "the desk card's identifier is kept: {filed}"
+    );
+    assert!(!card.exists(), "the card moved into the archive with it");
+}
+
+#[test]
+fn status_suggests_folders_to_put_on_the_desk() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    let home = sandbox.path("home");
+    std::fs::create_dir_all(home.join("Code/budget-app/.git")).unwrap();
+    std::fs::write(home.join("Code/budget-app/main.rs"), "fn main() {}\n").unwrap();
+    std::fs::create_dir_all(home.join("Desktop")).unwrap();
+    let status = |args: &[&str]| {
+        let out = std::process::Command::new(env!("CARGO_BIN_EXE_carrel"))
+            .args(args)
+            .current_dir(&root)
+            .env("HOME", &home)
+            .env("CARREL_CONFIG_DIR", sandbox.path("config"))
+            .env("CARREL_WORKER", "off")
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8(out.stdout).unwrap()
+    };
+    let text = status(&["status"]);
+    assert!(text.contains("Looks like active work"), "{text}");
+    assert!(text.contains("budget-app  (a Git repository"), "{text}");
+    let json: Value = serde_json::from_str(&status(&["status", "--json"])).unwrap();
+    assert_eq!(json["desk"]["to_track"][0]["git"], true, "{json}");
+    assert_eq!(json["desk"]["to_archive"], json!([]));
 }
 
 #[test]
@@ -963,6 +1186,204 @@ fn sessions_on_a_checked_out_item_become_pending_entries_to_approve() {
     assert!(card.contains("Changed 1 file(s): parts-list.csv"), "{card}");
     assert!(!card.contains("[!pending]"));
     assert_eq!(sandbox.json(&root, &["log"])[0]["operation"], "session");
+}
+
+#[cfg(unix)]
+#[test]
+fn sessions_edit_opens_an_entry_in_the_editor_and_keeps_it_pending() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    let item = "Projects/Hardware/parts-list.csv";
+    let card = root.join(format!("{item}.md"));
+    let mut file =
+        carrel_core::card_file::CardFile::parse(&std::fs::read_to_string(&card).unwrap()).unwrap();
+    let mut log = file.history().unwrap();
+    log.add(carrel_core::entries::HistoryEntry::pending(
+        "2099-01-02",
+        Some(70),
+        vec!["Changed 1 file(s): parts-list.csv".into()],
+    ));
+    file.set_history(&log).unwrap();
+    std::fs::write(&card, file.to_text().unwrap()).unwrap();
+    let editor = |name: &str, text: &str| {
+        let path = sandbox.path(name);
+        std::fs::write(&path, format!("#!/bin/sh\nprintf '{text}' > \"$1\"\n")).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        path.to_str().unwrap().to_owned()
+    };
+    let run = |editor: &str| {
+        std::process::Command::new(env!("CARGO_BIN_EXE_carrel"))
+            .args(["sessions", "edit", item, "1"])
+            .current_dir(&root)
+            .env("CARREL_CONFIG_DIR", sandbox.path("config"))
+            .env_remove("VISUAL")
+            .env("EDITOR", editor)
+            .output()
+            .unwrap()
+    };
+
+    let out = run(&editor(
+        "rewrite.sh",
+        "Added the new switch.\\nMy notes: order spares.\\n",
+    ));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout),
+        "Edit a history entry of “Desk lamp parts list”\n"
+    );
+    let text = std::fs::read_to_string(&card).unwrap();
+    assert!(
+        text.contains(
+            "> [!pending] 2099-01-02 · 1h 10m · auto-generated\n\
+             > Added the new switch.\n\
+             > My notes: order spares.\n"
+        ),
+        "{text}"
+    );
+    let log = sandbox.json(&root, &["log"]);
+    assert_eq!(log[0]["operation"], "session");
+
+    // Nothing saved, or text that would break the section, changes nothing.
+    assert_eq!(
+        String::from_utf8_lossy(&run("true").stdout),
+        "Nothing changed\n"
+    );
+    let out = run(&editor(
+        "breaks.sh",
+        "Fine.\\n### 2099-01-03\\nNot an entry.\\n",
+    ));
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("would break the history section"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("your text is in"), "{stderr}");
+    assert_eq!(std::fs::read_to_string(&card).unwrap(), text);
+    let out = run("false");
+    assert!(!out.status.success(), "a failed editor is an error");
+    let missing = sandbox.run_in(&root, &["sessions", "edit", item, "2"]);
+    assert!(
+        String::from_utf8_lossy(&missing.stderr).contains("there's no pending entry 2"),
+        "{}",
+        String::from_utf8_lossy(&missing.stderr)
+    );
+
+    // Approved, it's in the Journal as edited.
+    sandbox.ok(&root, &["sessions", "approve", item, "1"]);
+    let journal = std::fs::read_to_string(root.join("Journal/2099/2099-01.md")).unwrap();
+    assert!(journal.contains("Added the new switch."), "{journal}");
+}
+
+#[test]
+fn entries_approved_by_hand_are_noticed_and_kept_as_written() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    let item = "Projects/Hardware/parts-list.csv";
+    let card = root.join(format!("{item}.md"));
+    let mut file =
+        carrel_core::card_file::CardFile::parse(&std::fs::read_to_string(&card).unwrap()).unwrap();
+    let mut log = file.history().unwrap();
+    for (date, text) in [
+        ("2099-02-03", "Soldered the new switch."),
+        ("2099-02-04", "Tidied the list."),
+    ] {
+        log.add(carrel_core::entries::HistoryEntry::pending(
+            date,
+            Some(70),
+            vec![text.into()],
+        ));
+    }
+    file.set_history(&log).unwrap();
+    std::fs::write(&card, file.to_text().unwrap()).unwrap();
+    // Dropping one records the other, pending, in history.
+    sandbox.ok(&root, &["sessions", "drop", item, "1"]);
+
+    // Changing a pending entry's text by hand isn't approving it.
+    let text = std::fs::read_to_string(&card).unwrap();
+    std::fs::write(&card, text.replace("> Soldered the", "> Soldered  the")).unwrap();
+    let listed = sandbox.json(&root, &["sessions"]);
+    assert_eq!(listed["approved_by_hand"], json!([]), "{listed}");
+    assert_eq!(listed["recorded"], Value::Null, "nothing to record");
+    std::fs::write(&card, &text).unwrap();
+
+    // In Obsidian, the owner turns the callout into a normal entry, and adds a line.
+    let pending = "> [!pending] 2099-02-03 · 1h 10m · auto-generated\n> Soldered the new switch.\n";
+    let text = std::fs::read_to_string(&card).unwrap();
+    assert!(text.contains(pending), "{text}");
+    let approved =
+        "### 2099-02-03 · 1h 10m · auto-generated\nSoldered the new switch.\nIt works!\n";
+    let text = text.replace(pending, approved);
+    std::fs::write(&card, &text).unwrap();
+
+    let listed = sandbox.json(&root, &["sessions"]);
+    assert_eq!(
+        listed["approved_by_hand"],
+        json!([{ "item": listed["approved_by_hand"][0]["item"], "title": "Desk lamp parts list", "entries": 1 }]),
+        "{listed}"
+    );
+    assert!(listed["recorded"].is_string(), "{listed}");
+    assert_eq!(
+        std::fs::read_to_string(&card).unwrap(),
+        text,
+        "the owner's text is kept exactly"
+    );
+    let journal = std::fs::read_to_string(root.join("Journal/2099/2099-02.md")).unwrap();
+    assert!(journal.contains("Soldered the new switch."), "{journal}");
+    let log = sandbox.json(&root, &["log"]);
+    assert_eq!(log[0]["operation"], "session");
+    assert_eq!(log[0]["summary"], "Note 1 history entry approved by hand");
+
+    let again = sandbox.json(&root, &["sessions"]);
+    assert_eq!(again["approved_by_hand"], json!([]), "noticed once");
+    assert_eq!(again["recorded"], Value::Null);
+    assert!(
+        again["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|i| i["title"] != "Desk lamp parts list"),
+        "nothing pending on it: {again}"
+    );
+}
+
+#[test]
+fn a_desk_items_pending_entries_are_decided_by_its_path() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    let project = sandbox.path("Code/thesis");
+    std::fs::create_dir_all(&project).unwrap();
+    std::fs::write(project.join("draft.md"), "# Draft\n").unwrap();
+    sandbox.ok(&root, &["desk", "add", project.to_str().unwrap()]);
+    let card = sandbox.path("Code/thesis.md");
+    let mut file =
+        carrel_core::card_file::CardFile::parse(&std::fs::read_to_string(&card).unwrap()).unwrap();
+    let mut log = file.history().unwrap();
+    log.add(carrel_core::entries::HistoryEntry::pending(
+        "2026-10-30",
+        Some(70),
+        vec!["Changed 1 file(s): draft.md".into()],
+    ));
+    file.set_history(&log).unwrap();
+    std::fs::write(&card, file.to_text().unwrap()).unwrap();
+
+    let dropped = sandbox.json(&root, &["sessions", "drop", project.to_str().unwrap(), "1"]);
+    assert_eq!(dropped["entries"], 1, "{dropped}");
+    assert!(!std::fs::read_to_string(&card).unwrap().contains("draft.md"));
+    let unknown = sandbox.run_in(&root, &["sessions", "drop", "Code/elsewhere"]);
+    assert!(
+        String::from_utf8_lossy(&unknown.stderr).contains("isn't an item"),
+        "{}",
+        String::from_utf8_lossy(&unknown.stderr)
+    );
 }
 
 #[test]
@@ -1087,4 +1508,761 @@ fn types_nothing_reads_are_logged_without_names_and_listed() {
         "{text}"
     );
     assert!(text.contains(".f3d"), "{text}");
+}
+
+/// Sets `path`'s modification time to `hours` ago.
+fn backdate(path: &Path, hours: u64) {
+    std::fs::File::options()
+        .write(true)
+        .open(path)
+        .unwrap()
+        .set_modified(std::time::SystemTime::now() - std::time::Duration::from_hours(hours))
+        .unwrap();
+}
+
+/// Makes the next command that changes the archive look for sessions, as if the last look
+/// were long ago.
+fn forget_last_look(sandbox: &Sandbox) {
+    for entry in std::fs::read_dir(sandbox.path("config/sessions")).unwrap() {
+        let path = entry.unwrap().path();
+        let mut state: Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        state.as_object_mut().unwrap().remove("looked");
+        std::fs::write(&path, state.to_string()).unwrap();
+    }
+}
+
+/// Rewrites a YAML or JSON line that starts with `key` (after spaces) to `replacement`.
+fn rewrite_line(path: &Path, key: &str, replacement: &str) {
+    let text = std::fs::read_to_string(path).unwrap();
+    let text = text
+        .lines()
+        .map(|l| {
+            if l.trim_start().starts_with(key) {
+                replacement.to_owned()
+            } else {
+                l.to_owned()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n";
+    std::fs::write(path, text).unwrap();
+}
+
+#[test]
+fn commands_that_change_the_archive_record_desk_sessions_every_few_minutes() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    let project = sandbox.path("Code/budget-app");
+    std::fs::create_dir_all(&project).unwrap();
+    std::fs::write(project.join("notes.md"), "plans\n").unwrap();
+    sandbox.ok(&root, &["desk", "add", project.to_str().unwrap()]);
+
+    // Put on the desk three hours ago, worked on two hours ago.
+    let three_hours_ago = jiff::Timestamp::now() - jiff::SignedDuration::from_hours(3);
+    // This device's desk: the sample archive has another device's, and folders come in no
+    // particular order.
+    let desk = std::fs::read_dir(root.join("_System/devices"))
+        .unwrap()
+        .map(|d| d.unwrap().path().join("desk.json"))
+        .find(|d| std::fs::read_to_string(d).is_ok_and(|t| t.contains("budget-app")))
+        .unwrap();
+    rewrite_line(
+        &desk,
+        "\"added\"",
+        &format!("      \"added\": \"{three_hours_ago}\""),
+    );
+    backdate(&project.join("notes.md"), 2);
+
+    // `desk add` just looked, so the next command doesn't look again yet.
+    let quiet = sandbox.run_in(&root, &["collection", "new", "Projects/Garden"]);
+    assert!(quiet.status.success());
+    let card = sandbox.path("Code/budget-app.md");
+    assert!(
+        !std::fs::read_to_string(&card)
+            .unwrap()
+            .contains("[!pending]")
+    );
+
+    forget_last_look(&sandbox);
+    let found = sandbox.run_in(&root, &["collection", "new", "Projects/Orchard"]);
+    assert!(found.status.success());
+    assert!(
+        String::from_utf8_lossy(&found.stderr).contains("Found 1 new session(s) on “budget-app”"),
+        "{}",
+        String::from_utf8_lossy(&found.stderr)
+    );
+    let text = std::fs::read_to_string(&card).unwrap();
+    assert!(text.contains("[!pending]"), "{text}");
+    assert!(text.contains("Changed 1 file(s): notes.md"), "{text}");
+    assert!(
+        !String::from_utf8_lossy(&sandbox.run_in(&root, &["status"]).stderr).contains("Found"),
+        "commands that only read don't look"
+    );
+
+    let listed = sandbox.json(&root, &["sessions"]);
+    let ours = listed["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["title"] == "budget-app")
+        .expect("the desk item has pending entries");
+    assert_eq!(ours["desk"], true, "{listed}");
+    assert_eq!(ours["pending"].as_array().unwrap().len(), 1);
+    sandbox.ok(&root, &["sessions", "approve", project.to_str().unwrap()]);
+    assert!(
+        !std::fs::read_to_string(&card)
+            .unwrap()
+            .contains("[!pending]")
+    );
+}
+
+#[test]
+fn session_snapshots_are_taken_and_can_be_forgotten_on_return() {
+    if std::process::Command::new("kopia")
+        .arg("--version")
+        .output()
+        .is_err()
+    {
+        assert!(
+            std::env::var_os("CARREL_REQUIRE_KOPIA").is_none(),
+            "Kopia is required here but isn't installed"
+        );
+        eprintln!("skipped: kopia isn't installed");
+        return;
+    }
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    let password = format!("test-{}", std::process::id());
+    let run = |args: &[&str]| {
+        std::process::Command::new(env!("CARGO_BIN_EXE_carrel"))
+            .args(args)
+            .current_dir(&root)
+            .env("CARREL_CONFIG_DIR", sandbox.path("config"))
+            .env("CARREL_WORKER", "off")
+            .env("KOPIA_PASSWORD", &password)
+            .env("KOPIA_CHECK_FOR_UPDATES", "false")
+            .output()
+            .unwrap()
+    };
+    let repository = sandbox.path("backups");
+    let setup = run(&["backup", "setup", repository.to_str().unwrap()]);
+    assert!(
+        setup.status.success(),
+        "{}",
+        String::from_utf8_lossy(&setup.stderr)
+    );
+    let desk = sandbox.path("desk");
+    let item = "Projects/Hardware/parts-list.csv";
+    assert!(
+        run(&["checkout", item, "--to", desk.to_str().unwrap()])
+            .status
+            .success()
+    );
+    let three_hours_ago = jiff::Timestamp::now() - jiff::SignedDuration::from_hours(3);
+    rewrite_line(
+        &root.join(format!("{item}.md")),
+        "since:",
+        &format!("  since: \"{three_hours_ago}\""),
+    );
+    let working = desk.join("parts-list.csv");
+    std::fs::write(&working, "edited,at,the,desk\n").unwrap();
+    backdate(&working, 2);
+
+    let listed = run(&["sessions", "--json"]);
+    let listed: Value = serde_json::from_slice(&listed.stdout).unwrap();
+    assert_eq!(listed["sessions"], 1, "{listed}");
+    assert!(listed["snapshots"][0]["snapshot"].is_string(), "{listed}");
+
+    let returned = run(&["return", item, "--yes", "--trim-snapshots", "--json"]);
+    assert!(
+        String::from_utf8_lossy(&returned.stderr).contains("1 session snapshot(s)"),
+        "the proposal says so: {}",
+        String::from_utf8_lossy(&returned.stderr)
+    );
+    let returned: Value = serde_json::from_slice(&returned.stdout).unwrap();
+    let trimmed = &returned["session_snapshots"];
+    assert!(trimmed["returned"].is_string(), "{returned}");
+    assert_eq!(trimmed["forgotten"], 1, "{returned}");
+    assert_eq!(trimmed["kept"], 0);
+}
+
+/// Writes a zip of `(name, contents)` files at `path`.
+fn write_zip(path: &Path, files: &[(&str, &[u8])]) {
+    use std::io::Write as _;
+    let mut zip = zip::ZipWriter::new(std::fs::File::create(path).unwrap());
+    for (name, bytes) in files {
+        zip.start_file(*name, zip::write::SimpleFileOptions::default())
+            .unwrap();
+        zip.write_all(bytes).unwrap();
+    }
+    zip.finish().unwrap();
+}
+
+#[test]
+fn compressed_files_are_drafted_from_what_is_inside() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    let downloads = sandbox.path("Downloads");
+    std::fs::create_dir(&downloads).unwrap();
+    write_zip(
+        &downloads.join("lamp-firmware-main.zip"),
+        &[
+            (
+                "lamp-firmware-main/README.md",
+                b"Firmware for the desk lamp's dimmer.\n",
+            ),
+            (
+                "lamp-firmware-main/Cargo.toml",
+                b"[package]\nname = \"lamp-firmware\"\n",
+            ),
+            ("lamp-firmware-main/src/main.rs", b"fn main() {}\n"),
+            ("__MACOSX/lamp-firmware-main/._README.md", b"junk"),
+        ],
+    );
+    std::fs::write(
+        downloads.join("Holiday photos.7z"),
+        b"7z\xbc\xaf\x27\x1c\0\x04",
+    )
+    .unwrap();
+    let downloads_arg = downloads.to_str().unwrap();
+
+    let report = sandbox.json(&root, &["ingest", "--wait", "--each", downloads_arg]);
+    let items = report["items"].as_array().unwrap();
+    let firmware = items
+        .iter()
+        .find(|i| i["path"].as_str().unwrap().ends_with("main.zip"))
+        .unwrap();
+    assert_eq!(firmware["kind"], "file");
+    assert_eq!(firmware["compressed"]["format"], "zip");
+    assert_eq!(
+        firmware["compressed"]["holds"],
+        "a folder, lamp-firmware-main, with 3 files"
+    );
+    assert_eq!(firmware["text"]["method"], "listing");
+    assert!(firmware["text"]["characters"].as_u64().unwrap() > 50);
+    assert!(
+        downloads.join("lamp-firmware-main.zip").exists(),
+        "nothing is expanded before approval"
+    );
+    assert!(
+        !downloads.join("lamp-firmware-main").exists(),
+        "nothing is expanded before approval"
+    );
+
+    let seven = items
+        .iter()
+        .find(|i| i["path"].as_str().unwrap().ends_with("photos.7z"))
+        .unwrap();
+    assert_eq!(seven["compressed"]["format"], "7z");
+    if which("7z").is_none() && which("7zz").is_none() && which("unar").is_none() {
+        assert_eq!(seven["text"]["method"], "none");
+        let log = std::fs::read_to_string(sandbox.path("config/unreadable.json")).unwrap();
+        assert!(log.contains("\"extension\": \"7z\""), "{log}");
+        assert!(!log.contains("Holiday"), "no file names: {log}");
+    }
+}
+
+/// Where `program` is on `PATH`, if it's there.
+fn which(program: &str) -> Option<PathBuf> {
+    std::env::split_paths(&std::env::var_os("PATH")?)
+        .map(|dir| dir.join(program))
+        .find(|path| path.is_file())
+}
+
+#[cfg(unix)]
+#[test]
+fn edit_opens_a_filed_card_keeps_its_body_and_undo_reverses_it() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    let init = std::process::Command::new(env!("CARGO_BIN_EXE_carrel"))
+        .args(["init", root.to_str().unwrap()])
+        .env("CARREL_CONFIG_DIR", sandbox.path("config"))
+        .output()
+        .unwrap();
+    assert!(
+        init.status.success(),
+        "{}",
+        String::from_utf8_lossy(&init.stderr)
+    );
+    let card = root.join("Projects/Hardware/parts-list.csv.md");
+    let before = std::fs::read_to_string(&card).unwrap();
+    let body = before.splitn(3, "---").nth(2).unwrap().to_owned();
+    let editor = sandbox.path("editor.sh");
+    std::fs::write(
+        &editor,
+        "#!/bin/sh\nawk '{sub(/^title: .*/, \"title: Parts for the lamp\"); sub(/^sensitivity: .*/, \"sensitivity: public\")}1' \"$1\" > \"$1.new\" && mv \"$1.new\" \"$1\"\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&editor, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_carrel"))
+        .args(["edit", "Projects/Hardware/parts-list.csv", "--json"])
+        .current_dir(&root)
+        .env("CARREL_CONFIG_DIR", sandbox.path("config"))
+        .env("CARREL_WORKER", "off")
+        .env_remove("VISUAL")
+        .env("EDITOR", &editor)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert!(
+        report["changed"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("title"))
+    );
+    let after = std::fs::read_to_string(&card).unwrap();
+    assert!(after.contains("title: Parts for the lamp"), "{after}");
+    assert!(
+        after.contains("sensitivity: public"),
+        "the owner may lower it"
+    );
+    assert!(after.ends_with(&body), "the body is kept exactly");
+
+    let change = sandbox.json(&root, &["log"])[0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    sandbox.ok(&root, &["undo", &change[..8]]);
+    assert_eq!(
+        std::fs::read_to_string(&card).unwrap(),
+        before,
+        "undo restores the card"
+    );
+}
+
+/// Files a text file in `collection` with a card beside it carrying `fields`.
+fn file_with_card(root: &Path, collection: &str, name: &str, contents: &str, fields: &str) {
+    let path = root.join(collection).join(name);
+    std::fs::write(&path, contents).unwrap();
+    let checksum = carrel_core::card::Checksum::of_file(&path).unwrap();
+    let card = format!(
+        "---\ncarrel: card\nformat: \"1.0\"\nid: {}\nkind: file\nitem: \"{name}\"\n{fields}\
+         checksum: \"{}\"\nsize: {}\n---\n\n<!-- carrel:history -->\n## History\n\
+         <!-- /carrel:history -->\n",
+        carrel_core::card::Id::new_v7(),
+        checksum.0,
+        contents.len()
+    );
+    std::fs::write(root.join(collection).join(format!("{name}.md")), card).unwrap();
+}
+
+#[test]
+fn search_finds_items_by_their_words_with_filters_and_reasons() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    file_with_card(
+        &root,
+        "Holding",
+        "invoice.txt",
+        "Please pay invoice 2057-4038 by Friday.",
+        "title: \"Furniture shop bill\"\nsummary: \"A bill for office furniture.\"\n\
+         tags: [receipts]\ndates:\n  document: \"2025-03-02\"\nsensitivity: sensitive\n",
+    );
+    file_with_card(
+        &root,
+        "Holding",
+        "statement.txt",
+        "Balance owed on invoice 2057-4038.",
+        "title: \"Bank statement\"\nsensitivity: restricted\n",
+    );
+
+    let found = sandbox.json(&root, &["search", "invoice", "2057-4038"]);
+    assert_eq!(
+        found["total"], 1,
+        "the restricted statement's text isn't searched: {found}"
+    );
+    let first = &found["results"][0];
+    assert_eq!(first["found"]["type"], "item");
+    assert_eq!(first["found"]["title"], "Furniture shop bill");
+    assert_eq!(first["found"]["collection"], "Holding");
+    assert_eq!(first["found"]["sensitivity"], "sensitive");
+    assert_eq!(first["found"]["date"], "2025-03-02");
+    assert_eq!(first["why"], json!(["text"]));
+    assert_eq!(first["passage_from"], "text");
+    assert_eq!(found["meaning"]["state"], "off");
+    let text = first["passage"]["text"].as_str().unwrap();
+    let range = &first["passage"]["highlights"][1];
+    let (start, end) = (
+        usize::try_from(range["start"].as_u64().unwrap()).unwrap(),
+        usize::try_from(range["end"].as_u64().unwrap()).unwrap(),
+    );
+    assert_eq!(&text[start..end], "2057-4038");
+    assert!(
+        root.join("_System/cache.nosync/text").is_dir(),
+        "texts are kept in the cache"
+    );
+
+    let report = sandbox.ok(&root, &["search", "invoice 2057-4038"]);
+    assert_eq!(
+        report,
+        "1 result for “invoice 2057-4038”:\n\nFurniture shop bill  [sensitive]\n  \
+         Holding · 2025-03-02 · file\n  Please pay **invoice** **2057-4038** by Friday.\n  \
+         matched: text\n"
+    );
+    let report = sandbox.ok(&root, &["search", "bank", "statement"]);
+    assert!(report.contains("Bank statement  [restricted]"), "{report}");
+
+    let filtered = sandbox.json(&root, &["search", "tag:receipts", "before:2026"]);
+    assert_eq!(
+        filtered["results"][0]["found"]["title"],
+        "Furniture shop bill"
+    );
+    assert_eq!(filtered["results"][0]["why"], json!(["filters"]));
+    let checked_out = sandbox.json(&root, &["search", "checked-out"]);
+    assert_eq!(checked_out["results"][0]["found"]["checked_out"], true);
+    let limited = sandbox.json(&root, &["search", "oscillators", "--limit", "1"]);
+    assert_eq!(limited["results"].as_array().unwrap().len(), 1);
+    assert!(limited["total"].as_u64().unwrap() > 1, "{limited}");
+    let glossary = sandbox.json(&root, &["search", "implements"]);
+    assert_eq!(glossary["results"][0]["found"]["type"], "glossary");
+    assert_eq!(
+        sandbox.ok(&root, &["search", "zebra"]),
+        "Nothing found for “zebra”.\n"
+    );
+
+    let bad = sandbox.run_in(&root, &["search", "kind:box"]);
+    assert_eq!(bad.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&bad.stderr).contains("kind:box isn't a kind"));
+    assert_eq!(sandbox.run_in(&root, &["search"]).status.code(), Some(2));
+}
+
+#[test]
+fn init_chooses_the_archives_embedding_model() {
+    let sandbox = Sandbox::new();
+    let settings = |root: &Path| -> Value {
+        serde_json::from_str(&std::fs::read_to_string(root.join("_System/settings.json")).unwrap())
+            .unwrap()
+    };
+    let text = sandbox.ok(sandbox.dir.path(), &["init", "Notes"]);
+    assert!(
+        text.contains("searches it with embeddinggemma-300m"),
+        "{text}"
+    );
+    assert_eq!(
+        settings(&sandbox.path("Notes"))["embedding"]["model"],
+        "embeddinggemma-300m"
+    );
+
+    let created = sandbox.json(
+        sandbox.dir.path(),
+        &[
+            "init",
+            "Papers",
+            "--embedding-model",
+            "qwen3-embedding-0.6b",
+        ],
+    );
+    assert_eq!(created["embedding_model"], "qwen3-embedding-0.6b");
+    assert_eq!(
+        settings(&sandbox.path("Papers"))["embedding"]["model"],
+        "qwen3-embedding-0.6b"
+    );
+
+    let out = sandbox.run_in(
+        sandbox.dir.path(),
+        &["init", "Other", "--embedding-model", "word2vec"],
+    );
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("no embedding model word2vec"));
+    assert!(!sandbox.path("Other").exists(), "nothing is created");
+}
+
+/// Sets the sample archive's embedding model in its settings, as another program might, or
+/// removes it.
+fn set_embedding_model(root: &Path, model: Option<&str>) {
+    let path = root.join("_System/settings.json");
+    let mut settings: Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    match model {
+        Some(model) => settings["embedding"] = json!({ "model": model }),
+        None => {
+            settings.as_object_mut().unwrap().remove("embedding");
+        }
+    }
+    std::fs::write(&path, serde_json::to_string_pretty(&settings).unwrap()).unwrap();
+}
+
+#[test]
+fn an_archive_without_an_embedding_model_asks_for_one_on_first_use() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.dir.path().join("archive");
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    set_embedding_model(&root, None);
+
+    // Not in a terminal, there's no one to ask, so it says how to choose.
+    let out = sandbox.run_in(&root, &["models", "embed", "a lease"]);
+    assert!(!out.status.success());
+    let error = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        error.contains("carrel settings set embedding.model NAME"),
+        "{error}"
+    );
+    assert!(error.contains("embeddinggemma-300m"), "{error}");
+
+    let listed = sandbox.json(&root, &["settings"]);
+    assert_eq!(listed["archive"]["embedding.model"], "none");
+    let set = sandbox.json(
+        &root,
+        &["settings", "set", "embedding.model", "qwen3-embedding-0.6b"],
+    );
+    assert_eq!(set["to"], "qwen3-embedding-0.6b");
+    assert!(set["commit"].is_string(), "recorded in history");
+
+    // Once chosen, it stays: switching models means re-embedding the archive.
+    let out = sandbox.run_in(
+        &root,
+        &["settings", "set", "embedding.model", "embeddinggemma-300m"],
+    );
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("re-embeds"));
+}
+
+#[test]
+fn texts_are_embedded_with_the_archives_model_and_no_other() {
+    let sandbox = Sandbox::new();
+    let bin = sandbox.path("bin");
+    std::fs::create_dir(&bin).unwrap();
+    let suffix = std::env::consts::EXE_SUFFIX;
+    std::fs::copy(
+        echo_provider(),
+        bin.join(format!("carrel-provider-echo{suffix}")),
+    )
+    .unwrap();
+    let root = sandbox.sample();
+    let embed = |args: &[&str]| {
+        std::process::Command::new(env!("CARGO_BIN_EXE_carrel"))
+            .args(["models", "embed"])
+            .args(args)
+            .current_dir(&root)
+            .env("PATH", &bin)
+            .env("CARREL_CONFIG_DIR", sandbox.path("config"))
+            .env("CARREL_WORKER", "off")
+            .output()
+            .unwrap()
+    };
+
+    set_embedding_model(&root, Some("echo-embed"));
+    let out = embed(&["a lease", "a receipt", "--query", "--json"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let report: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(report["model"], "echo-embed");
+    assert_eq!(report["provider"], "echo");
+    assert_eq!(report["purpose"], "query");
+    assert_eq!(report["dimensions"], 3);
+    let vectors = report["vectors"].as_array().unwrap();
+    assert_eq!(vectors.len(), 2);
+    assert_eq!(vectors[0].as_array().unwrap().len(), 3);
+
+    // The echo provider has an embedding model, but not the archive's.
+    set_embedding_model(&root, Some("embeddinggemma-300m"));
+    let out = embed(&["a lease"]);
+    assert!(!out.status.success());
+    let error = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        error.contains("embeddinggemma-300m") && error.contains("carrel models download"),
+        "{error}"
+    );
+}
+
+#[test]
+fn embedding_models_are_listed_apart_and_unpinned_ones_are_never_downloaded() {
+    let sandbox = Sandbox::new();
+    let here = sandbox.path("");
+    let listed = sandbox.json(&here, &["models"]);
+    let catalog = listed["catalog"].as_array().unwrap();
+    let gemma = catalog
+        .iter()
+        .find(|m| m["name"] == "embeddinggemma-300m")
+        .unwrap();
+    assert_eq!(gemma["embedding"]["dimensions"], 768);
+    assert!(
+        catalog
+            .iter()
+            .any(|m| m["name"] == "qwen3-embedding-0.6b" && m["embedding"]["pooling"] == "last")
+    );
+    let text = sandbox.ok(&here, &["models"]);
+    assert!(text.contains("For search by meaning"), "{text}");
+
+    if gemma["pinned"] == false {
+        let out = sandbox.run_in(
+            &here,
+            &["models", "download", "embeddinggemma-300m", "--yes"],
+        );
+        assert!(!out.status.success());
+        assert!(String::from_utf8_lossy(&out.stderr).contains("isn't pinned"));
+        assert!(!sandbox.path("config/logs/network.log").exists());
+    }
+}
+
+#[test]
+fn approved_zips_are_expanded_unless_kept_compressed() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(&root, &["init", root.to_str().unwrap()]);
+    let downloads = sandbox.path("Downloads");
+    std::fs::create_dir(&downloads).unwrap();
+    let zipped = downloads.join("lamp-firmware-main.zip");
+    write_zip(
+        &zipped,
+        &[
+            ("lamp-firmware-main/README.md", b"Dimmer firmware.\n"),
+            ("lamp-firmware-main/Cargo.toml", b"[package]\n"),
+            ("lamp-firmware-main/src/main.rs", b"fn main() {}\n"),
+        ],
+    );
+    let installer = downloads.join("Lamp Utility.zip");
+    write_zip(&installer, &[("Lamp Utility/Setup.exe", b"MZ")]);
+    let gzipped = downloads.join("notes.zip");
+    write_zip(&gzipped, &[("a.txt", b"a"), ("b.txt", b"b")]);
+    sandbox.ok(
+        &root,
+        &["ingest", "--wait", "--each", downloads.to_str().unwrap()],
+    );
+    let entries = sandbox.json(&root, &["review"])["entries"]
+        .as_array()
+        .unwrap()
+        .clone();
+    let id_of = |name: &str| {
+        entries
+            .iter()
+            .find(|e| e["source"]["path"].as_str().unwrap().ends_with(name))
+            .map(|e| e["id"].as_str().unwrap().to_owned())
+            .unwrap()
+    };
+    let (firmware, utility, notes) = (id_of("main.zip"), id_of("Utility.zip"), id_of("notes.zip"));
+
+    let shown = sandbox.ok(&root, &["review", "show", &firmware]);
+    assert!(
+        shown.contains("compressed   will be expanded: 3 files"),
+        "{shown}"
+    );
+    assert!(shown.contains("/lamp-firmware-main"), "{shown}");
+    let shown = sandbox.ok(&root, &["review", "show", &utility]);
+    assert!(
+        shown.contains("kept compressed: it holds an installer (Setup.exe)"),
+        "{shown}"
+    );
+    let kept = sandbox.ok(&root, &["review", "keep-compressed", &notes]);
+    assert!(
+        kept.contains("kept compressed: the owner chose to keep it"),
+        "{kept}"
+    );
+    let refused = sandbox.run_in(&root, &["review", "expand", &utility]);
+    assert!(
+        refused.status.success(),
+        "software can still be expanded on request"
+    );
+
+    let approved = sandbox.json(&root, &["review", "approve", &firmware, &notes]);
+    let filed = approved["filed"].as_array().unwrap();
+    assert_eq!(filed.len(), 2, "{approved}");
+    let firmware_path = filed
+        .iter()
+        .find_map(|f| {
+            f["path"]
+                .as_str()
+                .filter(|p| p.ends_with("lamp-firmware-main"))
+        })
+        .unwrap();
+    assert!(root.join(firmware_path).join("src/main.rs").is_file());
+    assert!(!zipped.exists());
+    assert!(sandbox.path("Trash/lamp-firmware-main.zip").is_file());
+    let card = std::fs::read_to_string(root.join(format!("{firmware_path}.md"))).unwrap();
+    assert!(card.contains("kind: bundle"), "{card}");
+    assert!(card.contains("expanded_from:"), "{card}");
+    assert!(card.contains("name: lamp-firmware-main.zip"), "{card}");
+    assert!(
+        filed
+            .iter()
+            .any(|f| f["path"].as_str().unwrap().ends_with("notes.zip")),
+        "kept compressed: {approved}"
+    );
+
+    sandbox.ok(&root, &["settings", "set", "compressed_files", "keep"]);
+    let settings = std::fs::read_to_string(root.join("_System/settings.json")).unwrap();
+    assert!(
+        settings.contains("\"compressed_files\": \"keep\""),
+        "{settings}"
+    );
+}
+
+#[test]
+fn expand_opens_a_filed_zip_in_one_change_that_undo_reverses() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(&root, &["init", root.to_str().unwrap()]);
+    sandbox.ok(&root, &["settings", "set", "compressed_files", "keep"]);
+    let downloads = sandbox.path("Downloads");
+    std::fs::create_dir(&downloads).unwrap();
+    write_zip(
+        &downloads.join("Spectra.zip"),
+        &[
+            ("Spectra/run1.csv", b"nm,counts\n"),
+            ("Spectra/run2.csv", b"nm,counts\n"),
+        ],
+    );
+    sandbox.ok(
+        &root,
+        &["ingest", "--wait", "--each", downloads.to_str().unwrap()],
+    );
+    let entries = sandbox.json(&root, &["review"])["entries"].clone();
+    let entry = entries
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| {
+            e["source"]["path"]
+                .as_str()
+                .unwrap()
+                .ends_with("Spectra.zip")
+        })
+        .unwrap();
+    assert_eq!(entry["compressed"]["action"], "keep");
+    let approved = sandbox.json(&root, &["review", "approve", entry["id"].as_str().unwrap()]);
+    let zip_path = approved["filed"][0]["path"].as_str().unwrap().to_owned();
+    assert!(zip_path.ends_with("Spectra.zip"), "{approved}");
+
+    let expanded = sandbox.json(&root, &["expand", &zip_path]);
+    let to = expanded["to"].as_str().unwrap();
+    assert!(to.ends_with("/Spectra"), "{expanded}");
+    assert_eq!(expanded["kind"], "folder");
+    assert!(root.join(to).join("run2.csv").is_file());
+    assert!(!root.join(&zip_path).exists());
+    assert!(sandbox.path("Trash/Spectra.zip").is_file());
+    let card = std::fs::read_to_string(root.join(expanded["card"].as_str().unwrap())).unwrap();
+    assert!(
+        card.contains("kind: folder") && card.contains("name: Spectra.zip"),
+        "{card}"
+    );
+    assert!(
+        !root.join(format!("{zip_path}.md")).exists(),
+        "the card follows the item"
+    );
+
+    let again = sandbox.run_in(&root, &["expand", to]);
+    assert!(!again.status.success());
+    assert!(String::from_utf8_lossy(&again.stderr).contains("isn't a compressed file"));
+
+    let commit = expanded["commit"].as_str().unwrap();
+    sandbox.ok(&root, &["undo", commit]);
+    assert!(
+        !root.join(to).exists(),
+        "what was expanded leaves the collection"
+    );
+    let restored = std::fs::read_to_string(root.join(format!("{zip_path}.md"))).unwrap();
+    assert!(restored.contains("kind: file"), "{restored}");
 }

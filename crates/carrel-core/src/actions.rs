@@ -506,6 +506,54 @@ pub fn move_to(archive: &Archive, id: &str, path: &str) -> Result<Moved, ActionE
     })
 }
 
+/// Says whether the compressed file proposal `id` is expanded on approval or kept compressed,
+/// as the owner chose in Review (`docs/design/compressed.md`). The choice settles a proposal
+/// that was asking, and lifts the size limits when it's to expand. Nothing changes on disk
+/// until it's approved.
+///
+/// # Errors
+///
+/// [`ActionError::Queue`], or [`ActionError::Invalid`] for a decided proposal, one that isn't a
+/// compressed file, or expanding one that can't be: split, encrypted or unreadable.
+pub fn choose_compressed(
+    archive: &Archive,
+    id: &str,
+    choice: crate::compressed::plan::Choice,
+) -> Result<ReviewEntry, ActionError> {
+    use crate::compressed::plan::Choice;
+    if choice == Choice::Ask {
+        return Err(ActionError::Invalid(
+            "choose whether to expand it or keep it compressed".into(),
+        ));
+    }
+    let queue = ReviewQueue::of(archive);
+    let mut entry = queue.find(id)?;
+    decidable(&entry)?;
+    let short = short_id(entry.id);
+    let Some(plan) = entry.compressed.as_mut() else {
+        return Err(ActionError::Invalid(format!(
+            "{short} isn't a compressed file"
+        )));
+    };
+    // Only what was listed can be expanded: not a split, unreadable or encrypted archive.
+    let encrypted = plan.reason.as_deref() == Some("it's encrypted");
+    if choice == Choice::Expand && (plan.files.is_none() || encrypted) {
+        return Err(ActionError::Invalid(format!(
+            "{short} can't be expanded: {}",
+            plan.reason.as_deref().unwrap_or("it couldn't be read")
+        )));
+    }
+    plan.action = choice;
+    plan.by_owner = true;
+    plan.reason = (choice == Choice::Keep).then(|| "the owner chose to keep it".to_owned());
+    entry.problems.retain(|p| p.stage != "compressed");
+    if entry.state == State::NeedsOwner && entry.problems.is_empty() {
+        entry.state = State::Proposed;
+    }
+    queue.save(&entry)?;
+    Ok(entry)
+}
+
 /// The proposals still waiting on `question`.
 ///
 /// # Errors
@@ -1047,6 +1095,7 @@ pub fn correct_proposal(
             duplicate_of: None,
             likely: Vec::new(),
             same_as: None,
+            inside: None,
         };
         let draft = crate::ingest::card::Draft {
             title: entry.card.title.clone(),
@@ -1093,4 +1142,138 @@ pub fn correct_proposal(
         dropped,
         kept_sensitive,
     })
+}
+
+/// What the owner's edit of a filed card did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EditedCard {
+    /// Nothing changed.
+    Unchanged,
+    /// These fields changed; the card needs writing.
+    Changed(Vec<&'static str>),
+    /// The edit doesn't check out, for these reasons; the card is as it was.
+    Problems(Vec<String>),
+}
+
+/// The editable fields of the filed card `card`, in the collection at `collection`, as YAML
+/// for the owner's editor, with `problems` to fix listed above them. `floor` is the lowest
+/// sensitivity it may have: sensitive when a rule found a restricted value, otherwise public.
+///
+/// # Errors
+///
+/// [`ActionError::Archive`] if the collections can't be read.
+///
+/// # Panics
+///
+/// Never: the fields always serialize.
+pub fn card_text(
+    archive: &Archive,
+    card: &crate::card::Card,
+    collection: &str,
+    floor: Sensitivity,
+    problems: &[String],
+) -> Result<String, ActionError> {
+    let collections = archive.collections()?;
+    let vocabulary = applicable_tags(archive, &collections, collection);
+    let fields = DraftFields {
+        title: card.title.clone(),
+        summary: card.summary.clone(),
+        tags: card.tags.iter().map(|t| t.0.clone()).collect(),
+        dates: card.dates.clone(),
+        sensitivity: card.sensitivity,
+    };
+    let mut text = String::new();
+    for problem in problems {
+        writeln!(text, "# To fix: {problem}").unwrap();
+    }
+    if !problems.is_empty() {
+        text.push_str("#\n");
+    }
+    write!(
+        text,
+        "# The card for “{}”, in {}. The body below the card's fields is kept exactly.\n\
+         # Save to keep your changes; save it unchanged to change nothing. Delete a line to\n\
+         # clear it, such as a wrong date.\n\
+         # Tags that apply here: {}.\n\
+         # Sensitivity: {} or higher.\n",
+        card.title,
+        if collection.is_empty() {
+            "the archive root"
+        } else {
+            collection
+        },
+        if vocabulary.is_empty() {
+            "none".to_owned()
+        } else {
+            vocabulary.join(", ")
+        },
+        level_name(floor),
+    )
+    .unwrap();
+    text.push_str(&serde_saphyr::to_string(&fields).expect("card fields always serialize"));
+    Ok(text)
+}
+
+/// Applies the owner's edited `text` to the filed `card` in `collection`, checking it first:
+/// a title, real dates, tags that apply there, and no sensitivity below `floor`. Fields the
+/// owner changed are no longer a model's.
+///
+/// # Errors
+///
+/// [`ActionError::Archive`] if the collections can't be read.
+pub fn apply_card(
+    archive: &Archive,
+    card: &mut crate::card::Card,
+    collection: &str,
+    floor: Sensitivity,
+    text: &str,
+) -> Result<EditedCard, ActionError> {
+    let fields: DraftFields = match serde_saphyr::from_str(text) {
+        Ok(fields) => fields,
+        Err(e) => {
+            return Ok(EditedCard::Problems(vec![format!(
+                "the YAML isn't valid: {e}"
+            )]));
+        }
+    };
+    let collections = archive.collections()?;
+    let vocabulary = applicable_tags(archive, &collections, collection);
+    let checked = match check_fields(fields, &vocabulary, floor) {
+        Ok(checked) if !checked.new_tags.is_empty() => {
+            let names: Vec<&str> = checked.new_tags.iter().map(|t| t.0.as_str()).collect();
+            return Ok(EditedCard::Problems(vec![format!(
+                "{} {} a tag in {collection}; add it to the collection's tags first",
+                names.join(", "),
+                if names.len() == 1 { "isn't" } else { "aren't" }
+            )]));
+        }
+        Ok(checked) => checked,
+        Err(problems) => return Ok(EditedCard::Problems(problems)),
+    };
+    let changed: Vec<&'static str> = [
+        ("title", checked.title != card.title),
+        ("summary", checked.summary != card.summary),
+        ("tags", checked.tags != card.tags),
+        ("dates", checked.dates != card.dates),
+        ("sensitivity", checked.sensitivity != card.sensitivity),
+    ]
+    .into_iter()
+    .filter_map(|(field, differs)| differs.then_some(field))
+    .collect();
+    if changed.is_empty() {
+        return Ok(EditedCard::Unchanged);
+    }
+    card.title = checked.title;
+    card.summary = checked.summary;
+    card.tags = checked.tags;
+    card.dates = checked.dates;
+    card.sensitivity = checked.sensitivity;
+    if let Some(generated) = &mut card.generated {
+        generated.fields.retain(|f| !changed.contains(&f.as_str()));
+        // Kept while it still holds something, such as the owner's corrections.
+        if generated.fields.is_empty() && generated.extra.is_empty() {
+            card.generated = None;
+        }
+    }
+    Ok(EditedCard::Changed(changed))
 }

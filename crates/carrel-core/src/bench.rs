@@ -111,7 +111,7 @@ pub fn check(answers: &Answers, archive: &Archive, items: &Path) -> Result<Vec<S
         {
             problems.push(format!("{file}: {date} isn't a date"));
         }
-        let text = std::fs::read_to_string(path).map_err(|e| format!("{file}: {e}"))?;
+        let text = item_text(path).map_err(|e| format!("{file}: {e}"))?;
         let ruled = floor(file, &text, default).level;
         if answer.sensitivity < ruled {
             problems.push(format!(
@@ -129,6 +129,26 @@ pub fn check(answers: &Answers, archive: &Archive, items: &Path) -> Result<Vec<S
     Ok(problems)
 }
 
+/// An item's text for checking its expected level: a compressed file's names and the text of
+/// everything inside it, otherwise whatever text the file holds, so binary items such as images
+/// and 3D models are checked too.
+fn item_text(path: &Path) -> Result<String, String> {
+    let Some(listing) = crate::compressed::inspect(path).and_then(|i| i.listing) else {
+        let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+        return Ok(String::from_utf8_lossy(&bytes).into_owned());
+    };
+    let mut text = String::new();
+    for entry in listing.files() {
+        text.push_str(&entry.path);
+        text.push('\n');
+        let bytes = crate::compressed::read_entry(path, listing.format, &entry.path, 1 << 16)
+            .map_err(|e| e.to_string())?;
+        text.push_str(&String::from_utf8_lossy(&bytes));
+        text.push('\n');
+    }
+    Ok(text)
+}
+
 /// What a run proposed for one item.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Outcome {
@@ -140,6 +160,9 @@ pub struct Outcome {
     pub confidence: Option<String>,
     /// The level given.
     pub sensitivity: Option<Sensitivity>,
+    /// Why it was given that level.
+    #[serde(default)]
+    pub reasons: Vec<String>,
     /// The creation date drafted, as `YYYY-MM-DD`.
     pub date: Option<String>,
     /// The tags drafted, with any new one proposed.
@@ -202,6 +225,7 @@ pub fn outcomes(run: &Run) -> Vec<Outcome> {
                 destination: route.map(|r| r.path.clone()),
                 confidence: route.map(|r| format!("{:?}", r.confidence).to_lowercase()),
                 sensitivity: assessment.map(|a| a.level),
+                reasons: assessment.map(|a| a.reasons.clone()).unwrap_or_default(),
                 date: draft
                     .and_then(|d| d.created.as_ref())
                     .map(|c| c.0.chars().take(10).collect()),
@@ -456,6 +480,7 @@ items:
             destination: Some(destination.into()),
             confidence: Some("medium".into()),
             sensitivity: Some(level),
+            reasons: Vec::new(),
             date: None,
             tags: tags.iter().map(|t| (*t).to_owned()).collect(),
             title: "t".into(),

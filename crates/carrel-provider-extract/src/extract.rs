@@ -1,5 +1,6 @@
-//! The extractors: a PDF's text layer, read in Rust, and OCR through the `tesseract` program
-//! when it's installed (with `pdftoppm` for scanned PDFs).
+//! The extractors: a PDF's text layer, read in Rust, OCR through the `tesseract` program
+//! when it's installed (with `pdftoppm` for scanned PDFs), and the details of 3D printing and
+//! CAD files ([`crate::models`]).
 
 use std::panic::AssertUnwindSafe;
 use std::path::{Path, PathBuf};
@@ -9,6 +10,8 @@ use carrel_core::providers::process::{default_folders, find_program};
 use carrel_core::providers::{
     Capability, Extraction, ExtractionRequest, Offer, Provider, ProviderError, priority,
 };
+
+use crate::models::{self, MODEL_DETAILS};
 
 /// The offer for PDF text layers.
 pub const PDF_TEXT: &str = "pdf-text";
@@ -94,6 +97,17 @@ impl Extractor {
                 media_types: ocr_types,
                 extra: serde_json::Map::new(),
             },
+            Offer {
+                capability: Capability::ExtractText,
+                id: MODEL_DETAILS.into(),
+                label: Some("3D printing and CAD file details".into()),
+                // Below the CAD provider, which reads STEP and IGES headers too, and draws them.
+                priority: models::PRIORITY,
+                available: true,
+                reason: None,
+                media_types: models::MEDIA_TYPES.map(str::to_owned).to_vec(),
+                extra: serde_json::Map::new(),
+            },
         ];
         Self {
             offers,
@@ -125,6 +139,7 @@ impl Extractor {
             pages: Some(count),
             created: None,
             located: false,
+            pictures: Vec::new(),
         })
     }
 
@@ -140,6 +155,7 @@ impl Extractor {
                 pages: None,
                 created: None,
                 located: false,
+                pictures: Vec::new(),
             });
         }
         let pdftoppm = self.pdftoppm.as_deref().ok_or_else(|| {
@@ -176,6 +192,7 @@ impl Extractor {
             pages: Some(u32::try_from(pages.len()).unwrap_or(u32::MAX)),
             created: None,
             located: false,
+            pictures: Vec::new(),
         })
     }
 
@@ -226,6 +243,7 @@ impl Provider for Extractor {
         match offer {
             PDF_TEXT if request.media_type == "application/pdf" => Self::pdf_text(&request.path),
             TESSERACT => self.ocr(request),
+            MODEL_DETAILS => models::read(&request.path, &request.media_type),
             _ => Err(ProviderError::Unsupported(format!(
                 "{offer} doesn't read {}",
                 request.media_type
@@ -242,6 +260,7 @@ mod tests {
         ExtractionRequest {
             path: path.to_owned(),
             media_type: media_type.into(),
+            context: None,
         }
     }
 

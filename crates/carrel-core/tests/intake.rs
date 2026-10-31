@@ -149,6 +149,14 @@ fn processing_saves_the_proposal_and_takes_the_item_off_the_queue() {
     let (proposals, _) = ReviewQueue::of(&s.archive).list().unwrap();
     assert_eq!(proposals.len(), 1);
     assert_eq!(proposals[0].source.path, a);
+    let checksum = carrel_core::card::Checksum::of_file(&a).unwrap();
+    assert_eq!(
+        carrel_core::search::texts::TextCache::of(&s.archive)
+            .get(&checksum)
+            .as_deref(),
+        Some("notes on the lamp\n"),
+        "kept for search, so it's never read again"
+    );
 }
 
 #[test]
