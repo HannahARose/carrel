@@ -72,7 +72,7 @@ fn recorded_sessions(app: &mut App, result: Option<Result<String, Failure>>) {
             if let Err(Failure(e)) = app.reload() {
                 app.message = Some(e);
             } else {
-                app.message = Some(format!("{message}; approve them with `carrel sessions`"));
+                app.message = Some(message);
             }
         }
         Some(Err(Failure(e))) => app.message = Some(format!("Work sessions weren't recorded: {e}")),

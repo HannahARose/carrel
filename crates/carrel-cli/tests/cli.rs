@@ -1059,6 +1059,79 @@ fn sessions_edit_opens_an_entry_in_the_editor_and_keeps_it_pending() {
 }
 
 #[test]
+fn entries_approved_by_hand_are_noticed_and_kept_as_written() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    let item = "Projects/Hardware/parts-list.csv";
+    let card = root.join(format!("{item}.md"));
+    let mut file =
+        carrel_core::card_file::CardFile::parse(&std::fs::read_to_string(&card).unwrap()).unwrap();
+    let mut log = file.history().unwrap();
+    for (date, text) in [
+        ("2099-02-03", "Soldered the new switch."),
+        ("2099-02-04", "Tidied the list."),
+    ] {
+        log.add(carrel_core::entries::HistoryEntry::pending(
+            date,
+            Some(70),
+            vec![text.into()],
+        ));
+    }
+    file.set_history(&log).unwrap();
+    std::fs::write(&card, file.to_text().unwrap()).unwrap();
+    // Dropping one records the other, pending, in history.
+    sandbox.ok(&root, &["sessions", "drop", item, "1"]);
+
+    // Changing a pending entry's text by hand isn't approving it.
+    let text = std::fs::read_to_string(&card).unwrap();
+    std::fs::write(&card, text.replace("> Soldered the", "> Soldered  the")).unwrap();
+    let listed = sandbox.json(&root, &["sessions"]);
+    assert_eq!(listed["approved_by_hand"], json!([]), "{listed}");
+    assert_eq!(listed["recorded"], Value::Null, "nothing to record");
+    std::fs::write(&card, &text).unwrap();
+
+    // In Obsidian, the owner turns the callout into a normal entry, and adds a line.
+    let pending = "> [!pending] 2099-02-03 · 1h 10m · auto-generated\n> Soldered the new switch.\n";
+    let text = std::fs::read_to_string(&card).unwrap();
+    assert!(text.contains(pending), "{text}");
+    let approved =
+        "### 2099-02-03 · 1h 10m · auto-generated\nSoldered the new switch.\nIt works!\n";
+    let text = text.replace(pending, approved);
+    std::fs::write(&card, &text).unwrap();
+
+    let listed = sandbox.json(&root, &["sessions"]);
+    assert_eq!(
+        listed["approved_by_hand"],
+        json!([{ "item": listed["approved_by_hand"][0]["item"], "title": "Desk lamp parts list", "entries": 1 }]),
+        "{listed}"
+    );
+    assert!(listed["recorded"].is_string(), "{listed}");
+    assert_eq!(
+        std::fs::read_to_string(&card).unwrap(),
+        text,
+        "the owner's text is kept exactly"
+    );
+    let journal = std::fs::read_to_string(root.join("Journal/2099/2099-02.md")).unwrap();
+    assert!(journal.contains("Soldered the new switch."), "{journal}");
+    let log = sandbox.json(&root, &["log"]);
+    assert_eq!(log[0]["operation"], "session");
+    assert_eq!(log[0]["summary"], "Note 1 history entry approved by hand");
+
+    let again = sandbox.json(&root, &["sessions"]);
+    assert_eq!(again["approved_by_hand"], json!([]), "noticed once");
+    assert_eq!(again["recorded"], Value::Null);
+    assert!(
+        again["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|i| i["title"] != "Desk lamp parts list"),
+        "nothing pending on it: {again}"
+    );
+}
+
+#[test]
 fn a_desk_items_pending_entries_are_decided_by_its_path() {
     let sandbox = Sandbox::new();
     let root = sandbox.sample();

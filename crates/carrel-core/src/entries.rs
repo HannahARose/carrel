@@ -26,7 +26,7 @@ pub const AUTO: &str = "auto-generated";
 const NOTES: &str = "My notes:";
 
 /// One history entry.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct HistoryEntry {
     /// When, as `YYYY-MM-DD`.
     pub date: String,
@@ -38,7 +38,23 @@ pub struct HistoryEntry {
     pub tags: Vec<String>,
     /// The entry's text, one string per line, without the callout's `> `.
     pub lines: Vec<String>,
+    /// The lines it was read from, exactly, so an entry nothing changed is written back as
+    /// the owner left it. Empty for a new entry.
+    source: Vec<String>,
 }
+
+/// Entries are the same when they say the same, however they were written.
+impl PartialEq for HistoryEntry {
+    fn eq(&self, other: &Self) -> bool {
+        self.date == other.date
+            && self.duration == other.duration
+            && self.pending == other.pending
+            && self.tags == other.tags
+            && self.lines == other.lines
+    }
+}
+
+impl Eq for HistoryEntry {}
 
 impl HistoryEntry {
     /// A new pending entry written by a program.
@@ -50,6 +66,7 @@ impl HistoryEntry {
             pending: true,
             tags: vec![AUTO.to_owned()],
             lines,
+            source: Vec::new(),
         }
     }
 
@@ -72,6 +89,14 @@ impl HistoryEntry {
     }
 
     fn render(&self, out: &mut String) {
+        if !self.source.is_empty()
+            && HistoryLog::parse(&self.source.join("\n")).entries.first() == Some(self)
+        {
+            for line in &self.source {
+                writeln!(out, "{line}").unwrap();
+            }
+            return;
+        }
         if self.pending {
             writeln!(out, "{PENDING} {}", self.heading()).unwrap();
             for line in &self.lines {
@@ -138,15 +163,23 @@ impl HistoryLog {
     pub fn parse(content: &str) -> Self {
         let mut log = Self::default();
         let mut current: Option<HistoryEntry> = None;
+        // Whether the current entry is a callout, whose lines start with `>`.
+        let mut callout = false;
         for line in content.lines() {
-            if let Some(heading) = line.strip_prefix(PENDING) {
-                log.entries.extend(current.take());
-                current = Some(entry_from(heading.trim(), true));
+            let started = if let Some(heading) = line.strip_prefix(PENDING) {
+                Some((entry_from(heading.trim(), true), true))
             } else if let Some(heading) = line.strip_prefix("### ") {
+                Some((entry_from(heading.trim(), false), false))
+            } else {
+                approved_callout(line).map(|heading| (entry_from(heading, false), true))
+            };
+            if let Some((mut entry, is_callout)) = started {
                 log.entries.extend(current.take());
-                current = Some(entry_from(heading.trim(), false));
+                entry.source.push(line.to_owned());
+                current = Some(entry);
+                callout = is_callout;
             } else if let Some(entry) = current.as_mut() {
-                if entry.pending {
+                if callout {
                     if let Some(rest) = line.strip_prefix('>') {
                         entry
                             .lines
@@ -154,6 +187,7 @@ impl HistoryLog {
                     } else if line.trim().is_empty() {
                         // A blank line ends a callout.
                         log.entries.extend(current.take());
+                        continue;
                     } else {
                         // Text after a callout that isn't part of it: keep it with the entry.
                         entry.lines.push(line.to_owned());
@@ -161,6 +195,7 @@ impl HistoryLog {
                 } else {
                     entry.lines.push(line.to_owned());
                 }
+                entry.source.push(line.to_owned());
             } else {
                 log.preamble.push(line.to_owned());
             }
@@ -169,6 +204,9 @@ impl HistoryLog {
         for entry in &mut log.entries {
             while entry.lines.last().is_some_and(|l| l.trim().is_empty()) {
                 entry.lines.pop();
+            }
+            while entry.source.last().is_some_and(|l| l.trim().is_empty()) {
+                entry.source.pop();
             }
         }
         while log.preamble.last().is_some_and(|l| l.trim().is_empty()) {
@@ -263,6 +301,7 @@ impl HistoryLog {
         }
         let edited = HistoryEntry {
             lines,
+            source: Vec::new(),
             ..entry.clone()
         };
         check_readable(&edited)?;
@@ -321,6 +360,7 @@ impl HistoryLog {
             pending: true,
             tags,
             lines,
+            source: Vec::new(),
         };
         let first = positions[0];
         for &i in positions.iter().rev() {
@@ -364,6 +404,26 @@ fn check_readable(entry: &HistoryEntry) -> Result<(), EntryError> {
     Ok(())
 }
 
+/// The heading of a callout of another type than `pending` that starts with a date, such as
+/// `> [!done] 2026-10-29 · 2h 10m`: an entry the owner approved by changing its type.
+fn approved_callout(line: &str) -> Option<&str> {
+    let rest = line.strip_prefix("> [!")?;
+    let (kind, heading) = rest.split_once(']')?;
+    if kind.eq_ignore_ascii_case("pending") {
+        return None;
+    }
+    let heading = heading.trim_start_matches(['+', '-']).trim();
+    let date = heading.get(..10)?.as_bytes();
+    let is_date = date.iter().enumerate().all(|(i, b)| {
+        if i == 4 || i == 7 {
+            *b == b'-'
+        } else {
+            b.is_ascii_digit()
+        }
+    });
+    is_date.then_some(heading)
+}
+
 /// An entry with nothing but its heading, `date · duration · tags`.
 fn entry_from(heading: &str, pending: bool) -> HistoryEntry {
     let mut parts = heading.split(" · ").map(str::trim);
@@ -383,6 +443,7 @@ fn entry_from(heading: &str, pending: bool) -> HistoryEntry {
         pending,
         tags,
         lines: Vec::new(),
+        source: Vec::new(),
     }
 }
 
@@ -556,6 +617,57 @@ mod tests {
             Ok(true),
             "a closed code block and a quote are fine"
         );
+    }
+
+    #[test]
+    fn entries_approved_by_hand_are_written_back_as_the_owner_left_them() {
+        let section = "## History\n\n\
+            ### 2026-10-30 · 45m · auto-generated\n\
+            Changed 3 files.\n\
+            \n\
+            > [!done]+ 2026-10-29 · 2h 10m\n\
+            > Added a phase-response analysis.\n\
+            >\n\
+            > My notes: good day.\n";
+        let mut log = HistoryLog::parse(section);
+        assert_eq!(log.entries.len(), 2);
+        assert!(log.pending().is_empty(), "both are approved");
+        assert_eq!(log.entries[0].tags, [AUTO]);
+        let callout = &log.entries[1];
+        assert_eq!(callout.date, "2026-10-29");
+        assert_eq!(callout.minutes(), Some(130));
+        assert_eq!(
+            callout.lines,
+            [
+                "Added a phase-response analysis.",
+                "",
+                "My notes: good day."
+            ]
+        );
+        log.add(HistoryEntry::pending(
+            "2026-10-31",
+            Some(20),
+            vec!["New.".into()],
+        ));
+        let text = log.render();
+        assert!(
+            text.ends_with(&section["## History\n\n".len()..]),
+            "the owner's entries are as they were: {text}"
+        );
+        assert_eq!(HistoryLog::parse(&text), log);
+    }
+
+    #[test]
+    fn only_dated_callouts_are_entries() {
+        assert_eq!(
+            approved_callout("> [!note] 2026-10-29 · 1h"),
+            Some("2026-10-29 · 1h")
+        );
+        assert_eq!(approved_callout("> [!tip]- 2026-10-29"), Some("2026-10-29"));
+        assert_eq!(approved_callout("> [!note] Remember the cable"), None);
+        assert_eq!(approved_callout("> [!pending] 2026-10-29"), None);
+        assert_eq!(approved_callout("> [!Pending] 2026-10-29"), None);
+        assert_eq!(approved_callout("> [!note] 2026-1-29"), None);
     }
 
     #[test]

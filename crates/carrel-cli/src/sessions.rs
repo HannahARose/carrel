@@ -48,6 +48,15 @@ fn record_and_snapshot(archive: &Archive, lease: WriterLease) -> Result<(String,
         )
         .unwrap();
     }
+    for item in &recorded.approved_by_hand {
+        writeln!(
+            text,
+            "Noticed {} on “{}” approved by hand",
+            entries(item.entries),
+            item.title
+        )
+        .unwrap();
+    }
     let mut snapshots = Vec::new();
     if !recorded.items.is_empty()
         && let (Some(kopia), _) = crate::backup::for_batch(archive)
@@ -68,13 +77,18 @@ fn record_and_snapshot(archive: &Archive, lease: WriterLease) -> Result<(String,
             "commit": recorded.commit,
             "sessions": recorded.sessions(),
             "snapshots": snapshots,
+            "approved_by_hand": recorded
+                .approved_by_hand
+                .iter()
+                .map(|a| json!({ "item": a.id, "title": a.title, "entries": a.entries }))
+                .collect::<Vec<_>>(),
         }),
     ))
 }
 
 /// Records finished sessions when it's been [`EVERY`] since they were last looked for, unless
 /// another writer holds the archive: `None` when it didn't look, else what it found, as lines
-/// for the owner (empty when nothing).
+/// for the owner (empty when nothing), saying how to approve new sessions.
 pub fn record_if_due(archive: Option<&Path>) -> Option<Result<String, Failure>> {
     let archive = locate(archive).ok()?;
     let due = Scanned::path(&archive.doc().id.to_string())
@@ -86,7 +100,14 @@ pub fn record_if_due(archive: Option<&Path>) -> Option<Result<String, Failure>> 
     let lease = DiskLock::for_archive(&archive)
         .acquire(holder(&identity), "sessions", DEFAULT_LEASE)
         .ok()?;
-    Some(record_and_snapshot(&archive, lease).map(|(text, _)| text))
+    Some(
+        record_and_snapshot(&archive, lease).map(|(mut text, json)| {
+            if json["sessions"].as_u64().is_some_and(|n| n > 0) {
+                text.push_str("Approve them with `carrel sessions`.\n");
+            }
+            text
+        }),
+    )
 }
 
 /// Before a command that changes the archive: [`record_if_due`], with what it found on
@@ -94,7 +115,7 @@ pub fn record_if_due(archive: Option<&Path>) -> Option<Result<String, Failure>> 
 pub fn record_before_command(archive: Option<&Path>, quiet: bool) {
     match record_if_due(archive) {
         Some(Ok(text)) if !quiet && !text.is_empty() => {
-            eprintln!("{text}Approve them with `carrel sessions`.");
+            eprint!("{text}");
         }
         Some(Err(Failure(e))) if !quiet => {
             eprintln!("warning: work sessions weren't recorded: {e}");
@@ -216,6 +237,7 @@ pub fn list(archive: Option<&Path>) -> Result<Report, Failure> {
         json!({
             "recorded": recorded["commit"],
             "sessions": recorded["sessions"],
+            "approved_by_hand": recorded["approved_by_hand"],
             "snapshots": recorded["snapshots"],
             "items": items,
         }),
