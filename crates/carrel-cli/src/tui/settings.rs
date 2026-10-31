@@ -19,6 +19,8 @@ pub enum Row {
     Editor,
     /// The text model that drafts cards on this device.
     Model,
+    /// The text model asked when the first isn't sure where an item goes.
+    SecondModel,
     /// Models for local providers.
     Models,
     /// The worker that drafts queued items.
@@ -47,7 +49,7 @@ pub struct Shown {
 pub fn is_device(row: Row) -> bool {
     matches!(
         row,
-        Row::Picker | Row::Editor | Row::Model | Row::Models | Row::Worker
+        Row::Picker | Row::Editor | Row::Model | Row::SecondModel | Row::Models | Row::Worker
     )
 }
 
@@ -60,6 +62,7 @@ impl App {
             picker_row(&prefs),
             editor_row(),
             model_row(&prefs),
+            second_row(&prefs),
             models_row(),
             self.worker_row(),
         ];
@@ -172,21 +175,8 @@ impl App {
                         .unwrap_or_default(),
                 });
             }
-            Row::Model => {
-                let (registry, _) = crate::providers::registry();
-                let mut choices = vec!["default".to_owned()];
-                choices.extend(
-                    crate::providers::text_models(&registry)
-                        .iter()
-                        .map(crate::providers::TextModel::name),
-                );
-                self.picker = Some(Picker {
-                    collections: choices,
-                    filter: String::new(),
-                    chosen: 0,
-                    purpose: Purpose::Setting("model".into()),
-                });
-            }
+            Row::Model => self.model_picker("model", &["default"]),
+            Row::SecondModel => self.model_picker("second_model", &["default", "off"]),
             Row::Models => {
                 let available: Vec<String> = carrel_core::models::CATALOG
                     .iter()
@@ -226,6 +216,23 @@ impl App {
             Row::Worker | Row::Backups => {}
         }
         Handled::Yes(None)
+    }
+
+    /// Opens a picker for the setting `key`: `fixed` choices, then every available model.
+    fn model_picker(&mut self, key: &str, fixed: &[&str]) {
+        let (registry, _) = crate::providers::registry();
+        let mut choices: Vec<String> = fixed.iter().map(|c| (*c).to_owned()).collect();
+        choices.extend(
+            crate::providers::text_models(&registry)
+                .iter()
+                .map(crate::providers::TextModel::name),
+        );
+        self.picker = Some(Picker {
+            collections: choices,
+            filter: String::new(),
+            chosen: 0,
+            purpose: Purpose::Setting(key.into()),
+        });
     }
 
     /// Asks before downloading the catalog model `name`.
@@ -301,6 +308,27 @@ fn model_row(prefs: &crate::config::Prefs) -> Shown {
              If the chosen model goes away, Carrel uses the next best."
                 .into(),
             "The benchmark's results (docs/bench/) say how each model does.".into(),
+        ],
+    }
+}
+
+fn second_row(prefs: &crate::config::Prefs) -> Shown {
+    Shown {
+        row: Row::SecondModel,
+        label: "Second model".into(),
+        value: prefs
+            .second_model
+            .clone()
+            .unwrap_or_else(|| "a recommended model".into()),
+        detail: vec![
+            "Asked when the first model isn't sure where an item goes: what it would send to \
+             Holding, or place with low confidence. The better answer is kept."
+                .into(),
+            String::new(),
+            "By default, a model the benchmark recommends that you've installed, so a fast \
+             model can file most items and a careful one looks at the rest."
+                .into(),
+            "Enter to choose a model, default, or off.".into(),
         ],
     }
 }

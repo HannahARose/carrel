@@ -63,6 +63,10 @@ pub struct BenchArgs {
     /// if a model that met the bar then no longer does.
     #[arg(long, value_name = "RESULTS")]
     pub compare: Option<PathBuf>,
+    /// Ask this model for a second opinion on items each model isn't sure where to put, as
+    /// ingest does with a recommended model. Without it, each model is measured alone.
+    #[arg(long, value_name = "MODEL")]
+    pub second: Option<String>,
 }
 
 /// `carrel bench`.
@@ -102,14 +106,24 @@ pub fn bench(args: &BenchArgs, json: bool) -> Result<Report, Failure> {
     std::fs::create_dir_all(&runs).map_err(|e| Failure::io(&runs, &e))?;
 
     let (mut registry, _) = crate::providers::registry();
-    let models = choose(&registry, wanted)?;
+    let second = set_second(&mut registry, args.second.as_deref())?;
+    let mut models = choose(&registry, wanted)?;
+    if let Some(second) = &second {
+        for model in &mut models {
+            write!(model.label, " then {}", second.label).unwrap();
+        }
+    }
     let mut measured = Vec::new();
     let count = models.len();
     for (n, model) in models.into_iter().enumerate() {
         let saved_path = runs.join(format!(
-            "{}--{}.jsonl",
+            "{}--{}{}.jsonl",
             file_safe(&model.provider),
-            file_safe(&model.offer)
+            file_safe(&model.offer),
+            second
+                .as_ref()
+                .map(|s| format!("--then-{}-{}", file_safe(&s.provider), file_safe(&s.offer)))
+                .unwrap_or_default()
         ));
         let mut saved = load_saved(&saved_path);
         let mut display =
@@ -164,6 +178,24 @@ pub fn bench(args: &BenchArgs, json: bool) -> Result<Report, Failure> {
         compare_with(previous, &measured, out, &mut text)?;
     }
     Ok(Report::new(text, results))
+}
+
+/// Sets the model asked for a second opinion to `name`, or none, so each model is measured
+/// alone unless `--second` says otherwise.
+fn set_second(
+    registry: &mut Registry,
+    name: Option<&str>,
+) -> Result<Option<crate::providers::TextModel>, Failure> {
+    let second = name
+        .map(|name| crate::providers::resolve_model(registry, name))
+        .transpose()?;
+    registry.second_opinion(
+        Capability::TextModel,
+        second
+            .as_ref()
+            .map(|m| (m.provider.as_str(), m.offer.as_str())),
+    );
+    Ok(second)
 }
 
 /// Writes `comparison.md` in `out` and adds it to `text`; fails, with `text` as the message,
