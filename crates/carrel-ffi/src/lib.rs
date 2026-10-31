@@ -17,9 +17,11 @@ use std::path::Path;
 use std::sync::Arc;
 
 use carrel_core::Access;
-use carrel_core::archive::Archive;
-use carrel_core::card::Kind;
+use carrel_core::archive::{Archive, InitOptions};
+use carrel_core::card::{Id, Kind};
 use carrel_core::card_file::CardFile;
+use carrel_core::coordinator::{Coordinator, DEFAULT_LEASE, DiskLock, Holder};
+use carrel_core::history::History;
 
 uniffi::setup_scaffolding!();
 
@@ -170,6 +172,21 @@ impl ArchiveHandle {
         }
     }
 
+    /// Creates an archive named `name` in the empty folder `path` (creating it if needed),
+    /// with its history started, as `carrel init` does, and opens it.
+    ///
+    /// # Errors
+    ///
+    /// [`CarrelError::Failed`] if `path` is already an archive or has files in it, or if
+    /// anything can't be written.
+    #[uniffi::constructor]
+    pub fn create(path: String, name: String) -> Result<Arc<Self>, CarrelError> {
+        let config = carrel_core::local::config_dir().ok_or_else(|| {
+            CarrelError::failed("can't find your home folder; set CARREL_CONFIG_DIR")
+        })?;
+        create_archive(Path::new(&path), &name, &config)
+    }
+
     /// The archive's name.
     #[must_use]
     pub fn name(&self) -> String {
@@ -267,6 +284,53 @@ impl ArchiveHandle {
     }
 }
 
+/// Who makes changes from this device: the CLI's `identity.json` in the configuration folder,
+/// created as the CLI creates it if it isn't there yet.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct Identity {
+    person: Id,
+    device: Id,
+}
+
+fn identity(config: &Path) -> Result<Identity, CarrelError> {
+    let path = config.join("identity.json");
+    let located =
+        |e: &dyn std::fmt::Display| CarrelError::failed(format!("{}: {e}", path.display()));
+    match std::fs::read_to_string(&path) {
+        Ok(text) => serde_json::from_str(&text).map_err(|e| located(&e)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            let identity = Identity {
+                person: Id::new_v7(),
+                device: Id::new_v7(),
+            };
+            std::fs::create_dir_all(config).map_err(|e| located(&e))?;
+            let text = serde_json::to_string_pretty(&identity).map_err(|e| located(&e))? + "\n";
+            std::fs::write(&path, text).map_err(|e| located(&e))?;
+            Ok(identity)
+        }
+        Err(e) => Err(located(&e)),
+    }
+}
+
+fn create_archive(
+    root: &Path,
+    name: &str,
+    config: &Path,
+) -> Result<Arc<ArchiveHandle>, CarrelError> {
+    let identity = identity(config)?;
+    let archive = Archive::init(root, &InitOptions::new(name)).map_err(CarrelError::failed)?;
+    let holder = Holder {
+        person: identity.person,
+        device: identity.device,
+    };
+    let lease = DiskLock::for_archive(&archive)
+        .acquire(holder, "create", DEFAULT_LEASE)
+        .map_err(CarrelError::failed)?;
+    History::init(&archive, &lease).map_err(CarrelError::failed)?;
+    lease.release().map_err(CarrelError::failed)?;
+    Ok(Arc::new(ArchiveHandle { archive }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -309,6 +373,30 @@ mod tests {
             ArchiveHandle::open(dir.to_string_lossy().into_owned()),
             Err(CarrelError::NotAnArchive { .. })
         ));
+    }
+
+    #[test]
+    fn creates_an_archive_with_its_history() {
+        let dir = std::env::temp_dir().join(format!("carrel-ffi-{}", Id::new_v7()));
+        let config = dir.join("config");
+        let root = dir.join("New archive");
+        let archive = create_archive(&root, "Letters", &config).unwrap();
+        assert_eq!(archive.name(), "Letters");
+        assert!(
+            archive
+                .collections()
+                .unwrap()
+                .iter()
+                .any(|c| c.path == "Holding")
+        );
+        assert!(History::open(&archive.archive).is_ok());
+        let first = std::fs::read_to_string(config.join("identity.json")).unwrap();
+        assert!(create_archive(&root, "Again", &config).is_err());
+        let other = dir.join("Second");
+        create_archive(&other, "Second", &config).unwrap();
+        let second = std::fs::read_to_string(config.join("identity.json")).unwrap();
+        assert_eq!(first, second, "the identity is kept, not replaced");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     struct Echo;
