@@ -127,15 +127,13 @@ final class GemmaEncoderBackbone: Module {
     }
 }
 
-/// EmbeddingGemma, for MLXEmbedders' loader in place of its causal port.
-final class EmbeddingGemma: Module, EmbeddingModel {
+/// EmbeddingGemma, in place of MLXEmbedders' causal port.
+final class EmbeddingGemma: Module, TextEncoder {
     let config: Gemma3Configuration
 
     @ModuleInfo(key: "model") var backbone: GemmaEncoderBackbone
     /// The two dense layers after pooling (768 to 3072 and back), sized from the weights.
     @ModuleInfo var dense: [Linear]
-
-    var vocabularySize: Int { config.vocabularySize }
 
     init(_ config: Gemma3Configuration) {
         self.config = config
@@ -154,18 +152,13 @@ final class EmbeddingGemma: Module, EmbeddingModel {
         return .array(distance .<= MLXArray(Int32(reach)))
     }
 
-    /// One vector for each row of `inputs`: every token is a text's, with no padding.
-    func callAsFunction(
-        _ inputs: MLXArray, positionIds: MLXArray?, tokenTypeIds: MLXArray?, attentionMask: MLXArray?
-    ) -> EmbeddingModelOutput {
-        let tokens = inputs.ndim == 1 ? inputs.reshaped(1, -1) : inputs
-        let hidden = backbone(tokens)
-        var pooled = hidden.mean(axis: 1)
+    /// The text's vector: the mean of its tokens', through the dense layers.
+    func encode(_ tokens: MLXArray) -> MLXArray {
+        var pooled = backbone(tokens).mean(axis: 1)
         for layer in dense {
             pooled = layer(pooled)
         }
-        return EmbeddingModelOutput(
-            hiddenStates: hidden, pooledOutput: pooled.asType(.float32).l2Normalized(eps: 1e-6))
+        return pooled.reshaped(-1)
     }
 
     func sanitize(weights: [String: MLXArray]) -> [String: MLXArray] {

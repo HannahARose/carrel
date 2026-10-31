@@ -6,7 +6,6 @@
 import CarrelAppleProviders
 import Foundation
 import MLX
-import MLXEmbedders
 import MLXGuidedGeneration
 import MLXLLM
 import MLXLMCommon
@@ -32,7 +31,7 @@ public actor Loaded {
     public static let shared = Loaded()
 
     private var current: (name: String, container: ModelContainer)?
-    private var embedder: (name: String, container: EmbedderModelContainer)?
+    private var embedder: (name: String, encoder: LoadedEncoder)?
     private var tokenizers: [String: any MLXLMCommon.Tokenizer] = [:]
     private var biases: [String: Biases] = [:]
     private var lastUse = ContinuousClock.now
@@ -54,21 +53,24 @@ public actor Loaded {
         return container
     }
 
-    /// `folder`'s embedding model, loading it with `factory` if it isn't the one loaded.
-    func embedder(for folder: ModelFolder, using factory: EmbedderModelFactory) async throws
-        -> EmbedderModelContainer
+    /// The vectors of `prompts` through `folder`'s embedding model, loading it if it isn't the
+    /// one loaded. The model is used only here, inside the actor, one request at a time.
+    func vectors(of prompts: [String], spec: EmbeddingSpec, folder: ModelFolder) async throws
+        -> [[Float]]
     {
         lastUse = .now
-        if let embedder, embedder.name == folder.name {
-            return embedder.container
+        if embedder?.name != folder.name {
+            current = nil
+            embedder = nil
+            Memory.clearCache()
+            let encoder = try await LoadedEncoder.load(folder)
+            embedder = (folder.name, encoder)
+            scheduleIdleUnload()
         }
-        current = nil
-        embedder = nil
-        Memory.clearCache()
-        let container = try await factory.loadContainer(from: folder.url, using: LocalTokenizerLoader())
-        embedder = (folder.name, container)
-        scheduleIdleUnload()
-        return container
+        guard let encoder = embedder?.encoder else { return [] }
+        let vectors = prompts.map { encoder.vector(of: $0, spec: spec) }
+        lastUse = .now
+        return vectors
     }
 
     /// `folder`'s tokenizer alone, for counting tokens without loading the weights.

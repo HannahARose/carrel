@@ -6,7 +6,6 @@ import CarrelAppleProviders
 import Foundation
 import MLX
 import MLXEmbedders
-import MLXLMCommon
 import Testing
 
 @testable import CarrelMLXProvider
@@ -26,8 +25,8 @@ struct EmbeddingTests {
         return model
     }
 
-    static func run(_ model: EmbeddingGemma, _ tokens: [Int32]) -> EmbeddingModelOutput {
-        model(MLXArray(tokens).reshaped(1, -1), positionIds: nil, tokenTypeIds: nil, attentionMask: nil)
+    static func hidden(_ model: EmbeddingGemma, _ tokens: [Int32]) -> MLXArray {
+        model.backbone(MLXArray(tokens).reshaped(1, -1))
     }
 
     @Test func slidingLayersSeeHalfTheWindowEitherSide() throws {
@@ -49,18 +48,19 @@ struct EmbeddingTests {
 
     @Test func everyTokenSeesTheTokensAfterIt() throws {
         let model = try Self.tinyGemma()
-        let a = Self.run(model, [2, 7, 9, 11, 3]).hiddenStates!
-        let b = Self.run(model, [2, 7, 9, 11, 4]).hiddenStates!
+        let a = Self.hidden(model, [2, 7, 9, 11, 3])
+        let b = Self.hidden(model, [2, 7, 9, 11, 4])
         // Read in one direction, as Gemma generates text, the first token's state couldn't
         // change with the last token.
         #expect(!allClose(a[0..., 0, 0...], b[0..., 0, 0...]).item(Bool.self))
     }
 
-    @Test func theTextsVectorIsOneOfUnitLength() throws {
+    @Test func aTextHasOneVectorAsLongAsTheModelIsWide() throws {
         let model = try Self.tinyGemma()
-        let pooled = try #require(Self.run(model, [2, 7, 9, 11, 3, 5, 8]).pooledOutput)
-        #expect(pooled.shape == [1, 32])
-        let length = MLX.sqrt((pooled * pooled).sum()).item(Float.self)
+        let pooled = model.encode(MLXArray([2, 7, 9, 11, 3, 5, 8] as [Int32]).reshaped(1, -1))
+        #expect(pooled.shape == [32])
+        let vector = unitLength(pooled.asType(.float32).asArray(Float.self))
+        let length = vector.reduce(0) { $0 + $1 * $1 }.squareRoot()
         #expect(abs(length - 1) < 1e-4)
     }
 
