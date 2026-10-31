@@ -55,6 +55,7 @@ pub mod card_file;
 pub mod checkout;
 pub mod collections;
 pub mod coordinator;
+pub mod desk;
 pub mod detect;
 pub mod documents;
 pub mod entries;

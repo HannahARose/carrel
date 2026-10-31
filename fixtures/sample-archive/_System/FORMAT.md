@@ -681,6 +681,15 @@ Once a question is answered or dismissed, programs remove it and clear the probl
 
 `_System/devices/<device-id>/device.json` records a device's name, type and capability profile. `desk.json` lists the desk items tracked on that device with their local paths. Paths in `desk.json` are only meaningful on that device.
 
+`desk.json` is an object whose `items` is a list, in the order they were added, of:
+
+| Key | Meaning |
+| --- | --- |
+| `id` | The desk card's `id` |
+| `path` | Where the item is on that device, absolute |
+| `card` | Where its card is: beside it, its name with `.md` added |
+| `added` | When it was put on the desk |
+
 ### 7.11 Search index
 
 `_System/index/` holds the search index. Its files are tagged with the embedding model identifier and version from `settings.json`. The index can always be rebuilt from cards and items, so readers may ignore it.
