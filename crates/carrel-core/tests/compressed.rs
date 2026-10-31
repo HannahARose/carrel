@@ -72,7 +72,8 @@ fn every_portable_archive_format_lists_the_same_contents() {
         let link = listing.find("latest.csv").unwrap();
         assert_eq!(link.kind, EntryKind::Link("data/run1.csv".into()));
         let script = listing.find("tools/plot.sh").unwrap();
-        assert!(script.executable, "{format:?}");
+        // Zips made on Windows don't record Unix permissions.
+        assert!(script.executable || cfg!(windows), "{format:?}");
         let modified = listing.find("README.md").unwrap().modified.unwrap();
         assert!(modified.to_string().starts_with("2024-05-0"), "{modified}");
         assert_eq!(listing.unsafe_entry(), None);
@@ -122,6 +123,7 @@ fn expanding_unwraps_keeps_times_and_permissions_and_drops_junk() {
     assert_eq!(names, ["Spectrometer"], "nothing else is left behind");
     assert!(!root.join(".DS_Store").exists());
     assert!(root.join("README.md").is_file());
+    #[cfg(unix)]
     assert_eq!(
         std::fs::read_link(root.join("latest.csv")).unwrap(),
         Path::new("data/run1.csv")
@@ -183,17 +185,20 @@ fn expanding_unwraps_keeps_times_and_permissions_and_drops_junk() {
 #[test]
 fn unsafe_entries_are_refused() {
     let dir = tempfile::tempdir().unwrap();
-    let cases: [(&str, Vec<Item<'_>>); 3] = [
+    let mut cases: Vec<(&str, Vec<Item<'_>>)> = vec![
         ("slip.zip", vec![Item::File("../../escaped.txt", b"x")]),
         ("link.zip", vec![Item::Link("out", "../../etc/passwd")]),
-        (
+    ];
+    // Windows leaves links out, so nothing can be written through one there.
+    if cfg!(unix) {
+        cases.push((
             "through.zip",
             vec![
                 Item::Link("dir", "."),
                 Item::File("dir/x.txt", b"written through a link"),
             ],
-        ),
-    ];
+        ));
+    }
     for (name, items) in cases {
         let path = dir.path().join(name);
         zip(&path, &items);
