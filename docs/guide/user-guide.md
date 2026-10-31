@@ -85,9 +85,9 @@ When an item is filed with low or medium confidence, its card keeps a `placement
 
 Every item is rated **public**, **personal**, **sensitive** or **restricted**:
 
-- Rules set a floor before any model: a card number, a bank account number (IBAN), a social security number, a private key or a written-down password makes it **restricted**; words like "diagnosis", "payslip", "tax return" or "insurance claim" make it at least **sensitive**.
+- Rules set a floor before any model: a card number (in a card's format, with a real issuer's prefix and check digit), a bank account number (IBAN), a social security number, a private key, a written-down password or account recovery codes make it **restricted**; words like "diagnosis", "payslip", "tax return" or "insurance claim" make it at least **sensitive**.
 - A photo that records where it was taken is at least **personal**, with the reason "has the place it was taken". Most phone photos have a location, so it never raises them further.
-- A model may raise the level, never lower it.
+- A model may raise the level to **sensitive**, never lower it. Only the rules make an item restricted, since they check the value itself, and a file with no readable text isn't rated by a model at all.
 - The archive sets a default, **personal**.
 
 Sensitive and restricted items always wait for your approval, whatever rules say. The reasons are given in words, never by quoting what was found.
