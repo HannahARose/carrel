@@ -1,6 +1,5 @@
 //! The commands. Each returns a [`Report`] and leaves printing to `main`.
 
-use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
@@ -9,8 +8,8 @@ use carrel_core::archive::{Archive, ArchiveError, InitOptions, ItemRef};
 use carrel_core::card::{Card, Id};
 use carrel_core::card_file::CardFile;
 use carrel_core::coordinator::{Coordinator, DEFAULT_LEASE, DiskLock, Holder, LockInfo};
-use carrel_core::entries::HistoryEntry;
 use carrel_core::history::{Entry, History, HistoryError, Operation};
+use carrel_core::status::{Happened, Looking, Recent};
 use serde_json::{Value, json};
 
 use crate::config::{Identity, Prefs};
@@ -224,59 +223,35 @@ fn load_file(archive: &Archive, item: &ItemRef) -> Result<CardFile, Failure> {
     CardFile::parse(&text).map_err(|e| Failure::new(format!("{}: {e}", item.card)))
 }
 
-/// How many lines `carrel status` gives Recent.
-const RECENT: usize = 10;
-
-/// Something filed, changed or worked on lately, for Recent.
-struct Recent {
-    /// When, as `YYYY-MM-DD HH:MM` for a change and `YYYY-MM-DD` for work, so they sort
-    /// together.
-    when: String,
-    /// What happened, for people.
-    what: String,
-    /// The same for programs.
-    json: Value,
-}
-
-/// A work session's approved history entry, as Recent shows it.
-fn worked_on(item: Id, title: &str, entry: &HistoryEntry) -> Option<Recent> {
-    let duration = entry.duration.as_ref()?;
-    let first = entry.lines.iter().map(|l| l.trim()).find(|l| !l.is_empty());
-    let mut what = format!("Worked on “{title}” for {duration}");
-    if let Some(first) = first {
-        write!(what, ": {first}").unwrap();
+/// What a [`Recent`] says, for people and for programs.
+fn recent_line(recent: &Recent) -> (String, Value) {
+    match &recent.what {
+        Happened::Change(e) => (
+            e.summary.clone(),
+            json!({ "kind": "change", "change": entry_json(e) }),
+        ),
+        Happened::Work {
+            item,
+            title,
+            date,
+            duration,
+            summary,
+        } => {
+            let mut what = format!("Worked on “{title}” for {duration}");
+            if let Some(first) = summary {
+                write!(what, ": {first}").unwrap();
+            }
+            let json = json!({
+                "kind": "work",
+                "date": date,
+                "item": item,
+                "title": title,
+                "duration": duration,
+                "summary": summary,
+            });
+            (what, json)
+        }
     }
-    Some(Recent {
-        when: entry.date.clone(),
-        json: json!({
-            "kind": "work",
-            "date": entry.date,
-            "item": item,
-            "title": title,
-            "duration": duration,
-            "summary": first,
-        }),
-        what,
-    })
-}
-
-/// The latest changes and work sessions, newest first. Recording or approving a session is
-/// left out: the session itself is shown, on the day it happened.
-fn recent(history: Option<&[Entry]>, mut work: Vec<Recent>) -> Vec<Recent> {
-    let changes = history
-        .unwrap_or_default()
-        .iter()
-        .filter(|e| e.operation != Some(Operation::Session))
-        .take(RECENT)
-        .map(|e| Recent {
-            when: local_time(e.time),
-            what: e.summary.clone(),
-            json: json!({ "kind": "change", "change": entry_json(e) }),
-        });
-    work.extend(changes);
-    work.sort_by(|a, b| b.when.cmp(&a.when));
-    work.truncate(RECENT);
-    work
 }
 
 /// The part of `carrel status` about what was filed, changed or worked on lately.
@@ -287,7 +262,7 @@ fn recent_section(recent: &[Recent]) -> String {
     }
     text.push_str("\nRecent:\n");
     for r in recent {
-        writeln!(text, "  {:<16}  {}", r.when, r.what).unwrap();
+        writeln!(text, "  {:<16}  {}", r.when, recent_line(r).0).unwrap();
     }
     text
 }
@@ -337,44 +312,21 @@ fn archive_header(archive: &Archive) -> String {
 /// `carrel status`.
 pub fn status(archive: Option<&Path>) -> Result<Report, Failure> {
     let archive = locate(archive)?;
-    let collections: Vec<String> = archive.collections()?.into_iter().map(|c| c.path).collect();
-    let items = archive.items()?;
-    let mut by_kind: BTreeMap<String, usize> = BTreeMap::new();
-    let mut problems = Vec::new();
-    let mut work = Vec::new();
-    for item in &items {
-        *by_kind.entry(kind_name(item)).or_default() += 1;
-        let file = load_file(&archive, item)?;
-        let found = file.card().problems();
-        if !found.is_empty() {
-            problems.push((item.card.clone(), found));
-        }
-        // A card whose history section can't be read shows its problem in `carrel show`.
-        if let Ok(log) = file.history() {
-            work.extend(
-                log.entries
-                    .iter()
-                    .filter(|e| !e.pending)
-                    .filter_map(|e| worked_on(item.id, &file.card().title, e)),
-            );
-        }
-    }
-    let history = match History::open(&archive) {
-        Ok(history) => Some(history.log()?),
-        Err(HistoryError::NotInitialized) => None,
-        Err(e) => return Err(e.into()),
-    };
-    let lock = DiskLock::for_archive(&archive).current()?;
-    let synced = DiskLock::is_synced_folder(archive.root());
     let this_device = Identity::load()?.map(|i| i.device);
+    let summary = carrel_core::status::summary(&archive, &Looking::here(this_device))?;
+    let history = summary.history.as_deref();
 
     let mut text = archive_header(&archive);
-    let kinds: Vec<String> = by_kind.iter().map(|(k, n)| format!("{n} {k}")).collect();
+    let kinds: Vec<String> = summary
+        .by_kind
+        .iter()
+        .map(|(k, n)| format!("{n} {k}"))
+        .collect();
     writeln!(
         text,
         "{} in {}{}",
-        plural(items.len(), "item"),
-        plural(collections.len(), "collection"),
+        plural(summary.items, "item"),
+        plural(summary.collections, "collection"),
         if kinds.is_empty() {
             String::new()
         } else {
@@ -382,49 +334,51 @@ pub fn status(archive: Option<&Path>) -> Result<Report, Failure> {
         }
     )
     .unwrap();
-    text.push_str(&history_line(history.as_deref()));
-    text.push_str(&crate::backup::status_line(&archive, history.as_deref()));
-    text.push_str(&writer_line(lock.as_ref(), this_device));
-    let recent = recent(history.as_deref(), work);
-    text.push_str(&recent_section(&recent));
-    if !problems.is_empty() {
-        writeln!(text, "\n{} with problems:", plural(problems.len(), "card")).unwrap();
-        for (card, found) in &problems {
-            writeln!(text, "  {card}").unwrap();
-            for problem in found {
+    text.push_str(&history_line(history));
+    text.push_str(&crate::backup::status_line(&archive, history));
+    text.push_str(&writer_line(summary.writer.as_ref(), this_device));
+    text.push_str(&recent_section(&summary.recent));
+    if !summary.problems.is_empty() {
+        writeln!(
+            text,
+            "\n{} with problems:",
+            plural(summary.problems.len(), "card")
+        )
+        .unwrap();
+        for found in &summary.problems {
+            writeln!(text, "  {}", found.card).unwrap();
+            for problem in &found.problems {
                 writeln!(text, "    {problem}").unwrap();
             }
         }
     }
-    let names = carrel_core::names::check(&archive)?;
-    text.push_str(&names_section(&names));
-    let signals = carrel_core::signals::signals(&archive)?;
-    text.push_str(&signals_section(&signals));
-    let (desk_text, desk) = crate::desk::suggestions_section(&archive, this_device)?;
+    text.push_str(&names_section(&summary.names));
+    text.push_str(&signals_section(&summary.signals));
+    let (desk_text, desk) = crate::desk::suggestions_section(&summary.desk);
     text.push_str(&desk_text);
     let mut warnings = Vec::new();
-    if synced {
+    if summary.synced {
         warnings.push(SYNCED_WARNING);
         writeln!(text, "\nwarning: {SYNCED_WARNING}").unwrap();
     }
 
     let json = json!({
         "archive": archive_json(&archive),
-        "collections": collections.len(),
-        "items": { "total": items.len(), "by_kind": by_kind },
-        "problems": problems.iter().map(|(card, found)| json!({
-            "card": card,
-            "problems": found.iter().map(|p| json!({ "field": p.field, "message": p.message })).collect::<Vec<_>>(),
+        "collections": summary.collections,
+        "items": { "total": summary.items, "by_kind": summary.by_kind },
+        "problems": summary.problems.iter().map(|found| json!({
+            "card": found.card,
+            "problems": found.problems.iter().map(|p| json!({ "field": p.field, "message": p.message })).collect::<Vec<_>>(),
         })).collect::<Vec<_>>(),
-        "history": history.as_ref().map(|log| json!({
+        "history": history.map(|log| json!({
             "changes": log.len(),
             "last": log.first().map(entry_json),
         })),
-        "writer": writer_json(lock.as_ref()),
-        "recent": recent.iter().map(|r| &r.json).collect::<Vec<_>>(),
-        "signals": signals,
+        "writer": writer_json(summary.writer.as_ref()),
+        "recent": summary.recent.iter().map(|r| recent_line(r).1).collect::<Vec<_>>(),
+        "signals": summary.signals,
         "desk": desk,
-        "names": names.iter().map(|f| json!({
+        "names": summary.names.iter().map(|f| json!({
             "path": f.path,
             "problems": f.problems,
             "suggestion": f.suggestion,
@@ -522,14 +476,7 @@ pub(crate) fn plural(n: usize, word: &str) -> String {
 }
 
 pub(crate) fn local_time(seconds: i64) -> String {
-    jiff::Timestamp::from_second(seconds).map_or_else(
-        |_| seconds.to_string(),
-        |t| {
-            t.to_zoned(jiff::tz::TimeZone::system())
-                .strftime("%Y-%m-%d %H:%M")
-                .to_string()
-        },
-    )
+    carrel_core::status::local_time(seconds)
 }
 
 /// Finds the item `query` names: an identifier, or the path of the item or its card

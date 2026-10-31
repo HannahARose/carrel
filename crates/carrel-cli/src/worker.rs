@@ -1,6 +1,7 @@
-//! `carrel worker`: drafts the items waiting in an archive's intake queue on this device, one
-//! at a time, until none are left (`docs/design/tui-ingest.md`), then brings the embedding
-//! index up to date (`docs/design/search.md`).
+//! `carrel worker`: runs the core's worker loop ([`carrel_core::worker`]), which drafts the
+//! items waiting in an archive's intake queue on this device, one at a time, until none are
+//! left (`docs/design/tui-ingest.md`), then brings the embedding index up to date
+//! (`docs/design/search.md`).
 //!
 //! Adding to the queue starts a worker, and so does every change to filed items (filing,
 //! corrections, edits, refiles and returns), so the index catches up in the background and
@@ -11,6 +12,8 @@
 //! configuration folder keeps it to one per archive and device; the lock goes with the process,
 //! so a crashed worker never leaves a stale one. The worker writes its progress to a status
 //! file, which `carrel ingest --status` and the interactive mode read, and a log beside it.
+//!
+//! This module keeps what's the CLI's own: starting the worker detached, its lock, and its log.
 
 use std::fmt::Write as _;
 use std::fs::File;
@@ -19,40 +22,25 @@ use std::path::{Path, PathBuf};
 
 use carrel_core::archive::Archive;
 use carrel_core::backup::Backups;
-use carrel_core::intake::{Processed, process, waiting};
-use serde::{Deserialize, Serialize};
+use carrel_core::intake::Processed;
+use carrel_core::worker::{DeviceLock, Progress, Worker, WorkerError, file_in, now};
 use serde_json::json;
 
 use crate::commands::{holder, locate};
 use crate::config::Identity;
 use crate::{Failure, Report};
 
+pub use carrel_core::worker::Status;
+
 /// Set to `off` to never start a worker in the background, as in tests and some scripts.
 pub const WORKER_ENV: &str = "CARREL_WORKER";
-
-/// What a worker is doing, as its status file says.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Status {
-    /// The worker's process.
-    pub pid: u32,
-    /// The item being drafted, if any.
-    pub item: Option<String>,
-    /// Its stage, such as "Drafting cards".
-    pub stage: Option<String>,
-    /// Items finished since the worker started.
-    pub done: usize,
-    /// Items still waiting, including the current one.
-    pub waiting: usize,
-    /// When the status was written.
-    pub updated: String,
-}
 
 fn folder() -> Result<PathBuf, Failure> {
     Ok(crate::config::dir()?.join("workers"))
 }
 
 fn file_for(archive: &Archive, extension: &str) -> Result<PathBuf, Failure> {
-    Ok(folder()?.join(format!("{}.{extension}", archive.info().id)))
+    Ok(file_in(&folder()?, archive, extension))
 }
 
 /// The worker's log for `archive` on this device.
@@ -111,6 +99,17 @@ pub fn try_lock(archive: &Archive) -> Result<Option<Lock>, Failure> {
     }
 }
 
+/// The worker lock for one archive, as the core's loop takes it.
+struct Locks<'a>(&'a Archive);
+
+impl DeviceLock for Locks<'_> {
+    type Held = Lock;
+
+    fn try_lock(&self) -> Result<Option<Lock>, WorkerError> {
+        try_lock(self.0).map_err(|Failure(e)| WorkerError::Lock(e))
+    }
+}
+
 /// Whether a worker is running for `archive` on this device.
 ///
 /// # Errors
@@ -141,19 +140,7 @@ pub fn status(archive: &Archive) -> Option<Status> {
     if !running(archive).unwrap_or(false) {
         return None;
     }
-    let path = file_for(archive, "json").ok()?;
-    serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()
-}
-
-fn write_status(archive: &Archive, status: &Status) {
-    if let Ok(path) = file_for(archive, "json")
-        && let Ok(text) = serde_json::to_string(status)
-    {
-        let temp = path.with_extension("json.tmp");
-        if std::fs::write(&temp, text).is_ok() {
-            let _ = std::fs::rename(&temp, &path);
-        }
-    }
+    carrel_core::worker::read_status(&file_for(archive, "json").ok()?)
 }
 
 /// Starts a worker for `archive` in the background unless one is running or `CARREL_WORKER`
@@ -204,6 +191,43 @@ fn detach(command: &mut std::process::Command) {
 #[cfg(not(any(unix, windows)))]
 fn detach(_: &mut std::process::Command) {}
 
+/// The worker for `archive` on this device, with the providers and backups here, writing its
+/// status file.
+fn worker<'a>(
+    archive: &'a Archive,
+    registry: &'a carrel_core::providers::Registry,
+    backups: Option<&'a dyn Backups>,
+) -> Result<Worker<'a>, Failure> {
+    let identity = Identity::load_or_create()?;
+    Ok(Worker {
+        archive,
+        registry,
+        holder: holder(&identity),
+        backups,
+        status: file_for(archive, "json").ok(),
+    })
+}
+
+/// Progress from closures, for [`work`]. Each drafted item's run is recorded in the log of
+/// formats nothing here could read.
+struct Calls<I, D> {
+    on_item: I,
+    on_done: D,
+}
+
+impl<I: FnMut(usize, usize, &str), D: FnMut(Processed)> Progress for Calls<I, D> {
+    fn drafting(&mut self, done: usize, waiting: usize, name: &str) {
+        (self.on_item)(done, waiting, name);
+    }
+
+    fn drafted(&mut self, processed: Processed) {
+        if let Ok(run) = &processed.run {
+            crate::formats::record(run);
+        }
+        (self.on_done)(processed);
+    }
+}
+
 /// Drafts every waiting item for `archive` on this device, holding `lock`, until none are
 /// left, calling `on_item` with each item as it starts (finished so far, waiting, name) and
 /// `on_done` with each result. Items added while it runs are drafted too.
@@ -214,58 +238,15 @@ fn detach(_: &mut std::process::Command) {}
 pub fn work(
     archive: &Archive,
     lock: Lock,
-    mut on_item: impl FnMut(usize, usize, &str),
-    mut on_done: impl FnMut(Processed),
+    on_item: impl FnMut(usize, usize, &str),
+    on_done: impl FnMut(Processed),
 ) -> Result<usize, Failure> {
-    let identity = Identity::load_or_create()?;
-    let holder = holder(&identity);
     let (registry, _) = crate::providers::registry();
     let (backups, _) = crate::backup::for_batch(archive);
     let backups = backups.as_ref().map(|b| b as &dyn Backups);
-    let mut lock = Some(lock);
-    let mut done = 0;
-    loop {
-        let mut queue = waiting(archive, identity.device, false)?;
-        if queue.is_empty() {
-            // Let go, then look once more: an item added while the lock was held, by someone
-            // who saw a worker running and so started none, would otherwise wait for the next.
-            drop(lock.take());
-            if waiting(archive, identity.device, false)?.is_empty() {
-                return Ok(done);
-            }
-            match try_lock(archive)? {
-                Some(again) => lock = Some(again),
-                None => return Ok(done),
-            }
-            continue;
-        }
-        let entry = queue.remove(0);
-        let name = entry.path.file_name().map_or_else(
-            || entry.path.display().to_string(),
-            |n| n.to_string_lossy().into_owned(),
-        );
-        on_item(done, queue.len() + 1, &name);
-        let mut status = Status {
-            pid: std::process::id(),
-            item: Some(name.clone()),
-            stage: None,
-            done,
-            waiting: queue.len() + 1,
-            updated: now(),
-        };
-        write_status(archive, &status);
-        let processed = process(archive, &registry, entry, holder, backups, &mut |p| {
-            status.stage = Some(p.stage.describe().to_owned());
-            status.updated = now();
-            write_status(archive, &status);
-        })
-        .map_err(Failure::from)?;
-        if let Ok(run) = &processed.run {
-            crate::formats::record(run);
-        }
-        on_done(processed);
-        done += 1;
-    }
+    let worker = worker(archive, &registry, backups)?;
+    let mut calls = Calls { on_item, on_done };
+    Ok(worker.draft(&Locks(archive), lock, &mut calls)?)
 }
 
 /// Starts a worker for the archive at `archive` (or the current one) after a change to filed
@@ -280,46 +261,6 @@ pub fn after_change(archive: Option<&Path>) {
     }
 }
 
-/// Embeds what's behind in `archive`'s index with its embedding model, if a provider here runs
-/// it, writing progress to the status file. Returns how many items were embedded.
-fn embed(archive: &Archive, done: usize) -> Result<usize, Failure> {
-    let Some(model) = archive.settings().embedding_model().map(str::to_owned) else {
-        return Ok(0);
-    };
-    let (registry, _) = crate::providers::registry();
-    if !crate::index::offered(&registry, &model) {
-        return Ok(0);
-    }
-    let mut index = carrel_core::index::Index::open_or_new(archive, &model)
-        .map_err(|e| crate::index::failure(e, &model))?;
-    let mut status = Status {
-        pid: std::process::id(),
-        item: None,
-        stage: Some("Embedding for search".into()),
-        done,
-        waiting: 0,
-        updated: now(),
-    };
-    let embedded =
-        crate::index::catch_up(archive, &registry, &mut index, &mut |n, total, item| {
-            status.item = item.map(str::to_owned);
-            status.waiting = total - n;
-            status.updated = now();
-            write_status(archive, &status);
-        })?;
-    // If the archive switched models meanwhile (`carrel index model`), what was saved here
-    // is of the old model's index, which the switch removed; remove it again.
-    if let Ok(now) = Archive::open(archive.root()) {
-        let settings = now.settings();
-        if settings.embedding_model() != Some(model.as_str())
-            && settings.embedding_switch() != Some(model.as_str())
-        {
-            let _ = carrel_core::index::switch::remove_index(&now, &model);
-        }
-    }
-    Ok(embedded)
-}
-
 /// `carrel worker`: drafts the queue for this device until it's empty, then embeds what's
 /// behind in the index. It's what adding to the queue and changing filed items start in the
 /// background; run by hand, it says if another is already running.
@@ -329,45 +270,18 @@ fn embed(archive: &Archive, done: usize) -> Result<usize, Failure> {
 /// [`Failure`] if the archive or its queues can't be read or written.
 pub fn run(archive: Option<&Path>) -> Result<Report, Failure> {
     let archive = locate(archive)?;
-    let Some(mut lock) = try_lock(&archive)? else {
+    let Some(lock) = try_lock(&archive)? else {
         return Ok(Report::new(
             "A worker is already drafting this archive's queue on this device.\n",
             json!({ "running": true, "done": 0 }),
         ));
     };
-    let device = Identity::load_or_create()?.device;
-    let (mut done, mut embedded) = (0, 0);
-    loop {
-        done += draft(&archive, lock)?;
-        // Embedding holds the lock again, so two workers never embed at once.
-        let Some(again) = try_lock(&archive)? else {
-            break;
-        };
-        match embed(&archive, done) {
-            Ok(n) => {
-                embedded += n;
-                if n > 0 {
-                    let _ = writeln!(
-                        std::io::stderr(),
-                        "{} embedded {} for search",
-                        now(),
-                        crate::commands::plural(n, "item")
-                    );
-                }
-            }
-            Err(e) => {
-                let _ = writeln!(std::io::stderr(), "{} embedding failed: {}", now(), e.0);
-            }
-        }
-        // Items queued while it embedded saw a worker running and started none.
-        if waiting(&archive, device, false)?.is_empty() {
-            break;
-        }
-        lock = again;
-    }
-    if let Ok(path) = file_for(&archive, "json") {
-        let _ = std::fs::remove_file(path);
-    }
+    let (registry, _) = crate::providers::registry();
+    let (backups, _) = crate::backup::for_batch(&archive);
+    let backups = backups.as_ref().map(|b| b as &dyn Backups);
+    let worker = worker(&archive, &registry, backups)?;
+    let ran = worker.run(&Locks(&archive), lock, &mut Log::default())?;
+    let (done, embedded) = (ran.drafted, ran.embedded);
     let mut text = format!("Drafted {done} queued items.\n");
     if embedded > 0 {
         writeln!(
@@ -383,36 +297,78 @@ pub fn run(archive: Option<&Path>) -> Result<Report, Failure> {
     ))
 }
 
-/// Drafts the queue holding `lock`, logging each item, until it's empty.
-fn draft(archive: &Archive, lock: Lock) -> Result<usize, Failure> {
-    let mut log = std::io::stderr();
-    work(
-        archive,
-        lock,
-        |_, waiting, name| {
-            let _ = writeln!(log, "{} drafting {name} ({waiting} waiting)", now());
-        },
-        |processed| {
-            let line = match &processed.run {
-                Ok(run) => {
-                    let proposed = run.entries.iter().flatten().count();
-                    format!("proposed {proposed} for {}", processed.entry.path.display())
-                }
-                Err(failure) => format!(
-                    "failed ({} of {}): {failure}",
-                    processed.entry.attempts,
-                    carrel_core::intake::MAX_ATTEMPTS
-                ),
-            };
-            let _ = writeln!(std::io::stderr(), "{} {line}", now());
-        },
-    )
+/// The worker's log, on standard error: a line for each item drafted and each round of
+/// embedding, and progress reading text for the index.
+#[derive(Default)]
+struct Log {
+    reading: Option<crate::progress::Display>,
 }
 
-fn now() -> String {
-    jiff::Zoned::now()
-        .strftime("%Y-%m-%dT%H:%M:%S%:z")
-        .to_string()
+impl Log {
+    fn finish_reading(&mut self) {
+        if let Some(mut display) = self.reading.take() {
+            display.finish();
+        }
+    }
+}
+
+impl Progress for Log {
+    fn drafting(&mut self, _: usize, waiting: usize, name: &str) {
+        let _ = writeln!(
+            std::io::stderr(),
+            "{} drafting {name} ({waiting} waiting)",
+            now()
+        );
+    }
+
+    fn drafted(&mut self, processed: Processed) {
+        if let Ok(run) = &processed.run {
+            crate::formats::record(run);
+        }
+        let line = match &processed.run {
+            Ok(run) => {
+                let proposed = run.entries.iter().flatten().count();
+                format!("proposed {proposed} for {}", processed.entry.path.display())
+            }
+            Err(failure) => format!(
+                "failed ({} of {}): {failure}",
+                processed.entry.attempts,
+                carrel_core::intake::MAX_ATTEMPTS
+            ),
+        };
+        let _ = writeln!(std::io::stderr(), "{} {line}", now());
+    }
+
+    fn reading(&mut self, done: usize, total: usize, item: Option<&str>) {
+        self.reading
+            .get_or_insert_with(|| crate::progress::Display::new("Reading text", false))
+            .count("items", done, total, item);
+    }
+
+    fn embedding(&mut self, _: usize, _: usize, _: Option<&str>) {
+        self.finish_reading();
+    }
+
+    fn embedded(&mut self, items: usize) {
+        self.finish_reading();
+        if items > 0 {
+            let _ = writeln!(
+                std::io::stderr(),
+                "{} embedded {} for search",
+                now(),
+                crate::commands::plural(items, "item")
+            );
+        }
+    }
+
+    fn embedding_failed(&mut self, error: WorkerError) {
+        self.finish_reading();
+        let message = match error {
+            WorkerError::Index { model, source } => crate::index::failure(source, &model).0,
+            e => e.to_string(),
+        };
+        let _ = writeln!(std::io::stderr(), "{} embedding failed: {message}", now());
+    }
 }
 
 #[cfg(test)]
