@@ -71,6 +71,13 @@ var phonePhoto: [CFString: Any] { [
     #expect(result.created == nil)
 }
 
+@Test func descriptionsCanBeTurnedOff() {
+    #expect(ImageReader.describes([:]))
+    #expect(ImageReader.describes(["CARREL_IMAGE_DESCRIPTIONS": "on"]))
+    #expect(!ImageReader.describes(["CARREL_IMAGE_DESCRIPTIONS": "off"]))
+    #expect(!ImageReader.describes(["CARREL_IMAGE_DESCRIPTIONS": " OFF "]))
+}
+
 @Test func exifDatesAreCheckedBeforeUse() {
     #expect(Metadata.date("0000:00:00 00:00:00", offset: nil) == (nil, nil))
     #expect(Metadata.date("not a date", offset: "+01:00") == (nil, nil))

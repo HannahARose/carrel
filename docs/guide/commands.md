@@ -126,6 +126,7 @@ Backups need [Kopia](https://kopia.io), beside `carrel` or on `PATH`.
 | `CARREL_MODELS_DIR` | Where local models are kept |
 | `CARREL_WORKER=off` | Never start a worker in the background |
 | `CARREL_OCR_LANGUAGES` | Tesseract's languages for OCR, such as `eng+deu` |
+| `CARREL_IMAGE_DESCRIPTIONS=off` | Read images on a Mac without asking Apple's model to describe them, to measure what the descriptions add |
 | `VISUAL`, `EDITOR` | The editor for cards, unless the `editor` setting is set |
 | `NO_COLOR` | Draw the interactive mode without color |
 | `KOPIA_PASSWORD` | The backup password, for scripts; Kopia then doesn't store it |
