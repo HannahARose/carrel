@@ -522,6 +522,7 @@ dependencies = [
  "minijinja",
  "minijinja-contrib",
  "serde_json",
+ "tempfile",
  "tracing-subscriber",
 ]
 
