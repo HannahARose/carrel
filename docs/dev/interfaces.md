@@ -26,13 +26,13 @@ The command line and the interactive mode run on macOS, Linux and Windows. The M
 | The embedding index: status, rebuild, switch models | `index` | #263 | #267 |
 | Correct a filed item | `correct` | ✓ `c` | ✓ ⌘K (#234) |
 | Edit a filed item's card | `edit` | ✓ `e` | ✓ ⌘E (#234) |
-| Create collections | `collection` | #264 | #268 |
-| Rename an item | `rename` | #264 | #268 |
-| Expand a filed compressed file | `expand` | #264 | #268 |
-| Check out an item | `checkout` | #262 | ✓ (#235) |
+| Create collections | `collection` | ✓ `n` in Browse | #268 |
+| Rename an item | `rename` | ✓ `r` in Browse | #268 |
+| Expand a filed compressed file | `expand` | ✓ `z` in Browse | #268 |
+| Check out an item | `checkout` | ✓ `o` in Browse | ✓ (#235) |
 | Return or cancel a checkout | `return` | ✓ Active | ✓ (#235) |
 | List checkouts | `checkouts` | ✓ Active | ✓ (#235) |
-| Desk items: add, remove, archive | `desk` | #262 | ✓ (#235) |
+| Desk items: add, remove, archive | `desk` | ✓ Active | ✓ (#235) |
 | Work-session entries: approve, edit, combine, drop | `sessions` | ✓ Active | ✓ (#235) |
 | History and undo | `log`, `undo` | ✓ History | ✓ (#235) |
 | Backups: set up, snapshot, list, verify, restore | `backup` | ✓ Backups | #266 |

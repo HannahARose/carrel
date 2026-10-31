@@ -124,9 +124,9 @@ Backups need [Kopia](https://kopia.io), beside `carrel` or on `PATH`.
 | --- | --- |
 | `1` | **Status**: what `carrel status` shows, including Recent, and what's waiting for you |
 | `2` | **Review**: `a` approve, `h` hold, `m` move, `e` edit, `x` reject, `z` unpack a zip or keep it compressed, `Space` mark, `A` approve all high-confidence |
-| `3` | **Active**: what's checked out and on this device's desk, with their pending history entries; `r` return the chosen checkout, `x` cancel it, `o` open the working copy, `a` approve, `c` combine, `d` drop pending entries (all, or those marked with `Space`) |
+| `3` | **Active**: what's checked out and on this device's desk, with their pending history entries; `r` return the chosen checkout, `x` cancel it, `o` open the working copy, `a` approve, `c` combine, `d` drop pending entries (all, or those marked with `Space`); `n` put a file or folder on the desk, and on a desk item `x` take it off, `f` archive it |
 | `4` | **Questions**: `Enter` to answer, `d` to dismiss |
-| `5` | **Browse**: collections and items; `/` to search, as `carrel search` does; `Enter` on an item for its changes and links, then `u` to undo the chosen change, `Enter` to go to a linked item |
+| `5` | **Browse**: collections and items; `/` to search, as `carrel search` does; `Enter` on an item for its changes and links, then `u` to undo the chosen change, `Enter` to go to a linked item; on an item, `o` check it out, `r` rename it, `z` expand a compressed file; `n` new collection |
 | `6` | **History**: `u` to undo the chosen change |
 | `7` | **Ingest**: the queue; `x` remove, `t` to the front, `r` retry |
 | `8` | **Settings**: `Enter` to change the chosen setting |
