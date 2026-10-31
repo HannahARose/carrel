@@ -103,7 +103,8 @@ pub fn list(archive: Option<&Path>) -> Result<Report, Failure> {
 }
 
 /// `carrel sessions approve|drop|combine ITEM [N...]`: `N` are the numbers `carrel sessions`
-/// shows; none means all of the item's pending entries.
+/// shows; none means all of the item's pending entries. `ITEM` is an archived item, or a desk
+/// item on this device: its path or its card's.
 ///
 /// # Errors
 ///
@@ -116,8 +117,10 @@ pub fn decide(
 ) -> Result<Report, Failure> {
     let archive = locate(archive)?;
     let items = archive.items()?;
-    let item = find_item(&archive, &items, query)?;
-    let path = archive.root().join(&item.card);
+    let (path, id) = match find_item(&archive, &items, query) {
+        Ok(item) => (archive.root().join(&item.card), item.id),
+        Err(not_archived) => on_desk(&archive, query)?.ok_or(not_archived)?,
+    };
     let mut file = CardFile::parse(&std::fs::read_to_string(&path)?)?;
     let mut log = file.history()?;
     let pending = log.pending();
@@ -161,11 +164,27 @@ pub fn decide(
         }
     };
     file.set_history(&log)?;
-    let commit = write_and_commit(&archive, &path, &file, item.id, &summary)?;
+    let commit = write_and_commit(&archive, &path, &file, id, &summary)?;
     Ok(Report::new(
         format!("{summary}\n"),
-        json!({ "item": item.id, "entries": chosen.len(), "commit": commit }),
+        json!({ "item": id, "entries": chosen.len(), "commit": commit }),
     ))
+}
+
+/// The card and identifier of the desk item on this device at `query`, given as the item's
+/// path or its card's.
+fn on_desk(
+    archive: &Archive,
+    query: &str,
+) -> Result<Option<(std::path::PathBuf, carrel_core::card::Id)>, Failure> {
+    let path = crate::paths::expand(query);
+    let path = std::fs::canonicalize(&path).unwrap_or(path);
+    let desk = carrel_core::desk::Desk::load(archive, Identity::load_or_create()?.device)?;
+    Ok(desk
+        .items
+        .iter()
+        .find(|e| e.path == path || e.card == path)
+        .map(|e| (e.card.clone(), e.id)))
 }
 
 /// `1 history entry`, `2 history entries`.
