@@ -1,0 +1,5 @@
+From Kuramoto to Crawford: exploring the onset of synchronization in populations of coupled oscillators
+
+Abstract. The Kuramoto model describes a large population of coupled limit-cycle oscillators whose natural frequencies are drawn from a prescribed distribution. If the coupling strength exceeds a certain threshold, the system exhibits a phase transition: some of the oscillators spontaneously synchronize, while others remain incoherent.
+
+Physica D, September 2000. Downloaded for the literature review.

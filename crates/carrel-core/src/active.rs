@@ -1,0 +1,411 @@
+//! `Active/` and the Journal (FORMAT.md §9.2, §9.3): generated from the cards, never the
+//! owner's, so they're rebuilt whole and anything else in them is removed.
+//!
+//! - `Active/_index.md`: what's checked out (and, with desk items, on a desk).
+//! - `Active/Checked out/<title>.md`: one note per checked-out item.
+//! - `Journal/<year>/<year>-<month>.md`: each month's approved work sessions, newest first.
+
+use std::collections::BTreeMap;
+use std::fmt::Write as _;
+use std::path::Path;
+
+use crate::archive::{Archive, ArchiveError};
+use crate::card::{Card, Checkout};
+use crate::card_file::CardFile;
+use crate::entries::HistoryEntry;
+use crate::listing::{link_destination, relative};
+
+/// What regenerating changed, as paths relative to the archive root.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Regenerated {
+    /// Files written or removed.
+    pub changed: Vec<String>,
+}
+
+/// One checked-out item, for the notes.
+struct Out {
+    card_path: String,
+    title: String,
+    id: String,
+    checkout: Checkout,
+}
+
+/// One approved session, for the journal.
+struct Session {
+    card_path: String,
+    title: String,
+    entry: HistoryEntry,
+}
+
+/// Rebuilds `Active/` and `Journal/` from the cards.
+///
+/// # Errors
+///
+/// [`ArchiveError`] if the archive can't be listed or a file can't be written.
+pub fn regenerate(archive: &Archive) -> Result<Regenerated, ArchiveError> {
+    let mut out = Vec::new();
+    let mut sessions = Vec::new();
+    for item in archive.items()? {
+        let path = archive.root().join(&item.card);
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(file) = CardFile::parse(&text) else {
+            continue;
+        };
+        let card: &Card = file.card();
+        if let Some(checkout) = &card.checked_out {
+            out.push(Out {
+                card_path: item.card.clone(),
+                title: card.title.clone(),
+                id: item.id.to_string(),
+                checkout: checkout.clone(),
+            });
+        }
+        if let Ok(log) = file.history() {
+            for entry in log.entries.into_iter().filter(|e| !e.pending) {
+                sessions.push(Session {
+                    card_path: item.card.clone(),
+                    title: card.title.clone(),
+                    entry,
+                });
+            }
+        }
+    }
+    out.sort_by(|a, b| a.checkout.since.0.cmp(&b.checkout.since.0).reverse());
+
+    let mut files: BTreeMap<String, String> = BTreeMap::new();
+    let names = note_names(&out);
+    files.insert("Active/_index.md".into(), index(&out, &names));
+    for (o, name) in out.iter().zip(&names) {
+        files.insert(format!("Active/Checked out/{name}"), note(o));
+    }
+    for (month, text) in journal(&sessions) {
+        files.insert(month, text);
+    }
+
+    let mut regenerated = Regenerated::default();
+    let root = archive.root();
+    for (path, text) in &files {
+        if write_if_changed(root, path, text)? {
+            regenerated.changed.push(path.clone());
+        }
+    }
+    regenerated
+        .changed
+        .extend(remove_others(root, "Active/Checked out", &files)?);
+    if root.join("Journal").is_dir() {
+        for year in std::fs::read_dir(root.join("Journal")).map_err(io(&root.join("Journal")))? {
+            let year = year.map_err(io(&root.join("Journal")))?;
+            if year.path().is_dir() {
+                let folder = format!("Journal/{}", year.file_name().to_string_lossy());
+                regenerated
+                    .changed
+                    .extend(remove_others(root, &folder, &files)?);
+            }
+        }
+    }
+    regenerated.changed.sort();
+    Ok(regenerated)
+}
+
+fn io(path: &Path) -> impl FnOnce(std::io::Error) -> ArchiveError + '_ {
+    move |e| ArchiveError::Invalid {
+        path: path.to_owned(),
+        message: e.to_string(),
+    }
+}
+
+/// Each note's file name: the title made portable, with the start of the item's identifier
+/// added when two titles would collide.
+fn note_names(out: &[Out]) -> Vec<String> {
+    let base: Vec<String> = out
+        .iter()
+        .map(|o| crate::names::portable(&o.title))
+        .collect();
+    out.iter()
+        .zip(&base)
+        .map(|(o, name)| {
+            let clash = base
+                .iter()
+                .filter(|b| b.to_lowercase() == name.to_lowercase())
+                .count()
+                > 1;
+            if clash {
+                format!("{name} ({}).md", &o.id[..8])
+            } else {
+                format!("{name}.md")
+            }
+        })
+        .collect()
+}
+
+fn link(from_folder: &str, card_path: &str) -> String {
+    link_destination(&relative(from_folder, card_path))
+}
+
+fn escape(text: &str) -> String {
+    text.replace('[', "\\[")
+        .replace(']', "\\]")
+        .replace('|', "\\|")
+}
+
+fn index(out: &[Out], names: &[String]) -> String {
+    let mut text = String::from(
+        "# Active\n\nGenerated by Carrel from the cards: what's out of the archive right now. Don't edit it; it's rewritten.\n\n## Checked out\n\n",
+    );
+    if out.is_empty() {
+        text.push_str("Nothing is checked out.\n");
+    } else {
+        text.push_str("| Item | Where | Since | Due |\n| --- | --- | --- | --- |\n");
+        for (o, name) in out.iter().zip(names) {
+            writeln!(
+                text,
+                "| [{}]({}) ([note]({})) | `{}` | {} | {} |",
+                escape(&o.title),
+                link("Active", &o.card_path),
+                link_destination(&format!("Checked out/{name}")),
+                o.checkout.to.replace('`', "'"),
+                o.checkout.since.0.chars().take(10).collect::<String>(),
+                o.checkout.due.as_ref().map_or("", |d| d.0.as_str()),
+            )
+            .unwrap();
+        }
+    }
+    text
+}
+
+fn note(o: &Out) -> String {
+    let mut text = format!(
+        "# {}\n\nChecked out since {} to `{}`. Its card: [{}]({}).\n",
+        o.title,
+        o.checkout.since.0,
+        o.checkout.to.replace('`', "'"),
+        escape(&o.title),
+        link("Active/Checked out", &o.card_path),
+    );
+    if let Some(due) = &o.checkout.due {
+        writeln!(text, "\nDue back {}.", due.0).unwrap();
+    }
+    text.push_str("\nGenerated by Carrel; it's removed when the item is returned.\n");
+    text
+}
+
+const MONTHS: [&str; 12] = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+];
+
+/// Each month's journal, by path.
+fn journal(sessions: &[Session]) -> BTreeMap<String, String> {
+    let mut by_month: BTreeMap<String, Vec<&Session>> = BTreeMap::new();
+    for session in sessions {
+        let date = &session.entry.date;
+        if date.len() >= 7 && date.as_bytes()[4] == b'-' {
+            by_month
+                .entry(date[..7].to_owned())
+                .or_default()
+                .push(session);
+        }
+    }
+    by_month
+        .into_iter()
+        .map(|(month, mut list)| {
+            list.sort_by(|a, b| b.entry.date.cmp(&a.entry.date));
+            let (year, number) = (&month[..4], &month[5..7]);
+            let name = number
+                .parse::<usize>()
+                .ok()
+                .and_then(|n| MONTHS.get(n.wrapping_sub(1)))
+                .copied()
+                .unwrap_or(number);
+            let folder = format!("Journal/{year}");
+            let mut text = format!(
+                "# {name} {year}\n\nGenerated by Carrel from the cards' history: the month's work sessions, newest first.\n\n"
+            );
+            for s in list {
+                let summary = s
+                    .entry
+                    .lines
+                    .iter()
+                    .find(|l| !l.trim().is_empty() && !l.starts_with("My notes:"))
+                    .map(|l| format!(": {}", l.trim()))
+                    .unwrap_or_default();
+                writeln!(
+                    text,
+                    "- {}{} · [{}]({}){summary}",
+                    s.entry.date,
+                    s.entry
+                        .duration
+                        .as_ref()
+                        .map(|d| format!(" · {d}"))
+                        .unwrap_or_default(),
+                    escape(&s.title),
+                    link(&folder, &s.card_path),
+                )
+                .unwrap();
+            }
+            (format!("{folder}/{month}.md"), text)
+        })
+        .collect()
+}
+
+fn write_if_changed(root: &Path, path: &str, text: &str) -> Result<bool, ArchiveError> {
+    let file = root.join(path);
+    if std::fs::read_to_string(&file).is_ok_and(|current| current == text) {
+        return Ok(false);
+    }
+    if let Some(parent) = file.parent() {
+        std::fs::create_dir_all(parent).map_err(io(parent))?;
+    }
+    std::fs::write(&file, text).map_err(io(&file))?;
+    Ok(true)
+}
+
+/// Removes the Markdown files in `folder` that weren't just generated.
+fn remove_others(
+    root: &Path,
+    folder: &str,
+    keep: &BTreeMap<String, String>,
+) -> Result<Vec<String>, ArchiveError> {
+    let dir = root.join(folder);
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return Ok(Vec::new());
+    };
+    let mut removed = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(io(&dir))?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let path = format!("{folder}/{name}");
+        if Path::new(&name)
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("md"))
+            && !keep.contains_key(&path)
+        {
+            std::fs::remove_file(entry.path()).map_err(io(&entry.path()))?;
+            removed.push(path);
+        }
+    }
+    Ok(removed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::card::{DateOrTime, Extra, Id};
+
+    fn sample() -> (tempfile::TempDir, Archive) {
+        fn copy(from: &Path, to: &Path) {
+            std::fs::create_dir_all(to).unwrap();
+            for e in std::fs::read_dir(from).unwrap() {
+                let e = e.unwrap();
+                if e.file_type().unwrap().is_dir() {
+                    copy(&e.path(), &to.join(e.file_name()));
+                } else {
+                    std::fs::copy(e.path(), to.join(e.file_name())).unwrap();
+                }
+            }
+        }
+        let dir = tempfile::tempdir().unwrap();
+        copy(
+            &Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/sample-archive"),
+            &dir.path().join("a"),
+        );
+        let archive = Archive::open(&dir.path().join("a")).unwrap();
+        (dir, archive)
+    }
+
+    fn edit(archive: &Archive, card: &str, change: impl FnOnce(&mut CardFile)) {
+        let path = archive.root().join(card);
+        let mut file = CardFile::parse(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        change(&mut file);
+        std::fs::write(&path, file.to_text().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn checked_out_items_and_approved_sessions_are_listed() {
+        let (_dir, archive) = sample();
+        let card = "Projects/Hardware/parts-list.csv.md";
+        edit(&archive, card, |file| {
+            file.card_mut().checked_out = Some(Checkout {
+                to: "/Users/me/Desktop/parts-list.csv".into(),
+                device: Id::new_v7(),
+                person: Id::new_v7(),
+                since: DateOrTime("2026-10-30T09:00:00-04:00".into()),
+                due: Some(DateOrTime("2026-11-15".into())),
+                manifest: None,
+                extra: Extra::new(),
+            });
+            let mut log = file.history().unwrap();
+            let mut done = crate::entries::HistoryEntry::pending(
+                "2026-10-29",
+                Some(70),
+                vec!["Swapped the regulator.".into()],
+            );
+            done.pending = false;
+            log.add(done);
+            log.add(crate::entries::HistoryEntry::pending(
+                "2026-10-30",
+                None,
+                vec!["Pending.".into()],
+            ));
+            file.set_history(&log).unwrap();
+        });
+        std::fs::create_dir_all(archive.root().join("Active/Checked out")).unwrap();
+        std::fs::write(archive.root().join("Active/Checked out/Old.md"), "stale").unwrap();
+
+        let done = regenerate(&archive).unwrap();
+        assert!(done.changed.contains(&"Active/_index.md".to_owned()));
+        assert!(
+            done.changed
+                .contains(&"Active/Checked out/Old.md".to_owned()),
+            "stale notes go"
+        );
+        let index = std::fs::read_to_string(archive.root().join("Active/_index.md")).unwrap();
+        assert!(
+            index.contains("../Projects/Hardware/parts-list.csv.md"),
+            "{index}"
+        );
+        assert!(index.contains("2026-11-15"));
+        let title = CardFile::parse(&std::fs::read_to_string(archive.root().join(card)).unwrap())
+            .unwrap()
+            .card()
+            .title
+            .clone();
+        let note = archive.root().join(format!(
+            "Active/Checked out/{}.md",
+            crate::names::portable(&title)
+        ));
+        assert!(
+            std::fs::read_to_string(note)
+                .unwrap()
+                .contains("../../Projects/Hardware/parts-list.csv.md")
+        );
+
+        let month =
+            std::fs::read_to_string(archive.root().join("Journal/2026/2026-10.md")).unwrap();
+        assert!(month.starts_with("# October 2026"), "{month}");
+        assert!(month.contains("2026-10-29 · 1h 10m"), "{month}");
+        assert!(month.contains("Swapped the regulator."));
+        assert!(
+            !month.contains("Pending."),
+            "pending entries aren't in the journal"
+        );
+
+        assert_eq!(
+            regenerate(&archive).unwrap().changed,
+            Vec::<String>::new(),
+            "nothing changes twice"
+        );
+    }
+}

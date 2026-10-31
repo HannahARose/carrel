@@ -8,16 +8,26 @@
 //!
 //! | Module | What it handles | FORMAT.md |
 //! | --- | --- | --- |
+//! | [`actions`] | The owner's decisions on proposals and questions, shared by every interface | §7.9 |
 //! | [`archive`] | Creating, opening and finding archives; listing collections | §3, §7.1, §12 |
 //! | [`documents`] | `ARCHIVE.md`, `_collection.md`, `archive.json` and `settings.json` | §6.2, §6.3, §7.1, §7.2 |
 //! | [`card`] | Card frontmatter as typed fields, and checking it conforms | §5 |
 //! | [`card_file`] | Whole card files: edit fields without touching the owner's text | §5.3 |
 //! | [`frontmatter`] | Splitting any Markdown document into frontmatter and body | §2.2 |
 //! | [`sections`] | Managed sections, and comparing text while ignoring table padding | §5.3 |
+//! | [`listing`] | The generated listings: collections' contents and `ARCHIVE.md`'s collections | §6.2, §6.3 |
 //! | [`detect`] | Item kinds, sealing, and regenerable folders | §4, §7.5 |
 //! | [`manifest`] | Checksums, folder manifests and their diffs | §2.6, §7.7 |
+//! | [`names`] | Portable names: checking them, and suggesting portable ones | §2.5 |
+//! | [`rename`] | Renaming an item and its card together, with links and history following | §2.5, §8.2 |
 //! | [`history`] | The Git history of metadata, and undo | §8.1–§8.3 |
+//! | [`backup`] | Snapshots of contents with Kopia: setup, snapshot, verify, restore | §7.2, §8.2 |
 //! | [`coordinator`] | Which writer may change an archive: leases and the disk lock | §8.4 |
+//! | [`ingest`] | Ingest: intake, text, cards, routing, sensitivity, and filing approved items | `docs/design/ingest.md` |
+//! | [`review`] | The review queue: proposals to file items, waiting for the owner | §7.9 |
+//! | [`questions`] | Questions for the owner, and the glossary their answers teach | §7.3, §7.9 |
+//! | [`local`] | Where this device keeps its own data: configuration and models | none |
+//! | [`providers`] | Text models and text extraction from providers, native or portable | `docs/providers.md` |
 //!
 //! Two promises run through every module: owner text outside managed sections is never
 //! changed, and fields this version doesn't recognize are always preserved.
@@ -36,16 +46,39 @@
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 
+pub mod actions;
+pub mod active;
 pub mod archive;
+pub mod backup;
+pub mod bench;
 pub mod card;
 pub mod card_file;
+pub mod checkout;
+pub mod collections;
 pub mod coordinator;
+pub mod correct;
+pub mod desk;
 pub mod detect;
 pub mod documents;
+pub mod entries;
+pub mod formats;
 pub mod frontmatter;
 pub mod history;
+pub mod ingest;
+pub mod intake;
+pub mod listing;
+pub mod local;
 pub mod manifest;
+pub mod models;
+pub mod names;
+pub mod providers;
+pub mod questions;
+pub mod rename;
+pub mod review;
 pub mod sections;
+pub mod sessions;
+pub mod settings;
+pub mod signals;
 
 /// The version of the archive format this build reads and writes (`FORMAT.md`).
 pub const FORMAT_VERSION: FormatVersion = FormatVersion { major: 1, minor: 0 };
@@ -136,6 +169,26 @@ pub enum Access {
     ReadWrite,
     /// The archive uses a newer major format version; it must not be modified.
     ReadOnly,
+}
+
+/// `1.3 KB`, `482 KB`, `2.1 GB`.
+#[must_use]
+pub fn human_size(bytes: u64) -> String {
+    const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
+    #[allow(clippy::cast_precision_loss)] // a display value
+    let mut value = bytes as f64;
+    let mut unit = 0;
+    while value >= 1000.0 && unit < UNITS.len() - 1 {
+        value /= 1000.0;
+        unit += 1;
+    }
+    if unit == 0 {
+        format!("{bytes} B")
+    } else if value < 10.0 {
+        format!("{value:.1} {}", UNITS[unit])
+    } else {
+        format!("{value:.0} {}", UNITS[unit])
+    }
 }
 
 #[cfg(test)]

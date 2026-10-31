@@ -1,0 +1,9 @@
+Pathology Department, St Anne's Hospital
+Lab results reported 7 March 2025
+
+Patient: Alex Morgan
+Full blood count: within normal range
+Ferritin: 18 ug/L (low; range 30 to 400)
+Vitamin D: 52 nmol/L
+
+Comment: low iron stores. Discuss with your GP.

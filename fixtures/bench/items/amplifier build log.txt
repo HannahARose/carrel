@@ -1,0 +1,5 @@
+Headphone amplifier build log
+
+2025-03-22  Etched the board, drilled 0.8 mm holes.
+2025-03-23  Soldered the op-amp socket and power section. 9 V rail measures 8.96 V.
+2025-03-29  First listen. Slight hum; move the input wiring away from the transformer.

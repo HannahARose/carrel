@@ -145,8 +145,9 @@ fn renewing_extends_the_lease() {
     ));
     drop(expired);
 
+    // Long enough not to run out on a slow machine before it's renewed.
     let mut lease = lock
-        .acquire(holder(), "ingest", Duration::from_secs(1))
+        .acquire(holder(), "ingest", Duration::from_secs(60))
         .unwrap();
     let before = lease.info().expires.clone();
     lease.renew(DEFAULT_LEASE).unwrap();
@@ -218,6 +219,19 @@ fn synced_folders_are_recognized() {
     )));
     assert!(DiskLock::is_synced_folder(Path::new(
         "/Users/me/Library/CloudStorage/Dropbox/Archive"
+    )));
+    for synced in [
+        "C:/Users/me/OneDrive/Archive",
+        "C:/Users/me/OneDrive - Cognitogram/Archive",
+        "/home/me/Dropbox/Archive",
+        "C:/Users/me/Dropbox (Personal)/Archive",
+        "G:/My Drive/Archive",
+        "C:/Users/me/iCloudDrive/Archive",
+    ] {
+        assert!(DiskLock::is_synced_folder(Path::new(synced)), "{synced}");
+    }
+    assert!(!DiskLock::is_synced_folder(Path::new(
+        "/home/me/OneDriveNotes/Archive"
     )));
     assert!(!DiskLock::is_synced_folder(Path::new(
         "/Volumes/Backup/Archive"

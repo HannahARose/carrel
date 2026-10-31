@@ -40,23 +40,24 @@ jobs:
         with:
           persist-credentials: false
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      # The llama.cpp provider has its own job: building llama.cpp takes minutes.
+      - run: cargo clippy --workspace --exclude carrel-provider-llama --all-targets --locked -- -D warnings
 
   test:
     name: Test (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
-        # macOS is the main platform; Linux keeps the core and CLI portable.
-        os: [macos-latest, ubuntu-latest]
+        # macOS is the main platform; Linux and Windows keep the core and CLI portable.
+        os: [macos-latest, ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-      - run: cargo test --workspace --all-targets --locked
-      - run: cargo test --workspace --doc --locked
+      - run: cargo test --workspace --exclude carrel-provider-llama --all-targets --locked --no-fail-fast
+      - run: cargo test --workspace --exclude carrel-provider-llama --doc --locked
       - name: CLI reports its version
         run: cargo run --locked --bin carrel -- --version
 
@@ -72,11 +73,11 @@ jobs:
         with:
           persist-credentials: false
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-      - run: cargo doc --workspace --no-deps --document-private-items --locked
+      - run: cargo doc --workspace --exclude carrel-provider-llama --no-deps --document-private-items --locked
 
   swift:
-    # The Swift side: build the XCFramework and bindings, test them from Swift, and check the
-    # package also builds for iOS.
+    # The Swift side: build the XCFramework and bindings, test them from Swift, check the
+    # package also builds for iOS, and test the Apple provider on its own and through Carrel.
     name: Swift package
     runs-on: macos-latest
     steps:
@@ -93,6 +94,36 @@ jobs:
       - name: Build for the iOS Simulator
         working-directory: apple/CarrelKit
         run: xcodebuild -scheme CarrelKit -destination 'generic/platform=iOS Simulator' -derivedDataPath .build/xcode build
+      - name: Apple provider tests
+        working-directory: apple/CarrelProviders
+        run: swift test
+      - name: Apple provider through the provider protocol
+        run: |
+          bin="$(swift build --package-path apple/CarrelProviders --show-bin-path)"
+          swift build --package-path apple/CarrelProviders --product carrel-provider-apple
+          CARREL_TEST_APPLE_PROVIDER="$bin/carrel-provider-apple" cargo test --locked -p carrel-core --test apple_provider
+          PATH="$bin:$PATH" cargo run --locked --bin carrel -- providers
+
+  mlx:
+    # The MLX provider (apple/CarrelMLX). MLX's Metal shaders need xcodebuild, not swift build.
+    # Hosted runners can't run a model, so this builds it and runs the tests that need none;
+    # the on-device runner drafts with real MLX models.
+    name: MLX provider
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Metal Toolchain
+        # Xcode ships the Metal compiler as a separate component.
+        run: |
+          xcodebuild -showComponent MetalToolchain | grep -q "Status: installed" \
+            || xcodebuild -downloadComponent MetalToolchain
+      - name: Build and test
+        working-directory: apple/CarrelMLX
+        run: |
+          xcodebuild -scheme CarrelMLX-Package -destination 'platform=macOS' \
+            -derivedDataPath .build/xcode -skipMacroValidation test
 
   deny:
     # Known vulnerabilities, unmaintained or yanked crates, licenses, duplicate versions and
@@ -119,6 +150,21 @@ jobs:
         with:
           # Print findings and fail, rather than uploading them to code scanning.
           advanced-security: false
+      - name: No pull requests on the owner's Mac
+        # The self-hosted runner (docs/design/on-device-ci.md) runs code on the owner's
+        # machine, so no workflow that names its label may run for pull requests.
+        run: |
+          status=0
+          label="carrel-on-""device" # split, so this check doesn't find itself
+          for file in .github/workflows/*.yml .github/workflows/*.yaml; do
+            [ -f "$file" ] || continue
+            grep -v '^[[:space:]]*#' "$file" | grep -q "runs-on:.*$label" || continue
+            if grep -v '^[[:space:]]*#' "$file" | grep -q 'pull_request'; then
+              echo "::error file=$file::$file uses the self-hosted runner and runs on pull requests"
+              status=1
+            fi
+          done
+          exit $status
 
   hygiene:
     # Spelling (_typos.toml), Markdown style (.markdownlint-cli2.yaml) and links in the
@@ -139,16 +185,116 @@ jobs:
           args: >-
             --no-progress --include-fragments
             ${{ github.event_name != 'schedule' && '--offline' || '' }}
-            README.md CONTRIBUTING.md FORMAT.md fixtures/README.md 'apple/**/*.md'
+            README.md CONTRIBUTING.md FORMAT.md fixtures/README.md 'docs/**/*.md' 'apple/**/*.md'
           jobSummary: false
         env:
           GITHUB_TOKEN: ${{ github.token }}
+
+  llama:
+    # The portable model provider, with llama.cpp built in, run against a tiny test model.
+    name: llama.cpp provider (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      # A 1 MB model whose answers are nonsense: enough to test loading, generation and
+      # grammar-constrained JSON.
+      MODEL_URL: https://huggingface.co/ggml-org/models/resolve/main/tinyllamas/stories260K.gguf
+      MODEL_SHA256: 270cba1bd5109f42d03350f60406024560464db173c0e387d91f0426d3bd256d
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - run: cargo clippy -p carrel-provider-llama --all-targets --locked -- -D warnings
+      - name: Download the test model
+        run: |
+          mkdir -p "$RUNNER_TEMP/models"
+          curl -sSfL -o "$RUNNER_TEMP/models/stories260K.gguf" "$MODEL_URL"
+          echo "$MODEL_SHA256  $RUNNER_TEMP/models/stories260K.gguf" | shasum -a 256 -c -
+      - name: Tests
+        run: CARREL_TEST_LLAMA_MODELS="$RUNNER_TEMP/models" cargo test -p carrel-provider-llama --locked
+      - name: Through carrel providers
+        run: |
+          cargo build -p carrel-provider-llama -p carrel-cli --locked
+          CARREL_MODELS_DIR="$RUNNER_TEMP/models" PATH="$PWD/target/debug:$PATH" cargo run --locked --bin carrel -- providers
+
+  extract:
+    # The portable extraction provider with Tesseract and Poppler installed, so OCR of images
+    # and scanned PDFs is tested rather than skipped.
+    name: Portable extraction
+    runs-on: ubuntu-latest
+    env:
+      CARREL_REQUIRE_TESSERACT: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: Install Tesseract and Poppler
+        run: sudo apt-get update -q && sudo apt-get install -yq tesseract-ocr poppler-utils
+      - run: cargo test -p carrel-provider-extract --locked
+
+  kopia:
+    # Backups against the real kopia program and a throwaway filesystem repository.
+    name: Kopia backups (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            asset: kopia-0.23.1-macOS-arm64
+            sha256: 19e6ed637221f4dfd46a46e978ec4c509c386b522d746db2cd6762b217478111
+            archive: tar.gz
+          - os: ubuntu-latest
+            asset: kopia-0.23.1-linux-x64
+            sha256: 416d0f84a3dbb321a8b2d8f0997b1a0a6e915babe79ee76fa6e4d2bd1e1c5178
+            archive: tar.gz
+          - os: windows-latest
+            asset: kopia-0.23.1-windows-x64
+            sha256: f0369d9657dbe47a1b8b6ff4e308c5958a4813b405d4e32ae9d81b3f2b3d8251
+            archive: zip
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      ASSET: ${{ matrix.asset }}
+      SHA256: ${{ matrix.sha256 }}
+      ARCHIVE: ${{ matrix.archive }}
+      KOPIA_CHECK_FOR_UPDATES: "false"
+      CARREL_REQUIRE_KOPIA: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: Install Kopia
+        run: |
+          file="$RUNNER_TEMP/kopia.$ARCHIVE"
+          curl -sSfL -o "$file" "https://github.com/kopia/kopia/releases/download/v0.23.1/$ASSET.$ARCHIVE"
+          if command -v sha256sum > /dev/null; then
+            echo "$SHA256  $file" | sha256sum -c -
+          else
+            echo "$SHA256  $file" | shasum -a 256 -c -
+          fi
+          if [ "$ARCHIVE" = zip ]; then
+            unzip -q "$file" -d "$RUNNER_TEMP"
+          else
+            tar -xzf "$file" -C "$RUNNER_TEMP"
+          fi
+          echo "$RUNNER_TEMP/$ASSET" >> "$GITHUB_PATH"
+      - run: kopia --version
+      - name: Tests
+        run: cargo test -p carrel-core --test backup_kopia --locked
 
   ok:
     # The single required check for branch protection. It passes only if every job above passed.
     name: CI passed
     if: always()
-    needs: [fmt, clippy, test, docs, swift, deny, zizmor, hygiene]
+    needs: [fmt, clippy, test, docs, swift, mlx, llama, extract, kopia, deny, zizmor, hygiene]
     runs-on: ubuntu-latest
     steps:
       - name: Check job results

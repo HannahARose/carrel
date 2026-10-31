@@ -1,0 +1,11 @@
+LUMEN ANALYTICS LTD: PAYSLIP
+Pay date: 31 October 2025
+Employee: Alex Morgan   Employee no. 0193   Tax code 1257L
+
+Basic pay                 3,583.33
+Income tax                 -508.20
+National Insurance         -184.33
+Pension (5%)               -179.17
+Net pay                   2,711.63
+
+Paid to account number ending 5432.

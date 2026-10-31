@@ -1,0 +1,110 @@
+name: On-device
+
+# Tests and the model benchmark on the owner's Mac, registered as a self-hosted runner
+# (docs/design/on-device-ci.md, #45). Hosted runners have no Apple Intelligence and too little
+# memory for local models.
+#
+# This workflow runs code on the owner's machine, so it never runs for pull requests: only for
+# pushes to dev (already reviewed and merged), the weekly schedule and manual dispatch. The
+# "Pull request checks" workflow refuses any workflow that both runs on pull requests and
+# names the runner's label.
+
+on:
+  push:
+    branches: [dev]
+    paths-ignore:
+      - docs/**
+      - "**.md"
+  schedule:
+    # Sunday 03:00 in New York (07:00 UTC; 08:00 in winter).
+    - cron: "0 7 * * 0"
+  workflow_dispatch:
+    inputs:
+      job:
+        description: What to run
+        type: choice
+        options: [tests, benchmark]
+        default: tests
+
+permissions:
+  contents: read # check out the code
+
+# One job on the Mac at a time, so nothing compiles while the benchmark is timing models. A
+# push that arrives during a benchmark waits for it; only the latest waiting run is kept.
+concurrency:
+  group: on-device
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  KOPIA_CHECK_FOR_UPDATES: "false"
+
+jobs:
+  tests:
+    name: On-device tests
+    if: >-
+      github.repository == 'HannahARose/carrel' &&
+      (github.event_name == 'push' ||
+       (github.event_name == 'workflow_dispatch' && inputs.job == 'tests'))
+    runs-on: [self-hosted, macOS, ARM64, carrel-on-device]
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: scripts/on-device-tests.sh
+
+  benchmark:
+    name: Benchmark
+    if: >-
+      github.repository == 'HannahARose/carrel' &&
+      (github.event_name == 'schedule' ||
+       (github.event_name == 'workflow_dispatch' && inputs.job == 'benchmark'))
+    runs-on: [self-hosted, macOS, ARM64, carrel-on-device]
+    timeout-minutes: 480
+    permissions:
+      contents: read # check out the code
+      actions: read # download the previous run's results
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build
+        run: |
+          cargo build --release --locked -p carrel-cli -p carrel-provider-extract -p carrel-provider-llama
+          swift build -c release --package-path apple/CarrelProviders --product carrel-provider-apple
+          cp "$(swift build -c release --package-path apple/CarrelProviders --show-bin-path)/carrel-provider-apple" target/release/
+      - name: Download the previous results
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          previous=$(gh run list --workflow on-device.yml --status success --limit 20 \
+            --json databaseId,event --jq '[.[] | select(.event != "push")][0].databaseId // empty')
+          if [ -n "$previous" ] && gh run download "$previous" --name bench-results --dir "$RUNNER_TEMP/previous"; then
+            echo "Comparing with run $previous."
+          else
+            echo "No earlier results; this run is the first to compare against."
+          fi
+      - name: Benchmark
+        run: |
+          compare=()
+          if [ -f "$RUNNER_TEMP/previous/results.json" ]; then
+            compare=(--compare "$RUNNER_TEMP/previous/results.json")
+          fi
+          target/release/carrel bench --fresh --out bench-results "${compare[@]}"
+        shell: bash
+      - name: Summary
+        if: always()
+        run: |
+          if [ -f bench-results/comparison.md ]; then
+            cat bench-results/comparison.md >> "$GITHUB_STEP_SUMMARY"
+          elif [ -f bench-results/report.md ]; then
+            cat bench-results/report.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: bench-results
+          path: bench-results/
+          retention-days: 90

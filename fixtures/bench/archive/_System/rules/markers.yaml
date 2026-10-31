@@ -1,0 +1,1 @@
+markers: [".git", "Cargo.toml", "package.json", "pyproject.toml", "go.mod", "Package.swift", "*.xcodeproj", "*.xcworkspace", "*.kicad_pro"]

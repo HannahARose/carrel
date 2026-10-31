@@ -13,5 +13,9 @@ globs:
   - "**/*.md"
 ignores:
   - "fixtures/sample-archive/**"
+  - "fixtures/bench/**"
+  # Benchmark reports are written by `carrel bench` and kept as they came out.
+  - "docs/bench/*/report.md"
+  - "docs/bench/*/*/report.md"
   - "target/**"
   - "**/.build/**"

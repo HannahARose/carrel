@@ -1,0 +1,1 @@
+regenerable: ["node_modules", ".venv", "venv", "target", "build", "dist", "__pycache__", ".ipynb_checkpoints", "DerivedData"]

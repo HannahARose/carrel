@@ -23,12 +23,13 @@ A small, hand-built archive that follows [FORMAT.md](../FORMAT.md) v1.0 (draft).
 | Archive-wide and per-collection tag vocabularies | `ARCHIVE.md`, each `_collection.md` |
 | Active section and Journal | `Active/`, `Journal/2026/2026-10.md` |
 | `_System`: identity, settings, glossary, rules, manifests, device profile, an inbox entry, a copy of FORMAT.md | `_System/` |
+| A review entry: a proposal to file a print file into Projects/Hardware, with a proposed new tag | `_System/queue/review/` |
 
 ### Not included, and why
 
 - **`_System/history.git`** and a **`.git` marker** inside a bundle: Git can't store a repository's internal files inside another repository cleanly. Tests create the history repository at runtime, and `oscillator-sim` is sealed by `Cargo.toml` instead.
 - **Desk items:** they live outside the archive by definition.
-- **Queue entries:** their schemas are defined with the features that use them.
+- **Questions, tasks and restructure proposals** in `_System/queue/`: their schemas are defined with the features that use them.
 
 ### Changing the fixture
 
@@ -50,3 +51,19 @@ It reports every problem it finds, one per line:
 - the `ARCHIVE.md` and collection listings, and that every card can be reached from `ARCHIVE.md`
 - nothing left uncataloged
 - valid JSON and YAML under `_System`, and an exact copy of `FORMAT.md`
+
+## `bench/`
+
+The test set for the model benchmark ([docs/design/benchmark.md](../docs/design/benchmark.md)): what `carrel bench` ingests with each model, and what it scores them against.
+
+- **`archive/`:** an archive with thirteen collections and Holding, whose design documents sometimes overlap on purpose (Receipts and Manuals, Health and Insurance, Reading and Research). It has no routing rules, so models make every choice.
+- **`items/`:** 65 short documents of the kinds a Downloads folder holds. Every person, address and number in them is invented; the card number, IBAN and social security number are well-known example values. Some are hard on purpose: they fit two collections, belong in Holding, or are sensitive because of one line.
+- **`answers.yaml`:** each item's acceptable destinations, expected sensitivity, date and tags.
+
+`crates/carrel-core/tests/bench.rs` checks on every test run that the three agree: every item has an answer, every destination and tag exists, and no expected level is below what the sensitivity rules alone give. To run the benchmark itself (it needs a text model, and takes minutes per model):
+
+```bash
+cargo run -p carrel-cli -- bench --out bench-results
+```
+
+It can be stopped at any point and continued by running the same command again; add `--fresh` to start over after changing prompts, checks or models.

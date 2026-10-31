@@ -127,7 +127,7 @@ fn io(path: &Path) -> impl FnOnce(std::io::Error) -> ManifestError + '_ {
 
 /// A modification time with the file system's full precision (nanoseconds on APFS), so two
 /// edits within the same second still look different when deciding whether to re-read a file.
-fn timestamp(time: SystemTime) -> DateOrTime {
+pub(crate) fn timestamp(time: SystemTime) -> DateOrTime {
     let ts = jiff::Timestamp::try_from(time).unwrap_or(jiff::Timestamp::UNIX_EPOCH);
     let zoned = ts.to_zoned(jiff::tz::TimeZone::system());
     DateOrTime(zoned.strftime("%Y-%m-%dT%H:%M:%S%.f%:z").to_string())

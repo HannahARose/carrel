@@ -57,6 +57,13 @@ Dates are ISO 8601 calendar dates (`2026-10-29`). Times are RFC 3339 timestamps 
 - Paths inside the archive are relative to the archive root, use `/` as the separator, and never start with `/` or contain `.` or `..` segments.
 - Names are compared case-insensitively, because the default file systems on Apple platforms are case-insensitive. Two siblings **must not** differ only by case.
 - Names **must not** contain `/`, `:`, control characters, or leading or trailing spaces, and **should** stay under 200 bytes.
+- **Portable names.** So an archive can move between macOS, Linux, Windows and exFAT drives, names **should** also:
+  - not contain `<`, `>`, `"`, `\`, `|`, `?` or `*`;
+  - not be a name Windows reserves for devices (`CON`, `PRN`, `AUX`, `NUL`, `COM1` to `COM9`, `LPT1` to `LPT9`), compared without case and ignoring everything from the first `.`, so `con.txt` is reserved too;
+  - not end with a `.`;
+  - keep paths from the archive root under 200 characters, which leaves room under Windows' 260-character limit in a typical location.
+
+  Programs **must** give everything they create a portable name. They **should** report existing names that aren't portable, with a portable suggestion, and **must not** rename items without the owner's approval.
 - In **Markdown link destinations**, paths are percent-encoded so they work in every Markdown reader: at least space as `%20`, `(` as `%28`, `)` as `%29`, `%` as `%25`, `#` as `%23`, `?` as `%3F`, `<` as `%3C` and `>` as `%3E`. For example, `[RFC 9562](RFC%209562.md)`. Paths in frontmatter and JSON (such as `links[].path` or `manifest.path`) are plain, unencoded paths.
 
 ### 2.6 Checksums
@@ -177,6 +184,7 @@ Fields are owned by programs unless marked as owner fields. Optional fields are 
 | `url` | string | for `url` | The resource's address |
 | `checked_out` | map | no | Present while checked out (§9.1) |
 | `generated` | map | no | Provenance of program-written fields (§5.6) |
+| `placement` | map | no | How sure filing was of the item's collection, when it wasn't (§5.8) |
 | `removed` | map | for `tombstone` | §10 |
 
 Programs **must** preserve fields they don't recognize when rewriting a card.
@@ -243,7 +251,12 @@ generated:
   device: 01928f3a-0000-7000-8000-00000000d001
   at: "2026-10-29T15:42:07-07:00"
   level: preferred        # or below-preferred, if a stronger device should re-check it
+  corrections:            # optional: what the owner said to correct the card
+    - said: "This is a picture of Lake Annecy, not Geneva"
+      at: "2026-10-31T09:12:40-07:00"
 ```
+
+A field the owner set outright is left out of `fields`, so programs never overwrite it. `corrections` keeps the owner's corrections, oldest first; a program that rewrites a field in `fields` must give them to any model it uses and must not contradict them.
 
 ### 5.7 Example
 
@@ -277,6 +290,19 @@ Useful for the closed-loop latency numbers in the methods section.
 ## History
 <!-- /carrel:history -->
 ```
+
+### 5.8 Placement
+
+When an item is filed where routing wasn't sure it belongs, its card says so, as evidence for restructuring (`docs/design/signals.md`):
+
+```yaml
+placement:
+  confidence: low          # low or medium
+  by: model                # model or rule
+  at: "2026-10-30T14:02:11-04:00"
+```
+
+Programs write `placement` when filing a proposal whose destination confidence (§7.9) was `low` or `medium`, and never for items filed to Holding, where being there says the same. They remove it when the owner places the item themselves, such as by moving or renaming it, since the owner's choice settles where it belongs.
 
 ## 6. Collections and design documents
 
@@ -368,6 +394,7 @@ Part of [Research](../_collection.md)
 - The Subcollections table is omitted when there are none; the Items table is omitted when the collection holds no items directly.
 - The Items column counts items directly in a collection; when subcollections hold more, the count reads like `3 (+4 in subcollections)`.
 - Item rows link to cards, subcollection rows to their `_collection.md`, and link text is the item's or collection's title.
+- Subcollection rows are sorted by path, and item rows by the date in the Added column (`dates.added`, or for a tombstone the date it was removed), then by title, so a listing rebuilt from the same cards is always the same.
 
 Changes to a design document itself are recorded in its collection's `CHANGELOG.md`.
 
@@ -449,7 +476,9 @@ Archive-level settings that every device follows. Version 1.0 defines:
 | `sessions.idle_minutes` | integer | `45` |
 | `reminders` | list of `idle`, `weekly`, `menu-bar`, `due-date` | `["idle", "weekly", "menu-bar"]` |
 | `embedding.model` | model identifier | chosen at creation |
-| `backups` | map describing the backup repository (location and type, never the password) | none |
+| `backups` | map describing the backup repository: `type` (`kopia`), `repository` (the backup system's identifier for it) and `description`. Never its path, which differs between devices, and never the password | none |
+| `ingest.originals` | `move` (the original is moved into the archive on approval) or `keep` (it's copied, and the original is left for the owner to delete) | `move` |
+| `signals.crowded_items` | integer: how many loose items make a collection with no subcollections crowded, as a restructure signal | `30` |
 
 Programs **must** preserve unknown keys.
 
@@ -518,7 +547,7 @@ src/main.rs	sha256:e3b0c442…	2048	2026-09-14T10:02:11.137401922-07:00
 - **Encoding:** in paths, `%`, tab, carriage return and line feed are written as `%25`, `%09`, `%0D` and `%0A`; nothing else is encoded.
 - **What's listed:** every file, including those inside `.git`, except ignored files (§2.8) and the contents of regenerable folders (§4.3), which change too often to track and can be rebuilt.
 - **Symbolic links** are listed, not followed: the checksum is of the link's target path, and the size is that path's length in bytes.
-- **Storage:** manifests are stored at `_System/manifests/<item-id>.tsv`. They sync with the archive but are not part of the history repository (§8.1).
+- **Storage:** manifests are stored at `_System/manifests/<item-id>.tsv`. They sync with the archive but are not part of the history repository (§8.1). While an item is checked out, the manifest of what it held when it went out is kept beside them as `<item-id>.checkout.tsv`, for comparing with on return (§9.1); it's deleted when the item comes back.
 - **Content checksum:** the card's `manifest.checksum` identifies the item's contents, not the manifest file. It is the checksum of the text made by writing, for every row in order, the encoded path, a tab, the checksum, a tab, the size and a line feed. Modification times and the header are left out, so touching a file without changing it never changes the card, and a manifest rebuilt from a backup can be checked exactly against history.
 - **Reusing checksums:** a program may reuse an entry's checksum when a file's size and modification time both match the previous manifest, instead of reading the file again.
 - **Past manifests** can be rebuilt from the backup snapshot named in a history commit's `Carrel-Snapshot` trailer, using the rules in `_System/rules/` as of that commit, and checked against the `manifest.checksum` in the card as of that commit.
@@ -542,11 +571,129 @@ A device only ever writes to its own inbox folder. The writer applies inbox file
 
 ### 7.9 Queues
 
-`_System/queue/` holds pending work as one JSON file per entry, in subfolders `review/` (ingest and change proposals), `questions/` (questions for the owner), `tasks/` (work for a more capable device) and `proposals/` (restructure proposals). Entry schemas are defined alongside the features that use them and are versioned with this specification.
+`_System/queue/` holds pending work as one JSON file per entry, in subfolders `intake/` (items waiting to be ingested), `review/` (ingest and change proposals), `questions/` (questions for the owner), `tasks/` (work for a more capable device) and `proposals/` (restructure proposals). Entry schemas are defined alongside the features that use them and are versioned with this specification. Programs **must** preserve unknown keys in entries.
+
+#### Review entries
+
+`review/<id>.json` proposes filing one item. Nothing is moved or written into a collection until the owner approves it.
+
+```json
+{
+  "carrel": "review",
+  "format": "1.0",
+  "id": "019a2c1e-0000-7000-8000-000000000001",
+  "batch": "019a2c1e-0000-7000-8000-0000000000b1",
+  "created": "2026-11-02T10:15:00-08:00",
+  "state": "proposed",
+  "source": {
+    "path": "/Users/me/Downloads/parts-list.csv",
+    "device": "01928f3a-0000-7000-8000-00000000d001",
+    "checksum": "sha256:9f2c…",
+    "size": 1294
+  },
+  "kind": "file",
+  "duplicate_of": null,
+  "card": {
+    "title": "Desk lamp parts list",
+    "summary": "Bill of materials for the desk lamp build.",
+    "tags": ["electronics"],
+    "sensitivity": "personal",
+    "generated": {"fields": ["title", "summary", "tags"], "by": "carrel 0.2.0", "model": "apple/afm-3-core-advanced", "at": "2026-11-02T10:15:04-08:00", "level": "preferred"}
+  },
+  "proposed_tags": [],
+  "destination": {
+    "collection": "01a18701-0500-776a-9867-0804857e5ab6",
+    "path": "Projects/Hardware",
+    "confidence": "medium",
+    "reasons": ["A bill of materials for a hardware build"]
+  },
+  "problems": [],
+  "attempts": [{"stage": "card", "provider": "apple", "offer": "afm", "result": "ok"}]
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `id`, `batch` | The entry's identifier, and the ingest batch it came from (UUIDv7) |
+| `state` | `proposed`, `needs-owner` (something couldn't be settled; see `problems`), `approved`, `held` (to go to Holding), `rejected` (to stay where it is) or `archived` |
+| `source` | Where the item is now: an absolute path on the device `device`, with its checksum (§2.6) and size, or the manifest's content checksum and total size for a folder or bundle |
+| `kind` | `file`, `folder` or `bundle`; a bundle also has `sealed` |
+| `duplicate_of` | The identifier of an archived item with the same checksum, if any |
+| `likely_duplicates` | Optional. Archived items it's likely a duplicate of, at most three: each with its `id`, its `card` path, and `why`, a list of `same-name`, `newer-version`, `older-version` and `same-title-and-date` |
+| `card` | The card fields to write (§5), except those programs fill in when archiving (`id`, `item`, `checksum`, `size`, `manifest`). In `links`, a `path` is relative to the archive root until the item is filed, when it's rewritten relative to the card |
+| `proposed_tags` | At most one tag outside the destination's vocabulary (§6.5); approving the entry adds it to the destination collection's `tags` |
+| `destination` | The collection proposed, its path when proposed, `confidence` (`high`, `medium` or `low`), the `reasons`, and `rule` when a routing rule (§7.4) decided |
+| `problems` | What validation or the owner needs to settle, as `{"stage", "message"}` objects |
+| `attempts` | Every provider call made for the entry: `stage`, `provider`, `offer`, `result` (`ok`, `unsupported`, `unavailable`, `declined` (a model's safety refusal) or `failed`) and an optional `message` |
+| `sensitivity_reasons` | Why `card.sensitivity` is `sensitive` or `restricted`, in words that never quote what was found; absent otherwise |
+
+When an approved or held entry has been archived, programs remove the entry; the history commit (§8.2) records what was filed. A rejected entry is removed once the owner has seen the batch summary. Entries whose `source.device` is another device can't be archived there; they wait for that device.
+
+#### Intake entries
+
+Items added for ingest wait in `_System/queue/intake/`, one JSON file each, named for its `id`, until a program on their device has drafted their proposal:
+
+```json
+{
+  "carrel": "intake",
+  "format": "1.0",
+  "id": "01928f3d-1111-7aaa-8bbb-000000000001",
+  "path": "/Users/me/Downloads/parts-list.csv",
+  "device": "01928f3a-0000-7000-8000-00000000d001",
+  "added": "2026-10-30T14:02:11-04:00"
+}
+```
+
+| Key | Meaning |
+| --- | --- |
+| `path` | The item's absolute path on its device. Only that device processes the entry |
+| `device` | The device that has the item |
+| `added` | When it was added |
+| `order` | Its place in the queue, lower first, then by `id`; omitted when `0` |
+| `attempts`, `failure` | How many times processing it has failed, and why the last time; after two, it waits for the owner to retry it |
+
+Programs process entries one at a time, save each item's proposal to `review/` as soon as it's ready, and then remove the entry.
+
+#### Question entries
+
+When several items depend on the same unknown, a program asks the owner one question instead of guessing on each. Each question is a JSON file in `_System/queue/questions/`, named for its `id`:
+
+```json
+{
+  "carrel": "question",
+  "format": "1.0",
+  "id": "01a18701-0500-776a-9867-08f000000002",
+  "batch": "01a18701-0500-776a-9867-08f0000000b1",
+  "created": "2026-10-29T16:20:05-07:00",
+  "kind": "term",
+  "subject": "scope-ds",
+  "question": "What is “scope-ds”?",
+  "items": ["01a18701-0500-776a-9867-08f000000001"]
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `kind` | `term` (what a recurring term means; the answer becomes a glossary fact, §7.3) or `collection` (which collection the items belong in; the answer is a collection's path) |
+| `subject` | The term the question is about, as it appears in the items' names |
+| `question` | The question in words |
+| `items` | The review entries waiting on the answer. Programs mark each with a problem whose `stage` is `question`, and set it to `needs-owner` |
+| `choices` | For a `collection` question, the collections' paths to choose from |
+
+Once a question is answered or dismissed, programs remove it and clear the problem from its items. Items waiting on a term are drafted again with the new fact.
 
 ### 7.10 Devices
 
 `_System/devices/<device-id>/device.json` records a device's name, type and capability profile. `desk.json` lists the desk items tracked on that device with their local paths. Paths in `desk.json` are only meaningful on that device.
+
+`desk.json` is an object whose `items` is a list, in the order they were added, of:
+
+| Key | Meaning |
+| --- | --- |
+| `id` | The desk card's `id` |
+| `path` | Where the item is on that device, absolute |
+| `card` | Where its card is: beside it, its name with `.md` added |
+| `added` | When it was put on the desk |
 
 ### 7.11 Search index
 
@@ -640,6 +787,7 @@ checked_out:
   since: "2026-10-29T09:12:00-07:00"
   due: "2026-11-12"           # optional
   manifest: "sha256:…"        # manifest checksum at checkout
+  git_head: "3f9a…"           # optional: the commit a Git repository was at
 ```
 
 The archive copy **must not** be modified while `checked_out` is present, except by the return that removes it.

@@ -20,7 +20,7 @@ const SYNCED_WARNING: &str = "this archive is in a synced folder; until iCloud s
 
 /// Finds the archive to work on: `--archive`, else the one containing the current folder,
 /// else the one chosen with `carrel open`.
-fn locate(archive: Option<&Path>) -> Result<Archive, Failure> {
+pub fn locate(archive: Option<&Path>) -> Result<Archive, Failure> {
     if let Some(path) = archive {
         return Ok(Archive::find(path)?);
     }
@@ -143,7 +143,7 @@ pub fn init(
     ))
 }
 
-fn holder(identity: &Identity) -> Holder {
+pub(crate) fn holder(identity: &Identity) -> Holder {
     Holder {
         person: identity.person,
         device: identity.device,
@@ -275,6 +275,7 @@ pub fn status(archive: Option<&Path>) -> Result<Report, Failure> {
     )
     .unwrap();
     text.push_str(&history_line(history.as_deref()));
+    text.push_str(&crate::backup::status_line(&archive, history.as_deref()));
     text.push_str(&writer_line(lock.as_ref(), this_device));
     if !problems.is_empty() {
         writeln!(text, "\n{} with problems:", plural(problems.len(), "card")).unwrap();
@@ -285,6 +286,10 @@ pub fn status(archive: Option<&Path>) -> Result<Report, Failure> {
             }
         }
     }
+    let names = carrel_core::names::check(&archive)?;
+    text.push_str(&names_section(&names));
+    let signals = carrel_core::signals::signals(&archive)?;
+    text.push_str(&signals_section(&signals));
     let mut warnings = Vec::new();
     if synced {
         warnings.push(SYNCED_WARNING);
@@ -304,9 +309,55 @@ pub fn status(archive: Option<&Path>) -> Result<Report, Failure> {
             "last": log.first().map(entry_json),
         })),
         "writer": writer_json(lock.as_ref()),
+        "signals": signals,
+        "names": names.iter().map(|f| json!({
+            "path": f.path,
+            "problems": f.problems,
+            "suggestion": f.suggestion,
+        })).collect::<Vec<_>>(),
         "warnings": warnings,
     });
     Ok(Report::new(text, json))
+}
+
+/// The part of `carrel status` about the structure: where it shows signs of needing a
+/// restructure (`docs/design/signals.md`).
+fn signals_section(signals: &[carrel_core::signals::Signal]) -> String {
+    let mut text = String::new();
+    if signals.is_empty() {
+        return text;
+    }
+    text.push_str("\nStructure (signs a restructure may help later):\n");
+    for signal in signals {
+        writeln!(text, "  {}", signal.describe()).unwrap();
+    }
+    text
+}
+
+/// The part of `carrel status` about names that won't work on every system.
+fn names_section(names: &[carrel_core::names::Finding]) -> String {
+    let mut text = String::new();
+    if names.is_empty() {
+        return text;
+    }
+    writeln!(
+        text,
+        "\n{} won't work on every system:",
+        plural(names.len(), "name")
+    )
+    .unwrap();
+    for finding in names {
+        writeln!(text, "  {}: {}", finding.path, finding.problems.join("; ")).unwrap();
+        if let Some(suggestion) = &finding.suggestion {
+            writeln!(
+                text,
+                "    rename it with `carrel rename \"{}\" \"{suggestion}\"`",
+                finding.path
+            )
+            .unwrap();
+        }
+    }
+    text
 }
 
 fn history_line(history: Option<&[Entry]>) -> String {
@@ -356,7 +407,7 @@ fn plural(n: usize, word: &str) -> String {
     }
 }
 
-fn local_time(seconds: i64) -> String {
+pub(crate) fn local_time(seconds: i64) -> String {
     jiff::Timestamp::from_second(seconds).map_or_else(
         |_| seconds.to_string(),
         |t| {
@@ -369,7 +420,7 @@ fn local_time(seconds: i64) -> String {
 
 /// Finds the item `query` names: an identifier, or the path of the item or its card
 /// (relative to the current folder, or to the archive root).
-fn find_item<'a>(
+pub(crate) fn find_item<'a>(
     archive: &Archive,
     items: &'a [ItemRef],
     query: &str,
@@ -528,5 +579,134 @@ pub fn log(archive: Option<&Path>, max_count: Option<usize>) -> Result<Report, F
     Ok(Report::new(
         text,
         Value::Array(entries.iter().map(entry_json).collect()),
+    ))
+}
+
+/// `carrel undo CHANGE`: undoes a recorded change with a new change that reverses it. Items it
+/// moved go back, and the metadata it changed returns to how it was.
+pub fn undo(archive: Option<&Path>, change: &str) -> Result<Report, Failure> {
+    let archive = locate(archive)?;
+    let history = History::open(&archive)?;
+    let entries = history.log()?;
+    let matching: Vec<&Entry> = entries
+        .iter()
+        .filter(|e| e.id.starts_with(change))
+        .collect();
+    let entry = match matching.as_slice() {
+        [entry] => *entry,
+        [] => return Err(Failure::new(format!("no change {change} in the history"))),
+        _ => {
+            return Err(Failure::new(format!(
+                "several changes start with {change}; give more of it"
+            )));
+        }
+    };
+    let identity = Identity::load_or_create()?;
+    let lease =
+        DiskLock::for_archive(&archive).acquire(holder(&identity), "undo", DEFAULT_LEASE)?;
+    let result = history.undo(&archive, &entry.id, &lease);
+    lease.release()?;
+    let commit = result?;
+    Ok(Report::new(
+        format!(
+            "Undid “{}” as change {}\n",
+            entry.summary,
+            &commit[..commit.len().min(10)]
+        ),
+        json!({"undone": entry.id, "commit": commit}),
+    ))
+}
+
+/// `carrel collection new PATH`: a new collection with a design document to fill in.
+///
+/// # Errors
+///
+/// [`Failure`] if the path can't be used, a tag isn't `name=meaning`, or writing fails.
+pub fn collection_new(
+    archive: Option<&Path>,
+    path: &str,
+    description: Option<String>,
+    tags: &[String],
+) -> Result<Report, Failure> {
+    let archive = locate(archive)?;
+    let tags = tags
+        .iter()
+        .map(|t| {
+            t.split_once('=')
+                .map(|(name, meaning)| (name.trim().to_owned(), meaning.trim().to_owned()))
+                .filter(|(name, meaning)| !name.is_empty() && !meaning.is_empty())
+                .ok_or_else(|| Failure::new(format!("give a tag as name=meaning, not “{t}”")))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let identity = Identity::load_or_create()?;
+    let lease =
+        DiskLock::for_archive(&archive).acquire(holder(&identity), "collection", DEFAULT_LEASE)?;
+    let new = carrel_core::collections::NewCollection { description, tags };
+    let result = carrel_core::collections::create(&archive, path, &new, &lease);
+    lease.release()?;
+    let created = result?;
+    let text = format!(
+        "Created the collection {}.\nDescribe what belongs there, and what doesn't, in {}: models read it before filing anything.\n",
+        created.path,
+        archive.root().join(&created.design_document).display()
+    );
+    Ok(Report::new(
+        text,
+        json!({
+            "path": created.path,
+            "id": created.id,
+            "design_document": created.design_document,
+            "commit": created.commit,
+        }),
+    ))
+}
+
+/// `carrel rename ITEM [NEW_NAME]`: renames an item and its card together, to a portable name
+/// suggested for it unless one is given.
+pub fn rename(
+    archive: Option<&Path>,
+    query: &str,
+    new_name: Option<&str>,
+) -> Result<Report, Failure> {
+    let archive = locate(archive)?;
+    let items = archive.items()?;
+    let item = find_item(&archive, &items, query)?;
+    let current = item.item.as_deref().unwrap_or(&item.card);
+    let current = current.rsplit('/').next().unwrap_or(current);
+    let new_name = if let Some(name) = new_name {
+        name.to_owned()
+    } else {
+        let suggestion = carrel_core::names::portable(current);
+        if suggestion == current {
+            return Err(Failure::new(format!(
+                "“{current}” already works on every system; give a new name to rename it"
+            )));
+        }
+        suggestion
+    };
+    let identity = Identity::load_or_create()?;
+    let lease =
+        DiskLock::for_archive(&archive).acquire(holder(&identity), "rename", DEFAULT_LEASE)?;
+    let result = carrel_core::rename::rename(&archive, item, &new_name, &lease);
+    lease.release()?;
+    let renamed = result?;
+    let mut text = format!("Renamed {} to {}\n", renamed.from, renamed.to);
+    if !renamed.relinked.is_empty() {
+        writeln!(
+            text,
+            "Updated links in {}",
+            plural(renamed.relinked.len(), "card")
+        )
+        .unwrap();
+    }
+    Ok(Report::new(
+        text,
+        json!({
+            "from": renamed.from,
+            "to": renamed.to,
+            "card": renamed.card,
+            "relinked": renamed.relinked,
+            "commit": renamed.commit,
+        }),
     ))
 }

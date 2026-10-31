@@ -1,0 +1,7 @@
+Booking confirmed: London Gatwick to Lisbon
+
+Booking reference: K7Q2PX, booked 30 March 2025
+Passenger: Alex Morgan
+Out: 14 June 2025, LGW 07:10 to LIS 09:55
+Back: 24 June 2025, LIS 18:40 to LGW 21:20
+One cabin bag included.

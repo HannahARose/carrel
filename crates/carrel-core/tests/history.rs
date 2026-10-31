@@ -350,18 +350,20 @@ fn plain_git_can_read_the_history() {
 
 #[test]
 fn archives_opened_by_a_relative_path_record_history() {
-    let dir = tempfile::tempdir().unwrap();
-    let parent = dir.path().canonicalize().unwrap();
+    // Inside the build's own temporary folder, which is on the same drive as the current
+    // folder on Windows too, so a relative path between them exists.
+    let dir = tempfile::tempdir_in(env!("CARGO_TARGET_TMPDIR")).unwrap();
     let cwd = std::env::current_dir().unwrap();
-    // Relative to the current folder, however deep the temporary folder is.
-    let relative: PathBuf = cwd
-        .components()
-        .skip(1)
-        .map(|_| "..")
-        .collect::<PathBuf>()
-        .join(parent.strip_prefix("/").unwrap())
-        .join("Relative");
+    let target: Vec<_> = dir.path().components().collect();
+    let here: Vec<_> = cwd.components().collect();
+    let common = target.iter().zip(&here).take_while(|(a, b)| a == b).count();
+    let relative: PathBuf =
+        std::iter::repeat_n(std::path::Component::ParentDir, here.len() - common)
+            .chain(target[common..].iter().copied())
+            .collect::<PathBuf>()
+            .join("Relative");
     assert!(relative.is_relative());
+    assert!(relative.starts_with(".."), "{}", relative.display());
     let archive = Archive::init(&relative, &InitOptions::new("Relative")).unwrap();
     assert!(archive.root().is_absolute());
     let (lease, _, _) = writer(&archive);
@@ -392,4 +394,60 @@ fn history_can_start_for_an_archive_made_without_it() {
         History::start(&archive, &lease),
         Err(HistoryError::AlreadyInitialized)
     ));
+}
+
+#[test]
+fn the_first_change_cant_be_undone_and_nothing_is_touched() {
+    let dir = tempfile::tempdir().unwrap();
+    let archive = Archive::init(&dir.path().join("First"), &InitOptions::new("First")).unwrap();
+    let (lease, _, _) = writer(&archive);
+    let history = History::init(&archive, &lease).unwrap();
+    let first = history.log().unwrap()[0].id.clone();
+    let result = history.undo(&archive, &first, &lease);
+    assert!(
+        matches!(result, Err(HistoryError::UndoBlocked(_))),
+        "{result:?}"
+    );
+    assert!(archive.root().join("_System/archive.json").is_file());
+    assert!(archive.root().join("ARCHIVE.md").is_file());
+    assert_eq!(history.log().unwrap().len(), 1);
+}
+
+#[test]
+fn a_changed_setting_is_recorded_and_can_be_undone() {
+    use carrel_core::settings::{Key, change};
+
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("archive");
+    let archive = carrel_core::archive::Archive::init(
+        &root,
+        &carrel_core::archive::InitOptions::new("Settings"),
+    )
+    .unwrap();
+    let holder = carrel_core::coordinator::Holder {
+        person: carrel_core::card::Id::new_v7(),
+        device: carrel_core::card::Id::new_v7(),
+    };
+    let lease = carrel_core::coordinator::DiskLock::for_archive(&archive)
+        .acquire(holder, "test", carrel_core::coordinator::DEFAULT_LEASE)
+        .unwrap();
+    History::start(&archive, &lease).unwrap();
+
+    let changed = change(&archive, Key::Originals, "keep", &lease).unwrap();
+    assert_eq!(
+        (changed.from.as_str(), changed.to.as_str()),
+        ("move", "keep")
+    );
+    let commit = changed.commit.expect("recorded");
+    let reopened = carrel_core::archive::Archive::open(&root).unwrap();
+    assert_eq!(Key::Originals.get(reopened.settings()), "keep");
+    let again = change(&reopened, Key::Originals, "keep", &lease).unwrap();
+    assert_eq!(again.commit, None, "the same value changes nothing");
+
+    History::open(&reopened)
+        .unwrap()
+        .undo(&reopened, &commit, &lease)
+        .unwrap();
+    let undone = carrel_core::archive::Archive::open(&root).unwrap();
+    assert_eq!(Key::Originals.get(undone.settings()), "move");
 }

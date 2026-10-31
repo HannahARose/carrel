@@ -1,0 +1,12 @@
+Northbridge Bank
+Current account statement, 1 March 2025 to 31 March 2025
+
+Account holder: Alex Morgan
+IBAN: GB82 WEST 1234 5698 7654 32
+
+Opening balance        2,104.18
+01 Mar  Rent, Oakfield Lettings         -950.00
+04 Mar  Salary, Lumen Analytics        +2,870.42
+12 Mar  Grocer's, High Street            -64.30
+21 Mar  Transfer to savings             -300.00
+Statement balance      3,660.30

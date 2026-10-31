@@ -147,9 +147,73 @@ pub struct Settings {
     /// The backup repository's location and type (never the password).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backups: Option<Value>,
+    /// Ingest behavior.
+    #[serde(default, skip_serializing_if = "IngestSettings::is_default")]
+    pub ingest: IngestSettings,
+    /// When the structure shows signs of needing a restructure.
+    #[serde(default, skip_serializing_if = "SignalSettings::is_default")]
+    pub signals: SignalSettings,
     /// Keys this version doesn't know.
     #[serde(flatten)]
     pub extra: Extra,
+}
+
+/// Restructure signal settings (FORMAT.md §7.2, `docs/design/signals.md`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SignalSettings {
+    /// How many loose items make a collection with no subcollections crowded.
+    #[serde(default = "default_crowded_items")]
+    pub crowded_items: u32,
+    /// Keys this version doesn't know.
+    #[serde(flatten)]
+    pub extra: Extra,
+}
+
+fn default_crowded_items() -> u32 {
+    30
+}
+
+impl Default for SignalSettings {
+    fn default() -> Self {
+        Self {
+            crowded_items: default_crowded_items(),
+            extra: Extra::new(),
+        }
+    }
+}
+
+impl SignalSettings {
+    fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+/// Ingest settings (FORMAT.md §7.2).
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct IngestSettings {
+    /// What happens to an item's original when its proposal is approved.
+    #[serde(default)]
+    pub originals: Originals,
+    /// Keys this version doesn't know.
+    #[serde(flatten)]
+    pub extra: Extra,
+}
+
+impl IngestSettings {
+    fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+/// What happens to an item's original when it's filed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Originals {
+    /// The original is moved into the archive.
+    #[default]
+    Move,
+    /// It's copied, and the original is left for the owner to delete.
+    Keep,
 }
 
 /// Reminders on by default (FORMAT.md §7.2).
@@ -238,6 +302,8 @@ impl Default for Settings {
             reminders: default_reminders(),
             embedding: None,
             backups: None,
+            ingest: IngestSettings::default(),
+            signals: SignalSettings::default(),
             extra: Extra::new(),
         }
     }

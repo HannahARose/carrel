@@ -363,6 +363,10 @@ impl History {
             config.set_bool("core.bare", false)?;
             // Paths are compared as written; the archive spec handles case rules itself.
             config.set_bool("core.precomposeunicode", true)?;
+            // Metadata is stored exactly as written: LF line endings (FORMAT.md §2.1), whatever
+            // the person's own Git settings say. Windows needs long paths for deep archives.
+            config.set_bool("core.autocrlf", false)?;
+            config.set_bool("core.longpaths", true)?;
         }
         let info_dir = git_dir.join("info");
         std::fs::create_dir_all(&info_dir).map_err(io(&info_dir))?;
@@ -536,6 +540,13 @@ impl History {
             .map_err(|_| HistoryError::UnknownCommit(id.to_owned()))?;
         let head = self.head_commit()?.ok_or(HistoryError::NotInitialized)?;
         let original = entry_from(&target);
+        // Before the first change there was no archive to return to: reverting it would remove
+        // every metadata file, including the ones that make the folder an archive.
+        if target.parent_count() == 0 {
+            return Err(HistoryError::UndoBlocked(
+                "the change that started the archive's history can't be undone".into(),
+            ));
+        }
 
         let mut reverted = self.repo.revert_commit(&target, &head, 0, None)?;
         if reverted.has_conflicts() {

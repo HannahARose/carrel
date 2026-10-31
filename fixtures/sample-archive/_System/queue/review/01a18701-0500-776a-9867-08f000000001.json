@@ -1,0 +1,41 @@
+{
+  "carrel": "review",
+  "format": "1.0",
+  "id": "01a18701-0500-776a-9867-08f000000001",
+  "batch": "01a18701-0500-776a-9867-08f0000000b1",
+  "created": "2026-10-29T16:20:00-07:00",
+  "state": "proposed",
+  "source": {
+    "path": "/Users/sample/Downloads/lamp-diffuser.stl",
+    "device": "01a18701-0500-776a-9867-0800c9e7e287",
+    "checksum": "sha256:5b1d4f0e6a3c2b9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d",
+    "size": 482113
+  },
+  "kind": "file",
+  "duplicate_of": null,
+  "card": {
+    "title": "Desk lamp diffuser (print file)",
+    "summary": "A 3D-print file for the frosted diffuser that covers the desk lamp's LED strip.",
+    "tags": ["3d-printing"],
+    "sensitivity": "public",
+    "generated": {
+      "fields": ["title", "summary", "tags", "sensitivity"],
+      "by": "carrel 0.2.0",
+      "model": "apple/afm-3-core-advanced",
+      "device": "01a18701-0500-776a-9867-0800c9e7e287",
+      "at": "2026-10-29T16:20:04-07:00",
+      "level": "preferred"
+    }
+  },
+  "proposed_tags": ["lighting"],
+  "destination": {
+    "collection": "01a18701-0500-776a-9867-0804857e5ab6",
+    "path": "Projects/Hardware",
+    "confidence": "medium",
+    "reasons": ["A print file for a part of the desk lamp build, which is in Projects/Hardware"]
+  },
+  "attempts": [
+    {"stage": "card", "provider": "apple", "offer": "afm", "result": "ok"},
+    {"stage": "route", "provider": "apple", "offer": "afm", "result": "ok"}
+  ]
+}

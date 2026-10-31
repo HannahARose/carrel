@@ -1,6 +1,11 @@
 # Obsidian's per-device state in the sample archive; only app.json is shared
 fixtures/sample-archive/.obsidian/*
 !fixtures/sample-archive/.obsidian/app.json
+fixtures/bench/archive/.obsidian/*
+!fixtures/bench/archive/.obsidian/app.json
+
+# carrel bench's default output
+/bench-results/
 
 # Rust build output
 /target/
@@ -14,3 +19,6 @@ fixtures/sample-archive/.obsidian/*
 .swiftpm/
 *.xcuserstate
 xcuserdata/
+
+# Python bytecode, from running the scripts
+__pycache__/
