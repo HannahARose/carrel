@@ -28,7 +28,7 @@ Collection and file names are plain words. Dates in file names are written `YYYY
 | [Insurance](Insurance/_collection.md) | 0 | Insurance policies, renewals and claims |
 | [Letters](Letters/_collection.md) | 0 | Personal correspondence with family and friends |
 | [Manuals](Manuals/_collection.md) | 0 | Instructions and warranty terms for things I own |
-| [Projects](Projects/_collection.md) | 0 | Things I make outside work: code, electronics and writing |
+| [Projects](Projects/_collection.md) | 0 | Things I make outside work: code, electronics, 3D prints and writing |
 | [Reading](Reading/_collection.md) | 0 | Papers, articles and books by others, kept for reference |
 | [Receipts](Receipts/_collection.md) | 0 | Proof of purchase, kept for returns, warranty and expenses |
 | [Recipes](Recipes/_collection.md) | 0 | Recipes to cook again, with my notes |

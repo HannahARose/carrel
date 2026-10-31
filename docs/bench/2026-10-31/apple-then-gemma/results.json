@@ -1,0 +1,462 @@
+{
+  "carrel": "0.2.0",
+  "date": "2026-10-31",
+  "os": "macos",
+  "arch": "aarch64",
+  "bar": {
+    "valid": 0.95,
+    "routing": 0.8,
+    "under_rated_restricted": 0,
+    "under_rated": 0.05,
+    "seconds_per_item": 30.0
+  },
+  "models": [
+    {
+      "provider": "apple",
+      "offer": "afm",
+      "label": "apple/Apple Foundation Model then llama/gemma-4-e4b.gguf",
+      "version": "0.2.0",
+      "score": {
+        "items": 9,
+        "valid": 1.0,
+        "first_try": 1.0,
+        "declined": 0.0,
+        "routing": 1.0,
+        "sensitivity_exact": 0.4444444444444444,
+        "under_rated": 0.0,
+        "under_rated_restricted": 0,
+        "date": 1.0,
+        "tags_found": 0.75,
+        "tags_outside": 12,
+        "seconds_per_item": 18.071609467555557
+      },
+      "shortfalls": [],
+      "items": [
+        {
+          "outcome": {
+            "item": "IMG_1502.jpg",
+            "destination": "Recipes",
+            "confidence": "medium",
+            "sensitivity": "sensitive",
+            "reasons": [
+              "The recipe includes personal ingredients and instructions."
+            ],
+            "date": "2025-04-20",
+            "tags": [
+              "baking",
+              "household"
+            ],
+            "title": "Oat biscuits recipe",
+            "summary": "A recipe card with handwritten text for making oat biscuits, including ingredients and instructions.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "IMG_1502.jpg",
+            "routing": 1.0,
+            "sensitivity": "over",
+            "date": true,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [
+              "household"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Recipes"
+            ],
+            "sensitivity": "personal",
+            "date": "2025-04-20",
+            "tags": [
+              "baking"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "IMG_1876.jpg",
+            "destination": "Travel",
+            "confidence": "medium",
+            "sensitivity": "sensitive",
+            "reasons": [
+              "The image shows a location and departure details, which may involve personal travel patterns or private data.",
+              "has the place it was taken"
+            ],
+            "date": "2025-05-17",
+            "tags": [
+              "flights",
+              "trains"
+            ],
+            "title": "Departure List Display",
+            "summary": "A digital display shows a list of departures with times, destinations, and line numbers against a blue and white checkered background. The text is in yellow and white on a black background.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "IMG_1876.jpg",
+            "routing": 1.0,
+            "sensitivity": "over",
+            "date": true,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [
+              "flights"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Travel"
+            ],
+            "sensitivity": "personal",
+            "date": "2025-05-17",
+            "tags": [
+              "trains"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "IMG_2041.jpg",
+            "destination": "Receipts",
+            "confidence": "medium",
+            "sensitivity": "sensitive",
+            "reasons": [
+              "The receipt contains payment details and personal contact information."
+            ],
+            "date": "2025-06-14",
+            "tags": [
+              "appliances",
+              "household"
+            ],
+            "title": "Receipt from HARTLEY & SONS HARDWARE",
+            "summary": "A receipt from HARTLEY & SONS HARDWARE showing a purchase of an electric kettle and additional items, with a total amount and payment details.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "IMG_2041.jpg",
+            "routing": 1.0,
+            "sensitivity": "over",
+            "date": true,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [
+              "appliances"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Receipts"
+            ],
+            "sensitivity": "personal",
+            "date": "2025-06-14",
+            "tags": [
+              "household"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "IMG_3310.jpg",
+            "destination": "Work",
+            "confidence": "medium",
+            "sensitivity": "sensitive",
+            "reasons": [
+              "Task management with potential security and operational implications."
+            ],
+            "date": "2025-10-07",
+            "tags": [
+              "appointments",
+              "drafts"
+            ],
+            "title": "Sprint 14 planning tasks",
+            "summary": "A table of tasks for 'Sprint 14 planning' on '7 Oct' with columns 'TO DO', 'DOING', and 'DONE'. Tasks include 'Export to CSV', 'Fix login timeout', 'Dashboard Alters', 'Release 3.2 notes', and 'On-call rota Q4'.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "IMG_3310.jpg",
+            "routing": 1.0,
+            "sensitivity": "over",
+            "date": true,
+            "tags_found": 0,
+            "tags_expected": 1,
+            "tags_outside": [
+              "appointments",
+              "drafts"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Work"
+            ],
+            "sensitivity": "personal",
+            "date": "2025-10-07",
+            "tags": [
+              "meetings"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "IMG_4127.jpg",
+            "destination": "Holding",
+            "confidence": "low",
+            "sensitivity": "personal",
+            "reasons": [
+              "has the place it was taken"
+            ],
+            "date": "2025-09-21",
+            "tags": [
+              "electronics",
+              "household"
+            ],
+            "title": "Illustration of cat",
+            "summary": "An illustration of a fat orange cat lying on a blue surface with a yellow circle above it.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "IMG_4127.jpg",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 0,
+            "tags_expected": 0,
+            "tags_outside": [
+              "electronics",
+              "household"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Holding"
+            ],
+            "sensitivity": "personal",
+            "date": "2025-09-21",
+            "tags": []
+          }
+        },
+        {
+          "outcome": {
+            "item": "Screenshot 2025-08-28 at 09.14.03.png",
+            "destination": "Home",
+            "confidence": "medium",
+            "sensitivity": "sensitive",
+            "reasons": [
+              "mentions a lease"
+            ],
+            "date": "2025-08-28",
+            "tags": [
+              "contracts",
+              "lease"
+            ],
+            "title": "Rent review: 4 Elm Court",
+            "summary": "Screenshot of an email from Oakfield Lettings to Alex Morgan about a rent increase from $950 to $980 per month starting October 2025.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "Screenshot 2025-08-28 at 09.14.03.png",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [
+              "contracts"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Home"
+            ],
+            "sensitivity": "sensitive",
+            "date": "2025-08-28",
+            "tags": [
+              "lease"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "Screenshot 2025-10-03 at 08.41.55.png",
+            "destination": "Finances",
+            "confidence": "medium",
+            "sensitivity": "restricted",
+            "reasons": [
+              "contains what looks like a bank account number (IBAN)",
+              "mentions pay details"
+            ],
+            "date": "2025-10-03",
+            "tags": [
+              "bank",
+              "pay"
+            ],
+            "title": "Bank account screenshot",
+            "summary": "A screenshot showing a bank account with a balance and list of recent transactions.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "Screenshot 2025-10-03 at 08.41.55.png",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [
+              "pay"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Finances"
+            ],
+            "sensitivity": "restricted",
+            "date": "2025-10-03",
+            "tags": [
+              "bank"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "export.png",
+            "destination": "Projects",
+            "confidence": "medium",
+            "sensitivity": "sensitive",
+            "reasons": [
+              "Details involve health, energy, and precise technical setups."
+            ],
+            "date": null,
+            "tags": [
+              "electronics",
+              "tools"
+            ],
+            "title": "Plant monitor v2 - wiring",
+            "summary": "A technical diagram showing connections between a solar panel, a battery, a microcontroller, a moisture sensor, and a pump, detailing wiring for a plant monitor system.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "export.png",
+            "routing": 1.0,
+            "sensitivity": "over",
+            "date": true,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [
+              "tools"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Projects"
+            ],
+            "sensitivity": "personal",
+            "date": null,
+            "tags": [
+              "electronics"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "scan0007.png",
+            "destination": "Letters",
+            "confidence": "medium",
+            "sensitivity": "personal",
+            "reasons": [],
+            "date": "2025-03-03",
+            "tags": [
+              "articles",
+              "drafts"
+            ],
+            "title": "Letter to Alex",
+            "summary": "A printed page of a letter addressed to Alex, dated 3 March 2025, thanking them for a parcel, describing a scarf, and inviting them to help with gardening at Easter.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "scan0007.png",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 0,
+            "tags_expected": 1,
+            "tags_outside": [
+              "articles",
+              "drafts"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Letters"
+            ],
+            "sensitivity": "personal",
+            "date": "2025-03-03",
+            "tags": [
+              "friends"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

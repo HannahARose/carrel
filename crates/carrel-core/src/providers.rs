@@ -1,8 +1,8 @@
 //! Providers: where Carrel gets capabilities that depend on the platform (`docs/providers.md`).
 //!
-//! A [`Provider`] offers text models and text extraction. Native tools are used through
-//! providers where they exist (Apple's frameworks through `carrel-provider-apple`), and
-//! portable providers fill in elsewhere. A [`Registry`] holds the providers available on this
+//! A [`Provider`] offers text models, text extraction and embedding models. Native tools are
+//! used through providers where they exist (Apple's frameworks through
+//! `carrel-provider-apple`), and portable providers fill in elsewhere. A [`Registry`] holds the providers available on this
 //! device and, for each request, tries the best [`Offer`] first and falls back to the next.
 //!
 //! Providers are usually separate programs speaking the provider protocol, which
@@ -46,6 +46,8 @@ pub enum Capability {
     TextModel,
     /// Reading the text of PDFs, images and other documents.
     ExtractText,
+    /// Turning texts into vectors for search, with one embedding model.
+    Embed,
 }
 
 impl Capability {
@@ -55,6 +57,7 @@ impl Capability {
         match self {
             Self::TextModel => "text-model",
             Self::ExtractText => "extract-text",
+            Self::Embed => "embed",
         }
     }
 }
@@ -93,6 +96,13 @@ impl Offer {
                 .media_types
                 .iter()
                 .any(|t| t.eq_ignore_ascii_case(media_type))
+    }
+
+    /// Whether this offer describes what images show (`"describes": true`), so Carrel can
+    /// give it pictures to describe ([`Picture`]).
+    #[must_use]
+    pub fn describes(&self) -> bool {
+        self.extra.get("describes").and_then(Value::as_bool) == Some(true)
     }
 }
 
@@ -143,6 +153,22 @@ pub struct ExtractionRequest {
     pub path: PathBuf,
     /// Its media type, such as `application/pdf`.
     pub media_type: String,
+    /// For a picture to describe: what it is, such as "four views of a 3D model, 86 × 86 ×
+    /// 19 mm". The picture's own name says nothing, so this is all the reader knows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<String>,
+}
+
+/// A picture a provider drew or found in a file and can't describe itself, such as a 3MF's
+/// thumbnail: Carrel passes it to an image reader, adds what that says to the text as a
+/// `Shows:` line, and deletes it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Picture {
+    /// A file the provider wrote in the system's temporary folder. Pictures anywhere else are
+    /// ignored, and never deleted.
+    pub path: PathBuf,
+    /// What it is, for the image reader, which isn't told the file's name.
+    pub context: String,
 }
 
 /// The text read from a file.
@@ -164,6 +190,83 @@ pub struct Extraction {
     /// Whether it records where it was made, such as a photo's location.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub located: bool,
+    /// Pictures for an image reader to describe.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pictures: Vec<Picture>,
+}
+
+/// What a text is embedded for: some models embed a search query differently from the text it
+/// should find.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Purpose {
+    /// Text to be found: a card or a passage of an item.
+    #[default]
+    Document,
+    /// A search query.
+    Query,
+}
+
+/// Texts to embed.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EmbeddingRequest {
+    /// The texts, each embedded on its own.
+    pub texts: Vec<String>,
+    /// What they're embedded for.
+    #[serde(default)]
+    pub purpose: Purpose,
+}
+
+/// An embedding model's vectors, one for each text asked about, in order.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Embeddings {
+    /// The vectors, each of unit length.
+    pub vectors: Vec<Vec<f32>>,
+    /// The model's identifier, such as `embeddinggemma-300m`: the same on every provider that
+    /// runs it, so vectors from different devices can be compared.
+    pub model: String,
+    /// How many numbers each vector has.
+    pub dimensions: usize,
+}
+
+impl Embeddings {
+    /// Checks that these are `model`'s vectors for `request`: one for each text, each with
+    /// [`Embeddings::dimensions`] numbers, which for a catalog model are the catalog's.
+    ///
+    /// # Errors
+    ///
+    /// [`ProviderError::Failed`] saying what's wrong.
+    pub fn check(&self, model: &str, request: &EmbeddingRequest) -> Result<(), ProviderError> {
+        if self.model != model {
+            return Err(ProviderError::Failed(format!(
+                "asked for {model}'s embeddings, got {}'s",
+                self.model
+            )));
+        }
+        if self.vectors.len() != request.texts.len() {
+            return Err(ProviderError::Failed(format!(
+                "{} vectors for {} texts",
+                self.vectors.len(),
+                request.texts.len()
+            )));
+        }
+        let catalog = crate::models::find(model).and_then(|m| m.embedding);
+        if let Some(expected) = catalog.map(|e| e.dimensions)
+            && expected != self.dimensions
+        {
+            return Err(ProviderError::Failed(format!(
+                "{model}'s vectors have {expected} numbers, not {}",
+                self.dimensions
+            )));
+        }
+        if self.dimensions == 0 || self.vectors.iter().any(|v| v.len() != self.dimensions) {
+            return Err(ProviderError::Failed(format!(
+                "vectors that aren't all {} numbers long",
+                self.dimensions
+            )));
+        }
+        Ok(())
+    }
 }
 
 /// Why a provider couldn't do what was asked.
@@ -297,6 +400,20 @@ pub trait Provider: Send + Sync {
         let _ = (offer, request);
         Err(ProviderError::Unsupported(format!(
             "{} doesn't extract text",
+            self.name()
+        )))
+    }
+
+    /// Embeds `request`'s texts with the embedding model `offer`.
+    ///
+    /// # Errors
+    ///
+    /// A [`ProviderError`]; [`ProviderError::Unsupported`] if the provider has no embedding
+    /// models.
+    fn embed(&self, offer: &str, request: &EmbeddingRequest) -> Result<Embeddings, ProviderError> {
+        let _ = (offer, request);
+        Err(ProviderError::Unsupported(format!(
+            "{} has no embedding models",
             self.name()
         )))
     }
@@ -513,6 +630,58 @@ impl Registry {
             p.extract(&o.id, request)
         })
     }
+
+    /// Embeds `request`'s texts with `model`, the archive's embedding model, through the best
+    /// provider that offers it and succeeds. Only offers of `model` itself are tried, never
+    /// another model: vectors from different models can't be compared. Each answer is
+    /// [checked](Embeddings::check) before it's used.
+    ///
+    /// # Errors
+    ///
+    /// [`ProviderError::Unavailable`] if no provider on this device offers `model`, otherwise
+    /// as for [`Registry::complete`].
+    pub fn embed(
+        &self,
+        model: &str,
+        request: &EmbeddingRequest,
+    ) -> Result<(Embeddings, Source, Vec<Attempt>), ProviderError> {
+        let candidates: Vec<_> = self
+            .ranked(Capability::Embed)
+            .into_iter()
+            .filter(|(_, o)| o.id == model)
+            .collect();
+        if candidates.is_empty() {
+            return Err(ProviderError::Unavailable(format!(
+                "no provider on this device offers the embedding model {model}"
+            )));
+        }
+        try_in_turn(Capability::Embed, &candidates, |p, o| {
+            let embeddings = p.embed(&o.id, request)?;
+            embeddings.check(model, request)?;
+            Ok(embeddings)
+        })
+    }
+
+    /// What the best image reader that describes images says `request`'s picture shows, with
+    /// its context: only offers that describe are tried ([`Offer::describes`]).
+    ///
+    /// # Errors
+    ///
+    /// [`ProviderError::NoProvider`] when nothing here describes images, or the last reader's
+    /// error when none could.
+    pub fn describe(
+        &self,
+        request: &ExtractionRequest,
+    ) -> Result<(Extraction, Source, Vec<Attempt>), ProviderError> {
+        let candidates: Vec<_> = self
+            .ranked(Capability::ExtractText)
+            .into_iter()
+            .filter(|(_, o)| o.describes() && o.reads(&request.media_type))
+            .collect();
+        try_in_turn(Capability::ExtractText, &candidates, |p, o| {
+            p.extract(&o.id, request)
+        })
+    }
 }
 
 fn source(provider: &dyn Provider, offer: &Offer) -> Source {
@@ -598,6 +767,7 @@ impl Provider for PlainText {
             pages: None,
             created: None,
             located: false,
+            pictures: Vec::new(),
         })
     }
 }

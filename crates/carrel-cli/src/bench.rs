@@ -562,17 +562,20 @@ fn report_markdown(measured: &[Measured], answers: &Answers) -> String {
             } else {
                 "✗"
             };
-            let level = match (s.sensitivity, o.sensitivity) {
+            let mut level = match (s.sensitivity, o.sensitivity) {
                 (Rating::Missing, _) | (_, None) => "none".to_owned(),
                 (rating, Some(level)) => format!("{level:?} ({rating:?})").to_lowercase(),
             };
+            if !o.reasons.is_empty() {
+                write!(level, ": {}", o.reasons.join("; ")).unwrap();
+            }
             writeln!(
                 text,
                 "| {} | {} | {mark} {} | {} | {} | {} |",
                 cell(&o.item),
                 cell(&expected),
                 cell(o.destination.as_deref().unwrap_or("none")),
-                level,
+                cell(&level),
                 cell(&o.title),
                 cell(o.summary.as_deref().unwrap_or("")),
             )

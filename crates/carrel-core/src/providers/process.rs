@@ -13,8 +13,8 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::{
-    Completion, CompletionRequest, Extraction, ExtractionRequest, Offer, PROTOCOL_VERSION,
-    Provider, ProviderError,
+    Completion, CompletionRequest, EmbeddingRequest, Embeddings, Extraction, ExtractionRequest,
+    Offer, PROTOCOL_VERSION, Provider, ProviderError,
 };
 
 /// The start of every provider program's name.
@@ -324,6 +324,12 @@ impl Provider for ProcessProvider {
         let mut params = serde_json::to_value(request).expect("requests always serialize");
         params["offer"] = Value::from(offer);
         self.request("text/extract", params)
+    }
+
+    fn embed(&self, offer: &str, request: &EmbeddingRequest) -> Result<Embeddings, ProviderError> {
+        let mut params = serde_json::to_value(request).expect("requests always serialize");
+        params["offer"] = Value::from(offer);
+        self.request("text/embed", params)
     }
 
     fn count_tokens(&self, offer: &str, text: &str) -> Result<u64, ProviderError> {

@@ -56,8 +56,9 @@ The code documentation is built from `dev` on every merge, private items include
 | Writing a provider in Rust | [`providers::serve`](https://hrose.me/carrel/carrel_core/providers/serve/fn.serve.html), and `crates/carrel-core/examples/echo_provider.rs` | `providers/serve.rs` |
 | The protocol | [docs/providers.md](../providers.md) | |
 | The llama.cpp provider | [`crates/carrel-provider-llama`](https://github.com/HannahARose/carrel/tree/dev/crates/carrel-provider-llama) (left out of the published docs, since building llama.cpp takes minutes) | `crates/carrel-provider-llama` |
-| The extraction provider | [`carrel_provider_extract`](https://hrose.me/carrel/carrel_provider_extract/) | `crates/carrel-provider-extract` |
-| The Apple provider | `FoundationModel.swift`, `PDFText.swift`, `VisionOCR.swift`, `Protocol.swift` | `apple/CarrelProviders` |
+| The extraction provider, and 3MF, G-code, STEP and IGES details | [`carrel_provider_extract`](https://hrose.me/carrel/carrel_provider_extract/), [`models`](https://hrose.me/carrel/carrel_provider_extract/models/) | `crates/carrel-provider-extract` |
+| Drawing STEP and IGES models | `cad.rs` (the offer), `occt.rs` and `shim/carrel_cad.cpp` (OpenCascade), `render.rs` (the software renderer) | `crates/carrel-provider-cad` |
+| The Apple provider | `FoundationModel.swift`, `PDFText.swift`, `VisionOCR.swift`, `ImageReader.swift`, `ModelReader.swift`, `Protocol.swift` | `apple/CarrelProviders` |
 | The model catalog and checked downloads | [`models::CATALOG`](https://hrose.me/carrel/carrel_core/models/constant.CATALOG.html), [`models::download`](https://hrose.me/carrel/carrel_core/models/fn.download.html), [`Fetcher`](https://hrose.me/carrel/carrel_core/models/trait.Fetcher.html) | `models.rs` |
 | The network helper | [`carrel_fetch`](https://hrose.me/carrel/carrel_fetch/) | `crates/carrel-fetch` |
 | Backups | [`Backups`](https://hrose.me/carrel/carrel_core/backup/trait.Backups.html), [`Kopia`](https://hrose.me/carrel/carrel_core/backup/struct.Kopia.html) | `backup.rs` |

@@ -143,7 +143,7 @@ pub struct Settings {
     pub reminders: Vec<String>,
     /// The search embedding model, once one is chosen.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub embedding: Option<Value>,
+    pub embedding: Option<EmbeddingSettings>,
     /// The backup repository's location and type (never the password).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backups: Option<Value>,
@@ -160,6 +160,35 @@ pub struct Settings {
     /// Keys this version doesn't know.
     #[serde(flatten)]
     pub extra: Extra,
+}
+
+/// Search embedding settings (FORMAT.md §7.2, `docs/design/search.md`).
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct EmbeddingSettings {
+    /// The identifier of the model every device embeds with, such as `embeddinggemma-300m`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// Keys this version doesn't know.
+    #[serde(flatten)]
+    pub extra: Extra,
+}
+
+impl Settings {
+    /// The archive's embedding model, once one is chosen.
+    #[must_use]
+    pub fn embedding_model(&self) -> Option<&str> {
+        self.embedding
+            .as_ref()
+            .and_then(|e| e.model.as_deref())
+            .filter(|m| !m.trim().is_empty())
+    }
+
+    /// Chooses `model` as the archive's embedding model, keeping any other embedding settings.
+    pub fn set_embedding_model(&mut self, model: &str) {
+        self.embedding
+            .get_or_insert_with(EmbeddingSettings::default)
+            .model = Some(model.to_owned());
+    }
 }
 
 /// Restructure signal settings (FORMAT.md §7.2, `docs/design/signals.md`).

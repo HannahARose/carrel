@@ -504,6 +504,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "carrel-provider-cad"
+version = "0.2.0"
+dependencies = [
+ "carrel-core",
+ "carrel-provider-extract",
+ "cc",
+ "crc32fast",
+ "flate2",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "carrel-provider-extract"
 version = "0.2.0"
 dependencies = [
@@ -523,6 +536,7 @@ dependencies = [
  "minijinja",
  "minijinja-contrib",
  "serde_json",
+ "tempfile",
  "tracing-subscriber",
 ]
 

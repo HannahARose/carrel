@@ -1,0 +1,31 @@
+[package]
+name = "carrel-provider-cad"
+description = "Carrel's CAD provider: STEP and IGES models meshed through OpenCascade and drawn in software."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "carrel-provider-cad"
+path = "src/main.rs"
+
+[dependencies]
+carrel-core.workspace = true
+carrel-provider-extract = { path = "../carrel-provider-extract" }
+crc32fast = "1.5.3"
+flate2 = "1.1.10"
+serde_json = "1.0.154"
+tempfile = "3.27.0"
+
+[build-dependencies]
+cc = "1.10.0"
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+tempfile = "3.27.0"

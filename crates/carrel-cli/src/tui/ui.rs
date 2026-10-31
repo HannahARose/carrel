@@ -10,6 +10,7 @@ use carrel_core::card::Sensitivity;
 use carrel_core::review::{ReviewEntry, State};
 
 use super::app::{App, Confirm, Input, Picker, Tab};
+use super::item::{Pane, Relation, Row};
 use super::screens::InputPurpose;
 
 /// The smallest terminal the interactive mode lays out in.
@@ -276,11 +277,18 @@ fn draw_help(frame: &mut Frame, theme: Theme, area: Rect) {
             "mark several; approve all high-confidence (Review)",
         ),
         ("r  o  x", "return, open, cancel checkout (Active)"),
-        ("a  c  d  Space", "approve, combine, drop; mark (Active)"),
+        (
+            "a  e  c  d  Space",
+            "approve, edit, combine, drop; mark (Active)",
+        ),
         ("Enter  d", "answer or dismiss a question (Questions)"),
         (
             "←→  e  c  /  Esc",
-            "collections or items; edit or correct an item; search; clear it (Browse)",
+            "collections, items, an item; edit, correct; search; clear (Browse)",
+        ),
+        (
+            "u  Enter",
+            "undo the item's chosen change; go to a related item (Browse)",
         ),
         ("u", "undo the chosen change (History)"),
         (
@@ -676,10 +684,11 @@ fn draw_browse(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
         })
         .collect();
     // The pane the arrows move in is highlighted; the other keeps its choice dimly.
-    let (tree_style, items_style) = if app.browse_in_items {
-        (Style::new().add_modifier(Modifier::BOLD), theme.selected())
-    } else {
-        (theme.selected(), Style::new().add_modifier(Modifier::BOLD))
+    let bold = Style::new().add_modifier(Modifier::BOLD);
+    let (tree_style, items_style) = match app.browse_pane {
+        Pane::Collections => (theme.selected(), bold),
+        Pane::Items => (bold, theme.selected()),
+        Pane::Item => (bold, bold),
     };
     let mut tree_state = ListState::default().with_selected(Some(app.browse_collection));
     frame.render_stateful_widget(
@@ -722,12 +731,58 @@ fn draw_browse(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
         items_area,
         &mut items_state,
     );
-    let lines: Vec<Line> = app.card.iter().map(|l| Line::from(l.as_str())).collect();
-    frame.render_widget(
-        Paragraph::new(lines)
-            .wrap(Wrap { trim: false })
-            .block(Block::new().borders(ratatui::widgets::Borders::LEFT)),
-        card_area,
+    draw_item(frame, app, theme, card_area);
+}
+
+/// The chosen item: its card, then its changes and related items, which the owner moves
+/// among in the item's own pane.
+fn draw_item(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
+    let view = &app.item;
+    let block = Block::new().borders(ratatui::widgets::Borders::LEFT);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    let bold = Style::new().add_modifier(Modifier::BOLD);
+    // Headings aren't rows; `selected` is the chosen row's place among these.
+    let mut rows: Vec<ListItem> = Vec::new();
+    let mut selected = None;
+    if !view.history.is_empty() {
+        rows.push(ListItem::new(Line::styled("History", bold)));
+    }
+    for (i, row) in view.rows().into_iter().enumerate() {
+        if let (Row::Related(_), true) = (row, i == view.history.len()) {
+            rows.push(ListItem::new(Line::styled("Related", bold)));
+        }
+        if i == view.chosen {
+            selected = Some(rows.len());
+        }
+        rows.push(ListItem::new(match row {
+            Row::Change(entry) => format!(
+                "{}  {}",
+                crate::commands::local_time(entry.time),
+                entry.summary
+            ),
+            Row::Related(related) => match &related.relation {
+                Relation::Link(how) => format!("{how}  {}", related.title),
+            },
+        }));
+    }
+    let list_height = u16::try_from(rows.len())
+        .unwrap_or(u16::MAX)
+        .min(inner.height / 2);
+    let [card_area, list_area] =
+        Layout::vertical([Constraint::Min(0), Constraint::Length(list_height)]).areas(inner);
+    let lines: Vec<Line> = view.text.iter().map(|l| Line::from(l.as_str())).collect();
+    frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), card_area);
+    let highlight = if app.browse_pane == Pane::Item {
+        theme.selected()
+    } else {
+        Style::new()
+    };
+    let mut state = ListState::default().with_selected(selected);
+    frame.render_stateful_widget(
+        List::new(rows).highlight_style(highlight),
+        list_area,
+        &mut state,
     );
 }
 

@@ -110,6 +110,39 @@ fn init_creates_an_archive_with_history_recorded_by_this_device() {
 }
 
 #[test]
+fn status_shows_what_was_changed_or_worked_on_lately() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    let recent = &sandbox.json(&root, &["status"])["recent"];
+    assert_eq!(
+        recent,
+        &json!([{
+            "kind": "work",
+            "date": "2026-10-27",
+            "item": "01a18701-0500-776a-9867-080924eb019c",
+            "title": "oscillator-sim",
+            "duration": "45m",
+            "summary": "Set up the project and the basic Euler integration loop.",
+        }]),
+        "approved sessions only, not pending ones"
+    );
+
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    let recent = &sandbox.json(&root, &["status"])["recent"];
+    assert_eq!(
+        recent[0]["kind"], "change",
+        "today's change first: {recent}"
+    );
+    assert_eq!(recent[1]["kind"], "work");
+    let text = sandbox.ok(&root, &["status"]);
+    assert!(text.contains("\nRecent:\n"), "{text}");
+    assert!(
+        text.contains("  2026-10-27        Worked on “oscillator-sim” for 45m: Set up the project"),
+        "{text}"
+    );
+}
+
+#[test]
 fn status_counts_items_and_reports_card_problems() {
     let sandbox = Sandbox::new();
     let root = sandbox.sample();
@@ -192,6 +225,8 @@ fn show_finds_items_by_id_card_or_item_path() {
         report.contains("part-of Projects/Hardware/lamp-build.md"),
         "{report}"
     );
+
+    assert_eq!(by_item["history"], Value::Null, "no history started");
 
     let missing = sandbox.run_in(&root, &["show", "nothing-here", "--json"]);
     assert_eq!(missing.status.code(), Some(1));
@@ -728,6 +763,28 @@ fn settings_are_listed_set_and_undone() {
 }
 
 #[test]
+fn show_lists_the_changes_that_touched_the_item() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    let desk = sandbox.path("desk");
+    let item = "Projects/Hardware/parts-list.csv";
+    sandbox.ok(&root, &["checkout", item, "--to", desk.to_str().unwrap()]);
+    let log = sandbox.json(&root, &["log"]);
+    let history = &sandbox.json(&root, &["show", item])["history"];
+    assert_eq!(history.as_array().unwrap().len(), 1, "{history}");
+    assert_eq!(history[0]["id"], log[0]["id"]);
+    assert_eq!(history[0]["operation"], "checkout");
+    let shown = sandbox.ok(&root, &["show", item]);
+    assert!(
+        shown.contains("History (1 change; undo one with `carrel undo CHANGE`):"),
+        "{shown}"
+    );
+    let other = &sandbox.json(&root, &["show", "Projects/Hardware/lamp-build.md"])["history"];
+    assert_eq!(other, &json!([]), "a change touches only its own items");
+}
+
+#[test]
 fn checkout_copies_an_item_out_and_locks_the_archive_copy() {
     let sandbox = Sandbox::new();
     let root = sandbox.sample();
@@ -1129,6 +1186,172 @@ fn sessions_on_a_checked_out_item_become_pending_entries_to_approve() {
     assert!(card.contains("Changed 1 file(s): parts-list.csv"), "{card}");
     assert!(!card.contains("[!pending]"));
     assert_eq!(sandbox.json(&root, &["log"])[0]["operation"], "session");
+}
+
+#[cfg(unix)]
+#[test]
+fn sessions_edit_opens_an_entry_in_the_editor_and_keeps_it_pending() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    let item = "Projects/Hardware/parts-list.csv";
+    let card = root.join(format!("{item}.md"));
+    let mut file =
+        carrel_core::card_file::CardFile::parse(&std::fs::read_to_string(&card).unwrap()).unwrap();
+    let mut log = file.history().unwrap();
+    log.add(carrel_core::entries::HistoryEntry::pending(
+        "2099-01-02",
+        Some(70),
+        vec!["Changed 1 file(s): parts-list.csv".into()],
+    ));
+    file.set_history(&log).unwrap();
+    std::fs::write(&card, file.to_text().unwrap()).unwrap();
+    let editor = |name: &str, text: &str| {
+        let path = sandbox.path(name);
+        std::fs::write(&path, format!("#!/bin/sh\nprintf '{text}' > \"$1\"\n")).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        path.to_str().unwrap().to_owned()
+    };
+    let run = |editor: &str| {
+        std::process::Command::new(env!("CARGO_BIN_EXE_carrel"))
+            .args(["sessions", "edit", item, "1"])
+            .current_dir(&root)
+            .env("CARREL_CONFIG_DIR", sandbox.path("config"))
+            .env_remove("VISUAL")
+            .env("EDITOR", editor)
+            .output()
+            .unwrap()
+    };
+
+    let out = run(&editor(
+        "rewrite.sh",
+        "Added the new switch.\\nMy notes: order spares.\\n",
+    ));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout),
+        "Edit a history entry of “Desk lamp parts list”\n"
+    );
+    let text = std::fs::read_to_string(&card).unwrap();
+    assert!(
+        text.contains(
+            "> [!pending] 2099-01-02 · 1h 10m · auto-generated\n\
+             > Added the new switch.\n\
+             > My notes: order spares.\n"
+        ),
+        "{text}"
+    );
+    let log = sandbox.json(&root, &["log"]);
+    assert_eq!(log[0]["operation"], "session");
+
+    // Nothing saved, or text that would break the section, changes nothing.
+    assert_eq!(
+        String::from_utf8_lossy(&run("true").stdout),
+        "Nothing changed\n"
+    );
+    let out = run(&editor(
+        "breaks.sh",
+        "Fine.\\n### 2099-01-03\\nNot an entry.\\n",
+    ));
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("would break the history section"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("your text is in"), "{stderr}");
+    assert_eq!(std::fs::read_to_string(&card).unwrap(), text);
+    let out = run("false");
+    assert!(!out.status.success(), "a failed editor is an error");
+    let missing = sandbox.run_in(&root, &["sessions", "edit", item, "2"]);
+    assert!(
+        String::from_utf8_lossy(&missing.stderr).contains("there's no pending entry 2"),
+        "{}",
+        String::from_utf8_lossy(&missing.stderr)
+    );
+
+    // Approved, it's in the Journal as edited.
+    sandbox.ok(&root, &["sessions", "approve", item, "1"]);
+    let journal = std::fs::read_to_string(root.join("Journal/2099/2099-01.md")).unwrap();
+    assert!(journal.contains("Added the new switch."), "{journal}");
+}
+
+#[test]
+fn entries_approved_by_hand_are_noticed_and_kept_as_written() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    let item = "Projects/Hardware/parts-list.csv";
+    let card = root.join(format!("{item}.md"));
+    let mut file =
+        carrel_core::card_file::CardFile::parse(&std::fs::read_to_string(&card).unwrap()).unwrap();
+    let mut log = file.history().unwrap();
+    for (date, text) in [
+        ("2099-02-03", "Soldered the new switch."),
+        ("2099-02-04", "Tidied the list."),
+    ] {
+        log.add(carrel_core::entries::HistoryEntry::pending(
+            date,
+            Some(70),
+            vec![text.into()],
+        ));
+    }
+    file.set_history(&log).unwrap();
+    std::fs::write(&card, file.to_text().unwrap()).unwrap();
+    // Dropping one records the other, pending, in history.
+    sandbox.ok(&root, &["sessions", "drop", item, "1"]);
+
+    // Changing a pending entry's text by hand isn't approving it.
+    let text = std::fs::read_to_string(&card).unwrap();
+    std::fs::write(&card, text.replace("> Soldered the", "> Soldered  the")).unwrap();
+    let listed = sandbox.json(&root, &["sessions"]);
+    assert_eq!(listed["approved_by_hand"], json!([]), "{listed}");
+    assert_eq!(listed["recorded"], Value::Null, "nothing to record");
+    std::fs::write(&card, &text).unwrap();
+
+    // In Obsidian, the owner turns the callout into a normal entry, and adds a line.
+    let pending = "> [!pending] 2099-02-03 · 1h 10m · auto-generated\n> Soldered the new switch.\n";
+    let text = std::fs::read_to_string(&card).unwrap();
+    assert!(text.contains(pending), "{text}");
+    let approved =
+        "### 2099-02-03 · 1h 10m · auto-generated\nSoldered the new switch.\nIt works!\n";
+    let text = text.replace(pending, approved);
+    std::fs::write(&card, &text).unwrap();
+
+    let listed = sandbox.json(&root, &["sessions"]);
+    assert_eq!(
+        listed["approved_by_hand"],
+        json!([{ "item": listed["approved_by_hand"][0]["item"], "title": "Desk lamp parts list", "entries": 1 }]),
+        "{listed}"
+    );
+    assert!(listed["recorded"].is_string(), "{listed}");
+    assert_eq!(
+        std::fs::read_to_string(&card).unwrap(),
+        text,
+        "the owner's text is kept exactly"
+    );
+    let journal = std::fs::read_to_string(root.join("Journal/2099/2099-02.md")).unwrap();
+    assert!(journal.contains("Soldered the new switch."), "{journal}");
+    let log = sandbox.json(&root, &["log"]);
+    assert_eq!(log[0]["operation"], "session");
+    assert_eq!(log[0]["summary"], "Note 1 history entry approved by hand");
+
+    let again = sandbox.json(&root, &["sessions"]);
+    assert_eq!(again["approved_by_hand"], json!([]), "noticed once");
+    assert_eq!(again["recorded"], Value::Null);
+    assert!(
+        again["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|i| i["title"] != "Desk lamp parts list"),
+        "nothing pending on it: {again}"
+    );
 }
 
 #[test]
@@ -1615,6 +1838,178 @@ fn edit_opens_a_filed_card_keeps_its_body_and_undo_reverses_it() {
         before,
         "undo restores the card"
     );
+}
+
+#[test]
+fn init_chooses_the_archives_embedding_model() {
+    let sandbox = Sandbox::new();
+    let settings = |root: &Path| -> Value {
+        serde_json::from_str(&std::fs::read_to_string(root.join("_System/settings.json")).unwrap())
+            .unwrap()
+    };
+    let text = sandbox.ok(sandbox.dir.path(), &["init", "Notes"]);
+    assert!(
+        text.contains("searches it with embeddinggemma-300m"),
+        "{text}"
+    );
+    assert_eq!(
+        settings(&sandbox.path("Notes"))["embedding"]["model"],
+        "embeddinggemma-300m"
+    );
+
+    let created = sandbox.json(
+        sandbox.dir.path(),
+        &[
+            "init",
+            "Papers",
+            "--embedding-model",
+            "qwen3-embedding-0.6b",
+        ],
+    );
+    assert_eq!(created["embedding_model"], "qwen3-embedding-0.6b");
+    assert_eq!(
+        settings(&sandbox.path("Papers"))["embedding"]["model"],
+        "qwen3-embedding-0.6b"
+    );
+
+    let out = sandbox.run_in(
+        sandbox.dir.path(),
+        &["init", "Other", "--embedding-model", "word2vec"],
+    );
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("no embedding model word2vec"));
+    assert!(!sandbox.path("Other").exists(), "nothing is created");
+}
+
+/// Sets the sample archive's embedding model in its settings, as another program might, or
+/// removes it.
+fn set_embedding_model(root: &Path, model: Option<&str>) {
+    let path = root.join("_System/settings.json");
+    let mut settings: Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    match model {
+        Some(model) => settings["embedding"] = json!({ "model": model }),
+        None => {
+            settings.as_object_mut().unwrap().remove("embedding");
+        }
+    }
+    std::fs::write(&path, serde_json::to_string_pretty(&settings).unwrap()).unwrap();
+}
+
+#[test]
+fn an_archive_without_an_embedding_model_asks_for_one_on_first_use() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.dir.path().join("archive");
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    set_embedding_model(&root, None);
+
+    // Not in a terminal, there's no one to ask, so it says how to choose.
+    let out = sandbox.run_in(&root, &["models", "embed", "a lease"]);
+    assert!(!out.status.success());
+    let error = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        error.contains("carrel settings set embedding.model NAME"),
+        "{error}"
+    );
+    assert!(error.contains("embeddinggemma-300m"), "{error}");
+
+    let listed = sandbox.json(&root, &["settings"]);
+    assert_eq!(listed["archive"]["embedding.model"], "none");
+    let set = sandbox.json(
+        &root,
+        &["settings", "set", "embedding.model", "qwen3-embedding-0.6b"],
+    );
+    assert_eq!(set["to"], "qwen3-embedding-0.6b");
+    assert!(set["commit"].is_string(), "recorded in history");
+
+    // Once chosen, it stays: switching models means re-embedding the archive.
+    let out = sandbox.run_in(
+        &root,
+        &["settings", "set", "embedding.model", "embeddinggemma-300m"],
+    );
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("re-embeds"));
+}
+
+#[test]
+fn texts_are_embedded_with_the_archives_model_and_no_other() {
+    let sandbox = Sandbox::new();
+    let bin = sandbox.path("bin");
+    std::fs::create_dir(&bin).unwrap();
+    let suffix = std::env::consts::EXE_SUFFIX;
+    std::fs::copy(
+        echo_provider(),
+        bin.join(format!("carrel-provider-echo{suffix}")),
+    )
+    .unwrap();
+    let root = sandbox.sample();
+    let embed = |args: &[&str]| {
+        std::process::Command::new(env!("CARGO_BIN_EXE_carrel"))
+            .args(["models", "embed"])
+            .args(args)
+            .current_dir(&root)
+            .env("PATH", &bin)
+            .env("CARREL_CONFIG_DIR", sandbox.path("config"))
+            .env("CARREL_WORKER", "off")
+            .output()
+            .unwrap()
+    };
+
+    set_embedding_model(&root, Some("echo-embed"));
+    let out = embed(&["a lease", "a receipt", "--query", "--json"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let report: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(report["model"], "echo-embed");
+    assert_eq!(report["provider"], "echo");
+    assert_eq!(report["purpose"], "query");
+    assert_eq!(report["dimensions"], 3);
+    let vectors = report["vectors"].as_array().unwrap();
+    assert_eq!(vectors.len(), 2);
+    assert_eq!(vectors[0].as_array().unwrap().len(), 3);
+
+    // The echo provider has an embedding model, but not the archive's.
+    set_embedding_model(&root, Some("embeddinggemma-300m"));
+    let out = embed(&["a lease"]);
+    assert!(!out.status.success());
+    let error = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        error.contains("embeddinggemma-300m") && error.contains("carrel models download"),
+        "{error}"
+    );
+}
+
+#[test]
+fn embedding_models_are_listed_apart_and_unpinned_ones_are_never_downloaded() {
+    let sandbox = Sandbox::new();
+    let here = sandbox.path("");
+    let listed = sandbox.json(&here, &["models"]);
+    let catalog = listed["catalog"].as_array().unwrap();
+    let gemma = catalog
+        .iter()
+        .find(|m| m["name"] == "embeddinggemma-300m")
+        .unwrap();
+    assert_eq!(gemma["embedding"]["dimensions"], 768);
+    assert!(
+        catalog
+            .iter()
+            .any(|m| m["name"] == "qwen3-embedding-0.6b" && m["embedding"]["pooling"] == "last")
+    );
+    let text = sandbox.ok(&here, &["models"]);
+    assert!(text.contains("For search by meaning"), "{text}");
+
+    if gemma["pinned"] == false {
+        let out = sandbox.run_in(
+            &here,
+            &["models", "download", "embeddinggemma-300m", "--yes"],
+        );
+        assert!(!out.status.success());
+        assert!(String::from_utf8_lossy(&out.stderr).contains("isn't pinned"));
+        assert!(!sandbox.path("config/logs/network.log").exists());
+    }
 }
 
 #[test]

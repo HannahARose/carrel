@@ -52,7 +52,7 @@ Ingest is how files come into the archive. It never moves anything until you app
 1. **Choose files:** `i` in the interactive mode (with your file picker or the built-in browser), or `carrel ingest PATH...` in the shell. A folder is one item, unless you ask for each entry (`--each`, or `e` in the plan). A folder named like a pile (Downloads, Desktop, Inbox) makes you choose.
 2. **The plan** shows what will be added, its kind and size, and what's left out: duplicates of items already in the archive or of each other, items already waiting for review, files your rules ignore. `--dry-run` shows only the plan.
 3. **The queue:** each item waits in `_System/queue/intake/` until a **worker** drafts it. The worker runs in the background, one item at a time, and keeps going after you close the terminal. If it's stopped, it picks up where it left off the next time anything is added (or when you run `carrel worker`). `carrel ingest --status`, or the interactive mode's Ingest screen, shows what's waiting and what failed.
-4. **Drafting each item:** the worker reads the item's text (PDF text, OCR for scans, and for images what they show; see [Images](#images)), drafts its card with a model (title, summary, tags, dates), chooses a collection, and rates how sensitive it is. The proposal is saved as soon as it's ready, and appears in Review.
+4. **Drafting each item:** the worker reads the item's text (PDF text, OCR for scans, for images what they show, and for 3D models their shape; see [Images](#images) and [3D models and CAD files](#3d-models-and-cad-files)), drafts its card with a model (title, summary, tags, dates), chooses a collection, and rates how sensitive it is. The proposal is saved as soon as it's ready, and appears in Review.
 
 An item's journey:
 
@@ -102,6 +102,19 @@ On a Mac, Carrel reads more of an image than its text. For each picture it notes
 - on macOS 27 with Apple Intelligence, a sentence or two from Apple's on-device model on what it shows.
 
 The model drafts the card from all of that, so a photo named `IMG_0550.jpeg` gets a real title. When the model gives no date, the date the photo was taken becomes the card's **created** date. Where a photo was taken is never written into the text or the card; Carrel only notes that it has a location. Everything is read on the device.
+
+### 3D models and CAD files
+
+A model's file name often says little (`part_v3_final.stl`), so Carrel looks at the model itself.
+
+- **STL, OBJ, PLY and USD/USDZ, on a Mac:** Carrel measures the model (its size, as stored, usually in millimetres; its triangles; how many separate parts it has) and draws it from four sides. On macOS 27 with Apple Intelligence, Apple's on-device model says what the drawings show, such as "a ring-shaped component, likely a seal". It isn't told the file's name, so it looks rather than guesses from the name; the card is drafted from the name and the description together.
+- **3MF, G-code, STEP and IGES, on any platform:** Carrel reads what the file says about itself, without drawing it:
+  - a 3MF's title, designer, description and license, the printer and filament, and its objects
+  - the slicer's notes in G-code: the printer, filament, layer height, print time, and the objects printed
+  - a STEP or IGES file's name, the program that exported it and when, its author and organisation, and a STEP file's part names
+- **Drawing STEP and IGES:** with the optional `cad` provider, which needs [OpenCascade](https://dev.opencascade.org), Carrel also measures a STEP or IGES model (its size in millimetres, how many solids, their volume) and draws it from four sides for an image reader to describe, as for STL.
+- **Dates:** when the model gives none, the date the file was exported becomes the card's **created** date.
+- **Thumbnails:** a 3MF's thumbnail is described like an image on a Mac. The drawings and thumbnails aren't kept.
 
 ### Correcting a card
 
@@ -165,7 +178,9 @@ Items waiting on a question aren't approved in bulk until it's answered or dismi
 ## Finding things
 
 - **Browse** (`5`) lists collections and their items, with each card in full. `/` searches titles, tags and summaries across the archive.
-- `carrel show ITEM` prints a card.
+- **An item's view:** below its card, Browse lists every change that touched the item, newest first, from its filing to its latest correction or return, and the items its card links to (`version-of`, `related`, `part-of`). `Enter` on an item moves into its view: `u` undoes the chosen change (after asking, as History does), `Enter` on a linked item goes to it, and `←` or `Esc` go back.
+- **Recent**, on the Status screen (`1`) and in `carrel status`, lists the last ten things filed, changed or worked on across the archive: each recorded change, and each approved work session on the day it happened.
+- `carrel show ITEM` prints a card, its links, and the changes that touched it, each with the identifier `carrel undo` takes.
 - `ARCHIVE.md` and each collection's design document end with a generated list of its contents, so the archive is browsable in Finder or Obsidian too.
 
 ## Working on items
@@ -175,21 +190,24 @@ Most items are filed and left alone, but some are still being worked on: a proje
 - **Checking out** copies an item out of the archive to work on, to the Desktop unless you say where: `carrel checkout ITEM [--to FOLDER] [--due DATE]`. The archive copy is read-only until it comes back, and the card records where it went and when. On a Mac, the working copy has a “Checked Out” tag in Finder while it's out; returning or cancelling takes it off and leaves your own tags alone.
 - **Returning** brings the working copy back: `carrel return ITEM` shows what changed and the history entry it adds, and asks first. A backup snapshot is taken, and the change can be undone from History. `--discard` cancels the checkout instead, leaving the archive copy as it was.
 - **The desk** is for things you work on where they are, without archiving them yet: `carrel desk add PATH` writes a card beside the file or folder, drafted by your text model as ingest would, and nothing inside it is changed or moved. When it's done, `carrel desk archive PATH` queues it for ingest: you review its proposal as usual, and the card it had on the desk, history and all, goes into the archive with it. `carrel status` suggests folders on your Desktop or in `~/Code` that look like work in progress, and desk items you haven't touched for 60 days.
-- **Work sessions:** Carrel notices work on checked-out and desk items and adds a pending history entry for each finished stretch of it; see [Work sessions](#work-sessions). Approve, combine or drop them with `carrel sessions`, or on the Active screen.
+- **Work sessions:** Carrel notices work on checked-out and desk items and adds a pending history entry for each finished stretch of it; see [Work sessions](#work-sessions). Approve, edit, combine or drop them with `carrel sessions`, or on the Active screen.
 
 The **Active** screen (`3`) lists what's checked out and what's on this device's desk, each with its pending entries under it. The chosen item's details are on the right: where the working copy is, when it was checked out and is due, what has changed, and its pending entries, numbered.
 
 - `r` returns the chosen checkout, after showing what changed; `x` cancels it, after asking.
 - `o` opens the working copy (or the desk item) in Finder, or in the app its type opens with, and leaves the interactive mode as it is.
 - `a`, `c` and `d` approve, combine or drop the chosen item's pending entries: all of them, or the ones marked with `Space`.
+- `e` opens the chosen pending entry's text in your editor (`$VISUAL` or `$EDITOR`), as `e` in Review does. It stays pending until you approve it.
 
-Active/ in the archive, and the Journal, show the same in Obsidian, and are kept current with every checkout and return. `Active/On desk/` has a copy of each desk item's card, so you can read and annotate it with the rest of the archive: notes you write there, outside the box at the top and the history, are copied to the card beside the item the next time you run `carrel desk` or change the desk.
+Active/ in the archive, and the Journal, show the same in Obsidian, and are kept current with every checkout, return and approved entry. `Active/On desk/` has a copy of each desk item's card, so you can read and annotate it with the rest of the archive: notes you write there, outside the box at the top and the history, are copied to the card beside the item the next time you run `carrel desk` or change the desk.
 
 ### Work sessions
 
 Carrel notices work on checked-out and desk items from what's on disk: each file's modification time, and a Git repository's commits. Changes closer together than `sessions.idle_minutes` (45 by default) are one **session**, and each finished session becomes a pending entry in the card's history, with the files changed, the commits and the time spent. A session still going isn't written until it's over.
 
-Carrel looks for sessions whenever it runs, at most every five minutes: before each command that changes the archive, and in the background while the interactive mode is open. It never waits for another program that's writing to the archive; it looks the next time. `carrel sessions` looks right away and lists the pending entries; `carrel sessions approve ITEM`, `combine` or `drop` decide them. Until the Mac app watches items live, a file changed and then changed back isn't seen.
+Carrel looks for sessions whenever it runs, at most every five minutes: before each command that changes the archive, and in the background while the interactive mode is open. It never waits for another program that's writing to the archive; it looks the next time. `carrel sessions` looks right away and lists the pending entries; `carrel sessions approve ITEM`, `edit`, `combine` or `drop` decide them. `carrel sessions edit ITEM N` opens entry `N`'s text in your editor; it stays pending, and anything you add is kept when entries are combined (a line starting `My notes:` goes last).
+
+You can also approve an entry in Obsidian: change `> [!pending] 2026-10-29 · 2h 10m · auto-generated` to a heading, `### 2026-10-29 · 2h 10m`, and take the `>` marks off its lines, or change `pending` to another callout type such as `done`. The next time Carrel looks, it notices, adds the entry to the Journal and records the approval in History, leaving the entry exactly as you wrote it. Until the Mac app watches items live, a file changed and then changed back isn't seen.
 
 When backups are set up, each time Carrel finds finished sessions on an item it also takes a snapshot of the working copy, so work in progress is backed up before it's returned. That's the state when Carrel noticed, which for most work is the state when the session ended. For large data, such as a 60 GB dataset, add `snapshots: return-only` to the card to skip these and keep only the checkout and return snapshots.
 
@@ -231,10 +249,11 @@ Carrel never sends your files anywhere. Everything it does with them runs on you
 
 | Provider | What it gives Carrel | Where |
 | --- | --- | --- |
-| `apple` | Apple's on-device model, PDF text (PDFKit), images (ImageIO, Vision and Apple's model), OCR (Vision) | Macs with Apple Intelligence |
+| `apple` | Apple's on-device model, PDF text (PDFKit), images (ImageIO, Vision and Apple's model), 3D models (ModelIO, SceneKit and Apple's model), OCR (Vision) | Macs with Apple Intelligence |
 | `mlx` | Open models you download, through Apple's MLX, usually faster than llama.cpp on the same Mac | Apple-silicon Macs with twice the model's size in memory |
 | `llama` | Open models you download, through llama.cpp | Any platform |
-| `extract` | PDF text, and OCR through [Tesseract](https://tesseract-ocr.github.io) if it's installed | Any platform |
+| `extract` | PDF text, the details of 3MF, G-code, STEP and IGES files, and OCR through [Tesseract](https://tesseract-ocr.github.io) if it's installed | Any platform |
+| `cad` | STEP and IGES models measured and drawn through [OpenCascade](https://dev.opencascade.org); optional, built from source | Any platform with OpenCascade |
 
 `carrel providers` shows what this device has and which is used for what; the best available is chosen, and the next is tried when one can't help. `carrel models` lists models you can download, with their size, the memory they need and their license, and marks the ones the benchmark recommends: Qwen3.5 4B for 8 GB of memory, Gemma 4 E4B for 16 GB or more ([results](../bench/README.md)). It downloads one only when you ask: `carrel models download NAME` for llama.cpp, or `--format mlx` for the MLX provider. An MLX model is loaded on its first request and unloaded after five idle minutes. `carrel formats` lists the file types this device reads, and the ones it couldn't: each device keeps a count of them by type and reason (no reader, the reader failed, or read but empty) in `unreadable.json` in Carrel's folder, without file names, so you can share it. An ingest that meets one says so. The only Carrel program that goes online is `carrel-fetch`, which downloads models and logs every request to `logs/network.log` on this device.
 
