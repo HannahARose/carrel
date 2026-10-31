@@ -1,6 +1,6 @@
 # Design: the Mac app (v0.5)
 
-Status: proposed 2026-10-31. Issue #84; the shell is #91, and its CI #44.
+Status: accepted 2026-10-31, with the five recommendations below. Issue #84; built in #232, #233, #91 (with its CI, #44), #234, #235, #236, #237 and #238.
 
 ## What this adds
 
@@ -87,7 +87,7 @@ Each screen does what its interactive-mode counterpart does, through the same co
 7. The agent: the login item, file-system watching for work sessions, the menu bar list, and the CLI's worker stepping aside.
 8. The user guide's Mac app pages, then the gate.
 
-## Decisions
+## Decisions (accepted 2026-10-31)
 
 1. **One window per archive, a sidebar of the interactive mode's screens with a content list and an inspector,** each screen doing what its interactive-mode counterpart does through the same core functions. Recommended: the owner already knows the screens, the two can't drift apart, and it's the layout the spec and Apple's guidelines describe. The alternative is a document-style app that opens collections as windows, which suits browsing but not the queues.
 2. **The app calls the core in-process through CarrelKit's UniFFI bindings, and logic the app needs moves into `carrel-core` first.** Recommended: the proof of concept already works this way, it's fast, and the CLI and the app share one implementation. The alternative, running `carrel --json` commands, needs no bindings but parses text and can't stream progress or hold a lease.
