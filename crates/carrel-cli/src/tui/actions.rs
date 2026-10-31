@@ -465,11 +465,13 @@ mod tests {
             "asked again"
         );
         enter(&mut app, "2026-12-01");
+        assert!(matches!(
+            &app.confirm,
+            Some(Confirm::Checkout { to, due: Some(due), .. }) if *to == out && due == "2026-12-01"
+        ));
+        // A long folder, as on Windows, wraps in the pop-up, so only its start is looked for.
         let text = screen(&app, 120, 30);
-        assert!(
-            text.contains(&format!("Check out “{title}” to {}?", out.display())),
-            "{text}"
-        );
+        assert!(text.contains(&format!("Check out “{title}” to")), "{text}");
         assert!(text.contains("due back 2026-12-01"), "{text}");
         assert_eq!(app.key(key(KeyCode::Char('n'))), None);
         assert_eq!(app.message.as_deref(), Some("Nothing changed"));
@@ -572,7 +574,11 @@ mod tests {
         assert_eq!(purpose(&app), &InputPurpose::DeskPath);
         enter(&mut app, &notes.display().to_string());
         assert_eq!(app.confirm, Some(Confirm::DeskAdd(notes.clone())));
-        assert!(screen(&app, 120, 30).contains("on the desk?"));
+        let text = screen(&app, 120, 30);
+        assert!(
+            text.contains(" Desk ") && text.contains("Put "),
+            "the folder may wrap: {text}"
+        );
         assert_eq!(
             app.key(key(KeyCode::Char('y'))),
             Some(Effect::DeskAdd(notes.clone()))
