@@ -190,6 +190,8 @@ pub enum Effect {
     },
     /// Edit this proposal's card in the owner's editor.
     Edit(Id),
+    /// Edit this filed item's card, by its card's path, in the owner's editor.
+    EditItem(String),
     /// A step of correcting a card in words.
     Correction(Step),
     /// Answer this question.
@@ -585,7 +587,7 @@ impl App {
             Tab::Browse => {
                 keys.extend([("↑↓", "choose"), ("←→", "collections/items")]);
                 if self.browse_in_items {
-                    keys.push(("c", "correct"));
+                    keys.extend([("e", "edit"), ("c", "correct")]);
                 }
                 keys.push(("/", "search"));
             }

@@ -135,6 +135,13 @@ fn event_loop(
             Some(Effect::Correction(step)) if preparing.is_none() => {
                 correction(app, step, &mut preparing);
             }
+            Some(Effect::EditItem(card)) => {
+                // The editor needs the terminal to itself.
+                leave();
+                let result = crate::edit::edit(Some(app.archive.root()), &card);
+                *terminal = enter();
+                finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
+            }
             Some(Effect::Pick(words)) => {
                 // The picker needs the terminal to itself, as the editor does.
                 leave();
@@ -265,7 +272,11 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
             return None;
         }
         // The run loop does these itself, on the terminal or in the pop-up.
-        Effect::Edit(_) | Effect::Pick(_) | Effect::Correction(_) | Effect::Open(_) => return None,
+        Effect::Edit(_)
+        | Effect::EditItem(_)
+        | Effect::Pick(_)
+        | Effect::Correction(_)
+        | Effect::Open(_) => return None,
         Effect::Dismiss(id) => {
             let result = crate::questions::dismiss(Some(&root), &id.to_string());
             finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
@@ -1057,6 +1068,24 @@ mod tests {
         let saved = crate::correct::save(&app.archive, app.correction.take().unwrap()).unwrap();
         assert!(saved.message.starts_with("Saved"));
         drop(dir);
+    }
+
+    #[test]
+    fn e_edits_the_browsed_item_in_the_editor() {
+        let (_dir, mut app) = sample(false);
+        app.key(key(KeyCode::Char('5')));
+        assert_eq!(
+            app.key(key(KeyCode::Char('e'))),
+            None,
+            "a collection isn't an item"
+        );
+        app.key(key(KeyCode::Right));
+        let card = app.browse_items[app.browse_item].0.clone();
+        assert!(app.keys().iter().any(|(k, v)| *k == "e" && *v == "edit"));
+        assert_eq!(
+            app.key(key(KeyCode::Char('e'))),
+            Some(Effect::EditItem(card))
+        );
     }
 
     #[test]

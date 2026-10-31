@@ -279,8 +279,8 @@ fn draw_help(frame: &mut Frame, theme: Theme, area: Rect) {
         ("a  c  d  Space", "approve, combine, drop; mark (Active)"),
         ("Enter  d", "answer or dismiss a question (Questions)"),
         (
-            "←→  c  /  Esc",
-            "collections or items; correct an item; search; clear it (Browse)",
+            "←→  e  c  /  Esc",
+            "collections or items; edit or correct an item; search; clear it (Browse)",
         ),
         ("u", "undo the chosen change (History)"),
         (
