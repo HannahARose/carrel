@@ -29,8 +29,9 @@ final class IntakeModel {
     var canDraft: Bool { worker == nil && !isDrafting && !queue.waiting.isEmpty }
 
     /// The worker's activity, in the interactive mode's words, while it's running.
-    var workerLine: String? {
-        guard let worker else { return nil }
+    var workerLine: String? { worker.map(Self.line(for:)) }
+
+    static func line(for worker: WorkerStatus) -> String {
         let stage = worker.stage.map { " (\($0))" } ?? ""
         return "Drafting \(worker.item ?? "…")\(stage), \(worker.waiting) waiting"
     }
