@@ -123,6 +123,8 @@ impl Extractor {
             text,
             method: "embedded".into(),
             pages: Some(count),
+            created: None,
+            located: false,
         })
     }
 
@@ -136,6 +138,8 @@ impl Extractor {
                 text: self.recognize(tesseract, &request.path)?,
                 method: "ocr".into(),
                 pages: None,
+                created: None,
+                located: false,
             });
         }
         let pdftoppm = self.pdftoppm.as_deref().ok_or_else(|| {
@@ -170,6 +174,8 @@ impl Extractor {
             text: pages.join("\n\n"),
             method: "ocr".into(),
             pages: Some(u32::try_from(pages.len()).unwrap_or(u32::MAX)),
+            created: None,
+            located: false,
         })
     }
 

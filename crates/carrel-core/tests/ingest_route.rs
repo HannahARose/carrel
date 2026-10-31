@@ -364,3 +364,103 @@ fn proposals_carry_the_card_destination_and_applicable_tags() {
         "only the card's own title holds the number; no reason or problem quotes it"
     );
 }
+
+#[test]
+fn a_second_model_is_asked_only_when_the_first_isnt_sure() {
+    use carrel_core::providers::Capability;
+    let (_dir, archive) = sample();
+    let collections = archive.collections().unwrap();
+    let rules = RoutingRules::default();
+    let router = Router::new(&archive, &collections, &rules);
+    let route = |first: Vec<Result<serde_json::Value, ProviderError>>,
+                 second: Vec<Result<serde_json::Value, ProviderError>>| {
+        let mut registry = Registry::new();
+        registry.add(Box::new(Scripted::new("fast", 100, 8192, first)));
+        registry.add(Box::new(Scripted::new("careful", 50, 8192, second)));
+        registry.second_opinion(Capability::TextModel, Some(("careful", "m")));
+        router.route(
+            &registry,
+            &candidate(PathBuf::from("/in/notes.txt"), Kind::File),
+            Path::new("/in"),
+            &draft("Lamp notes", &[]),
+        )
+    };
+    let reading = || {
+        vec![
+            choice("Reading"),
+            choice("Reading"),
+            choice("(here)"),
+            choice("(here)"),
+        ]
+    };
+
+    // Sure the first time: the second model isn't asked.
+    let sure = route(reading(), vec![]);
+    assert_eq!(sure.path, "Reading");
+    assert_eq!(sure.attempts.len(), 2, "only the first model");
+
+    // Holding from the first, a place from the second: the second wins, and says why.
+    let unsure = route(
+        vec![fitting("Reading", "poorly"), choice("Reading")],
+        reading(),
+    );
+    assert_eq!(unsure.path, "Reading");
+    assert_eq!(unsure.confidence, Confidence::Medium);
+    assert_eq!(unsure.attempts.len(), 4, "every call is kept");
+    assert!(
+        unsure.reasons[0].contains("fast/m wasn't sure") && unsure.reasons[0].contains("careful/m"),
+        "{:?}",
+        unsure.reasons
+    );
+
+    // Both unsure: Holding stays, and the reasons say both tried.
+    let both = route(
+        vec![fitting("Reading", "poorly"), choice("Reading")],
+        vec![choice("Reading"), choice("Projects")],
+    );
+    assert_eq!(both.path, "Holding");
+    assert!(
+        both.reasons
+            .last()
+            .unwrap()
+            .contains("careful/m wasn't sure either")
+    );
+
+    // The same model can't second itself.
+    let mut registry = Registry::new();
+    registry.add(Box::new(Scripted::new(
+        "fast",
+        100,
+        8192,
+        vec![fitting("Reading", "poorly"), choice("Reading")],
+    )));
+    registry.second_opinion(Capability::TextModel, Some(("fast", "m")));
+    assert!(
+        registry
+            .second(Capability::TextModel, ("fast", "m"))
+            .is_none()
+    );
+}
+
+#[test]
+fn a_pinned_model_falls_back_only_to_its_second_opinion() {
+    use carrel_core::providers::Capability;
+    let mut registry = Registry::new();
+    registry.add(Box::new(Scripted::new("fast", 100, 8192, vec![])));
+    registry.add(Box::new(Scripted::new("careful", 50, 8192, vec![])));
+    registry.add(Box::new(Scripted::new("other", 60, 8192, vec![])));
+    registry.pin(Capability::TextModel, "careful", "m");
+    let names = |r: &Registry| -> Vec<String> {
+        r.ranked(Capability::TextModel)
+            .iter()
+            .map(|(p, _)| p.name().to_owned())
+            .collect()
+    };
+    assert_eq!(names(&registry), ["careful"]);
+    registry.second_opinion(Capability::TextModel, Some(("fast", "m")));
+    assert_eq!(
+        names(&registry),
+        ["careful", "fast"],
+        "the pinned model first"
+    );
+}

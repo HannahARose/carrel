@@ -150,11 +150,19 @@ pub struct ExtractionRequest {
 pub struct Extraction {
     /// The text.
     pub text: String,
-    /// `embedded` for text stored in the file, `ocr` for recognized text.
+    /// `embedded` for text stored in the file, `ocr` for recognized text, `described` when a
+    /// model also described an image.
     pub method: String,
     /// The number of pages, when the provider reports it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pages: Option<u32>,
+    /// When the file was made, if it says, such as a photo's date taken: a date, or a time
+    /// with its offset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created: Option<String>,
+    /// Whether it records where it was made, such as a photo's location.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub located: bool,
 }
 
 /// Why a provider couldn't do what was asked.
@@ -329,6 +337,7 @@ pub struct Registry {
     providers: Vec<Box<dyn Provider>>,
     preferred: BTreeMap<Capability, (String, String)>,
     pinned: BTreeMap<Capability, (String, String)>,
+    second: BTreeMap<Capability, (String, String)>,
 }
 
 impl std::fmt::Debug for Registry {
@@ -340,6 +349,7 @@ impl std::fmt::Debug for Registry {
             )
             .field("preferred", &self.preferred)
             .field("pinned", &self.pinned)
+            .field("second", &self.second)
             .finish()
     }
 }
@@ -371,11 +381,46 @@ impl Registry {
             .insert(capability, (provider.to_owned(), offer.to_owned()));
     }
 
-    /// Uses only `provider`'s offer `offer` for `capability`, with no other to fall back on, as
-    /// when the benchmark measures one model.
+    /// Uses only `provider`'s offer `offer` for `capability`, as when the benchmark measures
+    /// one model, with no other to fall back on but the second opinion, if one is set.
     pub fn pin(&mut self, capability: Capability, provider: &str, offer: &str) {
         self.pinned
             .insert(capability, (provider.to_owned(), offer.to_owned()));
+    }
+
+    /// Asks `provider`'s offer `offer` for a second opinion on `capability` when the first
+    /// model isn't sure, as routing does for items it would send to Holding. `None` asks no
+    /// one.
+    pub fn second_opinion(&mut self, capability: Capability, choice: Option<(&str, &str)>) {
+        match choice {
+            Some((provider, offer)) => {
+                self.second
+                    .insert(capability, (provider.to_owned(), offer.to_owned()));
+            }
+            None => {
+                self.second.remove(&capability);
+            }
+        }
+    }
+
+    /// The model to ask for a second opinion on `capability`, if one is set, available, and
+    /// not `first` itself. It's found among every provider, whatever is pinned: the second
+    /// opinion is a separate choice.
+    #[must_use]
+    pub fn second(
+        &self,
+        capability: Capability,
+        first: (&str, &str),
+    ) -> Option<(&dyn Provider, &Offer)> {
+        let (name, id) = self.second.get(&capability)?;
+        if (name.as_str(), id.as_str()) == first {
+            return None;
+        }
+        self.providers
+            .iter()
+            .filter(|p| p.name() == name)
+            .flat_map(|p| p.offers().iter().map(move |o| (p.as_ref(), o)))
+            .find(|(_, o)| o.capability == capability && o.available && &o.id == id)
     }
 
     /// The providers, in the order they were added.
@@ -388,20 +433,25 @@ impl Registry {
     /// priority keep the order the provider listed them in.
     #[must_use]
     pub fn ranked(&self, capability: Capability) -> Vec<(&dyn Provider, &Offer)> {
+        let is = |choice: Option<&(String, String)>, p: &dyn Provider, o: &Offer| {
+            choice.is_some_and(|(name, id)| name == p.name() && id == &o.id)
+        };
         let preferred = self.preferred.get(&capability);
         let pinned = self.pinned.get(&capability);
+        let second = self.second.get(&capability);
         let mut offers: Vec<(usize, &dyn Provider, &Offer)> = self
             .providers
             .iter()
             .enumerate()
             .flat_map(|(i, p)| p.offers().iter().map(move |o| (i, p.as_ref(), o)))
             .filter(|(_, _, o)| o.capability == capability && o.available)
-            .filter(|(_, p, o)| pinned.is_none_or(|(name, id)| name == p.name() && id == &o.id))
+            // A pinned model keeps its second opinion as its one fallback, as in use.
+            .filter(|(_, p, o)| pinned.is_none() || is(pinned, *p, o) || is(second, *p, o))
             .collect();
         offers.sort_by_key(|(i, p, o)| {
-            let is_preferred = preferred.is_some_and(|(name, id)| name == p.name() && id == &o.id);
             (
-                std::cmp::Reverse(is_preferred),
+                std::cmp::Reverse(is(pinned, *p, o)),
+                std::cmp::Reverse(is(preferred, *p, o)),
                 std::cmp::Reverse(o.priority),
                 std::cmp::Reverse(*i),
             )
@@ -545,6 +595,8 @@ impl Provider for PlainText {
             text: String::from_utf8_lossy(&bytes).into_owned(),
             method: "embedded".into(),
             pages: None,
+            created: None,
+            located: false,
         })
     }
 }

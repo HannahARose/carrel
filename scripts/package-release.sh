@@ -14,6 +14,8 @@
 #   KOPIA_SHA256    the archive's SHA-256, from Kopia's checksums.txt
 #   KOPIA_ARCHIVE   tar.gz or zip
 #   APPLE_PROVIDER  optional: the built carrel-provider-apple, for macOS
+#   MLX_PROVIDER    optional: the built carrel-provider-mlx (Apple silicon), for macOS; the
+#                   mlx-swift_Cmlx.bundle beside it, which holds MLX's shaders, goes with it
 #   THIRD_PARTY     optional: the license notices from scripts/third-party-licenses.sh
 #
 # The archive is written to dist/carrel-VERSION-NAME.tar.gz (.zip on Windows).
@@ -39,6 +41,10 @@ for program in carrel carrel-fetch carrel-provider-llama carrel-provider-extract
 done
 if [ -n "${APPLE_PROVIDER:-}" ]; then
   cp "$APPLE_PROVIDER" "$stage/"
+fi
+if [ -n "${MLX_PROVIDER:-}" ]; then
+  cp "$MLX_PROVIDER" "$stage/"
+  cp -R "$(dirname "$MLX_PROVIDER")/mlx-swift_Cmlx.bundle" "$stage/"
 fi
 
 # Kopia, pinned and checked, beside carrel: Carrel looks there before PATH.
@@ -81,6 +87,12 @@ helper, the providers and Kopia) beside the carrel program.
 EOF
 if [ -n "${APPLE_PROVIDER:-}" ]; then
   echo "  carrel-provider-apple   Apple's on-device model, PDFKit and Vision" >> "$stage/INSTALL.txt"
+fi
+if [ -n "${MLX_PROVIDER:-}" ]; then
+  cat >> "$stage/INSTALL.txt" <<'MLX'
+  carrel-provider-mlx     local open models through MLX, on Apple-silicon Macs only; keep
+                          mlx-swift_Cmlx.bundle beside it (see carrel models)
+MLX
 fi
 
 cd dist

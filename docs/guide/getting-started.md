@@ -26,21 +26,29 @@ On a Mac, also build the Apple provider, which gives Carrel Apple's on-device mo
 cd ~/Code/carrel-dev && swift build -c release --package-path apple/CarrelProviders && cp "$(swift build -c release --package-path apple/CarrelProviders --show-bin-path)/carrel-provider-apple" ~/.cargo/bin/
 ```
 
+On an Apple-silicon Mac you can also build the MLX provider, for open models through MLX. It needs Xcode and its Metal Toolchain (`xcodebuild -downloadComponent MetalToolchain`), and takes a few minutes:
+
+```bash
+cd ~/Code/carrel-dev/apple/CarrelMLX && xcodebuild -scheme carrel-provider-mlx -destination 'platform=macOS' -derivedDataPath .build/xcode -configuration Release -skipMacroValidation -quiet build && cp -R .build/xcode/Build/Products/Release/carrel-provider-mlx .build/xcode/Build/Products/Release/mlx-swift_Cmlx.bundle ~/.cargo/bin/
+```
+
 Make sure `~/.cargo/bin` is on your `PATH`, then check what Carrel found:
 
 ```bash
 carrel providers
 ```
 
-You need at least one **text model**. On a Mac with Apple Intelligence, Apple's model is already there. Anywhere else, download one (Carrel asks before downloading, and shows the size and license first):
+You need at least one **text model**. Download a recommended one (Carrel asks before downloading, and shows the size and license first): `gemma-4-e4b` if your computer has 16 GB of memory or more, `qwen3.5-4b` if it has 8 GB.
 
 ```bash
 carrel models
 ```
 
 ```bash
-carrel models download granite-4.2-3b
+carrel models download gemma-4-e4b
 ```
+
+On a Mac with Apple Intelligence, Apple's model is already there and is the fastest, but on its own it doesn't meet the [benchmark](../bench/README.md)'s bar: it declines some documents, health records especially, and routes less well. With a recommended model installed too, Carrel passes it what Apple's model declines.
 
 For backups, install [Kopia](https://kopia.io) too (`brew install kopia` on a Mac).
 

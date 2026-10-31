@@ -17,6 +17,10 @@ pub enum Row {
     Picker,
     /// This device's editor.
     Editor,
+    /// The text model that drafts cards on this device.
+    Model,
+    /// The text model asked when the first isn't sure where an item goes.
+    SecondModel,
     /// Models for local providers.
     Models,
     /// The worker that drafts queued items.
@@ -43,7 +47,10 @@ pub struct Shown {
 /// Whether a row is this device's or the archive's.
 #[must_use]
 pub fn is_device(row: Row) -> bool {
-    matches!(row, Row::Picker | Row::Editor | Row::Models | Row::Worker)
+    matches!(
+        row,
+        Row::Picker | Row::Editor | Row::Model | Row::SecondModel | Row::Models | Row::Worker
+    )
 }
 
 impl App {
@@ -54,6 +61,8 @@ impl App {
         let mut rows = vec![
             picker_row(&prefs),
             editor_row(),
+            model_row(&prefs),
+            second_row(&prefs),
             models_row(),
             self.worker_row(),
         ];
@@ -166,6 +175,8 @@ impl App {
                         .unwrap_or_default(),
                 });
             }
+            Row::Model => self.model_picker("model", &["default"]),
+            Row::SecondModel => self.model_picker("second_model", &["default", "off"]),
             Row::Models => {
                 let available: Vec<String> = carrel_core::models::CATALOG
                     .iter()
@@ -205,6 +216,23 @@ impl App {
             Row::Worker | Row::Backups => {}
         }
         Handled::Yes(None)
+    }
+
+    /// Opens a picker for the setting `key`: `fixed` choices, then every available model.
+    fn model_picker(&mut self, key: &str, fixed: &[&str]) {
+        let (registry, _) = crate::providers::registry();
+        let mut choices: Vec<String> = fixed.iter().map(|c| (*c).to_owned()).collect();
+        choices.extend(
+            crate::providers::text_models(&registry)
+                .iter()
+                .map(crate::providers::TextModel::name),
+        );
+        self.picker = Some(Picker {
+            collections: choices,
+            filter: String::new(),
+            chosen: 0,
+            purpose: Purpose::Setting(key.into()),
+        });
     }
 
     /// Asks before downloading the catalog model `name`.
@@ -258,6 +286,49 @@ fn editor_row() -> Shown {
         detail: vec![
             "Opens when you edit a proposal's card (e in Review).".into(),
             "Enter to set one for Carrel; leave it empty to use $VISUAL or $EDITOR.".into(),
+        ],
+    }
+}
+
+fn model_row(prefs: &crate::config::Prefs) -> Shown {
+    Shown {
+        row: Row::Model,
+        label: "Model".into(),
+        value: prefs
+            .model
+            .clone()
+            .unwrap_or_else(|| "Carrel's choice".into()),
+        detail: vec![
+            "The text model that drafts cards, routes and rates items on this device.".into(),
+            "Unset, Carrel uses the best available: Apple's on-device model where there is one, \
+             then local models."
+                .into(),
+            String::new(),
+            "Enter to choose one of the available models, or default to let Carrel choose. \
+             If the chosen model goes away, Carrel uses the next best."
+                .into(),
+            "The benchmark's results (docs/bench/) say how each model does.".into(),
+        ],
+    }
+}
+
+fn second_row(prefs: &crate::config::Prefs) -> Shown {
+    Shown {
+        row: Row::SecondModel,
+        label: "Second model".into(),
+        value: prefs
+            .second_model
+            .clone()
+            .unwrap_or_else(|| "a recommended model".into()),
+        detail: vec![
+            "Asked when the first model isn't sure where an item goes: what it would send to \
+             Holding, or place with low confidence. The better answer is kept."
+                .into(),
+            String::new(),
+            "By default, a model the benchmark recommends that you've installed, so a fast \
+             model can file most items and a careful one looks at the rest."
+                .into(),
+            "Enter to choose a model, default, or off.".into(),
         ],
     }
 }

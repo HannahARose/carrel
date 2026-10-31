@@ -1,6 +1,7 @@
 //! Stage 6: how sensitive an item is (`docs/design/ingest.md`). It decides what always waits
 //! for the owner, so it errs high: rules set a floor without a model, and a model may only
-//! raise it.
+//! raise it, to sensitive at most. Restricted comes only from rules that check a value, such as
+//! a card number's issuer and check digit, since models rated restricted on guesses.
 
 use std::fmt::Write as _;
 use std::sync::LazyLock;
@@ -9,7 +10,7 @@ use regex::Regex;
 use serde_json::json;
 
 use crate::card::Sensitivity;
-use crate::providers::{Capability, CompletionRequest, Registry};
+use crate::providers::{Capability, CompletionRequest, Offer, Provider, Registry};
 use crate::review::Attempt;
 
 /// How much of an item's text the floor rules read, in bytes.
@@ -35,8 +36,20 @@ pub struct Assessment {
     pub matched: Vec<String>,
 }
 
-static CARD_NUMBER: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\b(?:\d[ -]?){12,18}\d\b").expect("valid"));
+/// Card numbers as they're written: 13 to 19 digits together, in groups of four (`4111 1111
+/// 1111 1111`), or as American Express groups them (`3782 822463 10005`), with spaces or
+/// dashes but not both. Loose runs of digits, as in tables and equations, don't match.
+static CARD_NUMBER: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"\b(?:\d{13,19}|\d{4}(?: \d{4}){2} \d{1,7}|\d{4}(?:-\d{4}){2}-\d{1,7}|\d{4} \d{6} \d{5}|\d{4}-\d{6}-\d{5})\b",
+    )
+    .expect("valid")
+});
+/// Account recovery codes and wallet phrases: as good as a password.
+static RECOVERY: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)\b(?:recovery|backup) codes?\b|\b(?:recovery|seed|mnemonic) phrase\b")
+        .expect("valid")
+});
 static IBAN: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]){11,30}\b").expect("valid"));
 static US_SSN: LazyLock<Regex> = LazyLock::new(|| {
@@ -51,7 +64,7 @@ static PASSWORD: LazyLock<Regex> = LazyLock::new(|| {
 /// Words in the text that mark a kind of sensitive document, and what to call it.
 const SENSITIVE_WORDS: [(&str, &str); 13] = [
     (
-        r"(?i)\btax return\b|\bform 1040\b|\bw-2\b|\b1099\b|\bself assessment\b",
+        r"(?i)\btax return\b|\bform 1040\b|\bform w-2\b|\bw-2 (?:form|wage)|\b(?:form )?1099-(?:misc|nec|int|div|b|r|k|g)\b|\bform 1099\b|\bself assessment\b",
         "a tax document",
     ),
     (
@@ -109,6 +122,52 @@ static SENSITIVE_PATTERNS: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(
         .collect()
 });
 
+/// The card numbers in `text`: matches of [`CARD_NUMBER`] with a card issuer's prefix and
+/// length that pass the Luhn check, and that aren't part of a decimal number.
+fn card_numbers(text: &str) -> impl Iterator<Item = &str> {
+    CARD_NUMBER.find_iter(text).filter_map(move |m| {
+        let before = text[..m.start()].chars().next_back();
+        let after = text[m.end()..].chars().take(2).collect::<Vec<_>>();
+        let decimal = matches!(before, Some('.' | ','))
+            && text[..m.start()]
+                .chars()
+                .rev()
+                .nth(1)
+                .is_some_and(|c| c.is_ascii_digit())
+            || (matches!(after.first(), Some('.' | ','))
+                && after.get(1).is_some_and(char::is_ascii_digit));
+        let card = m.as_str();
+        (!decimal && issued(card) && luhn(card)).then_some(card)
+    })
+}
+
+/// Whether `candidate`'s digits start and run as a card issuer's do: Visa, Mastercard,
+/// American Express, Discover, JCB, Diners Club or Union Pay.
+fn issued(candidate: &str) -> bool {
+    let digits: String = candidate.chars().filter(char::is_ascii_digit).collect();
+    let len = digits.len();
+    let prefix = |n: usize| digits[..n].parse::<u32>().unwrap_or(0);
+    match digits.as_bytes()[0] {
+        b'4' => matches!(len, 13 | 16 | 19),
+        b'5' => (51..=55).contains(&prefix(2)) && len == 16,
+        b'2' => (2221..=2720).contains(&prefix(4)) && len == 16,
+        b'3' => {
+            (matches!(prefix(2), 34 | 37) && len == 15)
+                || ((3528..=3589).contains(&prefix(4)) && (16..=19).contains(&len))
+                || ((matches!(prefix(2), 36 | 38) || (300..=305).contains(&prefix(3)))
+                    && (14..=19).contains(&len))
+        }
+        b'6' => {
+            (prefix(4) == 6011
+                || prefix(2) == 65
+                || (644..=649).contains(&prefix(3))
+                || prefix(2) == 62)
+                && (16..=19).contains(&len)
+        }
+        _ => false,
+    }
+}
+
 /// Whether `digits` (with spaces or dashes) pass the Luhn check card numbers use.
 fn luhn(candidate: &str) -> bool {
     let digits: Vec<u32> = candidate.chars().filter_map(|c| c.to_digit(10)).collect();
@@ -156,10 +215,7 @@ fn iban(candidate: &str) -> bool {
 #[must_use]
 pub fn restricted_matches(text: &str) -> Vec<String> {
     let text = &text[..text.floor_char_boundary(SCAN_BYTES)];
-    let mut found: Vec<String> = CARD_NUMBER
-        .find_iter(text)
-        .map(|m| m.as_str())
-        .filter(|m| luhn(m))
+    let mut found: Vec<String> = card_numbers(text)
         .chain(IBAN.find_iter(text).map(|m| m.as_str()).filter(|m| iban(m)))
         .chain(US_SSN.find_iter(text).map(|m| m.as_str()))
         .map(str::to_owned)
@@ -184,7 +240,7 @@ pub fn floor(name: &str, text: &str, default: Sensitivity) -> Assessment {
         }
     };
 
-    if CARD_NUMBER.find_iter(scanned).any(|m| luhn(m.as_str())) {
+    if card_numbers(scanned).next().is_some() {
         raise(
             Sensitivity::Restricted,
             "contains what looks like a card number".into(),
@@ -219,6 +275,19 @@ pub fn floor(name: &str, text: &str, default: Sensitivity) -> Assessment {
             &mut level,
         );
     }
+    let lower = name.to_lowercase();
+    let words: Vec<&str> = lower.split(|c: char| !c.is_alphanumeric()).collect();
+    let says_codes = |w: &[&str]| {
+        w.iter().any(|x| matches!(*x, "recovery" | "backup"))
+            && w.iter().any(|x| matches!(*x, "code" | "codes"))
+    };
+    if RECOVERY.is_match(scanned) || says_codes(&words) {
+        raise(
+            Sensitivity::Restricted,
+            "holds account recovery codes".into(),
+            &mut level,
+        );
+    }
     for (pattern, what) in SENSITIVE_PATTERNS.iter() {
         if pattern.is_match(scanned) {
             raise(
@@ -228,8 +297,6 @@ pub fn floor(name: &str, text: &str, default: Sensitivity) -> Assessment {
             );
         }
     }
-    let lower = name.to_lowercase();
-    let words: Vec<&str> = lower.split(|c: char| !c.is_alphanumeric()).collect();
     for word in SENSITIVE_NAMES {
         if words.contains(&word) {
             raise(
@@ -247,6 +314,21 @@ pub fn floor(name: &str, text: &str, default: Sensitivity) -> Assessment {
     }
 }
 
+/// The reason given for an item that records where it was made.
+pub const LOCATION_REASON: &str = "has the place it was taken";
+
+impl Assessment {
+    /// Notes that the item records where it was made, such as a photo's location: at least
+    /// `personal`, but no higher, since most phone photos have one and raising them all would
+    /// bury the ones that are sensitive.
+    pub fn located(&mut self) {
+        self.level = self.level.max(Sensitivity::Personal);
+        if !self.reasons.iter().any(|r| r == LOCATION_REASON) {
+            self.reasons.push(LOCATION_REASON.to_owned());
+        }
+    }
+}
+
 fn level_name(level: Sensitivity) -> &'static str {
     match level {
         Sensitivity::Public => "public",
@@ -256,21 +338,38 @@ fn level_name(level: Sensitivity) -> &'static str {
     }
 }
 
-/// The floor, then the best text model's judgment, which may only raise it.
+/// The floor, then the best text model's judgment, which may only raise it. A model that
+/// declines or fails passes the item to the next, as drafting does. With no text, no model is
+/// asked: from a name alone, models guess, and they guessed high.
 #[must_use]
 pub fn assess(registry: &Registry, name: &str, text: &str, default: Sensitivity) -> Assessment {
     let mut assessment = floor(name, text, default);
-    if assessment.level == Sensitivity::Restricted {
+    // A model can only say sensitive, so once the rules have, there's nothing to ask.
+    if assessment.level >= Sensitivity::Sensitive || text.trim().is_empty() {
         return assessment;
     }
-    let Some((provider, offer)) = registry.ranked(Capability::TextModel).into_iter().next() else {
-        return assessment;
-    };
+    for (provider, offer) in registry.ranked(Capability::TextModel) {
+        if rate(provider, offer, name, text, &mut assessment) {
+            break;
+        }
+    }
+    assessment
+}
+
+/// One model's rating, raising `assessment` if it's higher. Whether the model answered.
+fn rate(
+    provider: &dyn Provider,
+    offer: &Offer,
+    name: &str,
+    text: &str,
+    assessment: &mut Assessment,
+) -> bool {
+    // Only the rules make an item restricted, since they check the value itself; a model can
+    // say it's sensitive, which already waits for the owner.
     let allowed: Vec<&str> = [
         Sensitivity::Public,
         Sensitivity::Personal,
         Sensitivity::Sensitive,
-        Sensitivity::Restricted,
     ]
     .into_iter()
     .filter(|l| *l >= assessment.level)
@@ -286,8 +385,10 @@ pub fn assess(registry: &Registry, name: &str, text: &str, default: Sensitivity)
         system: Some(
             "Rate how sensitive this item from a personal archive is. public: fine for anyone to see. \
              personal: the owner's own material, not harmful if seen. sensitive: health, money, legal, \
-             identity or other private matters. restricted: would cause real harm if seen, such as \
-             account numbers, passwords or identity documents. When in doubt, choose the higher level."
+             identity, credentials or other private matters. Rate on what the text shows, not on what \
+             it might contain: coursework, papers, manuals, logos and software are personal at most. \
+             When the text clearly concerns a private matter but you're unsure how serious, choose \
+             sensitive."
                 .into(),
         ),
         prompt,
@@ -310,6 +411,7 @@ pub fn assess(registry: &Registry, name: &str, text: &str, default: Sensitivity)
         result: result.into(),
         message,
     };
+    let mut answered = false;
     match provider.complete(&offer.id, &request) {
         Ok(completion) => {
             let json = completion.json.unwrap_or_default();
@@ -323,6 +425,7 @@ pub fn assess(registry: &Registry, name: &str, text: &str, default: Sensitivity)
             match level {
                 Some(level) => {
                     assessment.attempts.push(attempt("ok", None));
+                    answered = true;
                     if level > assessment.level {
                         assessment.level = level;
                         if level >= Sensitivity::Sensitive
@@ -344,5 +447,5 @@ pub fn assess(registry: &Registry, name: &str, text: &str, default: Sensitivity)
                 .push(attempt(result, Some(error.to_string())));
         }
     }
-    assessment
+    answered
 }

@@ -32,11 +32,13 @@ pub enum Tab {
     Ingest,
     /// This device's and the archive's settings.
     Settings,
+    /// Backups: snapshots, and taking, checking and restoring from them.
+    Backups,
 }
 
 impl Tab {
     /// Every tab, in order.
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::Status,
         Self::Review,
         Self::Questions,
@@ -44,6 +46,7 @@ impl Tab {
         Self::History,
         Self::Ingest,
         Self::Settings,
+        Self::Backups,
     ];
 
     /// The tab's name.
@@ -56,12 +59,32 @@ impl Tab {
             Self::History => "History",
             Self::Ingest => "Ingest",
             Self::Settings => "Settings",
+            Self::Backups => "Backups",
         }
     }
 
     fn index(self) -> usize {
         Self::ALL.iter().position(|t| *t == self).unwrap_or(0)
     }
+}
+
+/// Where what the interactive mode learns about the owner, such as the folder they pick
+/// from, is kept.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Preferences {
+    /// In this device's preferences, for next time.
+    Saved,
+    /// For this session only.
+    InMemory,
+}
+
+/// What the file picker is choosing for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Picking {
+    /// Files and folders to ingest.
+    Ingest,
+    /// The folder for a backup repository.
+    BackupFolder,
 }
 
 /// Something that waits for the owner to say yes.
@@ -152,6 +175,24 @@ pub enum Effect {
     },
     /// Download this catalog model.
     Download(String),
+    /// Take a backup snapshot now.
+    BackupNow,
+    /// Check the backups, reading back a share of the files.
+    BackupVerify,
+    /// Restore an item as of a change's snapshot, beside the archive.
+    BackupRestore {
+        /// The item: its identifier, or its card's or contents' path.
+        item: String,
+        /// The history commit whose snapshot to restore from.
+        at: String,
+    },
+    /// Create or connect to a backup repository.
+    BackupSetup {
+        /// Where it is or will be.
+        repository: std::path::PathBuf,
+        /// Its password, handed to Kopia, which keeps it in the keychain.
+        password: super::backups::Secret,
+    },
 }
 
 /// The interactive mode's state.
@@ -224,12 +265,19 @@ pub struct App {
     pub settings: Vec<super::settings::Shown>,
     /// The chosen setting.
     pub settings_chosen: usize,
+    /// The chosen snapshot on the Backups screen.
+    pub backup_chosen: usize,
     /// The built-in file browser, while it's open.
     pub browser: Option<super::browser::Browser>,
     /// The `picker` preference.
     pub picker_preference: Option<String>,
     /// Where picking files starts: the folder last picked from, or the home folder.
     pub start_folder: std::path::PathBuf,
+    /// What the file picker is choosing for.
+    pub picking: Picking,
+    /// Whether the folder picking ends in is saved to this device's preferences, or only kept
+    /// for this session, as in tests, which must never write the real configuration.
+    pub preferences: Preferences,
     /// Whether every key is shown.
     pub help: bool,
     /// Whether to leave.
@@ -285,9 +333,16 @@ impl App {
             worker: super::intake::Worker::default(),
             settings: Vec::new(),
             settings_chosen: 0,
+            backup_chosen: 0,
             browser: None,
             picker_preference: None,
             start_folder: std::path::PathBuf::from("."),
+            picking: Picking::Ingest,
+            preferences: if cfg!(test) {
+                Preferences::InMemory
+            } else {
+                Preferences::Saved
+            },
             help: false,
             quit: false,
         };
@@ -393,7 +448,14 @@ impl App {
                 ("↑↓", "choose"),
                 ("Enter ←", "open, up"),
                 ("Space", "mark"),
-                ("i", "add"),
+                (
+                    "i",
+                    if self.picking == Picking::BackupFolder {
+                        "choose the folder"
+                    } else {
+                        "add"
+                    },
+                ),
                 (".", "hidden"),
                 ("/", "type a path"),
                 ("Esc", "cancel"),
@@ -417,6 +479,13 @@ impl App {
                 ("r", "retry"),
             ]),
             Tab::History => keys.extend([("↑↓", "choose"), ("u", "undo")]),
+            Tab::Backups => keys.extend([
+                ("↑↓", "choose"),
+                ("n", "snapshot now"),
+                ("v", "verify"),
+                ("r", "restore"),
+                ("s", "set up"),
+            ]),
             Tab::Questions => {
                 keys.extend([("↑↓", "choose"), ("Enter", "answer"), ("d", "dismiss")]);
             }
@@ -442,6 +511,8 @@ impl App {
             self.intake_move(delta);
         } else if self.tab == Tab::Settings {
             self.settings_move(delta);
+        } else if self.tab == Tab::Backups {
+            self.backups_move(delta);
         } else if self.tab == Tab::History {
             let last = self.history.len().saturating_sub(1);
             let next = i64::try_from(self.selected).unwrap_or(0) + i64::from(delta);
@@ -480,19 +551,8 @@ impl App {
         if self.input.is_some() {
             return self.input_key(key);
         }
-        if let Some(browser) = &mut self.browser {
-            match browser.key(key) {
-                super::browser::Outcome::Browsing => {}
-                super::browser::Outcome::Add(paths) => {
-                    self.browser = None;
-                    self.plan(paths, carrel_core::ingest::IntakeOptions::default());
-                }
-                super::browser::Outcome::Type => {
-                    self.browser = None;
-                    self.ask_for_paths();
-                }
-                super::browser::Outcome::Cancel => self.browser = None,
-            }
+        if self.browser.is_some() {
+            self.browser_key(key);
             return None;
         }
         if self.picker.is_some() {
@@ -505,6 +565,7 @@ impl App {
             Tab::Browse => self.browse_key(key),
             Tab::Ingest => self.intake_key(key),
             Tab::Settings => self.settings_key(key),
+            Tab::Backups => self.backups_key(key),
             _ => Handled::No,
         };
         if let Handled::Yes(effect) = handled {
@@ -520,7 +581,7 @@ impl App {
                 });
             }
             KeyCode::Char('i') => return self.start_ingest(),
-            KeyCode::Char(c @ '1'..='7') => {
+            KeyCode::Char(c @ '1'..='8') => {
                 self.tab = Tab::ALL[usize::from(c as u8 - b'1')];
             }
             KeyCode::Tab | KeyCode::Right => {
@@ -546,6 +607,39 @@ impl App {
             _ => {}
         }
         None
+    }
+
+    /// Handles a key while the built-in browser is open.
+    fn browser_key(&mut self, key: KeyEvent) {
+        let Some(browser) = self.browser.as_mut() else {
+            return;
+        };
+        let outcome = browser.key(key);
+        if outcome != super::browser::Outcome::Browsing {
+            // Picking starts here next time, wherever the browser was left.
+            let dir = browser.dir.clone();
+            self.remember_folder(dir);
+        }
+        match outcome {
+            super::browser::Outcome::Browsing => {}
+            super::browser::Outcome::Add(paths) => {
+                self.browser = None;
+                self.picked(paths);
+            }
+            super::browser::Outcome::Type => {
+                self.browser = None;
+                if self.picking == Picking::BackupFolder {
+                    self.picking = Picking::Ingest;
+                    self.ask_for_backup_folder();
+                } else {
+                    self.ask_for_paths();
+                }
+            }
+            super::browser::Outcome::Cancel => {
+                self.browser = None;
+                self.picking = Picking::Ingest;
+            }
+        }
     }
 
     /// Handles the mouse: the wheel scrolls, and a click on the top line picks a screen.

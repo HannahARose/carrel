@@ -19,3 +19,6 @@ fixtures/bench/archive/.obsidian/*
 .swiftpm/
 *.xcuserstate
 xcuserdata/
+
+# Python bytecode, from running the scripts
+__pycache__/

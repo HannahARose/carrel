@@ -6,8 +6,11 @@
 
 mod backup;
 mod bench;
+mod checkout;
 mod commands;
 mod config;
+mod desk;
+mod formats;
 mod ingest;
 mod models;
 mod paths;
@@ -16,6 +19,7 @@ mod progress;
 mod providers;
 mod questions;
 mod review;
+mod sessions;
 mod settings;
 mod tui;
 mod worker;
@@ -76,6 +80,8 @@ enum Command {
     },
     /// List the providers on this device (text models, text extraction) and which are used.
     Providers,
+    /// List the file types this device reads, and those it couldn't read so far.
+    Formats,
     /// Add files and folders to the intake queue. A worker drafts each one's card and
     /// destination in the background, saving proposals for `carrel review` as they're ready.
     /// Nothing is moved until a proposal is approved.
@@ -113,6 +119,48 @@ enum Command {
         /// The new name; without one, the portable name `carrel status` suggests.
         new_name: Option<String>,
     },
+    /// Check an item out to work on: a copy goes to a working folder, and the archive copy is
+    /// read-only until it's returned.
+    Checkout {
+        /// The item: its identifier, or its card's or contents' path.
+        item: String,
+        /// The folder to put the copy in; the Desktop by default.
+        #[arg(long, value_name = "FOLDER")]
+        to: Option<PathBuf>,
+        /// When it's due back, as YYYY-MM-DD.
+        #[arg(long, value_name = "DATE")]
+        due: Option<String>,
+    },
+    /// List what's checked out, where, and whether it has changed.
+    Checkouts,
+    /// Return a checked-out item: shows what changed and the history entry it adds, asks,
+    /// then replaces the archive copy with the working copy.
+    Return {
+        /// The item: its identifier, or its card's or contents' path.
+        item: String,
+        /// Where the working copy is now, if it moved.
+        #[arg(long, value_name = "PATH")]
+        from: Option<PathBuf>,
+        /// Return without asking.
+        #[arg(long)]
+        yes: bool,
+        /// Cancel the checkout instead: unlock the archive copy as it was, without the
+        /// working copy's changes.
+        #[arg(long, conflicts_with = "from")]
+        discard: bool,
+    },
+    /// Desk items: files and folders being worked on where they are, tracked without being
+    /// archived.
+    Desk {
+        #[command(subcommand)]
+        action: Option<DeskAction>,
+    },
+    /// Work sessions on checked-out items: finds finished ones and lists the pending history
+    /// entries; approve, combine or drop them.
+    Sessions {
+        #[command(subcommand)]
+        action: Option<SessionsAction>,
+    },
     /// Create collections: folders with a design document saying what belongs in them.
     Collection {
         #[command(subcommand)]
@@ -141,6 +189,58 @@ enum Command {
 }
 
 #[derive(Debug, Subcommand)]
+enum DeskAction {
+    /// List this device's desk items.
+    List,
+    /// Track a file or folder where it is: a card goes beside it, and nothing is moved.
+    Add {
+        /// The file or folder.
+        path: PathBuf,
+        /// Its title; its name by default.
+        #[arg(long)]
+        title: Option<String>,
+        /// A short summary.
+        #[arg(long)]
+        summary: Option<String>,
+    },
+    /// Stop tracking a desk item. Its card stays beside it unless --delete-card.
+    Remove {
+        /// The file or folder.
+        path: PathBuf,
+        /// Delete its card too.
+        #[arg(long)]
+        delete_card: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum SessionsAction {
+    /// Find finished sessions, and list every pending history entry.
+    List,
+    /// Approve an item's pending entries: the numbers `carrel sessions` shows, or all.
+    Approve {
+        /// The item: its identifier, or its card's or contents' path.
+        item: String,
+        /// Which entries; all when none are given.
+        numbers: Vec<usize>,
+    },
+    /// Combine an item's pending entries into one, still pending.
+    Combine {
+        /// The item.
+        item: String,
+        /// Which entries; all when none are given.
+        numbers: Vec<usize>,
+    },
+    /// Drop an item's pending entries.
+    Drop {
+        /// The item.
+        item: String,
+        /// Which entries; all when none are given.
+        numbers: Vec<usize>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
 enum ModelsAction {
     /// List the models Carrel can download, and those already in the models folder.
     List,
@@ -149,6 +249,9 @@ enum ModelsAction {
     Download {
         /// The model's name, from `carrel models`.
         name: String,
+        /// `gguf` for the llama.cpp provider, or `mlx` for the MLX provider on Apple silicon.
+        #[arg(long, value_enum, default_value_t)]
+        format: models::Format,
         /// Download without asking.
         #[arg(long)]
         yes: bool,
@@ -157,6 +260,9 @@ enum ModelsAction {
     Remove {
         /// The model's name.
         name: String,
+        /// Which download to delete: `gguf` or `mlx`.
+        #[arg(long, value_enum, default_value_t)]
+        format: models::Format,
         /// Delete without asking.
         #[arg(long)]
         yes: bool,
@@ -362,6 +468,39 @@ enum ReviewAction {
     },
 }
 
+/// `carrel desk` and its subcommands.
+fn desk_command(archive: Option<&Path>, action: Option<DeskAction>) -> Result<Report, Failure> {
+    match action.unwrap_or(DeskAction::List) {
+        DeskAction::List => desk::list(archive),
+        DeskAction::Add {
+            path,
+            title,
+            summary,
+        } => desk::add_item(archive, &path, title.as_deref(), summary.as_deref()),
+        DeskAction::Remove { path, delete_card } => desk::remove_item(archive, &path, delete_card),
+    }
+}
+
+/// `carrel sessions` and its subcommands.
+fn sessions_command(
+    archive: Option<&Path>,
+    action: Option<SessionsAction>,
+) -> Result<Report, Failure> {
+    use sessions::Decision;
+    match action.unwrap_or(SessionsAction::List) {
+        SessionsAction::List => sessions::list(archive),
+        SessionsAction::Approve { item, numbers } => {
+            sessions::decide(archive, &item, &numbers, Decision::Approve)
+        }
+        SessionsAction::Combine { item, numbers } => {
+            sessions::decide(archive, &item, &numbers, Decision::Combine)
+        }
+        SessionsAction::Drop { item, numbers } => {
+            sessions::decide(archive, &item, &numbers, Decision::Drop)
+        }
+    }
+}
+
 /// `carrel review` and its subcommands.
 fn review_command(
     archive: Option<&Path>,
@@ -466,6 +605,7 @@ fn main() -> ExitCode {
         Command::Show { item } => commands::show(cli.archive.as_deref(), &item),
         Command::Log { max_count } => commands::log(cli.archive.as_deref(), max_count),
         Command::Providers => Ok(providers::list()),
+        Command::Formats => Ok(formats::list()),
         Command::Ingest(args) => {
             ingest::command(cli.archive.as_deref(), &args.into_request(), cli.json)
         }
@@ -480,6 +620,18 @@ fn main() -> ExitCode {
         Command::Rename { item, new_name } => {
             commands::rename(cli.archive.as_deref(), &item, new_name.as_deref())
         }
+        Command::Checkout { item, to, due } => {
+            checkout::checkout(cli.archive.as_deref(), &item, to.as_deref(), due.as_deref())
+        }
+        Command::Checkouts => checkout::list(cli.archive.as_deref()),
+        Command::Desk { action } => desk_command(cli.archive.as_deref(), action),
+        Command::Sessions { action } => sessions_command(cli.archive.as_deref(), action),
+        Command::Return {
+            item,
+            from,
+            yes,
+            discard,
+        } => checkout::return_item(cli.archive.as_deref(), &item, from.as_deref(), yes, discard),
         Command::Collection { action } => match action {
             CollectionAction::New {
                 path,
@@ -489,7 +641,7 @@ fn main() -> ExitCode {
         },
         Command::Backup { action } => match action {
             BackupAction::Setup { path, description } => {
-                backup::setup(cli.archive.as_deref(), &path, description.as_deref())
+                backup::setup(cli.archive.as_deref(), &path, description.as_deref(), None)
             }
             BackupAction::Now => backup::now(cli.archive.as_deref()),
             BackupAction::List => backup::list(cli.archive.as_deref()),
@@ -508,8 +660,10 @@ fn main() -> ExitCode {
         Command::Bench(args) => bench::bench(&args, cli.json),
         Command::Models { action } => match action.unwrap_or(ModelsAction::List) {
             ModelsAction::List => models::list(),
-            ModelsAction::Download { name, yes } => models::download(&name, yes, cli.json),
-            ModelsAction::Remove { name, yes } => models::remove(&name, yes),
+            ModelsAction::Download { name, format, yes } => {
+                models::download(&name, format, yes, cli.json)
+            }
+            ModelsAction::Remove { name, format, yes } => models::remove(&name, format, yes),
         },
     };
     finish(result, cli.json)

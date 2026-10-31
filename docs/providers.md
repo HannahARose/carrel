@@ -1,6 +1,6 @@
 # Carrel provider protocol
 
-**Version 1 (draft).** A provider is a separate program that gives Carrel a capability it can't provide portably by itself: a text model, or text extraction from PDFs and images. Carrel starts providers, asks what they offer, and sends them requests. Native tools are used through providers where they exist (Apple's Foundation Models, MLX, PDFKit and Vision through `carrel-provider-apple`), and portable providers fill in elsewhere. Anyone can write a provider in any language by following this document.
+**Version 1 (draft).** A provider is a separate program that gives Carrel a capability it can't provide portably by itself: a text model, or text extraction from PDFs and images. Carrel starts providers, asks what they offer, and sends them requests. Native tools are used through providers where they exist (Apple's Foundation Models, PDFKit and Vision through `carrel-provider-apple`, and open models through MLX with `carrel-provider-mlx`), and portable providers fill in elsewhere. Anyone can write a provider in any language by following this document.
 
 ## Finding providers
 
@@ -47,6 +47,8 @@ Response:
      "available": true, "context_tokens": 4096, "structured_output": true},
     {"capability": "extract-text", "id": "pdfkit", "label": "PDFKit", "priority": 100,
      "available": true, "media_types": ["application/pdf"]},
+    {"capability": "extract-text", "id": "image", "label": "Image reader", "priority": 100,
+     "available": true, "media_types": ["image/png", "image/jpeg", "image/heic"]},
     {"capability": "extract-text", "id": "vision", "label": "Vision OCR", "priority": 100,
      "available": false, "reason": "OCR languages aren't installed",
      "media_types": ["image/png", "image/jpeg", "image/heic", "application/pdf"]}
@@ -129,7 +131,12 @@ A provider that can't count answers with code 2 or `-32601`, and Carrel estimate
 {"jsonrpc": "2.0", "id": 3, "result": {"text": "...", "method": "embedded", "pages": 12}}
 ```
 
-`method` is `embedded` for text stored in the file or `ocr` for recognized text. `pages` is optional.
+`method` is `embedded` for text stored in the file, `ocr` for recognized text, or `described` when a model also described an image. `pages` is optional.
+
+Two more fields are optional, for what a file records about itself:
+
+- `created`: when it was made, such as a photo's date taken, as `YYYY-MM-DD` or a time with its offset (`2026-06-24T16:28:05+02:00`). Carrel uses it for the card's created date when the model gives none. Leave it out when the file doesn't say; for a local time with no offset, give only the date.
+- `located`: `true` when the file records where it was made, such as a photo's location. Carrel rates the item at least `personal`. Never put the place itself in `text`.
 
 ## Errors
 

@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use carrel_core::archive::Archive;
-use carrel_core::card::{Checksum, Id, Kind, QualityLevel, Tag};
+use carrel_core::card::{Checksum, DateOrTime, Id, Kind, QualityLevel, Tag};
 use carrel_core::ingest::Candidate;
 use carrel_core::ingest::card::{Context, Glossary, Vocabulary, draft, schema, system_prompt};
 use carrel_core::ingest::text::ItemText;
@@ -40,8 +40,11 @@ fn text(body: &str) -> ItemText {
         media_type: Some("text/plain".into()),
         method: "embedded".into(),
         pages: None,
+        created: None,
+        located: false,
         attempts: Vec::new(),
         note: None,
+        unread: None,
     }
 }
 
@@ -381,4 +384,47 @@ fn a_model_that_declines_is_named_so_the_owner_knows() {
         ProviderError::Declined("x".into())
     );
     assert_eq!(ProviderError::Declined("x".into()).result(), "declined");
+}
+
+#[test]
+fn a_date_the_file_records_is_used_when_the_model_gives_none() {
+    let fixture = Fixture::new();
+    let mut photo = text("Image: photo, taken 2026-06-24 16:28 on an iPhone 15 Pro");
+    photo.created = Some(DateOrTime("2026-06-24T16:28:05+02:00".into()));
+    let mut undated = good();
+    undated["created"] = json!("");
+    let registry = registry_of(vec![Scripted::new("a", 100, 8192, vec![Ok(undated)])]);
+    let d = draft(
+        &registry,
+        &fixture.context(),
+        &candidate("IMG_0550.jpeg"),
+        &photo,
+    );
+    assert_eq!(d.created, photo.created);
+    // The date is the file's, not the model's.
+    let generated = d.generated.unwrap();
+    assert!(
+        !generated.fields.contains(&"dates".to_owned()),
+        "{:?}",
+        generated.fields
+    );
+
+    // The model's own date stands.
+    let registry = registry_of(vec![Scripted::new("a", 100, 8192, vec![Ok(good())])]);
+    let d = draft(
+        &registry,
+        &fixture.context(),
+        &candidate("IMG_0550.jpeg"),
+        &photo,
+    );
+    assert_eq!(d.created, Some(DateOrTime("2026-09-14".into())));
+
+    // And with no model, the file's.
+    let d = draft(
+        &Registry::new(),
+        &fixture.context(),
+        &candidate("IMG_0550.jpeg"),
+        &photo,
+    );
+    assert_eq!(d.created, photo.created);
 }

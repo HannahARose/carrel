@@ -33,20 +33,20 @@ On Linux, Windows and Intel Macs nothing changes: the llama.cpp provider fills t
 ## Memory
 
 - **Loaded on the first request,** as llama.cpp does, and kept for the rest of the batch.
-- **Unloaded after five idle minutes,** or at once when the worker finishes its queue (a new `models/unload` notification), so a finished batch doesn't hold gigabytes.
+- **Unloaded after five idle minutes.** The worker exits when its queue is empty, which stops its providers and returns the memory, so no unload message is needed; the idle unload covers a provider kept running longer, as the Mac app's agent will (v0.5). (The accepted design also had a `models/unload` notification; building it showed the worker's exit already does its job.)
 - **Offered only with room:** the provider reports a model as available only when the Mac's memory is at least twice the model's size, so a 5 GB model needs a 16 GB Mac. Otherwise it's listed as unavailable with the reason, and llama.cpp or Apple's model is used.
 
 ## Choosing it
 
 - **Priority 90:** native, but below Apple's model (100), which is shared and costs no memory. With both available, Apple's model is used unless the owner chooses otherwise.
-- **The choice in settings:** a new device setting, `model` in `cli.json` (`apple`, or a catalog name with its format, such as `mlx/qwen3.5-4b`), shown in the Settings tab with each installed model's memory and benchmark score. It pins the text-model capability with `Registry::pin`, as `carrel bench` does. The benchmark's recommendation is the default.
+- **The choice in settings:** a new device setting, `model` in `cli.json` (`apple`, or a catalog name with its format, such as `mlx/qwen3.5-4b`), shown in the Settings tab with each installed model's memory and benchmark score. It's tried first (`Registry::prefer`); if it isn't available, Carrel falls back to the next best rather than drafting nothing. (Accepted as "pins"; changed while building it, since a removed model file would otherwise stop all drafting.) The benchmark's recommendation is the default.
 
 ## Building it
 
 1. `apple/CarrelMLX` with the provider, loading a model from a folder and answering `text/generate` and `text/count-tokens`.
-2. The JSON-Schema token filter, with tests against Carrel's card, route and rating schemas.
+2. Constrained JSON through `MLXGuidedGeneration`, checked against Carrel's card, route and rating schemas.
 3. MLX entries in the catalog, `--format mlx` downloads, and the memory check.
-4. Idle unloading and `models/unload`.
+4. Idle unloading.
 5. The `model` setting, in the CLI and the Settings tab.
 6. A benchmark run of the MLX builds, added to `docs/bench/`, and the release build.
 

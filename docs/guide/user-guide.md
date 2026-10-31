@@ -52,7 +52,7 @@ Ingest is how files come into the archive. It never moves anything until you app
 1. **Choose files:** `i` in the interactive mode (with your file picker or the built-in browser), or `carrel ingest PATH...` in the shell. A folder is one item, unless you ask for each entry (`--each`, or `e` in the plan). A folder named like a pile (Downloads, Desktop, Inbox) makes you choose.
 2. **The plan** shows what will be added, its kind and size, and what's left out: duplicates of items already in the archive or of each other, items already waiting for review, files your rules ignore. `--dry-run` shows only the plan.
 3. **The queue:** each item waits in `_System/queue/intake/` until a **worker** drafts it. The worker runs in the background, one item at a time, and keeps going after you close the terminal. If it's stopped, it picks up where it left off the next time anything is added (or when you run `carrel worker`). `carrel ingest --status`, or the interactive mode's Ingest screen, shows what's waiting and what failed.
-4. **Drafting each item:** the worker reads the item's text (PDF text, OCR for scans and images), drafts its card with a model (title, summary, tags, dates), chooses a collection, and rates how sensitive it is. The proposal is saved as soon as it's ready, and appears in Review.
+4. **Drafting each item:** the worker reads the item's text (PDF text, OCR for scans, and for images what they show; see [Images](#images)), drafts its card with a model (title, summary, tags, dates), chooses a collection, and rates how sensitive it is. The proposal is saved as soon as it's ready, and appears in Review.
 
 An item's journey:
 
@@ -76,6 +76,7 @@ flowchart LR
 
 - **Your rules first.** `_System/rules/routing.yaml` lists rules that match by extension, name, a marker file or the folder an item came from, and name a collection. The first that matches decides, before any model is asked. A rule with `auto_file: true` files its matches without review, except anything sensitive.
 - **Then the model**, one level at a time: it sees the top-level collections' design documents and the draft card, picks one, says how well it fits, and goes down into subcollections. It's asked twice, and the two answers must agree.
+- **A second opinion** when the model isn't sure: an item it would send to Holding, or place with low confidence, is routed again by a second model, and the better answer is kept, with both models' reasons. By default the second model is a recommended one you've installed (`carrel models`), so a fast model such as Apple's can file most items and a more careful one looks at the rest. Choose another with `carrel settings set second_model NAME`, or turn it off with `off`.
 - **Confidence:** *high* when a rule decided, *medium* when the model's two answers agreed, *low* otherwise. Poor or uncertain fits go to Holding.
 
 When an item is filed with low or medium confidence, its card keeps a `placement` record of that. `carrel status` gathers these into **Structure** signals: many uncertain items in one collection, a crowded collection, a collection with a single item, a tag used across several collections, or a lot waiting in Holding. They're hints that the structure could change; nothing moves until you decide.
@@ -84,11 +85,23 @@ When an item is filed with low or medium confidence, its card keeps a `placement
 
 Every item is rated **public**, **personal**, **sensitive** or **restricted**:
 
-- Rules set a floor before any model: a card number, a bank account number (IBAN), a social security number, a private key or a written-down password makes it **restricted**; words like "diagnosis", "payslip", "tax return" or "insurance claim" make it at least **sensitive**.
-- A model may raise the level, never lower it.
+- Rules set a floor before any model: a card number (in a card's format, with a real issuer's prefix and check digit), a bank account number (IBAN), a social security number, a private key, a written-down password or account recovery codes make it **restricted**; words like "diagnosis", "payslip", "tax return" or "insurance claim" make it at least **sensitive**.
+- A photo that records where it was taken is at least **personal**, with the reason "has the place it was taken". Most phone photos have a location, so it never raises them further.
+- A model may raise the level to **sensitive**, never lower it. Only the rules make an item restricted, since they check the value itself, and a file with no readable text isn't rated by a model at all.
 - The archive sets a default, **personal**.
 
 Sensitive and restricted items always wait for your approval, whatever rules say. The reasons are given in words, never by quoting what was found.
+
+### Images
+
+On a Mac, Carrel reads more of an image than its text. For each picture it notes:
+
+- what kind it is (a photo, a screenshot or another image), its size, when it was taken, and the camera or app that made it;
+- a few labels from Apple's Vision framework, such as `document`, `dog` or `beach`;
+- any text in it, by OCR;
+- on macOS 27 with Apple Intelligence, a sentence or two from Apple's on-device model on what it shows.
+
+The model drafts the card from all of that, so a photo named `IMG_0550.jpeg` gets a real title. When the model gives no date, the date the photo was taken becomes the card's **created** date. Where a photo was taken is never written into the text or the card; Carrel only notes that it has a location. Everything is read on the device.
 
 ### When a model declines
 
@@ -167,6 +180,7 @@ History keeps the cards; [Kopia](https://kopia.io) keeps the files. After `carre
 - `carrel backup verify` checks the repository, reading back a sample of the files.
 - `carrel backup restore ITEM [--at CHANGE]` restores an item as it was, into a new folder beside the archive. It never overwrites anything.
 - The password is asked for once and kept in your keychain. Losing it means losing the backups, so keep it in a password manager too.
+- The interactive mode's Backups screen (`8`) does the same: it lists the snapshots with their changes (from history, so it works with the drive unplugged), and `n` takes a snapshot, `v` verifies, `r` restores an item as of the chosen snapshot, and `s` sets up or connects a repository: choose its folder with your file picker or the built-in browser (`/` to type a path), then type the password, shown as dots.
 
 If the backup drive isn't connected, filing still works; the next snapshot covers what was missed.
 
@@ -176,11 +190,12 @@ Carrel never sends your files anywhere. Everything it does with them runs on you
 
 | Provider | What it gives Carrel | Where |
 | --- | --- | --- |
-| `apple` | Apple's on-device model, PDF text (PDFKit), OCR (Vision) | Macs with Apple Intelligence |
+| `apple` | Apple's on-device model, PDF text (PDFKit), images (ImageIO, Vision and Apple's model), OCR (Vision) | Macs with Apple Intelligence |
+| `mlx` | Open models you download, through Apple's MLX, usually faster than llama.cpp on the same Mac | Apple-silicon Macs with twice the model's size in memory |
 | `llama` | Open models you download, through llama.cpp | Any platform |
 | `extract` | PDF text, and OCR through [Tesseract](https://tesseract-ocr.github.io) if it's installed | Any platform |
 
-`carrel providers` shows what this device has and which is used for what; the best available is chosen, and the next is tried when one can't help. `carrel models` lists models you can download, with their size, the memory they need and their license, and downloads one only when you ask. The only Carrel program that goes online is `carrel-fetch`, which downloads models and logs every request to `logs/network.log` on this device.
+`carrel providers` shows what this device has and which is used for what; the best available is chosen, and the next is tried when one can't help. `carrel models` lists models you can download, with their size, the memory they need and their license, and marks the ones the benchmark recommends: Qwen3.5 4B for 8 GB of memory, Gemma 4 E4B for 16 GB or more ([results](../bench/README.md)). It downloads one only when you ask: `carrel models download NAME` for llama.cpp, or `--format mlx` for the MLX provider. An MLX model is loaded on its first request and unloaded after five idle minutes. `carrel formats` lists the file types this device reads, and the ones it couldn't: each device keeps a count of them by type and reason (no reader, the reader failed, or read but empty) in `unreadable.json` in Carrel's folder, without file names, so you can share it. An ingest that meets one says so. The only Carrel program that goes online is `carrel-fetch`, which downloads models and logs every request to `logs/network.log` on this device.
 
 ## Settings
 
@@ -190,6 +205,8 @@ The Settings screen (`7`), or `carrel settings`, shows two kinds:
 
 - **File picker** for choosing what to ingest: yazi, lf, nnn, ranger, vifm or fzf if one's installed, any command you give (with `{out}` for the file it writes chosen paths to), or the built-in browser. Settings suggests pickers you could install; Carrel never installs anything.
 - **Editor** for cards, before `$VISUAL` and `$EDITOR`.
+- **Second model**, asked when the first isn't sure where an item goes: a model name, `off`, or `default` for a recommended model you've installed.
+- **Model** that drafts cards, routes and rates items, as `provider/offer` (such as `llama/qwen3.5-4b`), or `default` to let Carrel choose: Apple's on-device model where there is one, then local models. If the chosen model isn't available, for example because its file was removed, Carrel uses the next best. `carrel settings` shows which is in use.
 
 **This archive**, kept in `_System/settings.json` and shared by every device that opens it:
 

@@ -47,15 +47,20 @@
 //! ```
 
 pub mod actions;
+pub mod active;
 pub mod archive;
 pub mod backup;
 pub mod bench;
 pub mod card;
 pub mod card_file;
+pub mod checkout;
 pub mod collections;
 pub mod coordinator;
+pub mod desk;
 pub mod detect;
 pub mod documents;
+pub mod entries;
+pub mod formats;
 pub mod frontmatter;
 pub mod history;
 pub mod ingest;
@@ -70,6 +75,7 @@ pub mod questions;
 pub mod rename;
 pub mod review;
 pub mod sections;
+pub mod sessions;
 pub mod settings;
 pub mod signals;
 

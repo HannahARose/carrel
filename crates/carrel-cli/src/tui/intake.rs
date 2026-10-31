@@ -88,6 +88,12 @@ impl App {
 
     /// Starts choosing what to ingest: the owner's file picker, or the built-in browser.
     pub(super) fn start_ingest(&mut self) -> Option<Effect> {
+        self.picking = super::app::Picking::Ingest;
+        self.start_picker()
+    }
+
+    /// Opens the owner's file picker, or the built-in browser, for what `picking` says.
+    pub(super) fn start_picker(&mut self) -> Option<Effect> {
         match crate::picker::choose(self.picker_preference.as_deref()) {
             crate::picker::Choice::Command(words) => Some(Effect::Pick(words)),
             crate::picker::Choice::BuiltIn => {
@@ -110,6 +116,32 @@ impl App {
     /// Opens the built-in browser where picking starts.
     pub(super) fn open_browser(&mut self) {
         self.browser = Some(super::browser::Browser::open(self.start_folder.clone()));
+    }
+
+    /// Makes `folder` where picking files for ingest starts next time, here and in this
+    /// device's preferences. Folders picked for backups aren't remembered: they'd send the
+    /// next ingest to the backup drive.
+    pub(super) fn remember_folder(&mut self, folder: PathBuf) {
+        if self.picking != super::app::Picking::Ingest || !folder.is_dir() {
+            return;
+        }
+        if self.preferences == super::app::Preferences::Saved
+            && let Ok(mut prefs) = crate::config::Prefs::load()
+        {
+            prefs.last_folder = Some(folder.clone());
+            let _ = prefs.save();
+        }
+        self.start_folder = folder;
+    }
+
+    /// What was picked goes where `picking` says: an ingest plan, or backup setup.
+    pub(super) fn picked(&mut self, paths: Vec<PathBuf>) {
+        if self.picking == super::app::Picking::BackupFolder {
+            self.picking = super::app::Picking::Ingest;
+            self.backup_folder_chosen(&paths);
+        } else {
+            self.plan(paths, IntakeOptions::default());
+        }
     }
 
     /// Opens the line to type or paste paths into.
