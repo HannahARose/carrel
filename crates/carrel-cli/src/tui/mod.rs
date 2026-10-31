@@ -1,6 +1,7 @@
 //! The interactive mode (`docs/design/interactive.md`): `carrel` in a terminal, or
 //! `carrel tui`. Everything it does is also a command.
 
+mod actions;
 mod active;
 mod app;
 mod archives;
@@ -394,19 +395,10 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
         effect @ (Effect::Return(_) | Effect::CancelCheckout(_) | Effect::Entries { .. }) => {
             active_work(root, effect)
         }
-        Effect::Download(name) => {
-            // What the providers offer changes once it's here.
-            if app.here.is_some() {
-                app.here = None;
-            }
-            (
-                format!("Downloading {name}…"),
-                Box::new(move || crate::models::download_quietly(&name)),
-            )
-        }
-        effect @ (Effect::Index(_) | Effect::OpenArchive(_) | Effect::CreateArchive(_)) => {
-            archive_work(app, root, effect)?
-        }
+        effect @ (Effect::Download(_)
+        | Effect::Index(_)
+        | Effect::OpenArchive(_)
+        | Effect::CreateArchive(_)) => switch_or_index_work(app, root, effect)?,
         Effect::Queue { paths, options } => {
             let result = queue(&root, &paths, options);
             finished(app, result.map_err(|Failure(e)| e));
@@ -447,6 +439,13 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
             }),
         ),
         Effect::Keep { id, kept, target } => keep(root, id, kept, target),
+        effect @ (Effect::Checkout { .. }
+        | Effect::DeskAdd(_)
+        | Effect::DeskRemove { .. }
+        | Effect::DeskArchive(_)
+        | Effect::NewCollection(_)
+        | Effect::Rename { .. }
+        | Effect::Expand { .. }) => archive_work(root, effect),
     };
     app.busy = Some(busy);
     let (send, receive) = std::sync::mpsc::channel();
@@ -457,10 +456,18 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
     Some(receive)
 }
 
-/// The work for the index and for switching archives: the index's in the background, and
-/// switching at once, since the app is replaced.
-fn archive_work(app: &mut App, root: PathBuf, effect: Effect) -> Option<(String, Work)> {
+/// The work for downloading a model, the index and switching archives: downloads and the
+/// index's in the background, and switching at once, since the app is replaced.
+fn switch_or_index_work(app: &mut App, root: PathBuf, effect: Effect) -> Option<(String, Work)> {
     match effect {
+        Effect::Download(name) => {
+            // What the providers offer changes once it's here.
+            app.here = None;
+            Some((
+                format!("Downloading {name}…"),
+                Box::new(move || crate::models::download_quietly(&name)),
+            ))
+        }
         Effect::Index(work) => Some(embedding::index_work(
             root,
             work,
@@ -493,6 +500,7 @@ fn picked_files(app: &mut App, picked: Result<Vec<PathBuf>, Failure>) {
         Ok(paths) if paths.is_empty() => {
             app.message = Some("Nothing chosen".into());
             app.picking = app::Picking::Ingest;
+            app.checking_out = None;
         }
         Ok(paths) => {
             if let Some(folder) = paths[0].parent().filter(|f| f.is_dir()) {
@@ -585,6 +593,58 @@ fn active_work(root: PathBuf, effect: Effect) -> (String, Work) {
         ),
         _ => unreachable!("only the Active screen's effects come here"),
     }
+}
+
+/// Work on the archive at the path it's given.
+type ArchiveWork = Box<dyn FnOnce(&Path) -> Result<Report, Failure> + Send>;
+
+/// The work for checking out, the desk, and Browse's actions, which `carrel checkout`,
+/// `carrel desk`, `carrel collection new`, `carrel rename` and `carrel expand` do. Each changes
+/// the archive, so a worker brings the search index up to date after it.
+fn archive_work(root: PathBuf, effect: Effect) -> (String, Work) {
+    let (busy, work): (&str, ArchiveWork) = match effect {
+        Effect::Checkout { item, to, due } => (
+            "Checking it out…",
+            Box::new(move |root| {
+                crate::checkout::checkout(Some(root), &item, Some(&to), due.as_deref())
+            }),
+        ),
+        Effect::DeskAdd(path) => (
+            "Putting it on the desk and drafting its card…",
+            Box::new(move |root| crate::desk::add_item(Some(root), &path, None, None)),
+        ),
+        Effect::DeskRemove { path, delete_card } => (
+            "Taking it off the desk…",
+            Box::new(move |root| crate::desk::remove_item(Some(root), &path, delete_card)),
+        ),
+        Effect::DeskArchive(path) => (
+            "Queueing it for the archive…",
+            Box::new(move |root| crate::desk::archive_desk_item(Some(root), &path)),
+        ),
+        Effect::NewCollection(new) => (
+            "Creating the collection…",
+            Box::new(move |root| {
+                crate::commands::collection_new(Some(root), &new.path, new.description, &new.tags)
+            }),
+        ),
+        Effect::Rename { item, new_name } => (
+            "Renaming it…",
+            Box::new(move |root| crate::commands::rename(Some(root), &item, Some(&new_name))),
+        ),
+        Effect::Expand { item, anyway } => (
+            "Expanding it…",
+            Box::new(move |root| crate::expand::expand(Some(root), &item, anyway)),
+        ),
+        _ => unreachable!("only the archive's actions come here"),
+    };
+    (
+        busy.into(),
+        Box::new(move || {
+            let result = work(&root);
+            changed(&root, &result);
+            result
+        }),
+    )
 }
 
 /// Opens `path` in the system's own app for it (Finder, a file manager, or what the file's
@@ -1774,7 +1834,7 @@ mod tests {
     /// The sample archive with its parts list checked out to `out/`, due back on 30 November,
     /// changed there and with two pending history entries, and a folder on the desk of the
     /// device the app shows.
-    fn active_sample() -> (tempfile::TempDir, App) {
+    pub(super) fn active_sample() -> (tempfile::TempDir, App) {
         use carrel_core::card_file::CardFile;
         use carrel_core::entries::HistoryEntry;
         let (dir, app) = sample(true);
@@ -1822,7 +1882,7 @@ mod tests {
     }
 
     /// Chooses the parts list on the Active screen, and returns it.
-    fn choose_parts_list(app: &mut App) -> super::active::ActiveItem {
+    pub(super) fn choose_parts_list(app: &mut App) -> super::active::ActiveItem {
         let i = app
             .active
             .iter()
@@ -1876,8 +1936,9 @@ mod tests {
         assert!(text.contains("No pending history entries"), "{text}");
         let keys = app.keys();
         assert!(
-            keys.iter()
-                .all(|(k, _)| !["r", "x", "a", "Space"].contains(k)),
+            keys.iter().all(|(k, _)| !["r", "a", "Space"].contains(k))
+                && keys.contains(&("x", "take off"))
+                && keys.contains(&("f", "archive")),
             "only what a desk item without entries answers to: {keys:?}"
         );
         assert_eq!(app.key(key(KeyCode::Char('r'))), None);

@@ -4,7 +4,9 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use carrel_core::archive::Archive;
-use carrel_core::backup::{BackupError, Backups, KOPIA_PREFIX, Kopia, record};
+use carrel_core::backup::{
+    BackupError, Backups, KOPIA_PREFIX, Kopia, SnapshotNowError, record, snapshot_now,
+};
 use carrel_core::coordinator::{Coordinator, DEFAULT_LEASE, DiskLock};
 use carrel_core::history::{Change, Entry, History, Operation};
 use carrel_core::ingest::filing::Outcome;
@@ -193,22 +195,12 @@ pub fn now(archive: Option<&Path>) -> Result<Report, Failure> {
     let identity = Identity::load_or_create()?;
     let lease =
         DiskLock::for_archive(&archive).acquire(holder(&identity), "backup", DEFAULT_LEASE)?;
-    let result = (|| -> Result<_, Failure> {
-        let snapshot = kopia.snapshot(archive.root(), "Snapshot on request")?;
-        let mut change = Change::new(
-            Operation::Edit,
-            "Snapshot on request",
-            identity.person,
-            identity.device,
-        );
-        change.snapshot = Some(snapshot.trailer());
-        // History records a snapshot only with a change; with nothing changed, the snapshot
-        // still exists in the repository.
-        let commit = History::open(&archive)?.commit(&archive, &change, &lease)?;
-        Ok((snapshot, commit))
-    })();
+    let result = snapshot_now(&archive, &kopia, &lease, "Snapshot on request");
     lease.release()?;
-    let (snapshot, commit) = result?;
+    let (snapshot, commit) = result.map_err(|e| match e {
+        SnapshotNowError::Backup(e) => Failure::from(e),
+        SnapshotNowError::History(e) => Failure::from(e),
+    })?;
     let mut text = format!("Snapshot {} taken", snapshot.trailer());
     if let (Some(size), Some(files)) = (snapshot.size, snapshot.files) {
         write!(text, ": {files} files, {}", human_bytes(size)).unwrap();

@@ -56,6 +56,40 @@ pub enum InputPurpose {
     OpenArchive,
     /// The folder for a new archive.
     CreateArchive,
+    /// The folder to check the item being checked out to.
+    CheckoutFolder,
+    /// When the item being checked out is due back, if ever.
+    Due {
+        /// The item's card path.
+        card: String,
+        /// Its title.
+        title: String,
+        /// The folder chosen for it.
+        to: std::path::PathBuf,
+    },
+    /// The file or folder to put on the desk.
+    DeskPath,
+    /// A new collection's path.
+    CollectionPath,
+    /// What belongs in the new collection at this path.
+    CollectionDescription {
+        /// The collection's path.
+        path: String,
+    },
+    /// The new collection's tags.
+    CollectionTags {
+        /// The collection's path.
+        path: String,
+        /// What belongs there.
+        description: Option<String>,
+    },
+    /// A new name for this item.
+    Rename {
+        /// The item's card path.
+        card: String,
+        /// Its name now.
+        from: String,
+    },
 }
 
 /// What a correction is for.
@@ -83,6 +117,13 @@ impl Input {
             InputPurpose::Correct(_) => {
                 "what's wrong (\"it's from 2019\"), or field: value lines such as created: 2019-03-31"
             }
+            InputPurpose::CheckoutFolder => "the folder (drop it here)",
+            InputPurpose::Due { .. } => "YYYY-MM-DD, or nothing",
+            InputPurpose::DeskPath => "the file or folder (drop it here)",
+            InputPurpose::CollectionPath => "the collection's path",
+            InputPurpose::CollectionDescription { .. } => "what belongs there, or nothing",
+            InputPurpose::CollectionTags { .. } => "name=meaning; …, or nothing",
+            InputPurpose::Rename { .. } => "the new name",
         }
     }
 
@@ -225,6 +266,7 @@ impl App {
                     | InputPurpose::RestoreItem { .. }) => {
                         return self.backup_input(purpose, text);
                     }
+                    purpose => return self.action_input(purpose, text),
                 }
             }
             _ => {}
@@ -293,8 +335,8 @@ impl App {
     }
 
     /// Handles a key on the Browse screen: ←→ move between collections, items and the chosen
-    /// item's view, `e` and `c` edit or correct the chosen item, `/` searches, and Esc clears a
-    /// search.
+    /// item's view, `e` and `c` edit or correct the chosen item, `o`, `r` and `z` check it out,
+    /// rename or expand it, `n` creates a collection, `/` searches, and Esc clears a search.
     pub(super) fn browse_key(&mut self, key: KeyEvent) -> Handled {
         if self.browse_pane == Pane::Item
             && let Handled::Yes(effect) = self.item_key(key)
@@ -302,6 +344,9 @@ impl App {
             return Handled::Yes(effect);
         }
         let on_item = self.browse_pane != Pane::Collections;
+        if let Handled::Yes(effect) = self.browse_action_key(key, on_item) {
+            return Handled::Yes(effect);
+        }
         match key.code {
             // Here ←→ move between the panes; Tab still switches screens.
             KeyCode::Right | KeyCode::Enter | KeyCode::Char('l') => match self.browse_pane {

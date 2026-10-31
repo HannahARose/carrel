@@ -89,6 +89,10 @@ pub enum Picking {
     Ingest,
     /// The folder for a backup repository.
     BackupFolder,
+    /// The folder to check the item in `App::checking_out` out to.
+    CheckoutFolder,
+    /// A file or folder to put on the desk.
+    DeskItem,
 }
 
 /// Something that waits for the owner to say yes.
@@ -132,6 +136,53 @@ pub enum Confirm {
         about: String,
         /// The fact.
         fact: String,
+    },
+    /// Checking this item out to a folder, as `carrel checkout ITEM --to --due` does.
+    Checkout {
+        /// The item's card path.
+        card: String,
+        /// Its title.
+        title: String,
+        /// The folder the working copy goes in.
+        to: std::path::PathBuf,
+        /// When it's due back, as YYYY-MM-DD.
+        due: Option<String>,
+    },
+    /// Putting this file or folder on the desk, as `carrel desk add` does.
+    DeskAdd(std::path::PathBuf),
+    /// Taking this desk item off the desk: `y` keeps its card, `d` deletes it too.
+    DeskRemove {
+        /// The desk item.
+        path: std::path::PathBuf,
+        /// Its title.
+        title: String,
+    },
+    /// Queueing this desk item for ingest and taking it off the desk.
+    DeskArchive {
+        /// The desk item.
+        path: std::path::PathBuf,
+        /// Its title.
+        title: String,
+    },
+    /// Creating a collection with its design document, as `carrel collection new` does.
+    NewCollection(super::actions::NewCollection),
+    /// Renaming an item and its card together.
+    Rename {
+        /// The item's card path.
+        card: String,
+        /// Its name now.
+        from: String,
+        /// The new name.
+        to: String,
+    },
+    /// Expanding a filed compressed file.
+    Expand {
+        /// The item's card path.
+        card: String,
+        /// Its title.
+        title: String,
+        /// Why it's kept compressed, when it's expanded all the same.
+        anyway: Option<String>,
     },
 }
 
@@ -256,6 +307,42 @@ pub enum Effect {
         numbers: Vec<usize>,
         /// Approve, combine or drop them.
         decision: crate::sessions::Decision,
+    },
+    /// Check this item out, as `carrel checkout ITEM --to FOLDER --due DATE` does.
+    Checkout {
+        /// The item's card path.
+        item: String,
+        /// The folder the working copy goes in.
+        to: std::path::PathBuf,
+        /// When it's due back, as YYYY-MM-DD.
+        due: Option<String>,
+    },
+    /// Put this file or folder on the desk, as `carrel desk add` does.
+    DeskAdd(std::path::PathBuf),
+    /// Take this desk item off the desk, as `carrel desk remove [--delete-card]` does.
+    DeskRemove {
+        /// The desk item.
+        path: std::path::PathBuf,
+        /// Whether its card goes too.
+        delete_card: bool,
+    },
+    /// Archive this desk item, as `carrel desk archive` does.
+    DeskArchive(std::path::PathBuf),
+    /// Create a collection, as `carrel collection new` does.
+    NewCollection(super::actions::NewCollection),
+    /// Rename an item and its card, as `carrel rename` does.
+    Rename {
+        /// The item's card path.
+        item: String,
+        /// The new name.
+        new_name: String,
+    },
+    /// Expand a filed compressed file, as `carrel expand [--anyway]` does.
+    Expand {
+        /// The item's card path.
+        item: String,
+        /// Whether to expand it even though there's a reason to keep it compressed.
+        anyway: bool,
     },
     /// Take a backup snapshot now.
     BackupNow,
@@ -382,6 +469,8 @@ pub struct App {
     pub start_folder: std::path::PathBuf,
     /// What the file picker is choosing for.
     pub picking: Picking,
+    /// The item being checked out, as its card's path and title, while its folder is chosen.
+    pub checking_out: Option<(String, String)>,
     /// Whether the folder picking ends in is saved to this device's preferences, or only kept
     /// for this session, as in tests, which must never write the real configuration.
     pub preferences: Preferences,
@@ -454,6 +543,7 @@ impl App {
             picker_preference: None,
             start_folder: std::path::PathBuf::from("."),
             picking: Picking::Ingest,
+            checking_out: None,
             preferences: if cfg!(test) {
                 Preferences::InMemory
             } else {
@@ -563,7 +653,14 @@ impl App {
         if self.correction.is_some() {
             return vec![("y", "save"), ("n", "discard")];
         }
-        if self.confirm.is_some() {
+        if let Some(confirm) = &self.confirm {
+            if matches!(confirm, Confirm::DeskRemove { .. }) {
+                return vec![
+                    ("y", "keep its card"),
+                    ("d", "delete its card"),
+                    ("n", "no"),
+                ];
+            }
             return vec![("y", "yes"), ("n", "no")];
         }
         // Typing comes before any screen's keys: they don't apply while a line is open.
@@ -593,10 +690,11 @@ impl App {
                 ("Space", "mark"),
                 (
                     "i",
-                    if self.picking == Picking::BackupFolder {
-                        "choose the folder"
-                    } else {
-                        "add"
+                    match self.picking {
+                        Picking::BackupFolder => "choose the folder",
+                        Picking::CheckoutFolder => "check out here",
+                        Picking::DeskItem => "put on the desk",
+                        Picking::Ingest => "add",
                     },
                 ),
                 (".", "hidden"),
@@ -638,7 +736,7 @@ impl App {
             Tab::Questions => {
                 keys.extend([("↑↓", "choose"), ("Enter", "answer"), ("d", "dismiss")]);
             }
-            Tab::Browse => keys.extend(self.browse_keys()),
+            Tab::Browse => return self.browse_keys(),
             _ => keys.push(("↑↓", "scroll")),
         }
         keys.extend([("^R", "refresh"), ("?", "help"), ("q", "quit")]);
@@ -695,20 +793,11 @@ impl App {
             return None;
         }
         if let Some(confirm) = self.confirm.take() {
-            if matches!(key.code, KeyCode::Char('y' | 'Y')) {
-                return Some(match confirm {
-                    Confirm::Undo { id, .. } => Effect::Undo(id),
-                    Confirm::Reject(ids) => Effect::Reject(ids),
-                    Confirm::Download { name, .. } => Effect::Download(name),
-                    Confirm::Return { id, .. } => Effect::Return(id),
-                    Confirm::CancelCheckout { id, .. } => Effect::CancelCheckout(id),
-                    Confirm::Learn { about, fact } => {
-                        Effect::Correction(Step::Learn { about, fact })
-                    }
-                });
+            let effect = confirmed(confirm, key.code);
+            if effect.is_none() {
+                self.message = Some("Nothing changed".into());
             }
-            self.message = Some("Nothing changed".into());
-            return None;
+            return effect;
         }
         if self.help {
             self.help = false;
@@ -803,16 +892,19 @@ impl App {
             }
             super::browser::Outcome::Type => {
                 self.browser = None;
-                if self.picking == Picking::BackupFolder {
-                    self.picking = Picking::Ingest;
-                    self.ask_for_backup_folder();
-                } else {
-                    self.ask_for_paths();
+                match self.picking {
+                    Picking::BackupFolder => {
+                        self.picking = Picking::Ingest;
+                        self.ask_for_backup_folder();
+                    }
+                    Picking::CheckoutFolder | Picking::DeskItem => self.ask_for_path(),
+                    Picking::Ingest => self.ask_for_paths(),
                 }
             }
             super::browser::Outcome::Cancel => {
                 self.browser = None;
                 self.picking = Picking::Ingest;
+                self.checking_out = None;
             }
         }
     }
@@ -831,6 +923,48 @@ impl App {
         }
         self.settings_shown();
     }
+}
+
+/// The work a confirmation's answer starts: `y` says yes, and `d` takes a desk item off the
+/// desk with its card. Any other key changes nothing.
+fn confirmed(confirm: Confirm, key: KeyCode) -> Option<Effect> {
+    if let (Confirm::DeskRemove { path, .. }, KeyCode::Char('d' | 'D')) = (&confirm, key) {
+        return Some(Effect::DeskRemove {
+            path: path.clone(),
+            delete_card: true,
+        });
+    }
+    if !matches!(key, KeyCode::Char('y' | 'Y')) {
+        return None;
+    }
+    Some(match confirm {
+        Confirm::Undo { id, .. } => Effect::Undo(id),
+        Confirm::Reject(ids) => Effect::Reject(ids),
+        Confirm::Download { name, .. } => Effect::Download(name),
+        Confirm::Return { id, .. } => Effect::Return(id),
+        Confirm::CancelCheckout { id, .. } => Effect::CancelCheckout(id),
+        Confirm::Learn { about, fact } => Effect::Correction(Step::Learn { about, fact }),
+        Confirm::Checkout { card, to, due, .. } => Effect::Checkout {
+            item: card,
+            to,
+            due,
+        },
+        Confirm::DeskAdd(path) => Effect::DeskAdd(path),
+        Confirm::DeskRemove { path, .. } => Effect::DeskRemove {
+            path,
+            delete_card: false,
+        },
+        Confirm::DeskArchive { path, .. } => Effect::DeskArchive(path),
+        Confirm::NewCollection(new) => Effect::NewCollection(new),
+        Confirm::Rename { card, to, .. } => Effect::Rename {
+            item: card,
+            new_name: to,
+        },
+        Confirm::Expand { card, anyway, .. } => Effect::Expand {
+            item: card,
+            anyway: anyway.is_some(),
+        },
+    })
 }
 
 /// `index` moved by `delta` within `len` items.

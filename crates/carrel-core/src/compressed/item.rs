@@ -125,6 +125,35 @@ fn io(path: &Path) -> impl FnOnce(std::io::Error) -> ExpandError + '_ {
     }
 }
 
+/// Whether the filed compressed file `item` would expand: `None` if it would as it is, or the
+/// reason it's kept compressed when only expanding it all the same (`anyway`) would. Reads the
+/// file's listing but changes nothing, so an interface can ask before expanding.
+///
+/// # Errors
+///
+/// [`ExpandError`] when it can't be expanded at all: it isn't a compressed file, it's checked
+/// out, or it's kept compressed for a reason `anyway` doesn't override.
+pub fn examine(archive: &Archive, item: &ItemRef) -> Result<Option<String>, ExpandError> {
+    let card_path = archive.root().join(&item.card);
+    let file = CardFile::parse(&std::fs::read_to_string(&card_path).map_err(io(&card_path))?)?;
+    if file.card().checked_out.is_some() {
+        return Err(ExpandError::CheckedOut);
+    }
+    let Some(from) = item.item.clone().filter(|_| file.card().kind == Kind::File) else {
+        return Err(ExpandError::NotCompressed(item.card.clone()));
+    };
+    let inside = super::inspect(&archive.root().join(&from))
+        .ok_or_else(|| ExpandError::NotCompressed(from.clone()))?;
+    match check(&inside, false) {
+        Ok(()) => Ok(None),
+        Err(ExpandError::Kept {
+            reason,
+            overridable: true,
+        }) => Ok(Some(reason)),
+        Err(e) => Err(e),
+    }
+}
+
 /// Expands the filed compressed file `item`, holding `lease`: what it held takes its place in
 /// the collection, unwrapped as at filing, its card follows (with `expanded_from`, and a new
 /// name when the item's name changes), links to it follow, and the compressed file goes to the
