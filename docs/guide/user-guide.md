@@ -183,7 +183,7 @@ The **Active** screen (`3`) lists what's checked out and what's on this device's
 - `o` opens the working copy (or the desk item) in Finder, or in the app its type opens with, and leaves the interactive mode as it is.
 - `a`, `c` and `d` approve, combine or drop the chosen item's pending entries: all of them, or the ones marked with `Space`.
 
-Active/ in the archive, and the Journal, show the same in Obsidian, and are kept current with every checkout and return.
+Active/ in the archive, and the Journal, show the same in Obsidian, and are kept current with every checkout and return. `Active/On desk/` has a copy of each desk item's card, so you can read and annotate it with the rest of the archive: notes you write there, outside the box at the top and the history, are copied to the card beside the item the next time you run `carrel desk` or change the desk.
 
 ## History and undo
 

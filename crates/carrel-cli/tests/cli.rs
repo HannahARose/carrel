@@ -889,6 +889,25 @@ fn desk_items_get_a_card_beside_them_and_stay_where_they_are() {
         1
     );
 
+    let mirror = root.join("Active/On desk/Budget app.md");
+    let mirrored = std::fs::read_to_string(&mirror).unwrap();
+    std::fs::write(
+        &mirror,
+        mirrored.replace(
+            "<!-- /carrel:mirror -->\n",
+            "<!-- /carrel:mirror -->\nTry the new chart crate.\n",
+        ),
+    )
+    .unwrap();
+    let listed = sandbox.json(&root, &["desk"]);
+    assert_eq!(listed["copied"].as_array().unwrap().len(), 1, "{listed}");
+    assert!(
+        std::fs::read_to_string(&card)
+            .unwrap()
+            .contains("Try the new chart crate."),
+        "notes written in the mirror go to the card"
+    );
+
     let again = sandbox.run_in(&root, &["desk", "add", project.to_str().unwrap()]);
     assert!(String::from_utf8_lossy(&again.stderr).contains("already on the desk"));
     let inside = sandbox.run_in(
@@ -899,6 +918,7 @@ fn desk_items_get_a_card_beside_them_and_stay_where_they_are() {
 
     sandbox.ok(&root, &["desk", "remove", project.to_str().unwrap()]);
     assert!(card.exists(), "the card stays unless asked");
+    assert!(!mirror.exists(), "the mirror goes with it");
     assert_eq!(sandbox.json(&root, &["desk"])["items"], json!([]));
     assert!(project.join("src/main.rs").exists());
 }

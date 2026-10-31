@@ -272,9 +272,7 @@ pub fn add(
             device,
         );
         change.items = vec![id];
-        History::open(archive)
-            .and_then(|h| h.commit(archive, &change, lease))
-            .map_err(DeskError::History)
+        commit(archive, &change, lease)
     });
     if let Err(e) = result {
         let _ = std::fs::remove_file(&card);
@@ -335,6 +333,18 @@ fn new_card(
     }
 }
 
+/// Rebuilds `Active/`, the desk mirrors included, and commits `change` with it.
+fn commit(archive: &Archive, change: &Change, lease: &WriterLease) -> Result<(), DeskError> {
+    crate::active::regenerate(archive).map_err(|e| DeskError::Io {
+        path: archive.root().join("Active"),
+        message: e.to_string(),
+    })?;
+    History::open(archive)
+        .and_then(|h| h.commit(archive, change, lease))
+        .map(|_| ())
+        .map_err(DeskError::History)
+}
+
 /// What a model's draft produced, leaving out the fields the owner gave.
 fn provenance(
     drafted: &Draft,
@@ -381,9 +391,7 @@ pub fn remove(
         device,
     );
     change.items = vec![entry.id];
-    History::open(archive)
-        .and_then(|h| h.commit(archive, &change, lease))
-        .map_err(DeskError::History)?;
+    commit(archive, &change, lease)?;
     Ok(entry)
 }
 
@@ -457,9 +465,7 @@ pub fn archive(
         device,
     );
     change.items = vec![entry.id];
-    History::open(archive)
-        .and_then(|h| h.commit(archive, &change, lease))
-        .map_err(DeskError::History)?;
+    commit(archive, &change, lease)?;
     Ok((entry, intake))
 }
 

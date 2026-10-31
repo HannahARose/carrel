@@ -802,6 +802,8 @@ The archive copy **must not** be modified while `checked_out` is present, except
 - `Active/Checked out/<title>.md`: one note per checked-out item, linking to its card and its working location. Names are made unique by adding the start of the item's `id` when two titles collide.
 - `Active/On desk/<title>.md`: mirrors of desk-item cards (§9.4), named the same way and refreshed while the archive is available. Owner notes written in a mirror's body are copied back to the desk card.
 
+A mirror's frontmatter is `carrel: desk-mirror`, the desk card's `id`, `card` (its absolute path on its device) and `mirrored` (the checksum, §2.6, of the card's notes when the mirror was written). Its body is a managed section `mirror` (§5.3) that programs write, followed by the desk card's body. The **notes** are a body without the `mirror` section and with the history section's content left out, table padding normalized. When a mirror's notes no longer match `mirrored`, the owner edited them there: programs copy them to the desk card, keeping the card's history section, or, if the card's notes changed too, add them to the card before its history section, so nothing is lost. A mirror of a desk card the device can't read, such as another device's, is left as it is.
+
 ### 9.3 Journal
 
 `Journal/<year>/<year>-<month>.md` lists the month's approved work sessions across all items, newest first, each linking to its card. Journal files are generated from cards and may be regenerated at any time.

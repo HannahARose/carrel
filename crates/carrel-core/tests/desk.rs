@@ -306,3 +306,99 @@ fn status_suggests_active_folders_to_track_and_idle_desk_items_to_archive() {
     assert_eq!(found.to_archive.len(), 1);
     assert!(found.to_archive[0].entry.path.ends_with("idle"));
 }
+
+#[test]
+fn desk_cards_are_mirrored_in_active_and_notes_written_there_go_back_to_the_card() {
+    let s = Setup::new();
+    let thesis = s.thesis();
+    let lease = s.lease();
+    let entry = add(&s.archive, &thesis, Some("My thesis"), None, None, &lease).unwrap();
+    let mirror = s.archive.root().join("Active/On desk/My thesis.md");
+    let text = std::fs::read_to_string(&mirror).unwrap();
+    assert!(text.contains("carrel: desk-mirror"), "{text}");
+    assert!(text.contains("# My thesis"), "{text}");
+    let index = std::fs::read_to_string(s.archive.root().join("Active/_index.md")).unwrap();
+    assert!(
+        index.contains("[My thesis](On%20desk/My%20thesis.md)"),
+        "{index}"
+    );
+
+    // A session is recorded on the card while the owner writes a note in the mirror.
+    let mut file = card_of(&entry.card);
+    let mut log = file.history().unwrap();
+    log.add(HistoryEntry::pending(
+        "2026-10-30",
+        Some(70),
+        vec!["Changed 1 file(s): notes.txt".into()],
+    ));
+    file.set_history(&log).unwrap();
+    std::fs::write(&entry.card, file.to_text().unwrap()).unwrap();
+    let note = "Ask Sam about chapter three.";
+    let edited = text.replace(
+        "<!-- /carrel:mirror -->\n",
+        &format!("<!-- /carrel:mirror -->\n{note}\n"),
+    );
+    std::fs::write(&mirror, edited).unwrap();
+
+    let done = carrel_core::active::regenerate(&s.archive).unwrap();
+    assert_eq!(done.copied, std::slice::from_ref(&entry.card));
+    let card = std::fs::read_to_string(&entry.card).unwrap();
+    assert!(card.contains(note), "{card}");
+    assert!(
+        card.contains("Changed 1 file(s): notes.txt"),
+        "the card's history is kept: {card}"
+    );
+    let text = std::fs::read_to_string(&mirror).unwrap();
+    assert!(text.contains(note) && text.contains("notes.txt"), "{text}");
+    let again = carrel_core::active::regenerate(&s.archive).unwrap();
+    assert_eq!(again.copied, Vec::<PathBuf>::new(), "copied once");
+    assert_eq!(again.changed, Vec::<String>::new());
+
+    // Both changed: the mirror's note is added, and nothing on the card is lost.
+    std::fs::write(&entry.card, card.replace(note, "Sam replied.")).unwrap();
+    std::fs::write(&mirror, text.replace(note, "Send it Friday.")).unwrap();
+    carrel_core::active::regenerate(&s.archive).unwrap();
+    let card = std::fs::read_to_string(&entry.card).unwrap();
+    assert!(
+        card.contains("Sam replied.") && card.contains("Send it Friday."),
+        "{card}"
+    );
+
+    carrel_core::desk::remove(&s.archive, &thesis, false, &lease).unwrap();
+    lease.release().unwrap();
+    assert!(!mirror.exists(), "its mirror goes when it's off the desk");
+}
+
+#[test]
+fn a_mirror_of_another_devices_desk_card_is_kept() {
+    let s = Setup::new();
+    let other = Id::new_v7();
+    let card = PathBuf::from("/elsewhere/Thesis.md");
+    let entry = carrel_core::desk::DeskEntry {
+        id: Id::new_v7(),
+        path: "/elsewhere/Thesis".into(),
+        card: card.clone(),
+        added: carrel_core::card::DateOrTime("2026-10-01T09:00:00-04:00".into()),
+        extra: carrel_core::card::Extra::new(),
+    };
+    let desk = Desk {
+        items: vec![entry.clone()],
+        extra: carrel_core::card::Extra::new(),
+    };
+    let path = Desk::path(&s.archive, other);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, serde_json::to_string(&desk).unwrap()).unwrap();
+    let mirror = s.archive.root().join("Active/On desk/Their thesis.md");
+    std::fs::create_dir_all(mirror.parent().unwrap()).unwrap();
+    let text = format!(
+        "---\ncarrel: desk-mirror\nid: {}\ncard: {}\nmirrored: sha256:00\n---\n<!-- carrel:mirror -->\n# Their thesis\n<!-- /carrel:mirror -->\n",
+        entry.id,
+        card.display()
+    );
+    std::fs::write(&mirror, &text).unwrap();
+
+    carrel_core::active::regenerate(&s.archive).unwrap();
+    assert_eq!(std::fs::read_to_string(&mirror).unwrap(), text);
+    let index = std::fs::read_to_string(s.archive.root().join("Active/_index.md")).unwrap();
+    assert!(index.contains("[Their thesis]"), "{index}");
+}

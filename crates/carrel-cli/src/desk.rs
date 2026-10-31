@@ -12,16 +12,31 @@ use crate::commands::{holder, locate};
 use crate::config::Identity;
 use crate::{Failure, Report};
 
-/// `carrel desk`: this device's desk items, and whether each is still there.
+/// `carrel desk`: this device's desk items, and whether each is still there. It first
+/// rebuilds `Active/`, so notes written in a desk card's mirror in `Active/On desk/` are copied
+/// back to the card.
 ///
 /// # Errors
 ///
-/// [`Failure`] if the archive or the desk can't be read.
+/// [`Failure`] if the archive or the desk can't be read, or `Active/` written.
 pub fn list(archive: Option<&Path>) -> Result<Report, Failure> {
     let archive = locate(archive)?;
     let identity = Identity::load_or_create()?;
+    let lease =
+        DiskLock::for_archive(&archive).acquire(holder(&identity), "desk", DEFAULT_LEASE)?;
+    let regenerated = carrel_core::active::regenerate(&archive);
+    lease.release()?;
+    let regenerated = regenerated?;
     let desk = Desk::load(&archive, identity.device)?;
     let mut text = String::new();
+    for card in &regenerated.copied {
+        writeln!(
+            text,
+            "Copied the notes you wrote in its mirror to {}",
+            card.display()
+        )
+        .unwrap();
+    }
     if desk.items.is_empty() {
         text.push_str("Nothing is on the desk; add something with `carrel desk add PATH`\n");
     }
@@ -38,7 +53,10 @@ pub fn list(archive: Option<&Path>) -> Result<Report, Failure> {
         )
         .unwrap();
     }
-    Ok(Report::new(text, json!({ "items": desk.items })))
+    Ok(Report::new(
+        text,
+        json!({ "items": desk.items, "copied": regenerated.copied }),
+    ))
 }
 
 /// `carrel desk add PATH [--title] [--summary]`: the card is drafted by this device's text
