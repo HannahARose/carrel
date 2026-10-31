@@ -33,7 +33,8 @@ pub struct Model {
     pub license: &'static str,
     /// The memory a machine should have to run it, in gigabytes.
     pub memory_gb: u8,
-    /// Whether the benchmark (#33) recommends it for machines with that much memory.
+    /// Whether the benchmark recommends it for machines with that much memory
+    /// (`docs/bench/`).
     pub recommended: bool,
     /// The same model converted for MLX, for `carrel-provider-mlx` (`docs/design/mlx.md`).
     pub mlx: Option<MlxBuild>,
@@ -158,7 +159,7 @@ pub const CATALOG: &[Model] = &[
         sha256: "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
         license: "Apache-2.0",
         memory_gb: 8,
-        recommended: false,
+        recommended: true,
         mlx: Some(MlxBuild {
             repository: "mlx-community/Qwen3.5-4B-MLX-4bit",
             revision: "32f3e8ecf65426fc3306969496342d504bfa13f3",
@@ -206,7 +207,7 @@ pub const CATALOG: &[Model] = &[
         sha256: "676c35070db6dbe52f93e9c864ee0fba4eddea94b9c875d9cb10daff453fbaee",
         license: "Apache-2.0",
         memory_gb: 16,
-        recommended: false,
+        recommended: true,
         mlx: Some(MlxBuild {
             repository: "mlx-community/gemma-4-e4b-it-4bit",
             revision: "475b9088d29754a3379866cf5aeb6b41acd313c2",
