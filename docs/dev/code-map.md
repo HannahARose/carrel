@@ -94,6 +94,16 @@ The code documentation is built from `dev` on every merge, private items include
 
 `App` never touches the terminal, so screens are tested by sending it keys and drawing it to ratatui's `TestBackend`; see the tests in `tui/mod.rs`.
 
+## The editor plugins
+
+| To work on | Read | Where |
+| --- | --- | --- |
+| The Neovim plugin: running `carrel`, results, pickers, the card view | `lua/carrel/init.lua`, with the commands in `plugin/carrel.lua` and `:help carrel` in `doc/carrel.txt` | `editors/nvim` |
+| The Emacs package | `carrel.el` | `editors/emacs` |
+| Their tests, the fake `carrel` and its fixtures | `run.sh`, `bin/carrel`, `fixtures/`, `archive/`, with the tests in `editors/nvim/tests/run.lua` and `editors/emacs/test/carrel-test.el` | `editors/test` |
+
+They only run `carrel --json`, so a change to the JSON that `carrel search`, `carrel show` or `carrel index status` prints needs the fixtures, and maybe the plugins, changed with it.
+
 ## The Swift side
 
 | To work on | Read | Where |

@@ -211,6 +211,7 @@ Items waiting on a question aren't approved in bulk until it's answered or dismi
 - **Recent**, on the Status screen (`1`) and in `carrel status`, lists the last ten things filed, changed or worked on across the archive: each recorded change, and each approved work session on the day it happened.
 - `carrel show ITEM` prints a card, the items related to it (its links, and those nearest it by meaning), and the changes that touched it, each with the identifier `carrel undo` takes.
 - `ARCHIVE.md` and each collection's design document end with a generated list of its contents, so the archive is browsable in Finder or Obsidian too.
+- **From Neovim or Emacs:** `:CarrelSearch` and `M-x carrel-search` search the same way and open what you choose; `:CarrelShow` and `M-x carrel-show` show the card of the file you're in. See [Neovim and Emacs](editors.md).
 
 ### Searching
 
