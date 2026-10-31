@@ -126,7 +126,7 @@ On DeskBook, an M2 Max MacBook Pro with 32 GB (the on-device runner), with Carre
 - **With drafted cards** (only the 9 items in the image run had them; the rest kept file names) every ranking does a point or two better, EmbeddingGemma reaching 98%.
 - Embedding all 81 items took under a minute per model on the M2 Max.
 
-After #251 changed the merge (exact names and numbers first, then words weighted by how strong the embedding model is), the same run on DeskBook at e8c0c1c gives [these results](2026-10-31/findability-merged/report.md):
+After #251 changed the merge (exact names and numbers first, then words weighted by how strong the embedding model is), the same run on DeskBook at e8c0c1c gives [these results](2026-10-31/findability-merged/report.md) (the full rankings, for replaying merges, are in `results.json.gz`):
 
 | Ranking | Model | Top five | Mean reciprocal rank | Missed |
 | --- | --- | --- | --- | --- |
