@@ -2,7 +2,7 @@
 
 The Mac app, as designed in [the Mac app design](../../docs/design/mac-app.md): one window per archive, with the interactive mode's screens in the sidebar, a content list and an inspector. It calls the Rust core in-process through [CarrelKit](../CarrelKit/README.md).
 
-- **`Carrel`:** the app. Status and Browse work; Review, Questions, Active and History say what's coming. Settings shows what's set today, read only.
+- **`Carrel`:** the app. Status, Browse, Active (checkout and return, the desk, pending entries) and History (with undo) work; Review and Questions say what's coming. Settings shows what's set today, read only.
 - **`CarrelTests`:** the view models, against the sample archive in `fixtures/`.
 
 The agent (#237) will be a second target in the same project. The project file is written by hand and committed; its folders are synchronized groups, so adding a Swift file under `Carrel/` or `CarrelTests/` needs no change to it.

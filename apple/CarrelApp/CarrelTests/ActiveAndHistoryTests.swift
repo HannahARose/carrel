@@ -87,6 +87,18 @@ final class ActiveScreenModelTests: XCTestCase {
         return try XCTUnwrap(model.items.first { $0.id == item.id })
     }
 
+    func testListsTheSamplesCheckoutWithItsEntry() throws {
+        let item = try XCTUnwrap(model.items.first { $0.title.contains("scillator") })
+        XCTAssertEqual(item.kind, .checkedOut)
+        XCTAssertEqual(item.pending.count, 1)
+        XCTAssertEqual(item.pending.first?.heading, "2026-10-28 · 2h 10m")
+        XCTAssertEqual(model.pendingCount, 1)
+        model.selection = [.item(item.id)]
+        XCTAssertTrue(model.canReturn)
+        XCTAssertTrue(model.canEdit)
+        XCTAssertEqual(model.decidedEntries, [1])
+    }
+
     func testCheckingOutAsksWhereAndWhenItsDue() async throws {
         let id = try sample.item(titled: "Desk lamp parts list")
         model.startCheckout(of: id, titled: "Desk lamp parts list")
@@ -143,7 +155,7 @@ final class ActiveScreenModelTests: XCTestCase {
         await model.confirmCancel(item)
         XCTAssertNil(model.problem)
         XCTAssertNil(model.cancelling)
-        XCTAssertTrue(model.items.isEmpty)
+        XCTAssertFalse(model.items.contains { $0.id == id })
     }
 
     func testTheDeskTakesAFolderAndCantBeReturned() async throws {
@@ -160,13 +172,14 @@ final class ActiveScreenModelTests: XCTestCase {
 
         await model.removeFromDesk()
         XCTAssertNil(model.problem)
-        XCTAssertTrue(model.items.isEmpty)
+        XCTAssertFalse(model.items.contains { $0.id == item.id })
     }
 
     func testEntriesAreCountedForTheBadgeAndApproved() async throws {
+        let before = model.pendingCount
         let item = try await deskItemWithEntries()
         XCTAssertEqual(item.pending.count, 2)
-        XCTAssertEqual(model.pendingCount, 2)
+        XCTAssertEqual(model.pendingCount, before + 2)
 
         model.selection = [.entry(item.id, 2)]
         XCTAssertEqual(model.selectedItem?.id, item.id)
@@ -174,9 +187,9 @@ final class ActiveScreenModelTests: XCTestCase {
         XCTAssertFalse(model.canCombine, "combining needs two")
         await model.decide(.approve)
         XCTAssertNil(model.problem)
-        XCTAssertEqual(model.pendingCount, 1)
+        XCTAssertEqual(model.pendingCount, before + 1)
         XCTAssertEqual(model.selection, [.item(item.id)])
-        XCTAssertEqual(model.items.first?.pending.first?.lines, ["Drew the second floor."])
+        XCTAssertEqual(model.selectedItem?.pending.first?.lines, ["Drew the second floor."])
     }
 
     func testChoosingTheItemDecidesAllItsEntries() async throws {
@@ -187,12 +200,12 @@ final class ActiveScreenModelTests: XCTestCase {
         XCTAssertFalse(model.canEdit, "which one to edit isn't clear")
         await model.decide(.combine)
         XCTAssertNil(model.problem)
-        XCTAssertEqual(model.pendingCount, 1)
+        XCTAssertEqual(model.selectedItem?.pending.count, 1)
         XCTAssertTrue(model.canEdit, "with only one, there's no doubt which")
 
         await model.decide(.drop)
         XCTAssertNil(model.problem)
-        XCTAssertEqual(model.pendingCount, 0)
+        XCTAssertEqual(model.selectedItem?.pending.count, 0)
         XCTAssertFalse(model.canDecide)
     }
 
@@ -206,10 +219,10 @@ final class ActiveScreenModelTests: XCTestCase {
         await model.save(draft)
         XCTAssertNil(model.problem)
         XCTAssertNil(model.editing)
+        let edited = try XCTUnwrap(model.items.first { $0.id == item.id })
         XCTAssertEqual(
-            model.items.first?.pending.first?.lines,
-            ["Drew the second floor.", "My notes: check the stairs."])
-        XCTAssertEqual(model.pendingCount, 2)
+            edited.pending.first?.lines, ["Drew the second floor.", "My notes: check the stairs."])
+        XCTAssertEqual(edited.pending.count, 2)
     }
 
     func testChoosingRowsOfTwoItemsChoosesNeither() async throws {
