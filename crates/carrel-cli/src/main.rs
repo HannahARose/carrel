@@ -746,6 +746,7 @@ fn changes_archive(command: &Command) -> bool {
     match command {
         Command::Undo { .. }
         | Command::Correct { .. }
+        | Command::Edit { .. }
         | Command::Rename { .. }
         | Command::Checkout { .. }
         | Command::Return { .. }
