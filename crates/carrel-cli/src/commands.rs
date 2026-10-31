@@ -170,10 +170,7 @@ pub fn init(
 }
 
 pub(crate) fn holder(identity: &Identity) -> Holder {
-    Holder {
-        person: identity.person,
-        device: identity.device,
-    }
+    identity.holder()
 }
 
 /// `carrel open`.

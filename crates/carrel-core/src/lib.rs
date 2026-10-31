@@ -65,6 +65,7 @@ pub mod correct;
 pub mod desk;
 pub mod detect;
 pub mod documents;
+pub mod edit;
 pub mod entries;
 pub mod finder;
 pub mod formats;

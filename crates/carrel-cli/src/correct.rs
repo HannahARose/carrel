@@ -299,7 +299,9 @@ pub fn prepare_filed(archive: &Archive, query: &str, words: &str) -> Result<Prep
 /// [`Failure`] if it can't be written or committed.
 pub fn save(archive: &Archive, prepared: Prepared) -> Result<Saved, Failure> {
     let saved = prepare::save(archive, prepared.inner, || {
-        crate::config::Identity::load_or_create().map(|i| crate::commands::holder(&i))
+        crate::config::Identity::load_or_create()
+            .map(|i| crate::commands::holder(&i))
+            .map_err(Failure::from)
     })?;
     let message = if saved.filed {
         format!(
@@ -414,16 +416,6 @@ pub fn review(
         learn_fact,
         json!({"proposal": entry.id}),
     )
-}
-
-/// The item's text, as drafting read it, for the model's context; empty when it can't be read.
-pub(crate) fn item_text(
-    archive: &Archive,
-    registry: &carrel_core::providers::Registry,
-    path: &Path,
-    kind: carrel_core::card::Kind,
-) -> String {
-    prepare::item_text(archive, registry, path, kind)
 }
 
 /// `carrel correct ITEM [WORDS...] [--yes] [--learn]`: corrects a filed item's card, and

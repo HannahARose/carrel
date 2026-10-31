@@ -26,6 +26,7 @@
 
 pub mod passage;
 pub mod query;
+pub mod run;
 pub mod texts;
 pub mod words;
 
