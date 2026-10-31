@@ -148,7 +148,7 @@ pub fn list() -> Result<Report, Failure> {
 }
 
 /// Asks `question` on the terminal, unless `yes` already answered it.
-fn confirm(question: &str, yes: bool) -> Result<bool, Failure> {
+pub(crate) fn confirm(question: &str, yes: bool) -> Result<bool, Failure> {
     if yes {
         return Ok(true);
     }

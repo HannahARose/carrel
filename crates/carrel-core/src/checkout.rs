@@ -58,7 +58,7 @@ impl std::fmt::Display for CheckoutError {
             Self::Card(why) => f.write_str(why),
             Self::CopyChanged(path) => write!(
                 f,
-                "the copy at {} doesn't match the item, so nothing was checked out",
+                "the copy at {} doesn't match what it was copied from, so nothing changed",
                 path.display()
             ),
             Self::History(e) => write!(f, "{e}"),
@@ -208,6 +208,299 @@ pub fn check_out(
             Err(e)
         }
     }
+}
+
+/// A return, worked out but not yet done: what changed and the history entry it would add.
+#[derive(Debug, Clone)]
+pub struct ReturnPlan {
+    /// The item.
+    pub item: Id,
+    /// Its card's path.
+    pub card: String,
+    /// Its title.
+    pub title: String,
+    /// Where the working copy is.
+    pub working: PathBuf,
+    /// How it differs from the item as it went out.
+    pub diff: Diff,
+    /// For a Git repository, the subjects of the commits since checkout, newest first.
+    pub commits: Vec<String>,
+    /// For a Git repository, whether there are changes not committed.
+    pub uncommitted: bool,
+    /// The history entry the return adds, approved with it.
+    pub entry: crate::entries::HistoryEntry,
+}
+
+/// What returning did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Returned {
+    /// The history commit.
+    pub commit: Option<String>,
+    /// The backup snapshot taken first, if there are backups.
+    pub snapshot: Option<String>,
+}
+
+/// Works out returning `item`: compares the working copy (at `from`, or where it was checked
+/// out to) with the item as it went out, reads a Git repository's commits since then, and
+/// drafts the history entry. Changes nothing.
+///
+/// # Errors
+///
+/// [`CheckoutError::Card`] if the item isn't checked out, [`CheckoutError::Missing`] if the
+/// working copy isn't there, or an error reading it.
+pub fn plan_return(
+    archive: &Archive,
+    item: &ItemRef,
+    from: Option<&Path>,
+) -> Result<ReturnPlan, CheckoutError> {
+    let card_path = archive.root().join(&item.card);
+    let text = std::fs::read_to_string(&card_path).map_err(io(&card_path))?;
+    let file = CardFile::parse(&text).map_err(|e| CheckoutError::Card(e.to_string()))?;
+    let card = file.card();
+    let Some(out) = &card.checked_out else {
+        return Err(CheckoutError::Card(format!(
+            "{} isn't checked out",
+            card.title
+        )));
+    };
+    let working = from.map_or_else(|| PathBuf::from(&out.to), Path::to_owned);
+    let saved = manifest_path(archive, item.id);
+    let then = Manifest::parse(&std::fs::read_to_string(&saved).map_err(io(&saved))?)?;
+    let rules = archive
+        .rules()
+        .map_err(|e| CheckoutError::Card(e.to_string()))?;
+    let diff = compare(&then, &working, &rules)?;
+    let head = out.extra.get("git_head").and_then(|v| v.as_str());
+    let (commits, uncommitted) = head.map_or((Vec::new(), false), |h| git_since(&working, h));
+    let entry = draft_entry(&diff, &commits);
+    Ok(ReturnPlan {
+        item: item.id,
+        card: item.card.clone(),
+        title: card.title.clone(),
+        working,
+        diff,
+        commits,
+        uncommitted,
+        entry,
+    })
+}
+
+/// The history entry for a return: what changed, in a line or two.
+fn draft_entry(diff: &Diff, commits: &[String]) -> crate::entries::HistoryEntry {
+    let mut lines = Vec::new();
+    if diff.is_empty() {
+        lines.push("Returned unchanged.".to_owned());
+    } else {
+        let mut parts = Vec::new();
+        for (n, what) in [
+            (diff.changed.len(), "changed"),
+            (diff.added.len(), "added"),
+            (diff.removed.len(), "removed"),
+            (diff.renamed.len(), "renamed"),
+        ] {
+            if n > 0 {
+                parts.push(format!("{n} {what}"));
+            }
+        }
+        lines.push(format!("Returned: {} file(s).", parts.join(", ")));
+        let names: Vec<&str> = diff
+            .changed
+            .iter()
+            .chain(&diff.added)
+            .map(String::as_str)
+            .take(8)
+            .collect();
+        if !names.is_empty() {
+            lines.push(format!("Files: {}", names.join(", ")));
+        }
+    }
+    if !commits.is_empty() {
+        let quoted: Vec<String> = commits.iter().take(8).map(|c| format!("\"{c}\"")).collect();
+        lines.push(format!("Commits: {}", quoted.join(", ")));
+    }
+    let today = jiff::Zoned::now().date().to_string();
+    crate::entries::HistoryEntry::pending(&today, None, lines)
+}
+
+/// The subjects of a repository's commits since `head`, newest first, and whether it has
+/// uncommitted changes.
+fn git_since(path: &Path, head: &str) -> (Vec<String>, bool) {
+    let Ok(repo) = git2::Repository::open(path) else {
+        return (Vec::new(), false);
+    };
+    let mut subjects = Vec::new();
+    if let (Ok(mut walk), Ok(since)) = (repo.revwalk(), git2::Oid::from_str(head))
+        && walk.push_head().is_ok()
+        && walk.hide(since).is_ok()
+    {
+        for oid in walk.flatten() {
+            if let Ok(commit) = repo.find_commit(oid) {
+                subjects.push(commit.summary().ok().flatten().unwrap_or("").to_owned());
+            }
+        }
+    }
+    let uncommitted = repo
+        .statuses(None)
+        .is_ok_and(|s| s.iter().any(|e| !e.status().is_ignored()));
+    (subjects, uncommitted)
+}
+
+/// Returns an item as `plan` worked out, holding `lease`: a backup snapshot first when there
+/// are backups, then the working copy written beside the archive copy, checked, and swapped
+/// in; the card's `checked_out` removed, its checksum or manifest updated and the entry
+/// approved; the lock released; and one `return` commit. The working copy is left where it
+/// is: deleting it is the owner's choice, made afterwards.
+///
+/// # Errors
+///
+/// An error at any step. Until the swap, the archive copy is untouched; a failure after it
+/// leaves the new copy in place and reports what's left to do.
+pub fn finish_return(
+    archive: &Archive,
+    plan: &ReturnPlan,
+    lease: &WriterLease,
+    backups: Option<&dyn crate::backup::Backups>,
+) -> Result<Returned, CheckoutError> {
+    let root = archive.root();
+    let card_path = root.join(&plan.card);
+    let text = std::fs::read_to_string(&card_path).map_err(io(&card_path))?;
+    let mut file = CardFile::parse(&text).map_err(|e| CheckoutError::Card(e.to_string()))?;
+    let contents = file
+        .card()
+        .item
+        .clone()
+        .ok_or_else(|| CheckoutError::CardOnly(plan.card.clone()))?;
+    let folder = Path::new(&plan.card)
+        .parent()
+        .map_or_else(String::new, |p| p.to_string_lossy().into_owned());
+    let archived = root.join(&folder).join(&contents);
+    let rules = archive
+        .rules()
+        .map_err(|e| CheckoutError::Card(e.to_string()))?;
+
+    let backup = match backups {
+        Some(backups) => Some(
+            backups
+                .snapshot(root, &format!("Before returning “{}”", plan.title))
+                .map_err(|e| CheckoutError::Card(e.to_string()))?
+                .trailer(),
+        ),
+        None => None,
+    };
+
+    // Write the new copy beside the old, check it, then swap the two.
+    let incoming = archived.with_file_name(format!(".carrel-return-{}", plan.item));
+    let outgoing = archived.with_file_name(format!(".carrel-old-{}", plan.item));
+    crate::ingest::filing::copy(&plan.working, &incoming)
+        .map_err(|e| CheckoutError::Card(e.to_string()))?;
+    let same = if plan.working.is_dir() {
+        snapshot(&plan.working, plan.item, &rules)?
+            .diff(&snapshot(&incoming, plan.item, &rules)?)
+            .is_empty()
+    } else {
+        Checksum::of_file(&plan.working).map_err(io(&plan.working))?
+            == Checksum::of_file(&incoming).map_err(io(&incoming))?
+    };
+    if !same {
+        remove_any(&incoming);
+        return Err(CheckoutError::CopyChanged(incoming));
+    }
+    unlock(&archived)?;
+    std::fs::rename(&archived, &outgoing).map_err(io(&archived))?;
+    if let Err(e) = std::fs::rename(&incoming, &archived) {
+        let _ = std::fs::rename(&outgoing, &archived);
+        return Err(io(&archived)(e));
+    }
+    remove_any(&outgoing);
+
+    let card = file.card_mut();
+    card.checked_out = None;
+    if archived.is_dir() {
+        let manifest = Manifest::build(&archived, plan.item, &rules, None)?;
+        let path = format!("_System/manifests/{}.tsv", plan.item);
+        std::fs::write(root.join(&path), manifest.to_tsv()).map_err(io(&root.join(&path)))?;
+        card.size = Some(manifest.total_size());
+        if let Some(reference) = card.manifest.as_mut() {
+            reference.checksum = manifest.checksum();
+        }
+    } else {
+        card.checksum = Some(Checksum::of_file(&archived).map_err(io(&archived))?);
+        card.size = Some(std::fs::metadata(&archived).map_err(io(&archived))?.len());
+    }
+    let mut log = file
+        .history()
+        .map_err(|e| CheckoutError::Card(e.to_string()))?;
+    let mut entry = plan.entry.clone();
+    entry.pending = false;
+    log.add(entry);
+    file.set_history(&log)
+        .map_err(|e| CheckoutError::Card(e.to_string()))?;
+    let text = file
+        .to_text()
+        .map_err(|e| CheckoutError::Card(e.to_string()))?;
+    write_card(&card_path, &text)?;
+    let _ = std::fs::remove_file(manifest_path(archive, plan.item));
+
+    let mut change = Change::new(
+        Operation::Return,
+        format!("Return “{}”", plan.title),
+        lease.info().person,
+        lease.info().device,
+    );
+    change.items = vec![plan.item];
+    change.snapshot.clone_from(&backup);
+    let commit = History::open(archive)?.commit(archive, &change, lease)?;
+    Ok(Returned {
+        commit,
+        snapshot: backup,
+    })
+}
+
+/// Cancels `item`'s checkout, holding `lease`: the archive copy is unlocked as it was, the
+/// card's `checked_out` removed, and the working copy left where it is, with its changes not
+/// brought back. One `return` commit.
+///
+/// # Errors
+///
+/// [`CheckoutError::Card`] if it isn't checked out, or an error writing.
+pub fn cancel_checkout(
+    archive: &Archive,
+    item: &ItemRef,
+    lease: &WriterLease,
+) -> Result<Option<String>, CheckoutError> {
+    let root = archive.root();
+    let card_path = root.join(&item.card);
+    let text = std::fs::read_to_string(&card_path).map_err(io(&card_path))?;
+    let mut file = CardFile::parse(&text).map_err(|e| CheckoutError::Card(e.to_string()))?;
+    let title = file.card().title.clone();
+    if file.card().checked_out.is_none() {
+        return Err(CheckoutError::Card(format!("{title} isn't checked out")));
+    }
+    if let Some(contents) = &item.item {
+        unlock(&root.join(contents))?;
+    }
+    file.card_mut().checked_out = None;
+    let text = file
+        .to_text()
+        .map_err(|e| CheckoutError::Card(e.to_string()))?;
+    write_card(&card_path, &text)?;
+    let _ = std::fs::remove_file(manifest_path(archive, item.id));
+    let mut change = Change::new(
+        Operation::Return,
+        format!("Cancel the checkout of “{title}”"),
+        lease.info().person,
+        lease.info().device,
+    );
+    change.items = vec![item.id];
+    Ok(History::open(archive)?.commit(archive, &change, lease)?)
+}
+
+fn remove_any(path: &Path) {
+    let _ = if path.is_dir() {
+        std::fs::remove_dir_all(path)
+    } else {
+        std::fs::remove_file(path)
+    };
 }
 
 /// The commit a Git repository at `path` is at, if it is one.

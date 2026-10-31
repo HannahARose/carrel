@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Output;
 
-use serde_json::Value;
+use serde_json::{Value, json};
 
 fn sample_archive() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/sample-archive")
@@ -770,4 +770,57 @@ fn checkout_copies_an_item_out_and_locks_the_archive_copy() {
     assert!(String::from_utf8_lossy(&again.stderr).contains("already checked out"));
     let log = sandbox.json(&root, &["log"]);
     assert_eq!(log[0]["operation"], "checkout");
+
+    // Returning brings the working copy back, unlocked, with an approved history entry.
+    let back = sandbox.json(
+        &root,
+        &["return", "Projects/Hardware/parts-list.csv", "--yes"],
+    );
+    assert_eq!(back["changed"], json!(["parts-list.csv"]));
+    let archived = root.join("Projects/Hardware/parts-list.csv");
+    assert_eq!(
+        std::fs::read_to_string(&archived).unwrap(),
+        "changed,on,the,desk\n"
+    );
+    std::fs::write(&archived, "writable again\n").unwrap();
+    let shown = sandbox.json(&root, &["show", "Projects/Hardware/parts-list.csv"]);
+    assert!(shown["fields"]["checked_out"].is_null());
+    let card = std::fs::read_to_string(root.join("Projects/Hardware/parts-list.csv.md")).unwrap();
+    assert!(card.contains("Returned: 1 changed file(s)."), "{card}");
+    assert!(
+        !card.contains("[!pending]"),
+        "the entry is approved with the return"
+    );
+    assert_eq!(sandbox.json(&root, &["log"])[0]["operation"], "return");
+    assert!(working.exists(), "the working copy is left for the owner");
+    let again = sandbox.run_in(
+        &root,
+        &["return", "Projects/Hardware/parts-list.csv", "--yes"],
+    );
+    assert!(String::from_utf8_lossy(&again.stderr).contains("isn't checked out"));
+
+    // Cancelling unlocks the archive copy as it was.
+    sandbox.ok(
+        &root,
+        &[
+            "checkout",
+            "Projects/Hardware/parts-list.csv",
+            "--to",
+            desk.to_str().unwrap(),
+        ],
+    );
+    sandbox.ok(
+        &root,
+        &[
+            "return",
+            "Projects/Hardware/parts-list.csv",
+            "--discard",
+            "--yes",
+        ],
+    );
+    assert_eq!(
+        std::fs::read_to_string(&archived).unwrap(),
+        "writable again\n"
+    );
+    std::fs::write(&archived, "and again\n").unwrap();
 }

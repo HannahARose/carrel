@@ -161,6 +161,38 @@ impl CardFile {
         Ok(())
     }
 
+    /// The card's history entries (FORMAT.md §5.5); none when it has no history section.
+    ///
+    /// # Errors
+    ///
+    /// [`CardFileError::Section`] if the section's markers are broken.
+    pub fn history(&self) -> Result<crate::entries::HistoryLog, CardFileError> {
+        Ok(self
+            .section("history")?
+            .map(crate::entries::HistoryLog::parse)
+            .unwrap_or_default())
+    }
+
+    /// Writes `log` as the card's history section, adding the section at the end of the body
+    /// if there isn't one.
+    ///
+    /// # Errors
+    ///
+    /// [`CardFileError::Section`] if the section's markers are broken.
+    pub fn set_history(&mut self, log: &crate::entries::HistoryLog) -> Result<(), CardFileError> {
+        let mut log = log.clone();
+        if log.preamble.is_empty() {
+            log.preamble.push("## History".into());
+        }
+        let content = log.render();
+        if self.section("history")?.is_some() {
+            self.set_section("history", &content)
+        } else {
+            self.body = sections::append_section(&self.body, "history", &content)?;
+            Ok(())
+        }
+    }
+
     /// Whether writing now would change the frontmatter.
     #[must_use]
     pub fn frontmatter_changed(&self) -> bool {
