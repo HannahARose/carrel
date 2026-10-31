@@ -5,7 +5,7 @@ use std::fmt::Write as _;
 use std::path::Path;
 
 use carrel_core::coordinator::{Coordinator as _, DEFAULT_LEASE, DiskLock};
-use carrel_core::desk::{Desk, add, remove};
+use carrel_core::desk::{Desk, add, archive as archive_item, draft, remove};
 use serde_json::json;
 
 use crate::commands::{holder, locate};
@@ -41,7 +41,8 @@ pub fn list(archive: Option<&Path>) -> Result<Report, Failure> {
     Ok(Report::new(text, json!({ "items": desk.items })))
 }
 
-/// `carrel desk add PATH [--title] [--summary]`.
+/// `carrel desk add PATH [--title] [--summary]`: the card is drafted by this device's text
+/// model, as ingest drafts cards, before the writer lock is taken.
 ///
 /// # Errors
 ///
@@ -55,19 +56,35 @@ pub fn add_item(
     let archive = locate(archive)?;
     let path = crate::paths::expand(&path.to_string_lossy());
     let identity = Identity::load_or_create()?;
+    let drafted = if title.is_some() && summary.is_some() {
+        None
+    } else {
+        let (registry, _) = crate::providers::registry();
+        Some(draft(&archive, &registry, &path, identity.device)?)
+    };
     let lease =
         DiskLock::for_archive(&archive).acquire(holder(&identity), "desk", DEFAULT_LEASE)?;
-    let result = add(&archive, &path, title, summary, &lease);
+    let result = add(&archive, &path, title, summary, drafted.as_ref(), &lease);
     lease.release()?;
     let entry = result?;
-    Ok(Report::new(
-        format!(
-            "Put {} on the desk, with its card at {}\n",
-            entry.path.display(),
-            entry.card.display()
-        ),
-        json!(entry),
-    ))
+    let mut text = format!(
+        "Put {} on the desk, with its card at {}\n",
+        entry.path.display(),
+        entry.card.display()
+    );
+    match drafted.as_ref().map(|d| (&d.generated, &d.problems)) {
+        Some((Some(generated), _)) => writeln!(
+            text,
+            "Its card was drafted by {}; edit the card to change it",
+            generated.model.as_deref().unwrap_or("a model")
+        )
+        .unwrap(),
+        Some((None, problems)) if !problems.is_empty() => {
+            writeln!(text, "Its title is its name: {}", problems.join("; ")).unwrap();
+        }
+        _ => {}
+    }
+    Ok(Report::new(text, json!(entry)))
 }
 
 /// `carrel desk remove PATH [--delete-card]`.
@@ -99,5 +116,39 @@ pub fn remove_item(
             }
         ),
         json!(entry),
+    ))
+}
+
+/// `carrel desk archive PATH`: queues the desk item for ingest, keeping its card and history,
+/// and takes it off the desk. A worker drafts its proposal in the background, as for
+/// `carrel ingest`.
+///
+/// # Errors
+///
+/// [`Failure`] if it isn't on the desk or can't be queued.
+pub fn archive_desk_item(archive: Option<&Path>, path: &Path) -> Result<Report, Failure> {
+    let archive = locate(archive)?;
+    let path = crate::paths::expand(&path.to_string_lossy());
+    let identity = Identity::load_or_create()?;
+    let lease =
+        DiskLock::for_archive(&archive).acquire(holder(&identity), "desk", DEFAULT_LEASE)?;
+    let result = archive_item(&archive, &path, &lease);
+    lease.release()?;
+    let (entry, intake) = result?;
+    let started = crate::worker::start(&archive)?;
+    let text = format!(
+        "Queued {} for ingest, keeping its card and history, and took it off the desk. {}; review its proposal in `carrel review` when it's ready.\n",
+        entry.path.display(),
+        if started {
+            "A worker is drafting it in the background"
+        } else if crate::worker::running(&archive)? {
+            "The running worker will draft it"
+        } else {
+            "No worker is started (CARREL_WORKER is off); run `carrel worker` to draft it"
+        }
+    );
+    Ok(Report::new(
+        text,
+        json!({ "item": entry, "queued": intake, "worker_started": started }),
     ))
 }

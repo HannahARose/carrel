@@ -357,7 +357,13 @@ pub fn file_one(
         })
     })?;
 
-    let id = Id::new_v7();
+    // An item archived from the desk keeps its desk card's identifier and body.
+    let desk_card = crate::desk::carried_card(&entry.extra);
+    let desk = desk_card
+        .as_deref()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|t| CardFile::parse(&t).ok());
+    let id = desk.as_ref().map_or_else(Id::new_v7, |f| f.card().id);
     let original_name = source
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
@@ -402,21 +408,17 @@ pub fn file_one(
             extra: Extra::new(),
         });
     }
-    let note = if name == original_name {
-        String::new()
-    } else if portable != original_name {
-        format!(
-            "\nFiled as “{name}”: “{original_name}” {}, so it wouldn't work on every system.\n",
-            crate::names::problems(&original_name).join(" and ")
-        )
-    } else {
-        format!(
-            "\nFiled as “{name}”: the collection already had an item named “{original_name}”.\n"
-        )
-    };
+    let note = renamed_note(&name, &original_name, &portable);
     let card_name = format!("{name}.md");
-    let text = CardFile::new(card, &note)?.to_text()?;
-    write_new(&folder.join(&card_name), &text)?;
+    let file = match &desk {
+        Some(desk) => CardFile::with_body(card, &format!("{note}{}", desk.body())),
+        None => CardFile::new(card, &note)?,
+    };
+    write_new(&folder.join(&card_name), &file.to_text()?)?;
+    if let Some(desk_card) = &desk_card {
+        // It's in the archive now, beside the item; the copy on the desk would only mislead.
+        let _ = std::fs::remove_file(desk_card);
+    }
 
     if placement == Placement::Destination {
         add_tags(archive, collection, entry)?;
@@ -430,6 +432,22 @@ pub fn file_one(
         card: format!("{}/{card_name}", collection.path),
         kept_original: (originals == Originals::Keep).then(|| source.clone()),
     })
+}
+
+/// The line a card gets when its item was filed under another name than `original_name`.
+fn renamed_note(name: &str, original_name: &str, portable: &str) -> String {
+    if name == original_name {
+        String::new()
+    } else if portable != original_name {
+        format!(
+            "\nFiled as “{name}”: “{original_name}” {}, so it wouldn't work on every system.\n",
+            crate::names::problems(original_name).join(" and ")
+        )
+    } else {
+        format!(
+            "\nFiled as “{name}”: the collection already had an item named “{original_name}”.\n"
+        )
+    }
 }
 
 /// A file's checksum, or a folder's manifest content checksum.

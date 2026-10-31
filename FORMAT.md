@@ -626,6 +626,7 @@ A device only ever writes to its own inbox folder. The writer applies inbox file
 | `problems` | What validation or the owner needs to settle, as `{"stage", "message"}` objects |
 | `attempts` | Every provider call made for the entry: `stage`, `provider`, `offer`, `result` (`ok`, `unsupported`, `unavailable`, `declined` (a model's safety refusal) or `failed`) and an optional `message` |
 | `sensitivity_reasons` | Why `card.sensitivity` is `sensitive` or `restricted`, in words that never quote what was found; absent otherwise |
+| `desk_card` | Optional. For a desk item being archived (§9.4), its desk card's absolute path: the filed card keeps that card's `id` and body |
 
 When an approved or held entry has been archived, programs remove the entry; the history commit (§8.2) records what was filed. A rejected entry is removed once the owner has seen the batch summary. Entries whose `source.device` is another device can't be archived there; they wait for that device.
 
@@ -651,6 +652,7 @@ Items added for ingest wait in `_System/queue/intake/`, one JSON file each, name
 | `added` | When it was added |
 | `order` | Its place in the queue, lower first, then by `id`; omitted when `0` |
 | `attempts`, `failure` | How many times processing it has failed, and why the last time; after two, it waits for the owner to retry it |
+| `desk_card` | Optional. For a desk item being archived (§9.4), its desk card's absolute path. The proposal gets the card's fields and the same key |
 
 Programs process entries one at a time, save each item's proposal to `review/` as soon as it's ready, and then remove the entry.
 
@@ -806,7 +808,7 @@ The archive copy **must not** be modified while `checked_out` is present, except
 
 ### 9.4 Desk items
 
-A desk item is tracked but stored outside the archive. Its card (with `carrel: card`) lives beside it on the device's desk and follows §5. The device's `desk.json` (§7.10) lists it, and `Active/On desk/` holds a mirror of its card.
+A desk item is tracked but stored outside the archive. Its card (with `carrel: card`) lives beside it on the device's desk and follows §5. The device's `desk.json` (§7.10) lists it, and `Active/On desk/` holds a mirror of its card. When it's archived, its proposal (§7.9) names the desk card in `desk_card`; the filed card keeps the desk card's `id` and body, history included, and programs then remove the desk card.
 
 ## 10. Removal
 

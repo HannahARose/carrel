@@ -12,6 +12,12 @@ use crate::card::{Card, CardMarker, DateOrTime, Dates, Extra, Id, Sensitivity};
 use crate::card_file::CardFile;
 use crate::coordinator::WriterLease;
 use crate::history::{Change, History, HistoryError, Operation};
+use crate::ingest::card::{Context, Draft, Glossary, Vocabulary};
+use crate::providers::Registry;
+
+/// The key, in an intake or review entry's extra fields, holding the path of the desk card an
+/// item being archived from the desk keeps: its identifier, fields and body go with it.
+pub const CARD_KEY: &str = "desk_card";
 
 /// One tracked desk item.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -62,6 +68,13 @@ pub enum DeskError {
     },
     /// The history couldn't be written.
     History(HistoryError),
+    /// It couldn't be queued for ingest.
+    NotQueued {
+        /// The item.
+        path: PathBuf,
+        /// Why.
+        reason: String,
+    },
 }
 
 impl std::fmt::Display for DeskError {
@@ -82,6 +95,9 @@ impl std::fmt::Display for DeskError {
             ),
             Self::Io { path, message } => write!(f, "{}: {message}", path.display()),
             Self::History(e) => write!(f, "{e}"),
+            Self::NotQueued { path, reason } => {
+                write!(f, "{} can't be queued for ingest: {reason}", path.display())
+            }
         }
     }
 }
@@ -148,9 +164,48 @@ pub fn card_path(path: &Path) -> PathBuf {
     path.with_file_name(name)
 }
 
+/// Drafts a card for the file or folder at `path` as ingest does: its text is read, and the
+/// text models in `registry` are asked for a title, summary, tags and date. With no model to
+/// answer, the draft has no provenance, and [`add`] falls back to the item's name. Nothing is
+/// written; it can take a while, so do it before taking the writer lock.
+///
+/// # Errors
+///
+/// [`DeskError`] if it's missing or the archive's rules can't be read.
+pub fn draft(
+    archive: &Archive,
+    registry: &Registry,
+    path: &Path,
+    device: Id,
+) -> Result<Draft, DeskError> {
+    let path = std::fs::canonicalize(path).map_err(|_| DeskError::Missing(path.to_owned()))?;
+    let failed = |e: &dyn std::fmt::Display| DeskError::Io {
+        path: path.clone(),
+        message: e.to_string(),
+    };
+    let candidate = crate::ingest::examine(archive, &path).map_err(|e| failed(&e))?;
+    let rules = archive.rules().map_err(|e| failed(&e))?;
+    let collections = archive.collections().map_err(|e| failed(&e))?;
+    let vocabulary = Vocabulary::of(archive, &collections);
+    let glossary = Glossary::of(archive);
+    let context = Context {
+        archive_name: &archive.doc().name,
+        vocabulary: &vocabulary,
+        glossary: &glossary,
+        device,
+    };
+    let text = crate::ingest::text::read(registry, &rules, &candidate);
+    Ok(crate::ingest::card::draft(
+        registry, &context, &candidate, &text,
+    ))
+}
+
 /// Puts the file or folder at `path` on this device's desk (the lease's), holding `lease`:
-/// writes a card beside it with `title` (its name if `None`) and `summary`, lists it in
-/// `desk.json`, and commits that as one change.
+/// writes a card beside it, lists it in `desk.json`, and commits that as one change.
+///
+/// The card's title and summary are `title` and `summary` when given, else the model's from
+/// `drafted` (see [`draft`]); its tags and date come from `drafted` too. Without a model's
+/// draft, the title is the item's name.
 ///
 /// # Errors
 ///
@@ -161,6 +216,7 @@ pub fn add(
     path: &Path,
     title: Option<&str>,
     summary: Option<&str>,
+    drafted: Option<&Draft>,
     lease: &WriterLease,
 ) -> Result<DeskEntry, DeskError> {
     let path = std::fs::canonicalize(path).map_err(|_| DeskError::Missing(path.to_owned()))?;
@@ -186,35 +242,7 @@ pub fn add(
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
     let id = Id::new_v7();
-    let today = DateOrTime(jiff::Zoned::now().date().to_string());
-    let card_value = Card {
-        carrel: CardMarker::Card,
-        format: crate::FORMAT_VERSION,
-        id,
-        kind: detected.kind,
-        title: title.map_or_else(|| name.clone(), str::to_owned),
-        item: Some(name),
-        sealed: detected.sealed,
-        allow_readme: None,
-        summary: summary.map(str::to_owned),
-        tags: Vec::new(),
-        links: Vec::new(),
-        dates: Some(Dates {
-            added: Some(today.clone()),
-            ..Dates::default()
-        }),
-        sensitivity: Sensitivity::Personal,
-        checksum: None,
-        size: None,
-        manifest: None,
-        location: None,
-        url: None,
-        checked_out: None,
-        generated: None,
-        placement: None,
-        removed: None,
-        extra: Extra::new(),
-    };
+    let card_value = new_card(id, &detected, name, (title, summary), drafted);
     let file = CardFile::new(card_value, "").map_err(|e| DeskError::Io {
         path: card.clone(),
         message: e.to_string(),
@@ -257,6 +285,69 @@ pub fn add(
     Ok(entry)
 }
 
+/// A new desk card for an item named `name`: the owner's title and summary in `given` if
+/// set, else a model's from `drafted`, else the name.
+fn new_card(
+    id: Id,
+    detected: &crate::detect::Detected,
+    name: String,
+    given: (Option<&str>, Option<&str>),
+    drafted: Option<&Draft>,
+) -> Card {
+    let (title, summary) = given;
+    let today = DateOrTime(jiff::Zoned::now().date().to_string());
+    // Only a model's draft is used for the title, summary and tags; without one, the
+    // fallback title is the file's stem, and the item's name says more.
+    let modelled = drafted.filter(|d| d.generated.is_some());
+    Card {
+        carrel: CardMarker::Card,
+        format: crate::FORMAT_VERSION,
+        id,
+        kind: detected.kind,
+        title: title
+            .map(str::to_owned)
+            .or_else(|| modelled.map(|d| d.title.clone()))
+            .unwrap_or_else(|| name.clone()),
+        item: Some(name),
+        sealed: detected.sealed,
+        allow_readme: None,
+        summary: summary
+            .map(str::to_owned)
+            .or_else(|| modelled.and_then(|d| d.summary.clone())),
+        tags: modelled.map(|d| d.tags.clone()).unwrap_or_default(),
+        links: Vec::new(),
+        dates: Some(Dates {
+            created: drafted.and_then(|d| d.created.clone()),
+            added: Some(today.clone()),
+            ..Dates::default()
+        }),
+        sensitivity: Sensitivity::Personal,
+        checksum: None,
+        size: None,
+        manifest: None,
+        location: None,
+        url: None,
+        checked_out: None,
+        generated: modelled.and_then(|d| provenance(d, title.is_some(), summary.is_some())),
+        placement: None,
+        removed: None,
+        extra: Extra::new(),
+    }
+}
+
+/// What a model's draft produced, leaving out the fields the owner gave.
+fn provenance(
+    drafted: &Draft,
+    title_given: bool,
+    summary_given: bool,
+) -> Option<crate::card::Provenance> {
+    let mut generated = drafted.generated.clone()?;
+    generated
+        .fields
+        .retain(|f| !(title_given && f == "title" || summary_given && f == "summary"));
+    (!generated.fields.is_empty()).then_some(generated)
+}
+
 /// Takes `path` off this device's desk, holding `lease`. Its card stays beside it unless
 /// `delete_card`; the item itself is never touched.
 ///
@@ -294,4 +385,117 @@ pub fn remove(
         .and_then(|h| h.commit(archive, &change, lease))
         .map_err(DeskError::History)?;
     Ok(entry)
+}
+
+/// Archives the desk item at `path`, holding `lease`: queues it for ingest, its desk card to be
+/// kept (its identifier, fields and history), and takes it off this device's desk. The item
+/// and its card stay where they are until the proposal is approved; filing then moves the card
+/// into the archive with it.
+///
+/// # Errors
+///
+/// [`DeskError::NotTracked`] if it isn't on the desk, [`DeskError::NotQueued`] if ingest
+/// leaves it out (already queued, say), or an error writing.
+pub fn archive(
+    archive: &Archive,
+    path: &Path,
+    lease: &WriterLease,
+) -> Result<(DeskEntry, crate::intake::IntakeEntry), DeskError> {
+    let wanted = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_owned());
+    let device = lease.info().device;
+    let mut desk = Desk::load(archive, device)?;
+    let Some(at) = desk.items.iter().position(|e| e.path == wanted) else {
+        return Err(DeskError::NotTracked(wanted));
+    };
+    if !wanted.exists() {
+        return Err(DeskError::Missing(wanted));
+    }
+    let not_queued = |reason: String| DeskError::NotQueued {
+        path: wanted.clone(),
+        reason,
+    };
+    let whole = crate::ingest::IntakeOptions {
+        each: false,
+        whole: true,
+    };
+    let mut queued = crate::intake::preview(archive, std::slice::from_ref(&wanted), whole, device)
+        .map_err(|e| not_queued(e.to_string()))?;
+    let Some(mut intake) = queued.added.pop() else {
+        let reason = queued
+            .skipped
+            .first()
+            .map_or_else(|| "nothing to ingest".to_owned(), |s| s.reason.clone());
+        return Err(not_queued(reason));
+    };
+    let entry = desk.items.remove(at);
+    intake.extra.insert(
+        CARD_KEY.to_owned(),
+        serde_json::Value::String(entry.card.to_string_lossy().into_owned()),
+    );
+    crate::intake::IntakeQueue::of(archive)
+        .save(&intake)
+        .map_err(|e| not_queued(e.to_string()))?;
+    desk.save(archive, device)?;
+    let title = std::fs::read_to_string(&entry.card)
+        .ok()
+        .and_then(|t| CardFile::parse(&t).ok())
+        .map_or_else(
+            || {
+                entry
+                    .path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .into_owned()
+            },
+            |f| f.card().title.clone(),
+        );
+    let mut change = Change::new(
+        Operation::Edit,
+        format!("Archive “{title}” from the desk"),
+        lease.info().person,
+        device,
+    );
+    change.items = vec![entry.id];
+    History::open(archive)
+        .and_then(|h| h.commit(archive, &change, lease))
+        .map_err(DeskError::History)?;
+    Ok((entry, intake))
+}
+
+/// The desk card a queued or proposed item keeps, from its entry's extra fields.
+#[must_use]
+pub fn carried_card(extra: &Extra) -> Option<PathBuf> {
+    extra
+        .get(CARD_KEY)
+        .and_then(serde_json::Value::as_str)
+        .map(PathBuf::from)
+}
+
+/// Gives the proposal `entry` the desk card at `card`'s fields, in place of the ones ingest
+/// drafted, and records the card so filing keeps its identifier and body. The sensitivity is
+/// the stricter of the two. A card that's gone or doesn't parse leaves the proposal as drafted.
+pub fn carry(entry: &mut crate::review::ReviewEntry, card: &Path) {
+    let Some(file) = std::fs::read_to_string(card)
+        .ok()
+        .and_then(|t| CardFile::parse(&t).ok())
+    else {
+        return;
+    };
+    let desk = file.card();
+    let draft = &mut entry.card;
+    draft.title.clone_from(&desk.title);
+    draft.summary.clone_from(&desk.summary);
+    draft.tags.clone_from(&desk.tags);
+    draft.sensitivity = draft.sensitivity.max(desk.sensitivity);
+    draft.generated.clone_from(&desk.generated);
+    let mut dates = desk.dates.clone().unwrap_or_default();
+    if dates.created.is_none() {
+        dates.created = draft.dates.as_ref().and_then(|d| d.created.clone());
+    }
+    draft.dates = Some(dates);
+    entry.extra.insert(
+        CARD_KEY.to_owned(),
+        serde_json::Value::String(card.to_string_lossy().into_owned()),
+    );
 }

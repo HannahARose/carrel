@@ -1368,7 +1368,7 @@ mod tests {
         let thesis = dir.path().join("Thesis");
         std::fs::create_dir_all(&thesis).unwrap();
         std::fs::write(thesis.join("draft.md"), "# Draft\n").unwrap();
-        carrel_core::desk::add(&archive, &thesis, Some("Thesis"), None, &lease).unwrap();
+        carrel_core::desk::add(&archive, &thesis, Some("Thesis"), None, None, &lease).unwrap();
         lease.release().unwrap();
         std::fs::write(&checked.working, "part,count\nlamp,2\n").unwrap();
         let mut app = App::new(archive).unwrap();
