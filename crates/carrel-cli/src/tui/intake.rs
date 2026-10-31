@@ -134,13 +134,18 @@ impl App {
         self.start_folder = folder;
     }
 
-    /// What was picked goes where `picking` says: an ingest plan, or backup setup.
+    /// What was picked goes where `picking` says: an ingest plan, backup setup, a checkout's
+    /// folder, or the desk.
     pub(super) fn picked(&mut self, paths: Vec<PathBuf>) {
-        if self.picking == super::app::Picking::BackupFolder {
-            self.picking = super::app::Picking::Ingest;
-            self.backup_folder_chosen(&paths);
-        } else {
-            self.plan(paths, IntakeOptions::default());
+        match self.picking {
+            super::app::Picking::BackupFolder => {
+                self.picking = super::app::Picking::Ingest;
+                self.backup_folder_chosen(&paths);
+            }
+            super::app::Picking::CheckoutFolder | super::app::Picking::DeskItem => {
+                self.picked_path(&paths);
+            }
+            super::app::Picking::Ingest => self.plan(paths, IntakeOptions::default()),
         }
     }
 
