@@ -144,6 +144,7 @@ fn a_provider_reports_its_offers_and_answers_requests() {
             &ExtractionRequest {
                 path: file,
                 media_type: "text/plain".into(),
+                context: None,
             },
         )
         .unwrap();
@@ -231,6 +232,7 @@ fn the_registry_prefers_higher_priority_and_settings() {
         .extract(&ExtractionRequest {
             path: file,
             media_type: "text/markdown".into(),
+            context: None,
         })
         .unwrap();
     assert_eq!(extracted.text, "# Title\n");
@@ -391,6 +393,7 @@ fn the_built_in_extractor_reads_plain_text() {
             &ExtractionRequest {
                 path: file,
                 media_type: "text/plain".into(),
+                context: None,
             },
         )
         .unwrap();

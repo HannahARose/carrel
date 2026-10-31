@@ -6,6 +6,7 @@ mod app;
 mod backups;
 mod browser;
 mod intake;
+mod item;
 mod review;
 mod screens;
 mod settings;
@@ -586,6 +587,7 @@ mod tests {
     };
 
     use super::app::{App, Confirm, Effect, Tab};
+    use super::item::Pane;
     use super::ui;
 
     fn copy_dir(from: &Path, to: &Path) {
@@ -1203,15 +1205,15 @@ mod tests {
         app.key(key(KeyCode::Down));
         assert_eq!(app.collections[app.browse_collection].path, "Projects");
         app.key(key(KeyCode::Right));
-        assert!(app.browse_in_items);
+        assert_eq!(app.browse_pane, Pane::Items);
         assert_eq!(
             app.tab,
             Tab::Browse,
             "→ moves between panes here, not screens"
         );
-        assert!(!app.card.is_empty(), "the chosen item's card");
+        assert!(!app.item.text.is_empty(), "the chosen item's card");
         app.key(key(KeyCode::Left));
-        assert!(!app.browse_in_items);
+        assert_eq!(app.browse_pane, Pane::Collections);
 
         app.key(key(KeyCode::Char('/')));
         for c in "oscillat".chars() {
@@ -1229,6 +1231,95 @@ mod tests {
         app.key(key(KeyCode::Esc));
         assert!(app.search.is_none());
         assert!(!app.quit, "Esc clears the search first");
+    }
+
+    #[test]
+    fn an_items_view_shows_its_changes_with_undo_and_its_links() {
+        use carrel_core::history::{Change, Operation};
+        let (_dir, mut app) = sample(true);
+        let items = app.archive.items().unwrap();
+        let parts = items
+            .iter()
+            .find(|i| i.card == "Projects/Hardware/parts-list.csv.md")
+            .unwrap();
+        let lease = DiskLock::for_archive(&app.archive)
+            .acquire(
+                Holder {
+                    person: Id::new_v7(),
+                    device: Id::new_v7(),
+                },
+                "test",
+                DEFAULT_LEASE,
+            )
+            .unwrap();
+        let card = app.archive.root().join(&parts.card);
+        let text = std::fs::read_to_string(&card).unwrap();
+        std::fs::write(&card, format!("{text}\nA note.\n")).unwrap();
+        let mut change = Change::new(
+            Operation::Edit,
+            "Correct the parts list",
+            Id::new_v7(),
+            Id::new_v7(),
+        );
+        change.items = vec![parts.id];
+        let commit = History::open(&app.archive)
+            .unwrap()
+            .commit(&app.archive, &change, &lease)
+            .unwrap()
+            .unwrap();
+        lease.release().unwrap();
+        app.reload().unwrap();
+
+        app.key(key(KeyCode::Char('5')));
+        app.browse_collection = app
+            .collections
+            .iter()
+            .position(|c| c.path == "Projects/Hardware")
+            .unwrap();
+        app.load_items();
+        app.key(key(KeyCode::Right));
+        app.browse_item = app
+            .browse_items
+            .iter()
+            .position(|(card, _)| card == "Projects/Hardware/parts-list.csv.md")
+            .unwrap();
+        app.load_card();
+        assert_eq!(
+            app.item.history.len(),
+            1,
+            "only the changes that touched it"
+        );
+        let text = screen(&app, 140, 30);
+        assert!(text.contains("History"), "{text}");
+        assert!(text.contains("Correct the parts list"), "{text}");
+        assert!(text.contains("part-of  Desk lamp build"), "{text}");
+
+        app.key(key(KeyCode::Enter));
+        assert_eq!(app.browse_pane, Pane::Item);
+        assert!(app.keys().iter().any(|(k, v)| *k == "u" && *v == "undo"));
+        app.key(key(KeyCode::Char('u')));
+        assert!(matches!(&app.confirm, Some(Confirm::Undo { id, .. }) if *id == commit));
+        assert_eq!(app.key(key(KeyCode::Char('y'))), Some(Effect::Undo(commit)));
+
+        app.key(key(KeyCode::Down));
+        assert!(
+            app.keys()
+                .iter()
+                .any(|(k, v)| *k == "Enter" && *v == "go to it")
+        );
+        app.key(key(KeyCode::Char('u')));
+        assert!(app.confirm.is_none(), "a link isn't a change");
+        app.key(key(KeyCode::Enter));
+        assert_eq!(app.browse_pane, Pane::Items);
+        assert_eq!(
+            app.browse_items[app.browse_item].0,
+            "Projects/Hardware/lamp-build.md"
+        );
+        assert_eq!(app.item.history.len(), 0);
+        app.key(key(KeyCode::Enter));
+        app.key(key(KeyCode::Esc));
+        assert_eq!(app.browse_pane, Pane::Items, "Esc leaves the item's view");
+        assert!(!app.quit);
     }
 
     #[test]

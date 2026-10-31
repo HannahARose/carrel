@@ -243,6 +243,15 @@ fn undo_moves_items_back_and_records_what_it_reverted() {
     assert_eq!(log[0].operation, Some(Operation::Move));
     assert_eq!(log[0].moves[0].to, "Projects/Hardware/parts-list.csv");
     assert_eq!(log.len(), 3, "history only grows");
+
+    let touched: Vec<String> = history
+        .item_log(item_id)
+        .unwrap()
+        .into_iter()
+        .map(|e| e.id)
+        .collect();
+    assert_eq!(touched, [undo, moved], "the item's changes, newest first");
+    assert!(!log[2].touches(item_id), "starting history named no item");
 }
 
 #[test]

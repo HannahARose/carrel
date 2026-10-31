@@ -193,6 +193,8 @@ fn show_finds_items_by_id_card_or_item_path() {
         "{report}"
     );
 
+    assert_eq!(by_item["history"], Value::Null, "no history started");
+
     let missing = sandbox.run_in(&root, &["show", "nothing-here", "--json"]);
     assert_eq!(missing.status.code(), Some(1));
     let error: Value = serde_json::from_slice(&missing.stderr).unwrap();
@@ -725,6 +727,28 @@ fn settings_are_listed_set_and_undone() {
     assert_eq!(device["model"], serde_json::Value::Null);
     assert!(device["model_in_use"].is_string());
     sandbox.ok(&root, &["settings", "set", "model", "default"]);
+}
+
+#[test]
+fn show_lists_the_changes_that_touched_the_item() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    let desk = sandbox.path("desk");
+    let item = "Projects/Hardware/parts-list.csv";
+    sandbox.ok(&root, &["checkout", item, "--to", desk.to_str().unwrap()]);
+    let log = sandbox.json(&root, &["log"]);
+    let history = &sandbox.json(&root, &["show", item])["history"];
+    assert_eq!(history.as_array().unwrap().len(), 1, "{history}");
+    assert_eq!(history[0]["id"], log[0]["id"]);
+    assert_eq!(history[0]["operation"], "checkout");
+    let shown = sandbox.ok(&root, &["show", item]);
+    assert!(
+        shown.contains("History (1 change; undo one with `carrel undo CHANGE`):"),
+        "{shown}"
+    );
+    let other = &sandbox.json(&root, &["show", "Projects/Hardware/lamp-build.md"])["history"];
+    assert_eq!(other, &json!([]), "a change touches only its own items");
 }
 
 #[test]

@@ -97,6 +97,13 @@ impl Offer {
                 .iter()
                 .any(|t| t.eq_ignore_ascii_case(media_type))
     }
+
+    /// Whether this offer describes what images show (`"describes": true`), so Carrel can
+    /// give it pictures to describe ([`Picture`]).
+    #[must_use]
+    pub fn describes(&self) -> bool {
+        self.extra.get("describes").and_then(Value::as_bool) == Some(true)
+    }
 }
 
 /// A prompt for a text model.
@@ -146,6 +153,22 @@ pub struct ExtractionRequest {
     pub path: PathBuf,
     /// Its media type, such as `application/pdf`.
     pub media_type: String,
+    /// For a picture to describe: what it is, such as "four views of a 3D model, 86 × 86 ×
+    /// 19 mm". The picture's own name says nothing, so this is all the reader knows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<String>,
+}
+
+/// A picture a provider drew or found in a file and can't describe itself, such as a 3MF's
+/// thumbnail: Carrel passes it to an image reader, adds what that says to the text as a
+/// `Shows:` line, and deletes it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Picture {
+    /// A file the provider wrote in the system's temporary folder. Pictures anywhere else are
+    /// ignored, and never deleted.
+    pub path: PathBuf,
+    /// What it is, for the image reader, which isn't told the file's name.
+    pub context: String,
 }
 
 /// The text read from a file.
@@ -167,6 +190,9 @@ pub struct Extraction {
     /// Whether it records where it was made, such as a photo's location.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub located: bool,
+    /// Pictures for an image reader to describe.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pictures: Vec<Picture>,
 }
 
 /// What a text is embedded for: some models embed a search query differently from the text it
@@ -635,6 +661,27 @@ impl Registry {
             Ok(embeddings)
         })
     }
+
+    /// What the best image reader that describes images says `request`'s picture shows, with
+    /// its context: only offers that describe are tried ([`Offer::describes`]).
+    ///
+    /// # Errors
+    ///
+    /// [`ProviderError::NoProvider`] when nothing here describes images, or the last reader's
+    /// error when none could.
+    pub fn describe(
+        &self,
+        request: &ExtractionRequest,
+    ) -> Result<(Extraction, Source, Vec<Attempt>), ProviderError> {
+        let candidates: Vec<_> = self
+            .ranked(Capability::ExtractText)
+            .into_iter()
+            .filter(|(_, o)| o.describes() && o.reads(&request.media_type))
+            .collect();
+        try_in_turn(Capability::ExtractText, &candidates, |p, o| {
+            p.extract(&o.id, request)
+        })
+    }
 }
 
 fn source(provider: &dyn Provider, offer: &Offer) -> Source {
@@ -720,6 +767,7 @@ impl Provider for PlainText {
             pages: None,
             created: None,
             located: false,
+            pictures: Vec::new(),
         })
     }
 }

@@ -26,6 +26,12 @@ On a Mac, also build the Apple provider, which gives Carrel Apple's on-device mo
 cd ~/Code/carrel-dev && swift build -c release --package-path apple/CarrelProviders && cp "$(swift build -c release --package-path apple/CarrelProviders --show-bin-path)/carrel-provider-apple" ~/.cargo/bin/
 ```
 
+To have Carrel draw STEP and IGES models and describe them, install [OpenCascade](https://dev.opencascade.org) (`brew install opencascade`, or on Debian and Ubuntu `apt install libocct-data-exchange-dev libocct-modeling-algorithms-dev`), then build the CAD provider. Without it, Carrel still reads those files' headers and part names:
+
+```bash
+cd ~/Code/carrel-dev && cargo install --locked --path crates/carrel-provider-cad
+```
+
 On an Apple-silicon Mac you can also build the MLX provider, for open models through MLX. It needs Xcode and its Metal Toolchain (`xcodebuild -downloadComponent MetalToolchain`), and takes a few minutes:
 
 ```bash
@@ -124,7 +130,7 @@ If several items share a term Carrel doesn't know, such as a project's code name
 
 ## 6. Look around, and undo
 
-- **Browse** (`5`) lists collections and their items; `/` searches titles, tags and summaries.
+- **Browse** (`5`) lists collections and their items; `/` searches titles, tags and summaries. Below each card are the changes that touched the item and the items it links to; `Enter` moves among them, and `u` undoes the chosen change.
 - **History** (`6`) lists every change. Choose one and press `u` to undo it: files it moved go back.
 - **Status** (`1`) summarizes the archive, including **Structure**: signs that a collection is getting crowded or that something's missing.
 - Your archive is a normal folder: open it in Finder, or as an Obsidian vault.

@@ -19,7 +19,8 @@ flowchart TB
             direction TB
             apple["carrel-provider-apple<br/>Foundation Models, PDFKit, Vision"]
             llama["carrel-provider-llama<br/>local models, llama.cpp"]
-            extract["carrel-provider-extract<br/>PDF text, Tesseract"]
+            extract["carrel-provider-extract<br/>PDF text, Tesseract, CAD details"]
+            cad["carrel-provider-cad<br/>STEP and IGES, OpenCascade"]
         end
         fetch["carrel-fetch<br/>network helper"]
         kopia["kopia<br/>backups"]
@@ -52,7 +53,8 @@ Three ideas run through it:
 | [`carrel`](https://hrose.me/carrel/carrel/) (`crates/carrel-cli`) | Program | The command-line tool, the interactive mode (`tui/`), the worker, and the benchmark. Each command returns a [`Report`](https://hrose.me/carrel/carrel/struct.Report.html) (text for people, JSON for scripts); `main` prints it. |
 | `carrel worker` | Process of the same program | Drafts the intake queue, one item at a time, detached from the terminal. One per archive per device. |
 | [`carrel-provider-llama`](https://github.com/HannahARose/carrel/tree/dev/crates/carrel-provider-llama) | Program | Text models: local GGUF models through llama.cpp, with Metal on Macs. |
-| [`carrel-provider-extract`](https://hrose.me/carrel/carrel_provider_extract/) | Program | PDF text in Rust, and OCR through Tesseract when it's installed. |
+| [`carrel-provider-extract`](https://hrose.me/carrel/carrel_provider_extract/) | Program | PDF text in Rust, OCR through Tesseract when it's installed, and what 3MF, G-code, STEP and IGES files say about themselves. |
+| [`carrel-provider-cad`](https://github.com/HannahARose/carrel/tree/dev/crates/carrel-provider-cad) | Program, optional | STEP and IGES models meshed through OpenCascade and drawn by a software renderer, for an image reader to describe. Builds without OpenCascade, and then says how to install it. |
 | `carrel-provider-apple` (`apple/CarrelProviders`) | Swift program | Apple's on-device model (Foundation Models), PDFKit and Vision. |
 | [`carrel-fetch`](https://hrose.me/carrel/carrel_fetch/) | Program | The network helper: downloads models, and is the only Carrel program that goes online. |
 | Kopia | Third-party program | Deduplicated, encrypted backups of file contents. |
@@ -272,4 +274,4 @@ sequenceDiagram
 
 ## Testing and CI
 
-`cargo test --workspace` runs everything that doesn't need a model or Kopia. CI (`.github/workflows/ci.yml`) runs format, clippy (pedantic, as errors), tests on macOS, Linux and Windows, docs, the Swift package, the llama.cpp provider against a tiny model, Kopia against a throwaway repository, extraction with Tesseract, `cargo deny`, zizmor on the workflows, and spelling, Markdown and link checks; "CI passed" gates merging. `fixtures/sample-archive` is a hand-built archive checked against the format on every run. `carrel bench` measures models on `fixtures/bench` ([docs/design/benchmark.md](../design/benchmark.md)). See [CONTRIBUTING.md](../../CONTRIBUTING.md) for branches, reviews and releases.
+`cargo test --workspace` runs everything that doesn't need a model or Kopia. CI (`.github/workflows/ci.yml`) runs format, clippy (pedantic, as errors), tests on macOS, Linux and Windows, docs, the Swift package, the llama.cpp provider against a tiny model, the CAD provider with OpenCascade on macOS and Linux, Kopia against a throwaway repository, extraction with Tesseract, `cargo deny`, zizmor on the workflows, and spelling, Markdown and link checks; "CI passed" gates merging. `fixtures/sample-archive` is a hand-built archive checked against the format on every run. `carrel bench` measures models on `fixtures/bench` ([docs/design/benchmark.md](../design/benchmark.md)). See [CONTRIBUTING.md](../../CONTRIBUTING.md) for branches, reviews and releases.

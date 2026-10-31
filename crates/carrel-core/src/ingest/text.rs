@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::card::{DateOrTime, Kind};
 use crate::compressed::{self, EntryKind, Inside, Shape};
 use crate::detect::{Compressed, Rules, is_ignored};
-use crate::providers::{ExtractionRequest, ProviderError, Registry};
+use crate::providers::{ExtractionRequest, Picture, ProviderError, Registry};
 use crate::review::Attempt;
 
 use super::Candidate;
@@ -220,6 +220,7 @@ fn read_file(registry: &Registry, path: &Path) -> ItemText {
     let request = ExtractionRequest {
         path: path.to_owned(),
         media_type: media_type.clone(),
+        context: None,
     };
     let result_name = |e: &ProviderError| e.result();
     let to_attempt = |a: &crate::providers::Attempt| Attempt {
@@ -239,9 +240,15 @@ fn read_file(registry: &Registry, path: &Path) -> ItemText {
                 result: "ok".into(),
                 message: None,
             });
-            let unread = extraction.text.trim().is_empty().then_some(Unread::Empty);
+            let mut text = extraction.text;
+            for picture in &extraction.pictures {
+                if let Some(shows) = describe_picture(registry, picture) {
+                    write!(text, "\nShows: {shows}").unwrap();
+                }
+            }
+            let unread = text.trim().is_empty().then_some(Unread::Empty);
             ItemText {
-                text: extraction.text,
+                text,
                 media_type: Some(media_type),
                 method: extraction.method,
                 pages: extraction.pages,
@@ -276,6 +283,31 @@ fn read_file(registry: &Registry, path: &Path) -> ItemText {
             }),
         },
     }
+}
+
+/// What the best image reader says a provider's picture shows, given its context and not the
+/// file's name; then the picture is deleted. None when nothing here describes images, or the
+/// picture isn't a file in the temporary folder, where providers write them.
+fn describe_picture(registry: &Registry, picture: &Picture) -> Option<String> {
+    let temporary = std::env::temp_dir().canonicalize().ok()?;
+    let path = picture.path.canonicalize().ok()?;
+    if !path.starts_with(&temporary) || !path.is_file() {
+        return None;
+    }
+    let request = ExtractionRequest {
+        media_type: media_type(&path),
+        path: path.clone(),
+        context: Some(picture.context.clone()),
+    };
+    let shows = registry.describe(&request).ok().and_then(|(read, _, _)| {
+        read.text
+            .lines()
+            .find_map(|line| line.strip_prefix("Shows: "))
+            .map(|s| s.trim().to_owned())
+            .filter(|s| !s.is_empty())
+    });
+    let _ = std::fs::remove_file(&path);
+    shows
 }
 
 /// The most of a compressed file's one file that's read for its text, in bytes.
