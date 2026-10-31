@@ -140,6 +140,17 @@ items:
     sensitivity: personal
     date: null
     tags: [appliances]
+  "kettle manual.zip":
+    destinations: [Manuals]
+    sensitivity: personal
+    date: null
+    tags: [appliances]
+  "label printer driver.zip":
+    destinations: [Manuals]
+    sensitivity: personal
+    date: null
+    tags: [electronics]
+    may: [tools]
   "employment contract lumen.md":
     destinations: [Work]
     sensitivity: sensitive
@@ -181,6 +192,12 @@ items:
     sensitivity: personal
     date: null
     tags: [code]
+  "lamp dimmer firmware.zip":
+    destinations: [Projects]
+    sensitivity: personal
+    date: null
+    tags: [code]
+    may: [electronics]
   "amplifier build log.txt":
     destinations: [Projects]
     sensitivity: personal

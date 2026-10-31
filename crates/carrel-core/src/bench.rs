@@ -111,7 +111,7 @@ pub fn check(answers: &Answers, archive: &Archive, items: &Path) -> Result<Vec<S
         {
             problems.push(format!("{file}: {date} isn't a date"));
         }
-        let text = std::fs::read_to_string(path).map_err(|e| format!("{file}: {e}"))?;
+        let text = item_text(path).map_err(|e| format!("{file}: {e}"))?;
         let ruled = floor(file, &text, default).level;
         if answer.sensitivity < ruled {
             problems.push(format!(
@@ -127,6 +127,24 @@ pub fn check(answers: &Answers, archive: &Archive, items: &Path) -> Result<Vec<S
         }
     }
     Ok(problems)
+}
+
+/// An item's text for checking its expected level: a compressed file's names and the text of
+/// everything inside it, otherwise the file's own text.
+fn item_text(path: &Path) -> Result<String, String> {
+    let Some(listing) = crate::compressed::inspect(path).and_then(|i| i.listing) else {
+        return std::fs::read_to_string(path).map_err(|e| e.to_string());
+    };
+    let mut text = String::new();
+    for entry in listing.files() {
+        text.push_str(&entry.path);
+        text.push('\n');
+        let bytes = crate::compressed::read_entry(path, listing.format, &entry.path, 1 << 16)
+            .map_err(|e| e.to_string())?;
+        text.push_str(&String::from_utf8_lossy(&bytes));
+        text.push('\n');
+    }
+    Ok(text)
 }
 
 /// What a run proposed for one item.

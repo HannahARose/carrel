@@ -1,6 +1,7 @@
 //! `carrel expand ITEM`: expanding a compressed file that's already filed, with the same
 //! checks as filing, as one undoable change (`docs/design/compressed.md`).
 
+use std::fmt::Write as _;
 use std::path::Path;
 
 use carrel_core::compressed::item::expand_item;
@@ -39,10 +40,12 @@ pub fn expand(archive: Option<&Path>, query: &str, anyway: bool) -> Result<Repor
         None => text.push_str(
             "The compressed file is in the Trash; undo it from History or with `carrel undo`, then put it back from the Trash.\n",
         ),
-        Some(problem) => text.push_str(&format!(
-            "The compressed file couldn't go to the Trash, so it's still at {}: {problem}\n",
+        Some(problem) => writeln!(
+            text,
+            "The compressed file couldn't go to the Trash, so it's still at {}: {problem}",
             expanded.from
-        )),
+        )
+        .unwrap(),
     }
     Ok(Report::new(
         text,

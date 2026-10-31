@@ -49,10 +49,12 @@ fn tool(format: Compressed) -> Result<Tool, Error> {
 
 /// Runs `command`, returning its standard output, or what went wrong.
 fn run(mut command: Command) -> Result<Vec<u8>, Error> {
-    let output = command
-        .stdin(Stdio::null())
-        .output()
-        .map_err(|e| Error::Invalid(format!("couldn't run {:?}: {e}", command.get_program())))?;
+    let output = command.stdin(Stdio::null()).output().map_err(|e| {
+        Error::Invalid(format!(
+            "couldn't run {}: {e}",
+            command.get_program().display()
+        ))
+    })?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stdout = String::from_utf8_lossy(&output.stdout);
