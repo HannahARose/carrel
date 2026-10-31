@@ -275,6 +275,12 @@ pub enum Effect {
         /// Its password, handed to Kopia, which keeps it in the keychain.
         password: super::backups::Secret,
     },
+    /// Rebuild the embedding index, or switch the archive's model, as `carrel index` does.
+    Index(super::embedding::Embedding),
+    /// Show the archive at this path instead, as `carrel open` does.
+    OpenArchive(std::path::PathBuf),
+    /// Create an archive at this path, as `carrel init` does, and show it.
+    CreateArchive(std::path::PathBuf),
 }
 
 /// The interactive mode's state.
@@ -360,6 +366,12 @@ pub struct App {
     pub settings: Vec<super::settings::Shown>,
     /// The chosen setting.
     pub settings_chosen: usize,
+    /// What the providers on this device offer, found when Settings is first shown.
+    pub here: Option<super::embedding::Here>,
+    /// How far work in the background has got, when it says.
+    pub progress: super::embedding::Shared,
+    /// The archives opened or created on this device, for the archive switcher.
+    pub known_archives: Vec<std::path::PathBuf>,
     /// The chosen snapshot on the Backups screen.
     pub backup_chosen: usize,
     /// The built-in file browser, while it's open.
@@ -434,6 +446,9 @@ impl App {
             worker: super::intake::Worker::default(),
             settings: Vec::new(),
             settings_chosen: 0,
+            here: None,
+            progress: super::embedding::Shared::default(),
+            known_archives: Vec::new(),
             backup_chosen: 0,
             browser: None,
             picker_preference: None,
@@ -448,6 +463,7 @@ impl App {
             quit: false,
         };
         let prefs = crate::config::Prefs::load().unwrap_or_default();
+        app.known_archives = prefs.known_archives();
         app.picker_preference = prefs.picker;
         app.start_folder = prefs
             .last_folder
@@ -468,6 +484,7 @@ impl App {
         let root_path = self.archive.root().to_owned();
         let root = Some(root_path.as_path());
         self.status = lines(&crate::commands::status(root)?.text);
+        self.status.extend(self.index_status());
         self.history = match History::open(&self.archive) {
             Ok(history) => history.log()?,
             Err(HistoryError::NotInitialized) => Vec::new(),
@@ -600,7 +617,9 @@ impl App {
             ];
         }
         match self.tab {
-            Tab::Settings => keys.extend([("↑↓", "choose"), ("Enter", "change")]),
+            Tab::Settings => {
+                keys.extend([("↑↓", "choose"), ("Enter", "change"), ("^O", "archives")]);
+            }
             Tab::Ingest => keys.extend([
                 ("i", "add"),
                 ("↑↓", "choose"),
@@ -657,6 +676,12 @@ impl App {
 
     /// Handles a key, returning work for the run loop when there is some.
     pub fn key(&mut self, key: KeyEvent) -> Option<Effect> {
+        let effect = self.key_here(key);
+        self.settings_shown();
+        effect
+    }
+
+    fn key_here(&mut self, key: KeyEvent) -> Option<Effect> {
         if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
             self.quit = true;
             return None;
@@ -700,6 +725,10 @@ impl App {
             return self.picker_key(key);
         }
         self.message = None;
+        if key.code == KeyCode::Char('o') && key.modifiers.contains(KeyModifiers::CONTROL) {
+            self.archive_picker();
+            return None;
+        }
         let handled = match self.tab {
             Tab::Review => self.review_key(key),
             Tab::Active => self.active_key(key),
@@ -717,6 +746,10 @@ impl App {
             KeyCode::Char('q') | KeyCode::Esc => self.quit = true,
             KeyCode::Char('?') => self.help = true,
             KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Providers may have come or gone too.
+                if self.here.is_some() {
+                    self.here = Some(super::embedding::Here::find());
+                }
                 self.message = Some(match self.reload() {
                     Ok(()) => "Refreshed".into(),
                     Err(Failure(e)) => e,
@@ -796,6 +829,7 @@ impl App {
             }
             _ => {}
         }
+        self.settings_shown();
     }
 }
 

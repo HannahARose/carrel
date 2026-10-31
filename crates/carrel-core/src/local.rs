@@ -196,12 +196,40 @@ pub struct Prefs {
     /// The folder files were last picked from, where picking starts next time.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_folder: Option<PathBuf>,
+    /// The archives opened or created on this device, most recent first, at most
+    /// [`RECENT_ARCHIVES`], so the interactive mode and the apps can offer them again.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub recent: Vec<PathBuf>,
     /// Keys this version doesn't know.
     #[serde(flatten)]
     pub extra: Extra,
 }
 
+/// How many archives [`Prefs::recent`] remembers.
+pub const RECENT_ARCHIVES: usize = 10;
+
 impl Prefs {
+    /// Notes that the archive at `root` was opened or created, putting it first among the
+    /// recent archives.
+    pub fn note_archive(&mut self, root: &Path) {
+        self.recent.retain(|r| r != root);
+        self.recent.insert(0, root.to_owned());
+        self.recent.truncate(RECENT_ARCHIVES);
+    }
+
+    /// The archives to offer: the one chosen with `carrel open`, then the recent ones, each
+    /// once, leaving out those no longer there.
+    #[must_use]
+    pub fn known_archives(&self) -> Vec<PathBuf> {
+        let mut known: Vec<PathBuf> = Vec::new();
+        for root in self.archive.iter().chain(&self.recent) {
+            if !known.contains(root) && root.join("_System/archive.json").is_file() {
+                known.push(root.clone());
+            }
+        }
+        known
+    }
+
     /// The saved preferences, or the defaults.
     ///
     /// # Errors

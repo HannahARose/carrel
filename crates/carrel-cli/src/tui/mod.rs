@@ -3,8 +3,10 @@
 
 mod active;
 mod app;
+mod archives;
 mod backups;
 mod browser;
+mod embedding;
 mod intake;
 mod item;
 mod review;
@@ -36,6 +38,11 @@ use carrel_core::card::Id;
 
 /// Work run in the background, with what it reports.
 type Work = Box<dyn FnOnce() -> Result<Report, Failure> + Send>;
+
+/// `text`'s lines, as a report screen shows them.
+fn lines_of(text: &str) -> Vec<String> {
+    text.lines().map(str::to_owned).collect()
+}
 
 /// Opens the interactive mode on the archive commands would use, and returns when the owner
 /// quits. The terminal is restored however it ends.
@@ -150,7 +157,12 @@ fn event_loop(
         {
             running = None;
             app.busy = None;
+            if let Ok(mut progress) = app.progress.lock() {
+                *progress = None;
+            }
             finished(app, result);
+            // After a download, Settings finds what the providers offer again.
+            app.settings_shown();
         }
         terminal
             .draw(|frame| ui::draw(frame, app, theme))
@@ -376,10 +388,19 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
         effect @ (Effect::Return(_) | Effect::CancelCheckout(_) | Effect::Entries { .. }) => {
             active_work(root, effect)
         }
-        Effect::Download(name) => (
-            format!("Downloading {name}…"),
-            Box::new(move || crate::models::download_quietly(&name)),
-        ),
+        Effect::Download(name) => {
+            // What the providers offer changes once it's here.
+            if app.here.is_some() {
+                app.here = None;
+            }
+            (
+                format!("Downloading {name}…"),
+                Box::new(move || crate::models::download_quietly(&name)),
+            )
+        }
+        effect @ (Effect::Index(_) | Effect::OpenArchive(_) | Effect::CreateArchive(_)) => {
+            archive_work(app, root, effect)?
+        }
         Effect::Queue { paths, options } => {
             let result = queue(&root, &paths, options);
             finished(app, result.map_err(|Failure(e)| e));
@@ -428,6 +449,35 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
         let _ = send.send(result);
     });
     Some(receive)
+}
+
+/// The work for the index and for switching archives: the index's in the background, and
+/// switching at once, since the app is replaced.
+fn archive_work(app: &mut App, root: PathBuf, effect: Effect) -> Option<(String, Work)> {
+    match effect {
+        Effect::Index(work) => Some(embedding::index_work(
+            root,
+            work,
+            app.progress.clone(),
+            Box::new(|| crate::providers::registry().0),
+            Box::new(|| {
+                Ok(crate::commands::holder(
+                    &crate::config::Identity::load_or_create()?,
+                ))
+            }),
+        )),
+        Effect::OpenArchive(path) => {
+            let result = app.switch_archive(&path);
+            app.message = Some(result.unwrap_or_else(|Failure(e)| e));
+            None
+        }
+        Effect::CreateArchive(path) => {
+            let result = app.create_archive(&path);
+            app.message = Some(result.unwrap_or_else(|Failure(e)| e));
+            None
+        }
+        _ => None,
+    }
 }
 
 /// Plans what the picker chose; if the picker couldn't run, says why and opens the built-in

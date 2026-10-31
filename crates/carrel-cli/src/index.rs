@@ -10,7 +10,7 @@ use std::fmt::Write as _;
 use std::path::Path;
 
 use carrel_core::archive::Archive;
-use carrel_core::coordinator::{Coordinator as _, DEFAULT_LEASE, DiskLock};
+use carrel_core::coordinator::{Coordinator as _, DEFAULT_LEASE, DiskLock, Holder};
 use carrel_core::index::switch::{self, Switch};
 use carrel_core::index::{Index, IndexError, embed_query, plan};
 use carrel_core::models::embedding_models;
@@ -160,19 +160,36 @@ pub fn rebuild(archive: Option<&Path>, json: bool) -> Result<Report, Failure> {
     let archive = locate(archive)?;
     let model = crate::models::archive_model(&archive)?;
     let (registry, _) = crate::providers::registry();
-    let mut index = Index::open_or_new(&archive, &model).map_err(|e| failure(e, &model))?;
+    let mut display = crate::progress::Display::new(format!("Embedding with {model}"), json);
+    let report = rebuild_with(&archive, &registry, &model, &mut |done, total, item| {
+        display.count("items", done, total, item);
+    });
+    display.finish();
+    report
+}
+
+/// Embeds every item of `archive` again with `model`, the archive's embedding model, through
+/// `registry`, calling `progress` for each item; what `carrel index rebuild` and the
+/// interactive mode's Settings do.
+///
+/// # Errors
+///
+/// [`Failure`] if no provider in `registry` runs the model, or the index can't be written.
+pub fn rebuild_with(
+    archive: &Archive,
+    registry: &Registry,
+    model: &str,
+    progress: &mut dyn FnMut(usize, usize, Option<&str>),
+) -> Result<Report, Failure> {
+    let mut index = Index::open_or_new(archive, model).map_err(|e| failure(e, model))?;
     let resumed = index.rebuilding();
     if !resumed {
         // Make sure the model answers before the old index is let go.
-        embed_query(&registry, &model, "a test").map_err(|e| failure(e, &model))?;
+        embed_query(registry, model, "a test").map_err(|e| failure(e, model))?;
         index.start_rebuild();
-        index.save().map_err(|e| failure(e, &model))?;
+        index.save().map_err(|e| failure(e, model))?;
     }
-    let mut display = crate::progress::Display::new(format!("Embedding with {model}"), json);
-    let items = catch_up(&archive, &registry, &mut index, &mut |done, total, item| {
-        display.count("items", done, total, item);
-    })?;
-    display.finish();
+    let items = catch_up(archive, registry, &mut index, progress)?;
     let text = format!(
         "{} {} with {model}, as {}.\n",
         if resumed {
@@ -228,12 +245,11 @@ fn switch_progress(archive: &Archive, text: &mut String) -> Result<Value, Failur
 /// Takes the archive's writer lease, runs `change` holding it, and lets it go.
 fn holding<T>(
     archive: &Archive,
+    holder: Holder,
     purpose: &str,
     change: impl FnOnce(&carrel_core::coordinator::WriterLease) -> Result<T, switch::SwitchError>,
 ) -> Result<T, Failure> {
-    let identity = Identity::load_or_create()?;
-    let lease =
-        DiskLock::for_archive(archive).acquire(holder(&identity), purpose, DEFAULT_LEASE)?;
+    let lease = DiskLock::for_archive(archive).acquire(holder, purpose, DEFAULT_LEASE)?;
     let result = change(&lease);
     lease.release()?;
     Ok(result?)
@@ -313,14 +329,14 @@ fn not_offered(registry: &Registry, model: &str) -> Failure {
 
 /// `carrel index model NAME` when NAME is already the archive's model: stops a switch to
 /// another model, if one is under way.
-fn keep(archive: &Archive, model: &str) -> Result<Report, Failure> {
+fn keep(archive: &Archive, holder: Holder, model: &str) -> Result<Report, Failure> {
     if switch::pending(archive).is_none() {
         return Ok(Report::new(
             format!("This archive is already searched with {model}.\n"),
             json!({ "model": model, "switched": false, "stopped": null }),
         ));
     }
-    let stopped = holding(archive, "index model", |lease| {
+    let stopped = holding(archive, holder, "index model", |lease| {
         switch::cancel(archive, lease)
     })?;
     let to = stopped.as_deref().unwrap_or_default();
@@ -341,29 +357,58 @@ fn keep(archive: &Archive, model: &str) -> Result<Report, Failure> {
 /// settings can't be written.
 pub fn switch_to(archive: Option<&Path>, model: &str, json: bool) -> Result<Report, Failure> {
     let archive = locate(archive)?;
-    let model = model.trim();
-    if archive.settings().embedding_model() == Some(model) {
-        return keep(&archive, model);
-    }
+    let holder = holder(&Identity::load_or_create()?);
     let (registry, _) = crate::providers::registry();
-    if !offered(&registry, model) {
-        return Err(not_offered(&registry, model));
-    }
-    // Make sure the model answers before anything is recorded.
-    embed_query(&registry, model, "a test").map_err(|e| failure(e, model))?;
-    let (mut index, begun) = holding(&archive, "index model", |lease| {
-        switch::begin(&archive, model, lease)
-    })?;
-    if let Some(replaced) = &begun.replaced {
+    let model = model.trim();
+    let mut display = crate::progress::Display::new(format!("Embedding with {model}"), json);
+    let report = switch_with(
+        &archive,
+        &registry,
+        holder,
+        model,
+        &mut |done, total, item| {
+            display.count("items", done, total, item);
+        },
+    );
+    display.finish();
+    let report = report?;
+    if let Some(replaced) = report.json["replaced"].as_str() {
         eprintln!("Gave up switching to {replaced}, and removed its index.");
     }
-    let mut display = crate::progress::Display::new(format!("Embedding with {model}"), json);
-    let items = catch_up(&archive, &registry, &mut index, &mut |done, total, item| {
-        display.count("items", done, total, item);
+    Ok(report)
+}
+
+/// Switches `archive` to the embedding model `model` through `registry`, holding the writer
+/// lease as `holder` while the switch is recorded and finished, and calling `progress` for
+/// each item embedded; what `carrel index model NAME` and the interactive mode's Settings do.
+/// When `model` is already the archive's, stops a switch to another model, if one is under
+/// way.
+///
+/// # Errors
+///
+/// [`Failure`] if no provider in `registry` offers `model`, it fails, or the index or settings
+/// can't be written.
+pub fn switch_with(
+    archive: &Archive,
+    registry: &Registry,
+    holder: Holder,
+    model: &str,
+    progress: &mut dyn FnMut(usize, usize, Option<&str>),
+) -> Result<Report, Failure> {
+    if archive.settings().embedding_model() == Some(model) {
+        return keep(archive, holder, model);
+    }
+    if !offered(registry, model) {
+        return Err(not_offered(registry, model));
+    }
+    // Make sure the model answers before anything is recorded.
+    embed_query(registry, model, "a test").map_err(|e| failure(e, model))?;
+    let (mut index, begun) = holding(archive, holder, "index model", |lease| {
+        switch::begin(archive, model, lease)
     })?;
-    display.finish();
-    let finished = holding(&archive, "index model", |lease| {
-        switch::finish(&archive, model, lease)
+    let items = catch_up(archive, registry, &mut index, progress)?;
+    let finished = holding(archive, holder, "index model", |lease| {
+        switch::finish(archive, model, lease)
     })?;
     let mut text = format!(
         "{} {} with {model}, as {}. This archive is now searched with {model}, on every device \
