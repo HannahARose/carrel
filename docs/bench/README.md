@@ -126,6 +126,19 @@ On DeskBook, an M2 Max MacBook Pro with 32 GB (the on-device runner), with Carre
 - **With drafted cards** (only the 9 items in the image run had them; the rest kept file names) every ranking does a point or two better, EmbeddingGemma reaching 98%.
 - Embedding all 81 items took under a minute per model on the M2 Max.
 
+After #251 changed the merge (exact names and numbers first, then words weighted by how strong the embedding model is), the same run on DeskBook at e8c0c1c gives [these results](2026-10-31/findability-merged/report.md):
+
+| Ranking | Model | Top five | Mean reciprocal rank | Missed |
+| --- | --- | --- | --- | --- |
+| Words alone | none | 91% | 0.85 | 21 |
+| Meaning alone | EmbeddingGemma 300M | 97% | 0.92 | 6 |
+| **Words and meaning** | **EmbeddingGemma 300M** | **98%** | **0.92** | **5** |
+| Meaning alone | Qwen3-Embedding 0.6B | 97% | 0.88 | 7 |
+| Words and meaning | Qwen3-Embedding 0.6B | 97% | 0.90 | 7 |
+| Words and meaning | Apple NaturalLanguage (English) | 91% | 0.84 | 20 |
+
+The merge now beats meaning alone with EmbeddingGemma, and with Apple's weak embedding it no longer falls below words alone (91%, up from 84%).
+
 ## Running it again
 
 ```bash
