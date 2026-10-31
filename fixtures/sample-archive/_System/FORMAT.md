@@ -251,7 +251,12 @@ generated:
   device: 01928f3a-0000-7000-8000-00000000d001
   at: "2026-10-29T15:42:07-07:00"
   level: preferred        # or below-preferred, if a stronger device should re-check it
+  corrections:            # optional: what the owner said to correct the card
+    - said: "This is a picture of Lake Annecy, not Geneva"
+      at: "2026-10-31T09:12:40-07:00"
 ```
+
+A field the owner set outright is left out of `fields`, so programs never overwrite it. `corrections` keeps the owner's corrections, oldest first; a program that rewrites a field in `fields` must give them to any model it uses and must not contradict them.
 
 ### 5.7 Example
 

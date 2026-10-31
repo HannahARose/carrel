@@ -9,6 +9,7 @@ mod bench;
 mod checkout;
 mod commands;
 mod config;
+mod correct;
 mod desk;
 mod formats;
 mod ingest;
@@ -110,6 +111,21 @@ enum Command {
     Undo {
         /// The change's identifier, or its start.
         change: String,
+    },
+    /// Correct a filed item's card in plain words, narrowly ("it's from 2019") or broadly
+    /// ("it's a picture of A, not B"), or with `field: value` lines. The changes are shown
+    /// before and after and saved only when you agree; a new collection refiles it.
+    Correct {
+        /// The item: its identifier, or its card's or contents' path.
+        item: String,
+        /// What's wrong; asked for when left out.
+        words: Vec<String>,
+        /// Save without asking.
+        #[arg(long)]
+        yes: bool,
+        /// Add a lasting fact the correction states to the glossary without asking.
+        #[arg(long)]
+        learn: bool,
     },
     /// Rename an item and its card together, as when `carrel status` finds a name that won't
     /// work on every system. Links to it follow, and the change can be undone.
@@ -453,6 +469,21 @@ enum ReviewAction {
         /// The proposal's identifier, or its start or end.
         id: String,
     },
+    /// Correct a proposal in plain words, narrowly ("it's from 2019") or broadly ("it's a
+    /// picture of A, not B"), or with `field: value` lines. The changes are shown before and
+    /// after, and saved only when you agree.
+    Correct {
+        /// The proposal's identifier, or its start or end.
+        id: String,
+        /// What's wrong; asked for when left out.
+        words: Vec<String>,
+        /// Save without asking.
+        #[arg(long)]
+        yes: bool,
+        /// Add a lasting fact the correction states to the glossary without asking.
+        #[arg(long)]
+        learn: bool,
+    },
     /// Propose another collection for an item. It's filed there when approved.
     MoveTo {
         /// The proposal's identifier, or its start or end.
@@ -525,6 +556,12 @@ fn review_command(
         ),
         ReviewAction::Hold { ids } => review::hold(archive, &ids),
         ReviewAction::Edit { id } => review::edit(archive, &id),
+        ReviewAction::Correct {
+            id,
+            words,
+            yes,
+            learn,
+        } => correct::review(archive, &id, &words, yes, learn),
         ReviewAction::MoveTo { id, collection } => review::move_to(archive, &id, &collection),
     }
 }
@@ -617,6 +654,12 @@ fn main() -> ExitCode {
             _ => settings::list(cli.archive.as_deref()),
         },
         Command::Review { all, action } => review_command(cli.archive.as_deref(), all, action),
+        Command::Correct {
+            item,
+            words,
+            yes,
+            learn,
+        } => correct::filed(cli.archive.as_deref(), &item, &words, yes, learn),
         Command::Rename { item, new_name } => {
             commands::rename(cli.archive.as_deref(), &item, new_name.as_deref())
         }

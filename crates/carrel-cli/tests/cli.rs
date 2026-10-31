@@ -966,6 +966,95 @@ fn sessions_on_a_checked_out_item_become_pending_entries_to_approve() {
 }
 
 #[test]
+fn review_correct_shows_the_change_and_saves_only_when_told() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    let lines = "created: 2019-03-31\nsensitivity: public\ncollection: Reading";
+
+    let shown = sandbox.ok(&root, &["review", "correct", "00000001", lines]);
+    assert!(
+        shown.contains("created      (none)  →  2019-03-31  (yours)"),
+        "{shown}"
+    );
+    assert!(
+        shown.contains("collection   Projects/Hardware  →  Reading"),
+        "{shown}"
+    );
+    assert!(
+        shown.contains("Not saved"),
+        "no terminal to ask on: {shown}"
+    );
+    let unchanged = sandbox.json(&root, &["review", "show", "00000001"]);
+    assert_eq!(unchanged["destination"]["path"], "Projects/Hardware");
+
+    let saved = sandbox.json(&root, &["review", "correct", "00000001", lines, "--yes"]);
+    assert_eq!(saved["saved"], true);
+    let after = sandbox.json(&root, &["review", "show", "00000001"]);
+    assert_eq!(after["destination"]["path"], "Reading");
+    assert_eq!(after["card"]["dates"]["created"], "2019-03-31");
+    assert_eq!(after["card"]["sensitivity"], "public");
+    assert_eq!(
+        after["card"]["generated"]["corrections"][0]["said"], lines,
+        "the owner's words are kept with the card"
+    );
+
+    let bad = sandbox.run_in(
+        &root,
+        &["review", "correct", "00000001", "created: soon", "--yes"],
+    );
+    assert_eq!(bad.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&bad.stderr).contains("isn't a date"));
+}
+
+#[test]
+fn correct_refiles_a_filed_item_in_one_change_that_undo_reverses() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    let init = std::process::Command::new(env!("CARGO_BIN_EXE_carrel"))
+        .args(["init", root.to_str().unwrap()])
+        .env("CARREL_CONFIG_DIR", sandbox.path("config"))
+        .output()
+        .unwrap();
+    assert!(
+        init.status.success(),
+        "{}",
+        String::from_utf8_lossy(&init.stderr)
+    );
+    let lines = "created: 2019-03-31\ncollection: Reading";
+    let saved = sandbox.json(
+        &root,
+        &[
+            "correct",
+            "Projects/Hardware/parts-list.csv",
+            lines,
+            "--yes",
+        ],
+    );
+    assert_eq!(saved["saved"], true, "{saved}");
+    assert_eq!(saved["card"], "Reading/parts-list.csv.md");
+    assert!(root.join("Reading/parts-list.csv").exists());
+    assert!(!root.join("Projects/Hardware/parts-list.csv").exists());
+    let card = std::fs::read_to_string(root.join("Reading/parts-list.csv.md")).unwrap();
+    assert!(card.contains("created: 2019-03-31"), "{card}");
+    let log = sandbox.json(&root, &["log"]);
+    assert!(
+        log[0]["summary"]
+            .as_str()
+            .unwrap()
+            .contains("Owner: created: 2019-03-31"),
+        "{log}"
+    );
+
+    let change = log[0]["id"].as_str().unwrap().to_owned();
+    sandbox.ok(&root, &["undo", &change[..8]]);
+    assert!(
+        root.join("Projects/Hardware/parts-list.csv").exists(),
+        "undo moved it back"
+    );
+    assert!(!root.join("Reading/parts-list.csv.md").exists());
+}
+
+#[test]
 fn types_nothing_reads_are_logged_without_names_and_listed() {
     let sandbox = Sandbox::new();
     let root = sandbox.sample();
