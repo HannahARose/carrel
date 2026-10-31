@@ -53,11 +53,11 @@ impl App {
         let set_up = self.backups_set_up();
         Handled::Yes(match key.code {
             KeyCode::Char('s') => {
-                self.input = Some(Input {
-                    purpose: InputPurpose::BackupRepository,
-                    text: String::new(),
-                });
-                None
+                self.picking = super::app::Picking::BackupFolder;
+                self.message = Some(
+                    "Choose the folder for the backups: an empty one for new backups, or an existing repository".into(),
+                );
+                self.start_picker()
             }
             KeyCode::Char('n' | 'v' | 'r') if !set_up => {
                 self.message = Some("Backups aren't set up; press s to set them up".into());
@@ -85,24 +85,45 @@ impl App {
         })
     }
 
+    /// Opens the line to type or paste the backup folder into.
+    pub(super) fn ask_for_backup_folder(&mut self) {
+        self.input = Some(Input {
+            purpose: InputPurpose::BackupRepository,
+            text: String::new(),
+        });
+    }
+
+    /// Goes on to the password for the folder chosen, typed or picked: the first of `paths`,
+    /// or the folder a picked file is in.
+    pub(super) fn backup_folder_chosen(&mut self, paths: &[std::path::PathBuf]) {
+        let Some(first) = paths.first() else {
+            self.message = Some("No folder chosen; nothing set up".into());
+            return;
+        };
+        let folder = if first.is_file() {
+            first
+                .parent()
+                .map_or_else(|| first.clone(), std::path::Path::to_owned)
+        } else {
+            first.clone()
+        };
+        let new = !crate::backup::exists(&folder);
+        self.input = Some(Input {
+            purpose: InputPurpose::BackupPassword {
+                repository: folder,
+                new,
+                first: None,
+            },
+            text: String::new(),
+        });
+    }
+
     /// What happens when a line typed for backups is entered: the repository, then the
     /// password (twice for a new repository), then setting up; or the item to restore.
     pub(super) fn backup_input(&mut self, purpose: InputPurpose, text: String) -> Option<Effect> {
         match purpose {
             InputPurpose::BackupRepository => {
-                let Some(path) = crate::paths::split_paths(&text).into_iter().next() else {
-                    self.message = Some("No folder given; nothing set up".into());
-                    return None;
-                };
-                let new = !crate::backup::exists(&path);
-                self.input = Some(Input {
-                    purpose: InputPurpose::BackupPassword {
-                        repository: path,
-                        new,
-                        first: None,
-                    },
-                    text: String::new(),
-                });
+                self.backup_folder_chosen(&crate::paths::split_paths(&text));
                 None
             }
             InputPurpose::BackupPassword {

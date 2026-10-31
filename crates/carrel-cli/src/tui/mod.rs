@@ -266,6 +266,7 @@ fn picked_files(app: &mut App, picked: Result<Vec<PathBuf>, Failure>) -> Option<
     match picked {
         Ok(paths) if paths.is_empty() => {
             app.message = Some("Nothing chosen".into());
+            app.picking = app::Picking::Ingest;
             None
         }
         Ok(paths) => {
@@ -273,7 +274,7 @@ fn picked_files(app: &mut App, picked: Result<Vec<PathBuf>, Failure>) -> Option<
             if let Some(folder) = &folder {
                 folder.clone_into(&mut app.start_folder);
             }
-            app.plan(paths, carrel_core::ingest::IntakeOptions::default());
+            app.picked(paths);
             folder
         }
         Err(Failure(e)) => {
@@ -601,6 +602,7 @@ mod tests {
     #[test]
     fn backups_are_set_up_with_a_masked_password_typed_twice() {
         let (_dir, mut app) = sample(false);
+        app.picker_preference = Some("builtin".into());
         app.key(key(KeyCode::Char('8')));
         assert_eq!(app.tab, Tab::Backups);
         let text = screen(&app, 120, 30);
@@ -611,6 +613,8 @@ mod tests {
 
         let repository = app.archive.root().parent().unwrap().join("backups");
         app.key(key(KeyCode::Char('s')));
+        // `/` in the browser types a path instead.
+        app.key(key(KeyCode::Char('/')));
         for c in repository.to_str().unwrap().chars() {
             app.key(key(KeyCode::Char(c)));
         }
@@ -634,6 +638,8 @@ mod tests {
         assert!(app.message.as_deref().unwrap().contains("don't match"));
 
         app.key(key(KeyCode::Char('s')));
+        // `/` in the browser types a path instead.
+        app.key(key(KeyCode::Char('/')));
         for c in repository.to_str().unwrap().chars() {
             app.key(key(KeyCode::Char(c)));
         }
@@ -656,6 +662,47 @@ mod tests {
             }
             other => panic!("{other:?}"),
         }
+    }
+
+    #[test]
+    fn the_backup_folder_is_chosen_in_the_built_in_browser() {
+        let (_dir, mut app) = sample(false);
+        app.picker_preference = Some("builtin".into());
+        let parent = app.archive.root().parent().unwrap().to_owned();
+        std::fs::create_dir_all(parent.join("Backups")).unwrap();
+        app.start_folder = parent.clone();
+        app.key(key(KeyCode::Char('8')));
+        assert_eq!(app.key(key(KeyCode::Char('s'))), None);
+        let browser = app.browser.as_ref().expect("the built-in browser opens");
+        let at = browser
+            .entries
+            .iter()
+            .position(|(name, _)| name == "Backups")
+            .unwrap();
+        assert!(screen(&app, 220, 30).contains("choose the folder"));
+        for _ in 0..at {
+            app.key(key(KeyCode::Down));
+        }
+        app.key(key(KeyCode::Char('i')));
+        assert!(app.browser.is_none());
+        match &app.input {
+            Some(super::screens::Input {
+                purpose:
+                    super::screens::InputPurpose::BackupPassword {
+                        repository, new, ..
+                    },
+                ..
+            }) => {
+                assert_eq!(repository, &parent.join("Backups"));
+                assert!(*new, "an empty folder makes new backups");
+            }
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(
+            app.picking,
+            super::app::Picking::Ingest,
+            "picking goes back to ingest"
+        );
     }
 
     #[test]
