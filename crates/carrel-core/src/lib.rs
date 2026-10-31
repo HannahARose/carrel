@@ -17,6 +17,7 @@
 //! | [`sections`] | Managed sections, and comparing text while ignoring table padding | §5.3 |
 //! | [`listing`] | The generated listings: collections' contents and `ARCHIVE.md`'s collections | §6.2, §6.3 |
 //! | [`detect`] | Item kinds, sealing, and regenerable folders | §4, §7.5 |
+//! | [`compressed`] | Reading inside compressed files, and expanding them | §5.2, `docs/design/compressed.md` |
 //! | [`manifest`] | Checksums, folder manifests and their diffs | §2.6, §7.7 |
 //! | [`names`] | Portable names: checking them, and suggesting portable ones | §2.5 |
 //! | [`rename`] | Renaming an item and its card together, with links and history following | §2.5, §8.2 |
@@ -55,6 +56,7 @@ pub mod card;
 pub mod card_file;
 pub mod checkout;
 pub mod collections;
+pub mod compressed;
 pub mod coordinator;
 pub mod correct;
 pub mod desk;

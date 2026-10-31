@@ -146,15 +146,21 @@ fn matches(m: &Match, candidate: &Candidate, source: &Path) -> bool {
         return false;
     }
     if let Some(marker) = &m.marker {
-        if candidate.kind == Kind::File {
-            return false;
-        }
         let pattern = NamePattern(marker.clone());
-        let found = std::fs::read_dir(&candidate.path).is_ok_and(|entries| {
-            entries
-                .filter_map(Result::ok)
-                .any(|e| pattern.matches(&e.file_name().to_string_lossy()))
-        });
+        // A compressed file's markers are those of what expanding it makes.
+        let found =
+            if let Some(listing) = candidate.inside.as_ref().and_then(|i| i.listing.as_ref()) {
+                !matches!(listing.shape(), crate::compressed::Shape::OneFile(_))
+                    && listing.top_level().iter().any(|n| pattern.matches(n))
+            } else if candidate.kind == Kind::File {
+                false
+            } else {
+                std::fs::read_dir(&candidate.path).is_ok_and(|entries| {
+                    entries
+                        .filter_map(Result::ok)
+                        .any(|e| pattern.matches(&e.file_name().to_string_lossy()))
+                })
+            };
         if !found {
             return false;
         }

@@ -1,5 +1,7 @@
 //! Ingest's text stage: media types, reading, back matter and fitting to a budget.
 
+mod common;
+
 use std::fmt::Write as _;
 use std::path::PathBuf;
 
@@ -23,6 +25,7 @@ fn candidate(path: &std::path::Path, kind: Kind) -> Candidate {
         duplicate_of: None,
         likely: Vec::new(),
         same_as: None,
+        inside: None,
     }
 }
 
@@ -64,6 +67,18 @@ fn media_types_come_from_content_first() {
     assert_eq!(
         media_type(&write("archive", b"PK\x03\x04....")),
         "application/zip"
+    );
+    assert_eq!(
+        media_type(&write("book.epub", b"PK\x03\x04....")),
+        "application/epub+zip"
+    );
+    assert_eq!(
+        media_type(&write("export.tar.gz", b"\x1f\x8b\x08....")),
+        "application/gzip"
+    );
+    assert_eq!(
+        media_type(&write("photos.7z", b"7z\xbc\xaf\x27\x1c....")),
+        "application/x-7z-compressed"
     );
 }
 
@@ -364,4 +379,73 @@ fn without_an_image_reader_pictures_are_dropped() {
     let text = read(&registry, &Rules::default(), &candidate(&model, Kind::File));
     assert_eq!(text.text, "3D print project (3MF)\nTitle: Keychain");
     assert!(!picture.exists());
+}
+
+#[test]
+fn compressed_files_are_read_from_inside() {
+    use common::archives::{Item, gz, zip};
+
+    let dir = tempfile::tempdir().unwrap();
+    let registry = Registry::with_built_ins();
+    let rules = Rules::default();
+    let compressed = |path: &std::path::Path| Candidate {
+        inside: carrel_core::compressed::inspect(path),
+        ..candidate(path, Kind::File)
+    };
+
+    let project = dir.path().join("oscillator-sim-main.zip");
+    zip(
+        &project,
+        &[
+            Item::Dir("oscillator-sim-main/"),
+            Item::File(
+                "oscillator-sim-main/README.md",
+                b"Simulates coupled oscillators.\n",
+            ),
+            Item::File(
+                "oscillator-sim-main/Cargo.toml",
+                b"[package]\nname = \"oscillator-sim\"\n",
+            ),
+            Item::File("oscillator-sim-main/src/main.rs", b"fn main() {}\n"),
+            Item::File("oscillator-sim-main/target/debug/big", b"x"),
+            Item::File("__MACOSX/oscillator-sim-main/._README.md", b"x"),
+        ],
+    );
+    let text = read(&registry, &rules, &compressed(&project));
+    assert_eq!(text.method, "listing");
+    assert_eq!(text.media_type.as_deref(), Some("application/zip"));
+    let t = &text.text;
+    assert!(
+        t.starts_with(
+            "Compressed file: oscillator-sim-main.zip (zip, holding a folder, oscillator-sim-main, with 4 files"
+        ),
+        "{t}"
+    );
+    assert!(t.contains("README:\nSimulates coupled oscillators."), "{t}");
+    assert!(t.contains("Cargo.toml:\n[package]"), "{t}");
+    assert!(t.contains("Project markers: Cargo.toml"), "{t}");
+    assert!(t.contains("\nsrc/\n  main.rs\n"), "{t}");
+    assert!(t.contains("target/ (regenerable)"), "{t}");
+    assert!(!t.contains("big") && !t.contains("MACOSX"), "{t}");
+
+    let csv = dir.path().join("parts.csv.gz");
+    std::fs::write(&csv, gz(b"part,qty\nLED,4\n")).unwrap();
+    let text = read(&registry, &rules, &compressed(&csv));
+    assert_eq!(
+        text.text, "part,qty\nLED,4\n",
+        "one file inside is read as itself"
+    );
+    assert_eq!(text.media_type.as_deref(), Some("text/csv"));
+
+    let seven = dir.path().join("photos.7z");
+    std::fs::write(&seven, b"7z\xbc\xaf\x27\x1c\0\x04").unwrap();
+    if carrel_core::compressed::tools::find().is_none() {
+        let text = read(&registry, &rules, &compressed(&seven));
+        assert_eq!(text.method, "none");
+        assert_eq!(
+            text.unread,
+            Some(carrel_core::ingest::text::Unread::NoReader)
+        );
+        assert!(text.note.unwrap().contains("7z"));
+    }
 }

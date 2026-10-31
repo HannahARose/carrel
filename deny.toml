@@ -44,8 +44,12 @@ allow = [
 ]
 confidence-threshold = 0.9
 # The network helper's TLS trust roots: Mozilla's CA list, published as data under a
-# permissive data license.
-exceptions = [{ crate = "webpki-roots", allow = ["CDLA-Permissive-2.0"] }]
+# permissive data license. The bzip2 decoder for compressed files (docs/design/compressed.md):
+# a Rust port of libbzip2 under its own BSD-style license.
+exceptions = [
+    { crate = "webpki-roots", allow = ["CDLA-Permissive-2.0"] },
+    { crate = "libbz2-rs-sys", allow = ["bzip2-1.0.6"] },
+]
 
 [licenses.private]
 # Carrel's own crates aren't published.

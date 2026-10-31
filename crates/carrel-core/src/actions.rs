@@ -1047,6 +1047,7 @@ pub fn correct_proposal(
             duplicate_of: None,
             likely: Vec::new(),
             same_as: None,
+            inside: None,
         };
         let draft = crate::ingest::card::Draft {
             title: entry.card.title.clone(),
