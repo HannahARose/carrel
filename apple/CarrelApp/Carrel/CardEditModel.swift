@@ -63,8 +63,7 @@ final class CardEditModel {
 
     /// The sensitivities it may be given, least first.
     var sensitivities: [Sensitivity] {
-        let all: [Sensitivity] = [.public, .personal, .sensitive, .restricted]
-        return Array(all.drop { $0 != floor })
+        Array(Sensitivity.ordered.drop { $0 != floor })
     }
 
     /// The tags it doesn't have yet, to add.
