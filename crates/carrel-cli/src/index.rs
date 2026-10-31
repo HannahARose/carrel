@@ -11,14 +11,15 @@ use std::path::Path;
 
 use carrel_core::archive::Archive;
 use carrel_core::coordinator::{Coordinator as _, DEFAULT_LEASE, DiskLock};
-use carrel_core::index::switch::{self, Switch};
-use carrel_core::index::{Index, IndexError, embed_query, plan};
+use carrel_core::index::manage::{self, Built, Stage, SwitchStatus, Switched};
+use carrel_core::index::{Index, IndexError};
 use carrel_core::models::embedding_models;
-use carrel_core::providers::{Capability, Registry};
+use carrel_core::providers::Registry;
 use serde_json::{Value, json};
 
 use crate::commands::{holder, locate, plural};
 use crate::config::Identity;
+use crate::progress::Display;
 use crate::{Failure, Report};
 
 pub use carrel_core::search::run::how_to_get;
@@ -32,19 +33,10 @@ pub fn failure(error: IndexError, model: &str) -> Failure {
 /// The embedding models providers on this device offer, best first, each once, with the
 /// provider that runs it and how many numbers its vectors have, if it says.
 pub fn offered_models(registry: &Registry) -> Vec<(String, String, Option<u64>)> {
-    let mut models: Vec<(String, String, Option<u64>)> = Vec::new();
-    for (provider, offer) in registry.ranked(Capability::Embed) {
-        if !models.iter().any(|(id, _, _)| *id == offer.id) {
-            let dimensions = offer.extra.get("dimensions").and_then(Value::as_u64);
-            models.push((offer.id.clone(), provider.name().to_owned(), dimensions));
-        }
-    }
-    models
-}
-
-/// Whether a provider on this device offers the embedding model `model`.
-pub fn offered(registry: &Registry, model: &str) -> bool {
-    carrel_core::worker::offered(registry, model)
+    manage::offered_models(registry)
+        .into_iter()
+        .map(|m| (m.model, m.provider, m.dimensions))
+        .collect()
 }
 
 /// `carrel index status`: the archive's embedding model, how many items are embedded, and how
@@ -55,9 +47,10 @@ pub fn offered(registry: &Registry, model: &str) -> bool {
 /// [`Failure`] if there's no archive or it can't be read.
 pub fn status(archive: Option<&Path>) -> Result<Report, Failure> {
     let archive = locate(archive)?;
+    let status = manage::status(&archive)?;
     let mut switching = String::new();
-    let switch = switch_progress(&archive, &mut switching)?;
-    let Some(model) = archive.settings().embedding_model().map(str::to_owned) else {
+    let switch = switch_progress(status.switch.as_ref(), &mut switching);
+    let Some(model) = &status.model else {
         let mut text = String::from(
             "This archive has no embedding model yet, so it's searched by words only. Choose one \
              with `carrel index model NAME`.\n",
@@ -68,43 +61,40 @@ pub fn status(archive: Option<&Path>) -> Result<Report, Failure> {
             json!({ "model": null, "exists": false, "switch": switch }),
         ));
     };
-    let index = Index::open(&archive, &model).map_err(|e| failure(e, &model))?;
-    let plan = plan(&archive, index.as_ref()).map_err(|e| failure(e, &model))?;
-    let behind = plan.pending.len();
+    let behind = status.behind;
     let worker = crate::worker::running(&archive).unwrap_or(false);
     let mut text = String::new();
-    match &index {
-        None => writeln!(
+    if status.exists {
+        writeln!(
+            text,
+            "The meaning index uses {model}: {} of {} embedded, as {}; {behind} behind.",
+            status.embedded,
+            plural(status.items, "item"),
+            plural(status.vectors, "vector"),
+        )
+        .unwrap();
+        if status.rebuilding {
+            writeln!(
+                text,
+                "A rebuild stopped part way; `carrel index rebuild` carries on from there."
+            )
+            .unwrap();
+        } else if behind > 0 && worker {
+            writeln!(text, "The worker is catching up.").unwrap();
+        } else if behind > 0 {
+            writeln!(
+                text,
+                "The worker embeds them after the next change, or run `carrel index rebuild`."
+            )
+            .unwrap();
+        }
+    } else {
+        writeln!(
             text,
             "There's no meaning index for {model} yet, so search uses words only. Build it with \
              `carrel index rebuild`."
         )
-        .unwrap(),
-        Some(index) => {
-            writeln!(
-                text,
-                "The meaning index uses {model}: {} of {} embedded, as {}; {behind} behind.",
-                plan.current(),
-                plural(plan.items, "item"),
-                plural(index.vectors(), "vector"),
-            )
-            .unwrap();
-            if index.rebuilding() {
-                writeln!(
-                    text,
-                    "A rebuild stopped part way; `carrel index rebuild` carries on from there."
-                )
-                .unwrap();
-            } else if behind > 0 && worker {
-                writeln!(text, "The worker is catching up.").unwrap();
-            } else if behind > 0 {
-                writeln!(
-                    text,
-                    "The worker embeds them after the next change, or run `carrel index rebuild`."
-                )
-                .unwrap();
-            }
-        }
+        .unwrap();
     }
     text.push_str(&switching);
     Ok(Report::new(
@@ -112,22 +102,39 @@ pub fn status(archive: Option<&Path>) -> Result<Report, Failure> {
         json!({
             "model": model,
             "switch": switch,
-            "exists": index.is_some(),
-            "items": plan.items,
-            "embedded": plan.current(),
+            "exists": status.exists,
+            "items": status.items,
+            "embedded": status.embedded,
             "behind": behind,
-            "gone": plan.gone.len(),
-            "vectors": index.as_ref().map_or(0, Index::vectors),
-            "dimensions": index.as_ref().map_or(0, Index::dimensions),
-            "rebuilding": index.as_ref().is_some_and(Index::rebuilding),
+            "gone": status.gone,
+            "vectors": status.vectors,
+            "dimensions": status.dimensions,
+            "rebuilding": status.rebuilding,
             "worker": worker,
         }),
     ))
 }
 
+/// Shows catching up with `model` on standard error: reading text, then embedding.
+fn shown(model: &str, json: bool) -> impl FnMut(Stage, usize, usize, Option<&str>) {
+    let mut reading: Option<Display> = None;
+    let mut embedding = Display::new(format!("Embedding with {model}"), json);
+    move |stage, done, total, item| match stage {
+        Stage::Reading => reading
+            .get_or_insert_with(|| Display::new("Reading text", json))
+            .count("items", done, total, item),
+        Stage::Embedding => {
+            if let Some(mut reading) = reading.take() {
+                reading.finish();
+            }
+            embedding.count("items", done, total, item);
+        }
+    }
+}
+
 /// Brings `archive`'s index for `model` up to date: reads the text of items not in the text
-/// cache yet, then embeds what's behind, calling `progress` for each item. Returns how many
-/// items were embedded.
+/// cache yet, then embeds what's behind, showing progress. Returns how many items were
+/// embedded.
 ///
 /// # Errors
 ///
@@ -136,16 +143,15 @@ pub fn catch_up(
     archive: &Archive,
     registry: &Registry,
     index: &mut Index,
-    progress: &mut dyn FnMut(usize, usize, Option<&str>),
+    json: bool,
 ) -> Result<usize, Failure> {
     let model = index.model().to_owned();
-    crate::search::read_texts(archive, registry, false)?;
-    let plan = plan(archive, Some(index)).map_err(|e| failure(e, &model))?;
-    let items = plan.pending.len();
-    index
-        .embed(archive, registry, plan, progress)
-        .map_err(|e| failure(e, &model))?;
-    Ok(items)
+    Ok(manage::catch_up(
+        archive,
+        registry,
+        index,
+        &mut shown(&model, json),
+    )?)
 }
 
 /// `carrel index rebuild`: embeds every item again with the archive's embedding model, asked
@@ -160,51 +166,38 @@ pub fn rebuild(archive: Option<&Path>, json: bool) -> Result<Report, Failure> {
     let archive = locate(archive)?;
     let model = crate::models::archive_model(&archive)?;
     let (registry, _) = crate::providers::registry();
-    let mut index = Index::open_or_new(&archive, &model).map_err(|e| failure(e, &model))?;
-    let resumed = index.rebuilding();
-    if !resumed {
-        // Make sure the model answers before the old index is let go.
-        embed_query(&registry, &model, "a test").map_err(|e| failure(e, &model))?;
-        index.start_rebuild();
-        index.save().map_err(|e| failure(e, &model))?;
-    }
-    let mut display = crate::progress::Display::new(format!("Embedding with {model}"), json);
-    let items = catch_up(&archive, &registry, &mut index, &mut |done, total, item| {
-        display.count("items", done, total, item);
-    })?;
-    display.finish();
+    let built = manage::rebuild(&archive, &registry, &model, &mut shown(&model, json))?;
     let text = format!(
         "{} {} with {model}, as {}.\n",
-        if resumed {
+        if built.resumed {
             "Carried on: embedded"
         } else {
             "Embedded"
         },
-        plural(items, "item"),
-        plural(index.vectors(), "vector"),
+        plural(built.embedded, "item"),
+        plural(built.vectors, "vector"),
     );
     Ok(Report::new(
         text,
         json!({
             "model": model,
-            "embedded": items,
-            "items": index.len(),
-            "vectors": index.vectors(),
-            "dimensions": index.dimensions(),
-            "resumed": resumed,
+            "embedded": built.embedded,
+            "items": built.items,
+            "vectors": built.vectors,
+            "dimensions": built.dimensions,
+            "resumed": built.resumed,
         }),
     ))
 }
 
-/// Writes how far the switch `archive` is part way through has got to `text`, and returns it
-/// for `--json`: `null` when there's no switch.
-fn switch_progress(archive: &Archive, text: &mut String) -> Result<Value, Failure> {
-    let Some(Switch { from, to }) = switch::pending(archive) else {
-        return Ok(Value::Null);
+/// Writes how far `switch` has got to `text`, and returns it for `--json`: `null` when
+/// there's no switch.
+fn switch_progress(switch: Option<&SwitchStatus>, text: &mut String) -> Value {
+    let Some(switch) = switch else {
+        return Value::Null;
     };
-    let index = Index::open(archive, &to).map_err(|e| failure(e, &to))?;
-    let plan = plan(archive, index.as_ref()).map_err(|e| failure(e, &to))?;
-    let serving = match &from {
+    let to = &switch.to;
+    let serving = match &switch.from {
         Some(from) => format!("search uses {from} until it's done"),
         None => "search uses words only until it's done".to_owned(),
     };
@@ -212,31 +205,17 @@ fn switch_progress(archive: &Archive, text: &mut String) -> Result<Value, Failur
         text,
         "Switching to {to}: {} of {} embedded; {serving}. `carrel index model {to}` carries on, \
          on any device that has {to}.",
-        plan.current(),
-        plural(plan.items, "item"),
+        switch.embedded,
+        plural(switch.items, "item"),
     )
     .unwrap();
-    Ok(json!({
-        "from": from,
+    json!({
+        "from": switch.from,
         "to": to,
-        "items": plan.items,
-        "embedded": plan.current(),
-        "behind": plan.pending.len(),
-    }))
-}
-
-/// Takes the archive's writer lease, runs `change` holding it, and lets it go.
-fn holding<T>(
-    archive: &Archive,
-    purpose: &str,
-    change: impl FnOnce(&carrel_core::coordinator::WriterLease) -> Result<T, switch::SwitchError>,
-) -> Result<T, Failure> {
-    let identity = Identity::load_or_create()?;
-    let lease =
-        DiskLock::for_archive(archive).acquire(holder(&identity), purpose, DEFAULT_LEASE)?;
-    let result = change(&lease);
-    lease.release()?;
-    Ok(result?)
+        "items": switch.items,
+        "embedded": switch.embedded,
+        "behind": switch.behind,
+    })
 }
 
 /// `carrel index model`: the archive's embedding model, a switch in progress, and the models
@@ -252,7 +231,7 @@ pub fn models(archive: Option<&Path>) -> Result<Report, Failure> {
         Some(model) => format!("This archive is searched with {model}.\n"),
         None => "This archive has no embedding model yet.\n".to_owned(),
     };
-    let switch = switch_progress(&archive, &mut text)?;
+    let switch = switch_progress(manage::switch_status(&archive)?.as_ref(), &mut text);
     let (registry, _) = crate::providers::registry();
     let here = offered_models(&registry);
     if here.is_empty() {
@@ -293,47 +272,11 @@ pub fn models(archive: Option<&Path>) -> Result<Report, Failure> {
     ))
 }
 
-/// Why `model` can't be switched to on this device: no provider here offers it. Says which
-/// models can be, and how to get it.
-fn not_offered(registry: &Registry, model: &str) -> Failure {
-    let here: Vec<String> = offered_models(registry)
-        .into_iter()
-        .map(|(id, _, _)| id)
-        .collect();
-    let can = if here.is_empty() {
-        "no provider here embeds".to_owned()
-    } else {
-        format!("this device can embed with {}", here.join(", "))
-    };
-    let how = how_to_get(model).map_or(String::new(), |how| format!("; {how}"));
-    Failure::new(format!(
-        "no provider on this device offers {model}, so it can't build its index; {can}{how}"
-    ))
-}
-
-/// `carrel index model NAME` when NAME is already the archive's model: stops a switch to
-/// another model, if one is under way.
-fn keep(archive: &Archive, model: &str) -> Result<Report, Failure> {
-    if switch::pending(archive).is_none() {
-        return Ok(Report::new(
-            format!("This archive is already searched with {model}.\n"),
-            json!({ "model": model, "switched": false, "stopped": null }),
-        ));
-    }
-    let stopped = holding(archive, "index model", |lease| {
-        switch::cancel(archive, lease)
-    })?;
-    let to = stopped.as_deref().unwrap_or_default();
-    Ok(Report::new(
-        format!("Stopped switching to {to} and removed its index; the archive keeps {model}.\n"),
-        json!({ "model": model, "switched": false, "stopped": stopped }),
-    ))
-}
-
 /// `carrel index model NAME`: switches the archive to the embedding model NAME, which a
 /// provider here must offer. Builds NAME's index beside the current one, showing progress,
 /// while search keeps using the current one, then makes NAME the archive's model, for every
-/// device, and removes the old index. Interrupted, it carries on when run again.
+/// device, and removes the old index. Interrupted, it carries on when run again. NAME already
+/// the archive's model, it stops a switch to another model, if one is under way.
 ///
 /// # Errors
 ///
@@ -342,55 +285,74 @@ fn keep(archive: &Archive, model: &str) -> Result<Report, Failure> {
 pub fn switch_to(archive: Option<&Path>, model: &str, json: bool) -> Result<Report, Failure> {
     let archive = locate(archive)?;
     let model = model.trim();
-    if archive.settings().embedding_model() == Some(model) {
-        return keep(&archive, model);
-    }
     let (registry, _) = crate::providers::registry();
-    if !offered(&registry, model) {
-        return Err(not_offered(&registry, model));
-    }
-    // Make sure the model answers before anything is recorded.
-    embed_query(&registry, model, "a test").map_err(|e| failure(e, model))?;
-    let (mut index, begun) = holding(&archive, "index model", |lease| {
-        switch::begin(&archive, model, lease)
-    })?;
-    if let Some(replaced) = &begun.replaced {
+    let identity = Identity::load_or_create()?;
+    let switched = manage::switch_to(
+        &archive,
+        &registry,
+        model,
+        &mut || {
+            DiskLock::for_archive(&archive).acquire(holder(&identity), "index model", DEFAULT_LEASE)
+        },
+        &mut shown(model, json),
+    )?;
+    let (from, replaced, built) = match switched {
+        Switched::Already => {
+            return Ok(Report::new(
+                format!("This archive is already searched with {model}.\n"),
+                json!({ "model": model, "switched": false, "stopped": null }),
+            ));
+        }
+        Switched::Stopped(to) => {
+            return Ok(Report::new(
+                format!(
+                    "Stopped switching to {to} and removed its index; the archive keeps {model}.\n"
+                ),
+                json!({ "model": model, "switched": false, "stopped": to }),
+            ));
+        }
+        Switched::Done {
+            from,
+            replaced,
+            built,
+        } => (from, replaced, built),
+    };
+    if let Some(replaced) = &replaced {
         eprintln!("Gave up switching to {replaced}, and removed its index.");
     }
-    let mut display = crate::progress::Display::new(format!("Embedding with {model}"), json);
-    let items = catch_up(&archive, &registry, &mut index, &mut |done, total, item| {
-        display.count("items", done, total, item);
-    })?;
-    display.finish();
-    let finished = holding(&archive, "index model", |lease| {
-        switch::finish(&archive, model, lease)
-    })?;
+    let Built {
+        embedded,
+        items,
+        vectors,
+        dimensions,
+        resumed,
+    } = built;
     let mut text = format!(
         "{} {} with {model}, as {}. This archive is now searched with {model}, on every device \
          that has it.\n",
-        if begun.resumed {
+        if resumed {
             "Carried on: embedded"
         } else {
             "Embedded"
         },
-        plural(items, "item"),
-        plural(index.vectors(), "vector"),
+        plural(embedded, "item"),
+        plural(vectors, "vector"),
     );
-    if let Some(from) = &finished.from {
+    if let Some(from) = &from {
         writeln!(text, "Removed {from}'s index.").unwrap();
     }
     Ok(Report::new(
         text,
         json!({
             "model": model,
-            "from": finished.from,
+            "from": from,
             "switched": true,
-            "embedded": items,
-            "items": index.len(),
-            "vectors": index.vectors(),
-            "dimensions": index.dimensions(),
-            "resumed": begun.resumed,
-            "replaced": begun.replaced,
+            "embedded": embedded,
+            "items": items,
+            "vectors": vectors,
+            "dimensions": dimensions,
+            "resumed": resumed,
+            "replaced": replaced,
         }),
     ))
 }
