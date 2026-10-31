@@ -120,6 +120,19 @@ impl App {
         }
     }
 
+    /// Opens the line for correcting the chosen proposal in words.
+    fn start_correction(&mut self) -> Option<Effect> {
+        if let Some(entry) = self.queue.get(self.chosen) {
+            self.input = Some(super::screens::Input {
+                purpose: super::screens::InputPurpose::Correct(
+                    super::screens::Correcting::Proposal(entry.id),
+                ),
+                text: String::new(),
+            });
+        }
+        None
+    }
+
     /// Handles a key on the Review screen.
     pub(super) fn review_key(&mut self, key: KeyEvent) -> Handled {
         if matches!(key.code, KeyCode::Char('[' | ']')) && !self.comparisons.is_empty() {
@@ -196,7 +209,7 @@ impl App {
                 None
             }
             KeyCode::Char('e') => self.queue.get(self.chosen).map(|e| Effect::Edit(e.id)),
-            KeyCode::Char('c') => self.queue.get(self.chosen).map(|e| Effect::Correct(e.id)),
+            KeyCode::Char('c') => self.start_correction(),
             KeyCode::Char('m') => {
                 match self.archive.collections() {
                     Ok(collections) => {

@@ -4,11 +4,14 @@
 
 use std::fmt::Write as _;
 use std::io::{BufRead as _, IsTerminal as _, Write as _};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use carrel_core::actions;
 use carrel_core::archive::Archive;
-use carrel_core::correct::{Correctable as _, Fields, Subject, Worked, level, notes, work_out};
+use carrel_core::card_file::CardFile;
+use carrel_core::correct::{
+    Correctable as _, Fact, Fields, Subject, Worked, level, notes, work_out,
+};
 use carrel_core::ingest::card::Vocabulary;
 use carrel_core::review::{ReviewQueue, short_id};
 use serde_json::json;
@@ -16,8 +19,8 @@ use serde_json::json;
 use crate::commands::locate;
 use crate::{Failure, Report};
 
-/// The owner's words: those given, or asked for on the terminal.
-fn words(given: &[String]) -> Result<String, Failure> {
+/// The owner's words: those given, or asked for on the terminal under the card's `title`.
+fn words(given: &[String], title: &str) -> Result<String, Failure> {
     let joined = given.join(" ");
     if !joined.trim().is_empty() {
         return Ok(joined);
@@ -27,7 +30,12 @@ fn words(given: &[String]) -> Result<String, Failure> {
             "say what's wrong, such as `carrel review correct ID \"it's from 2019\"`",
         ));
     }
-    eprint!("What's wrong with it? ");
+    eprintln!("Correcting “{title}”");
+    eprintln!(
+        "Say what's wrong (\"it's from 2019\", \"it's a picture of A, not B\"), or write \
+         `field: value`, such as `created: 2019-03-31`. Enter on its own cancels."
+    );
+    eprint!("\nWhat's wrong with it? ");
     let _ = std::io::stderr().flush();
     let mut line = String::new();
     std::io::stdin().lock().read_line(&mut line)?;
@@ -37,20 +45,35 @@ fn words(given: &[String]) -> Result<String, Failure> {
     Ok(line.trim().to_owned())
 }
 
-/// The archive's collections as the model sees them, by path with what each is for.
-fn collections(archive: &Archive) -> Result<Vec<(String, String)>, Failure> {
-    Ok(archive
-        .collections()?
-        .into_iter()
+/// Says a model is working, on a terminal, when the words aren't `field: value` lines: it
+/// takes several seconds.
+fn working(words: &str) {
+    let lines = words.lines().all(|l| {
+        l.split_once(':').is_some_and(|(f, _)| {
+            matches!(
+                f.trim().to_lowercase().as_str(),
+                "title" | "summary" | "created" | "date" | "tags" | "sensitivity" | "collection"
+            )
+        })
+    });
+    if !lines && std::io::stderr().is_terminal() {
+        eprintln!("Working out what that changes…");
+    }
+}
+
+/// The collections as the model sees them, by path with what each is for.
+fn described(collections: &[carrel_core::archive::Collection]) -> Vec<(String, String)> {
+    collections
+        .iter()
         .map(|c| {
             let purpose = c
                 .doc
                 .description
                 .clone()
                 .unwrap_or_else(|| c.doc.title.clone());
-            (c.path, purpose)
+            (c.path.clone(), purpose)
         })
-        .collect())
+        .collect()
 }
 
 /// Each changed field before and after, and where it goes, for people.
@@ -126,16 +149,10 @@ fn describe(
     text
 }
 
-/// Adds the change and what comes with it to `out`: a sensitivity kept by a rule, tags left
-/// off, and a lasting fact Carrel noticed.
-fn notes_after(
-    out: &mut String,
-    shown: &str,
-    kept: bool,
-    dropped: &[String],
-    fact: Option<&carrel_core::correct::Fact>,
-) {
-    out.push_str(shown);
+/// The change, with what comes with it: a sensitivity kept by a rule, tags left off, and a
+/// lasting fact Carrel noticed.
+fn notes_after(shown: &str, kept: bool, dropped: &[String], fact: Option<&Fact>) -> String {
+    let mut out = shown.to_owned();
     if kept {
         out.push_str("  (kept at sensitive: a rule found a restricted value in it)\n");
     }
@@ -155,19 +172,16 @@ fn notes_after(
         )
         .unwrap();
     }
+    out
 }
 
 /// Offers a lasting fact from a correction for the glossary: added with `learn`, asked about
 /// on a terminal, otherwise left with a hint. Never added silently. Returns what happened.
-fn offer_fact(
-    archive: &Archive,
-    fact: Option<&carrel_core::correct::Fact>,
-    learn: bool,
-) -> Result<String, Failure> {
+fn offer_fact(archive: &Archive, fact: Option<&Fact>, add: bool) -> Result<String, Failure> {
     let Some(fact) = fact else {
         return Ok(String::new());
     };
-    let agreed = if learn {
+    let agreed = if add {
         true
     } else if std::io::stdin().is_terminal() {
         eprint!("Add “{}” to the glossary? [y/N] ", fact.about);
@@ -181,14 +195,7 @@ fn offer_fact(
     if !agreed {
         return Ok(String::new());
     }
-    let identity = crate::config::Identity::load_or_create()?;
-    actions::learn(
-        archive,
-        &fact.about,
-        &fact.fact,
-        crate::commands::holder(&identity),
-    )?;
-    Ok(format!("Added “{}” to the glossary.\n", fact.about))
+    Ok(learn(archive, fact)? + "\n")
 }
 
 /// Asks whether to save, unless `yes`. `None` when there's no terminal to ask on.
@@ -206,7 +213,318 @@ fn agree(yes: bool) -> Result<Option<bool>, Failure> {
     Ok(Some(matches!(answer.trim(), "y" | "Y" | "yes" | "Yes")))
 }
 
-/// `carrel review correct ID [WORDS...] [--yes]`.
+/// A correction worked out and described, waiting for the owner's yes. The interactive mode
+/// shows it in a pop-up; the commands print it and ask on the terminal.
+#[derive(Debug)]
+pub struct Prepared {
+    /// The card's title, for a heading.
+    pub title: String,
+    /// Each change, and what comes with it, one per line; empty when it changes nothing.
+    pub shown: String,
+    /// A lasting fact to offer for the glossary once it's saved.
+    pub fact: Option<Fact>,
+    words: String,
+    worked: Worked,
+    changed: Vec<&'static str>,
+    kept_sensitive: bool,
+    to: Option<String>,
+    pending: Pending,
+}
+
+/// What a prepared correction saves.
+#[derive(Debug)]
+enum Pending {
+    /// A proposal, corrected.
+    Proposal(Box<carrel_core::review::ReviewEntry>),
+    /// A filed item's card, corrected, refiled when `to` is set.
+    Filed {
+        item: carrel_core::archive::ItemRef,
+        card_path: PathBuf,
+        file: Box<CardFile>,
+    },
+}
+
+/// What saving a correction did.
+#[derive(Debug, Clone)]
+pub struct Saved {
+    /// For people.
+    pub message: String,
+    /// The history commit, for a filed item.
+    pub commit: Option<String>,
+    /// The card's path after, for a filed item.
+    pub card: Option<String>,
+}
+
+impl Prepared {
+    /// Whether it changes nothing.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.shown.is_empty()
+    }
+
+    /// Everything about it, as JSON, for `--json`.
+    fn json(&self) -> serde_json::Value {
+        json!({
+            "changed": self.changed,
+            "collection": self.to,
+            "kept_sensitive": self.kept_sensitive,
+            "fact": self.fact,
+            "model": self.worked.model,
+            "changes": self.worked.changes,
+        })
+    }
+}
+
+/// The context a correction is worked out in: the archive's collections and tags, and its
+/// text models.
+struct Context {
+    registry: carrel_core::providers::Registry,
+    collections: Vec<carrel_core::archive::Collection>,
+    described: Vec<(String, String)>,
+    vocabulary: Vocabulary,
+}
+
+impl Context {
+    fn of(archive: &Archive) -> Result<Self, Failure> {
+        let (registry, _) = crate::providers::registry();
+        let collections = archive.collections()?;
+        Ok(Self {
+            registry,
+            vocabulary: Vocabulary::of(archive, &collections),
+            described: described(&collections),
+            collections,
+        })
+    }
+}
+
+/// Works out what `words` change in the proposal `id`, without saving anything.
+///
+/// # Errors
+///
+/// [`Failure`] if the proposal isn't found, or the correction can't be worked out.
+pub fn prepare_review(archive: &Archive, id: &str, words: &str) -> Result<Prepared, Failure> {
+    let entry = actions::proposals(archive, &[id.to_owned()])?
+        .pop()
+        .ok_or_else(|| Failure::new(format!("no proposal {id}")))?;
+    let context = Context::of(archive)?;
+    let before = entry.card.fields();
+    let earlier: Vec<String> = notes(&before).into_iter().map(|n| n.said).collect();
+    let text = item_text(archive, &context.registry, &entry.source.path, entry.kind);
+    let subject = Subject {
+        card: &before,
+        collection: &entry.destination.path,
+        text: &text,
+        collections: &context.described,
+        vocabulary: &context.vocabulary,
+    };
+    let worked = work_out(&context.registry, &subject, words, &earlier)?;
+    let corrected = actions::correct_proposal(archive, &context.registry, &entry, &worked, words)?;
+    let after = corrected.entry.card.fields();
+    let moved = corrected
+        .to
+        .as_deref()
+        .map(|to| (entry.destination.path.as_str(), to));
+    let mut shown = describe(&before, &after, moved, &worked);
+    if !shown.is_empty() {
+        shown = notes_after(
+            &shown,
+            corrected.kept_sensitive,
+            &corrected.dropped,
+            worked.changes.fact.as_ref(),
+        );
+    }
+    Ok(Prepared {
+        title: entry.card.title.clone(),
+        shown,
+        fact: worked.changes.fact.clone(),
+        words: words.to_owned(),
+        changed: corrected.changed,
+        kept_sensitive: corrected.kept_sensitive,
+        to: corrected.to,
+        worked,
+        pending: Pending::Proposal(Box::new(corrected.entry)),
+    })
+}
+
+/// Works out what `words` change in the filed item `query`, without saving anything.
+///
+/// # Errors
+///
+/// [`Failure`] if the item isn't found, or the correction can't be worked out.
+pub fn prepare_filed(archive: &Archive, query: &str, words: &str) -> Result<Prepared, Failure> {
+    let items = archive.items()?;
+    let item = crate::commands::find_item(archive, &items, query)?.clone();
+    let card_path = archive.root().join(&item.card);
+    let mut file = CardFile::parse(&std::fs::read_to_string(&card_path)?)?;
+    let context = Context::of(archive)?;
+    let before = file.card().fields();
+    let earlier: Vec<String> = notes(&before).into_iter().map(|n| n.said).collect();
+    let here = item.card.rsplit_once('/').map_or("", |(f, _)| f).to_owned();
+    let contents = item.item.as_ref().map(|p| archive.root().join(p));
+    let text = contents
+        .as_deref()
+        .map(|p| item_text(archive, &context.registry, p, item.kind))
+        .unwrap_or_default();
+    let subject = Subject {
+        card: &before,
+        collection: &here,
+        text: &text,
+        collections: &context.described,
+        vocabulary: &context.vocabulary,
+    };
+    let worked = work_out(&context.registry, &subject, words, &earlier)?;
+    let (after, changed, kept_sensitive) =
+        corrected(&before, &worked, words, contents.as_deref(), &text);
+    let to = target_of(
+        archive,
+        &context.registry,
+        &context.collections,
+        &item,
+        contents.as_deref(),
+        &after,
+        &worked,
+    )
+    .filter(|t| *t != here);
+    let mut shown = describe(
+        &before,
+        &after,
+        to.as_deref().map(|t| (here.as_str(), t)),
+        &worked,
+    );
+    if !shown.is_empty() {
+        shown = notes_after(&shown, kept_sensitive, &[], worked.changes.fact.as_ref());
+    }
+    file.card_mut().set_fields(after);
+    Ok(Prepared {
+        title: before.title.clone(),
+        shown,
+        fact: worked.changes.fact.clone(),
+        words: words.to_owned(),
+        changed,
+        kept_sensitive,
+        to,
+        worked,
+        pending: Pending::Filed {
+            item,
+            card_path,
+            file: Box::new(file),
+        },
+    })
+}
+
+/// Saves a prepared correction: a proposal back to the queue, or a filed item's card as one
+/// change, refiled when its collection changed.
+///
+/// # Errors
+///
+/// [`Failure`] if it can't be written or committed.
+pub fn save(archive: &Archive, prepared: Prepared) -> Result<Saved, Failure> {
+    match prepared.pending {
+        Pending::Proposal(entry) => {
+            ReviewQueue::of(archive).save(&entry)?;
+            Ok(Saved {
+                message: format!("Saved the correction to “{}”.", entry.card.title),
+                commit: None,
+                card: None,
+            })
+        }
+        Pending::Filed {
+            item,
+            card_path,
+            file,
+        } => {
+            let title = file.card().title.clone();
+            let (card, commit) = save_filed(
+                archive,
+                &item,
+                &card_path,
+                *file,
+                prepared.to.as_deref(),
+                &prepared.words,
+                &prepared.changed,
+            )?;
+            Ok(Saved {
+                message: format!(
+                    "Saved the correction to “{title}”; undo it from History or with `carrel undo`."
+                ),
+                commit,
+                card: Some(card),
+            })
+        }
+    }
+}
+
+/// Adds `fact` to the glossary, as the owner agreed.
+///
+/// # Errors
+///
+/// [`Failure`] if the glossary can't be written or committed.
+pub fn learn(archive: &Archive, fact: &Fact) -> Result<String, Failure> {
+    let identity = crate::config::Identity::load_or_create()?;
+    actions::learn(
+        archive,
+        &fact.about,
+        &fact.fact,
+        crate::commands::holder(&identity),
+    )?;
+    Ok(format!("Added “{}” to the glossary.", fact.about))
+}
+
+/// Shows a prepared correction, asks for the yes (unless `yes`), saves it, and offers its fact.
+fn finish(
+    archive: &Archive,
+    heading: String,
+    prepared: Prepared,
+    yes: bool,
+    learn_fact: bool,
+    mut json: serde_json::Value,
+) -> Result<Report, Failure> {
+    let mut out = heading;
+    if prepared.is_empty() {
+        out.push_str("It changes nothing.\n");
+        json["saved"] = json!(false);
+        return Ok(Report::new(out, json));
+    }
+    out.push_str(&prepared.shown);
+    if let serde_json::Value::Object(map) = prepared.json() {
+        for (k, v) in map {
+            json[k] = v;
+        }
+    }
+    // When asking, the change is shown first, on the terminal; otherwise it's in the report.
+    let asking = !yes && std::io::stdin().is_terminal();
+    if asking {
+        eprint!("{out}");
+        out.clear();
+    }
+    let fact = prepared.fact.clone();
+    match agree(yes)? {
+        Some(true) => {
+            if let Pending::Proposal(entry) = &prepared.pending {
+                json["entry"] = serde_json::to_value(entry.as_ref()).unwrap_or_default();
+            }
+            let saved = save(archive, prepared)?;
+            json["saved"] = json!(true);
+            json["commit"] = json!(saved.commit);
+            if let Some(card) = &saved.card {
+                json["card"] = json!(card);
+            }
+            writeln!(out, "{}", saved.message).unwrap();
+            out.push_str(&offer_fact(archive, fact.as_ref(), learn_fact)?);
+        }
+        Some(false) => {
+            json["saved"] = json!(false);
+            out.push_str("Not saved.\n");
+        }
+        None => {
+            json["saved"] = json!(false);
+            out.push_str("Not saved: there's no terminal to ask on; add --yes to save it.\n");
+        }
+    }
+    Ok(Report::new(out, json))
+}
+
+/// `carrel review correct ID [WORDS...] [--yes] [--learn]`.
 ///
 /// # Errors
 ///
@@ -216,89 +534,24 @@ pub fn review(
     id: &str,
     given: &[String],
     yes: bool,
-    learn: bool,
+    learn_fact: bool,
 ) -> Result<Report, Failure> {
     let archive = locate(archive)?;
     let entry = actions::proposals(&archive, &[id.to_owned()])?
         .pop()
         .ok_or_else(|| Failure::new(format!("no proposal {id}")))?;
-    let words = words(given)?;
-    let (registry, _) = crate::providers::registry();
-    let collections = collections(&archive)?;
-    let vocabulary = Vocabulary::of(&archive, &archive.collections()?);
-    let before = entry.card.fields();
-    let earlier: Vec<String> = notes(&before).into_iter().map(|n| n.said).collect();
-    let text = item_text(&archive, &registry, &entry.source.path, entry.kind);
-    let subject = Subject {
-        card: &before,
-        collection: &entry.destination.path,
-        text: &text,
-        collections: &collections,
-        vocabulary: &vocabulary,
-    };
-    let worked = work_out(&registry, &subject, &words, &earlier)?;
-    let corrected = actions::correct_proposal(&archive, &registry, &entry, &worked, &words)?;
-    let after = corrected.entry.card.fields();
-
-    let mut out = format!("Correcting {} ({})\n", short_id(entry.id), entry.card.title);
-    let moved = corrected
-        .to
-        .as_deref()
-        .map(|to| (entry.destination.path.as_str(), to));
-    let shown = describe(&before, &after, moved, &worked);
-    if shown.is_empty() {
-        out.push_str("It changes nothing.\n");
-        return Ok(Report::new(
-            out,
-            json!({"proposal": entry.id, "saved": false, "changed": []}),
-        ));
-    }
-    notes_after(
-        &mut out,
-        &shown,
-        corrected.kept_sensitive,
-        &corrected.dropped,
-        worked.changes.fact.as_ref(),
-    );
-    // When asking, the change is shown first, on the terminal; otherwise it's in the report.
-    let asking = !yes && std::io::stdin().is_terminal();
-    if asking {
-        eprint!("{out}");
-    }
-    let saved = match agree(yes)? {
-        Some(true) => {
-            ReviewQueue::of(&archive).save(&corrected.entry)?;
-            "Saved.\n"
-        }
-        Some(false) => "Not saved.\n",
-        None => "Not saved: there's no terminal to ask on; add --yes to save it.\n",
-    };
-    let is_saved = saved == "Saved.\n";
-    let learned = if is_saved {
-        offer_fact(&archive, worked.changes.fact.as_ref(), learn)?
-    } else {
-        String::new()
-    };
-    if asking {
-        saved.clone_into(&mut out);
-    } else {
-        out.push_str(saved);
-    }
-    out.push_str(&learned);
-    Ok(Report::new(
-        out,
-        json!({
-            "proposal": entry.id,
-            "saved": is_saved,
-            "changed": corrected.changed,
-            "collection": corrected.to,
-            "kept_sensitive": corrected.kept_sensitive,
-            "fact": worked.changes.fact,
-            "model": worked.model,
-            "changes": worked.changes,
-            "entry": corrected.entry,
-        }),
-    ))
+    let words = words(given, &entry.card.title)?;
+    working(&words);
+    let prepared = prepare_review(&archive, id, &words)?;
+    let heading = format!("Correcting {} ({})\n", short_id(entry.id), entry.card.title);
+    finish(
+        &archive,
+        heading,
+        prepared,
+        yes,
+        learn_fact,
+        json!({"proposal": entry.id}),
+    )
 }
 
 /// The item's text, as drafting read it, for the model's context; empty when it can't be read.
@@ -325,8 +578,8 @@ fn item_text(
     carrel_core::ingest::text::read(registry, &rules, &candidate).text
 }
 
-/// `carrel correct ITEM [WORDS...] [--yes]`: corrects a filed item's card, and refiles it when
-/// the collection changes, as one undoable change.
+/// `carrel correct ITEM [WORDS...] [--yes] [--learn]`: corrects a filed item's card, and
+/// refiles it when the collection changes, as one undoable change.
 ///
 /// # Errors
 ///
@@ -336,104 +589,27 @@ pub fn filed(
     query: &str,
     given: &[String],
     yes: bool,
-    learn: bool,
+    learn_fact: bool,
 ) -> Result<Report, Failure> {
-    use carrel_core::card_file::CardFile;
-
     let archive = locate(archive)?;
     let items = archive.items()?;
     let item = crate::commands::find_item(&archive, &items, query)?.clone();
-    let card_path = archive.root().join(&item.card);
-    let mut file = CardFile::parse(&std::fs::read_to_string(&card_path)?)?;
-    let words = words(given)?;
-    let (registry, _) = crate::providers::registry();
-    let collections = collections(&archive)?;
-    let all = archive.collections()?;
-    let vocabulary = Vocabulary::of(&archive, &all);
-    let before = file.card().fields();
-    let earlier: Vec<String> = notes(&before).into_iter().map(|n| n.said).collect();
-    let here = item.card.rsplit_once('/').map_or("", |(f, _)| f).to_owned();
-    let contents = item.item.as_ref().map(|p| archive.root().join(p));
-    let text = contents
-        .as_deref()
-        .map(|p| item_text(&archive, &registry, p, item.kind))
-        .unwrap_or_default();
-    let subject = Subject {
-        card: &before,
-        collection: &here,
-        text: &text,
-        collections: &collections,
-        vocabulary: &vocabulary,
-    };
-    let worked = work_out(&registry, &subject, &words, &earlier)?;
-    let (after, changed, kept_sensitive) =
-        corrected(&before, &worked, &words, contents.as_deref(), &text);
-
-    let target = target_of(
+    let title = CardFile::parse(&std::fs::read_to_string(archive.root().join(&item.card))?)?
+        .card()
+        .title
+        .clone();
+    let words = words(given, &title)?;
+    working(&words);
+    let prepared = prepare_filed(&archive, query, &words)?;
+    let json = json!({"item": item.id, "card": item.card});
+    finish(
         &archive,
-        &registry,
-        &all,
-        &item,
-        contents.as_deref(),
-        &after,
-        &worked,
+        format!("Correcting {title}\n"),
+        prepared,
+        yes,
+        learn_fact,
+        json,
     )
-    .filter(|t| *t != here);
-
-    let mut out = format!("Correcting {}\n", before.title);
-    let shown = describe(
-        &before,
-        &after,
-        target.as_deref().map(|t| (here.as_str(), t)),
-        &worked,
-    );
-    if shown.is_empty() {
-        out.push_str("It changes nothing.\n");
-        return Ok(Report::new(
-            out,
-            json!({"item": item.id, "saved": false, "changed": []}),
-        ));
-    }
-    notes_after(
-        &mut out,
-        &shown,
-        kept_sensitive,
-        &[],
-        worked.changes.fact.as_ref(),
-    );
-    let asking = !yes && std::io::stdin().is_terminal();
-    if asking {
-        eprint!("{out}");
-        out.clear();
-    }
-    let mut commit = None;
-    let mut location = item.card.clone();
-    match agree(yes)? {
-        Some(true) => {
-            file.card_mut().set_fields(after);
-            (location, commit) = save_filed(
-                &archive,
-                &item,
-                &card_path,
-                file,
-                target.as_deref(),
-                &words,
-                &changed,
-            )?;
-            out.push_str(
-                "Saved; undo it with `carrel undo` and the change shown in `carrel log`.\n",
-            );
-            out.push_str(&offer_fact(&archive, worked.changes.fact.as_ref(), learn)?);
-        }
-        Some(false) => out.push_str("Not saved.\n"),
-        None => out.push_str("Not saved: there's no terminal to ask on; add --yes to save it.\n"),
-    }
-    let json = json!({
-        "item": item.id, "saved": commit.is_some(), "commit": commit, "card": location,
-        "changed": changed, "collection": target, "kept_sensitive": kept_sensitive,
-        "fact": worked.changes.fact, "model": worked.model, "changes": worked.changes,
-    });
-    Ok(Report::new(out, json))
 }
 
 /// `before` with the correction applied, the fields changed, and whether a lower sensitivity
@@ -477,7 +653,7 @@ fn save_filed(
     archive: &Archive,
     item: &carrel_core::archive::ItemRef,
     card_path: &Path,
-    file: carrel_core::card_file::CardFile,
+    file: CardFile,
     target: Option<&str>,
     words: &str,
     changed: &[&str],
@@ -582,5 +758,9 @@ fn reroute(
     };
     let source = path.parent().unwrap_or(&path).to_owned();
     let route = router.route(registry, &candidate, &source, &draft);
-    route.collection.map(|_| route.path)
+    // Only somewhere it fits: an unsure answer, or Holding, leaves it where it is.
+    (route.collection.is_some()
+        && route.confidence != carrel_core::review::Confidence::Low
+        && route.path != "Holding")
+        .then_some(route.path)
 }

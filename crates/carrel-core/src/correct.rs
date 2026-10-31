@@ -278,7 +278,7 @@ pub fn work_out(
                 feedback = Some("answer with a JSON object following the schema".into());
                 continue;
             };
-            match check(&answer, subject) {
+            match check(&answer, subject).map(|c| grounded(c, words)) {
                 Ok(changes) => {
                     worked.attempts.push(attempt("ok", None));
                     worked.changes = changes;
@@ -385,7 +385,7 @@ pub fn schema(subject: &Subject<'_>) -> Value {
             "sensitivity_dictated": flag,
             "collection": {"enum": collections, "description": "Only if the owner named where it belongs"},
             "collection_dictated": flag,
-            "reroute": {"type": "boolean", "description": "true if the correction changes what the item is, so where it belongs should be chosen again"},
+            "reroute": {"type": "boolean", "description": "true only if the correction says the item is a different kind of thing or about a different subject, so where it belongs should be chosen again; false for dates, names, details and small fixes"},
             "fact": {"type": "string", "description": "Something the owner said that is true beyond this item, such as who a name refers to, as one sentence; otherwise an empty string"},
             "fact_about": {"type": "string", "description": "The word or name that fact is about; an empty string when there's no fact"}
         }
@@ -396,9 +396,78 @@ fn system_prompt() -> String {
     "You apply the owner's corrections to a catalog card in their personal archive. The owner \
      is right: change every field their correction affects, and nothing else. A broad correction \
      (what the item is or shows) usually changes the title and summary, and perhaps the tags. \
-     Keep the card's style: a short, specific title, and a summary of one to three sentences \
-     saying what the item is. Never repeat account numbers, passwords or identity numbers."
+     Leave the tags alone unless the correction names a tag or changes what the item is. A \
+     field is dictated only when the owner gave its exact value. A fact is only something about \
+     a person, organisation, place, project or term that would help file other items, never \
+     about this item. Keep the card's style: a short, specific title, and a summary of one to \
+     three sentences saying what the item is. Never repeat account numbers, passwords or \
+     identity numbers."
         .to_owned()
+}
+
+/// Lowercased words and numbers, for comparing what the owner said with a value.
+fn words_of(text: &str) -> String {
+    text.to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Whether the owner's words contain `value`, ignoring case and punctuation.
+fn said(words: &str, value: &str) -> bool {
+    let value = words_of(value);
+    !value.is_empty() && format!(" {} ", words_of(words)).contains(&format!(" {value} "))
+}
+
+/// Holds the model's answer to what the owner actually said. A field counts as dictated only
+/// when its value is in the owner's words (a date, when its year is); models mark inferred
+/// fields as dictated too readily, and dictated fields stop being model-written for good. A
+/// tag is added only when the owner talks about tags and names it, and removed only then or by
+/// a broad correction (one that changes what the item is). A lasting fact must be about
+/// something the owner named.
+fn grounded(mut changes: Changes, words: &str) -> Changes {
+    if let Some(f) = &mut changes.title {
+        f.dictated &= said(words, &f.value);
+    }
+    if let Some(f) = &mut changes.summary {
+        f.dictated &= said(words, &f.value);
+    }
+    if let Some(f) = &mut changes.created {
+        f.dictated &= said(words, &f.value.0[..4.min(f.value.0.len())]);
+    }
+    if let Some(f) = &mut changes.sensitivity {
+        f.dictated &= said(words, level(f.value));
+    }
+    if let Some(f) = &mut changes.collection {
+        let last = f.value.rsplit('/').next().unwrap_or(&f.value);
+        f.dictated &= said(words, last);
+    }
+    if let Some(f) = &mut changes.tags {
+        // Models fill tag lists given the chance, so tags are added only when the owner talks
+        // about tags and names them. A broad correction may still drop tags that no longer fit.
+        let about_tags = words_of(words).split(' ').any(|w| w.starts_with("tag"));
+        let named = |t: &Tag| about_tags && said(words, &t.0.replace('-', " "));
+        f.value.add.retain(|t| named(t));
+        f.value.new = f.value.new.take().filter(|t| named(t));
+        f.value.remove.retain(|t| named(t));
+        // What's left was named as a tag by the owner, so it's theirs.
+        f.dictated = true;
+        if f.value == TagEdit::default() {
+            changes.tags = None;
+        }
+    }
+    changes.fact = changes.fact.take().filter(|fact| {
+        let about = fact.about.to_lowercase();
+        let first = words_of(&fact.fact);
+        let first = first.split(' ').next().unwrap_or("");
+        said(words, &fact.about)
+            && !matches!(first, "this" | "these" | "it" | "its" | "the")
+            && !["this item", "the item", "this file", "this document"]
+                .iter()
+                .any(|w| about.contains(w) || fact.fact.to_lowercase().contains(w))
+    });
+    changes
 }
 
 fn prompt(subject: &Subject<'_>, words: &str, earlier: &[String]) -> String {

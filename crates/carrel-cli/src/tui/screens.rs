@@ -49,6 +49,17 @@ pub enum InputPurpose {
         /// The history commit.
         at: String,
     },
+    /// What's wrong with this card, in words or `field: value` lines.
+    Correct(Correcting),
+}
+
+/// What a correction is for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Correcting {
+    /// A proposal in Review.
+    Proposal(Id),
+    /// A filed item, by its card's path.
+    Item(String),
 }
 
 impl Input {
@@ -62,6 +73,9 @@ impl Input {
             InputPurpose::BackupRepository => "the backup folder (drop it here)",
             InputPurpose::BackupPassword { .. } => "the password",
             InputPurpose::RestoreItem { .. } => "the item to restore",
+            InputPurpose::Correct(_) => {
+                "what's wrong (\"it's from 2019\"), or field: value lines such as created: 2019-03-31"
+            }
         }
     }
 
@@ -171,6 +185,15 @@ impl App {
                         self.browse_in_items = self.search.is_some();
                         self.browse_item = 0;
                         self.load_items();
+                    }
+                    InputPurpose::Correct(_) if text.is_empty() => {
+                        self.message = Some("Nothing to correct".into());
+                    }
+                    InputPurpose::Correct(target) => {
+                        return Some(Effect::Correction(super::app::Step::Work {
+                            target,
+                            words: text,
+                        }));
                     }
                     InputPurpose::BackupPassword { .. } => {
                         // A password is taken as typed, spaces and all.
@@ -293,7 +316,10 @@ impl App {
             }
             KeyCode::Char('c') if self.browse_in_items => {
                 if let Some((card, _)) = self.browse_items.get(self.browse_item) {
-                    return Handled::Yes(Some(Effect::CorrectItem(card.clone())));
+                    self.input = Some(Input {
+                        purpose: InputPurpose::Correct(Correcting::Item(card.clone())),
+                        text: String::new(),
+                    });
                 }
             }
             KeyCode::Char('/') => {
