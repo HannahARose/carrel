@@ -29,7 +29,7 @@ Exit status is `0` on success, `1` when the command failed, and `2` for a usage 
 | `carrel desk add PATH [--title T] [--summary S]` | Puts a file or folder on the desk: a card goes beside it (its name with `.md` added), and nothing is written inside it or moved. Not for things inside the archive. |
 | `carrel desk remove PATH [--delete-card]` | Takes it off the desk; its card stays unless `--delete-card`. |
 | `carrel sessions` | Finds finished work sessions on items checked out on this device (changes closer together than 45 minutes are one session, and Git commits count too) and adds a pending history entry for each, then lists every pending entry, numbered. A session still going isn't written until it's over. |
-| `carrel sessions approve\|combine\|drop ITEM [N...]` | Approves, combines into one, or drops an item's pending entries, by the numbers `carrel sessions` shows; all of them when none are given. Each is a history change. |
+| `carrel sessions approve\|combine\|drop ITEM [N...]` | Approves, combines into one, or drops an item's pending entries, by the numbers `carrel sessions` shows; all of them when none are given. `ITEM` is an archived item, or a desk item on this device given by its path or its card's. Each is a history change. |
 | `carrel edit ITEM` | Opens a filed item's card in your editor (`e` in Browse). It's checked as proposals are: a title, real dates, tags that apply in its collection, and no sensitivity below what a rule found. The body below the fields is kept exactly. Delete a line to clear it, such as a wrong date. One change, which `carrel undo` reverses. |
 | `carrel correct ITEM [WORDS…] [--yes] [--learn]` | Corrects a filed item's card the same way, and refiles it when the collection changes. One change, which `carrel undo` reverses. |
 | `carrel rename ITEM [NEW_NAME]` | Renames an item and its card together, and updates links to it. Without a new name, uses the portable name `carrel status` suggests. Can be undone. |
@@ -108,12 +108,13 @@ Backups need [Kopia](https://kopia.io), beside `carrel` or on `PATH`.
 | --- | --- |
 | `1` | **Status**: what `carrel status` shows, and what's waiting for you |
 | `2` | **Review**: `a` approve, `h` hold, `m` move, `e` edit, `x` reject, `Space` mark, `A` approve all high-confidence |
-| `3` | **Questions**: `Enter` to answer, `d` to dismiss |
-| `4` | **Browse**: collections and items; `/` to search |
-| `5` | **History**: `u` to undo the chosen change |
-| `6` | **Ingest**: the queue; `x` remove, `t` to the front, `r` retry |
-| `7` | **Settings**: `Enter` to change the chosen setting |
-| `8` | **Backups**: the snapshots, each with its change; `n` snapshot now, `v` verify, `r` restore an item as of the chosen snapshot, `s` set up or connect a repository, choosing its folder with the file picker |
+| `3` | **Active**: what's checked out and on this device's desk, with their pending history entries; `r` return the chosen checkout, `x` cancel it, `o` open the working copy, `a` approve, `c` combine, `d` drop pending entries (all, or those marked with `Space`) |
+| `4` | **Questions**: `Enter` to answer, `d` to dismiss |
+| `5` | **Browse**: collections and items; `/` to search |
+| `6` | **History**: `u` to undo the chosen change |
+| `7` | **Ingest**: the queue; `x` remove, `t` to the front, `r` retry |
+| `8` | **Settings**: `Enter` to change the chosen setting |
+| `9` | **Backups**: the snapshots, each with its change; `n` snapshot now, `v` verify, `r` restore an item as of the chosen snapshot, `s` set up or connect a repository, choosing its folder with the file picker |
 
 `i` on any screen chooses files to ingest. `Ctrl-R` reads everything again, and `q` quits; the worker keeps going.
 
