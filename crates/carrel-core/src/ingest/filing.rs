@@ -539,7 +539,7 @@ fn card_for(
 
 /// `name`, or `name (2)`, `name (3)`… before any extension, whichever is free in `folder`
 /// along with its card name. Names are compared without case (FORMAT.md §2.5).
-fn free_name(folder: &Path, name: &str) -> std::io::Result<String> {
+pub(crate) fn free_name(folder: &Path, name: &str) -> std::io::Result<String> {
     let taken: Vec<String> = match std::fs::read_dir(folder) {
         Ok(entries) => entries
             .filter_map(Result::ok)
@@ -604,7 +604,7 @@ fn place(
     Ok(())
 }
 
-fn copy(source: &Path, target: &Path) -> Result<(), FilingError> {
+pub(crate) fn copy(source: &Path, target: &Path) -> Result<(), FilingError> {
     let meta = std::fs::symlink_metadata(source).map_err(io(source))?;
     if meta.file_type().is_symlink() {
         let link = std::fs::read_link(source).map_err(io(source))?;

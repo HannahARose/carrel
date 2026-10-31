@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Output;
 
-use serde_json::Value;
+use serde_json::{Value, json};
 
 fn sample_archive() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/sample-archive")
@@ -724,4 +724,103 @@ fn settings_are_listed_set_and_undone() {
     assert_eq!(device["model"], serde_json::Value::Null);
     assert!(device["model_in_use"].is_string());
     sandbox.ok(&root, &["settings", "set", "model", "default"]);
+}
+
+#[test]
+fn checkout_copies_an_item_out_and_locks_the_archive_copy() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    let desk = sandbox.path("desk");
+    let out = sandbox.json(
+        &root,
+        &[
+            "checkout",
+            "Projects/Hardware/parts-list.csv",
+            "--to",
+            desk.to_str().unwrap(),
+            "--due",
+            "2026-12-01",
+        ],
+    );
+    let working = PathBuf::from(out["working"].as_str().unwrap());
+    assert_eq!(working, desk.join("parts-list.csv"));
+    assert_eq!(
+        std::fs::read(&working).unwrap(),
+        std::fs::read(root.join("Projects/Hardware/parts-list.csv")).unwrap()
+    );
+    assert!(out["commit"].is_string());
+    assert!(
+        std::fs::write(root.join("Projects/Hardware/parts-list.csv"), "x").is_err(),
+        "the archive copy is read-only"
+    );
+    let shown = sandbox.json(&root, &["show", "Projects/Hardware/parts-list.csv"]);
+    assert_eq!(shown["fields"]["checked_out"]["due"], "2026-12-01");
+
+    let listed = sandbox.json(&root, &["checkouts"]);
+    assert_eq!(listed["checked_out"][0]["state"], "unchanged");
+    std::fs::write(&working, "changed,on,the,desk\n").unwrap();
+    assert_eq!(
+        sandbox.json(&root, &["checkouts"])["checked_out"][0]["state"],
+        "changed"
+    );
+
+    let again = sandbox.run_in(&root, &["checkout", "Projects/Hardware/parts-list.csv"]);
+    assert!(!again.status.success());
+    assert!(String::from_utf8_lossy(&again.stderr).contains("already checked out"));
+    let log = sandbox.json(&root, &["log"]);
+    assert_eq!(log[0]["operation"], "checkout");
+
+    // Returning brings the working copy back, unlocked, with an approved history entry.
+    let back = sandbox.json(
+        &root,
+        &["return", "Projects/Hardware/parts-list.csv", "--yes"],
+    );
+    assert_eq!(back["changed"], json!(["parts-list.csv"]));
+    let archived = root.join("Projects/Hardware/parts-list.csv");
+    assert_eq!(
+        std::fs::read_to_string(&archived).unwrap(),
+        "changed,on,the,desk\n"
+    );
+    std::fs::write(&archived, "writable again\n").unwrap();
+    let shown = sandbox.json(&root, &["show", "Projects/Hardware/parts-list.csv"]);
+    assert!(shown["fields"]["checked_out"].is_null());
+    let card = std::fs::read_to_string(root.join("Projects/Hardware/parts-list.csv.md")).unwrap();
+    assert!(card.contains("Returned: 1 changed file(s)."), "{card}");
+    assert!(
+        !card.contains("[!pending]"),
+        "the entry is approved with the return"
+    );
+    assert_eq!(sandbox.json(&root, &["log"])[0]["operation"], "return");
+    assert!(working.exists(), "the working copy is left for the owner");
+    let again = sandbox.run_in(
+        &root,
+        &["return", "Projects/Hardware/parts-list.csv", "--yes"],
+    );
+    assert!(String::from_utf8_lossy(&again.stderr).contains("isn't checked out"));
+
+    // Cancelling unlocks the archive copy as it was.
+    sandbox.ok(
+        &root,
+        &[
+            "checkout",
+            "Projects/Hardware/parts-list.csv",
+            "--to",
+            desk.to_str().unwrap(),
+        ],
+    );
+    sandbox.ok(
+        &root,
+        &[
+            "return",
+            "Projects/Hardware/parts-list.csv",
+            "--discard",
+            "--yes",
+        ],
+    );
+    assert_eq!(
+        std::fs::read_to_string(&archived).unwrap(),
+        "writable again\n"
+    );
+    std::fs::write(&archived, "and again\n").unwrap();
 }
