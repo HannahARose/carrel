@@ -1199,6 +1199,18 @@ public protocol ArchiveHandleProtocol: AnyObject, Sendable {
     func search(query: String, limit: UInt32, progress: ProgressListener?) throws  -> SearchResults
     
     /**
+     * Searches for `query` as [`ArchiveHandle::search`] does, by words alone: over the text
+     * already read, without starting a provider or a model, so it's quick enough to run as
+     * someone types. Items whose text hasn't been read yet are found by their cards.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] for a filter that can't be used or a query with nothing in
+     * it, or [`CarrelError::Failed`] if the archive can't be read.
+     */
+    func searchWords(query: String, limit: UInt32) throws  -> SearchResults
+    
+    /**
      * Chooses the text model that drafts cards on this device (`None` lets Carrel choose)
      * and the one asked for a second opinion (`off`, or `None` for a recommended one).
      * Names are `provider/offer`, an offer, or a provider alone.
@@ -2362,6 +2374,27 @@ open func search(query: String, limit: UInt32, progress: ProgressListener?)throw
         FfiConverterString.lower(query),
         FfiConverterUInt32.lower(limit),
         FfiConverterOptionTypeProgressListener.lower(progress),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Searches for `query` as [`ArchiveHandle::search`] does, by words alone: over the text
+     * already read, without starting a provider or a model, so it's quick enough to run as
+     * someone types. Items whose text hasn't been read yet are found by their cards.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] for a filter that can't be used or a query with nothing in
+     * it, or [`CarrelError::Failed`] if the archive can't be read.
+     */
+open func searchWords(query: String, limit: UInt32)throws  -> SearchResults  {
+    return try  FfiConverterTypeSearchResults_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_search_words(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(query),
+        FfiConverterUInt32.lower(limit),uniffiCallStatus
     )
 })
 }
@@ -11591,6 +11624,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_search() != 11699) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_search_words() != 565) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_choose_models() != 39343) {

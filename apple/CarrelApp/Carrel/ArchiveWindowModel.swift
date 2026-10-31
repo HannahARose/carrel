@@ -79,6 +79,12 @@ final class ArchiveWindowModel {
     private(set) var items: [ItemSummary] = []
     private(set) var isLoading = false
     private(set) var problem: String?
+    /// The archive, through CarrelKit's ArchiveModel, once it's open.
+    private(set) var archive: ArchiveModel?
+    /// Search in the toolbar.
+    private(set) var search: SearchModel?
+    /// Adding items, and the worker drafting them.
+    private(set) var intake: IntakeModel?
 
     var screen: Screen? = .status {
         didSet { if screen != oldValue { selectedItemID = nil } }
@@ -109,6 +115,10 @@ final class ArchiveWindowModel {
             tree = CollectionNode.tree(loaded.1)
             items = loaded.2
             problem = nil
+            let archive = ArchiveModel(handle: loaded.0)
+            self.archive = archive
+            search = SearchModel(archive: archive)
+            intake = IntakeModel(archive: archive)
         } catch {
             problem = message(for: error)
         }

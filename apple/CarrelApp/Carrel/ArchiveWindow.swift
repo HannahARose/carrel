@@ -27,6 +27,7 @@ struct ArchiveWindow: View {
         } detail: {
             Inspector(model: model)
         }
+        .modifier(ArchiveWindowActions(model: model))
         .navigationTitle(model.name)
         .navigationSubtitle(
             model.isReadOnly ? "\(model.screenTitle) · Read only" : model.screenTitle
@@ -85,6 +86,14 @@ private struct ScreenContent: View {
     @Bindable var model: ArchiveWindowModel
 
     var body: some View {
+        if let search = model.search, search.isActive {
+            SearchResultsView(model: model, search: search)
+        } else {
+            screen
+        }
+    }
+
+    @ViewBuilder private var screen: some View {
         switch model.screen {
         case .status, nil:
             StatusView(model: model)
