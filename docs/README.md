@@ -16,6 +16,7 @@
 | [Development setup](dev/development-setup.md) | Setting up a Mac to build Carrel, and the checks CI runs |
 | [Architecture](dev/architecture.md) | The parts, how they communicate, what's on disk, the main flows, with diagrams |
 | [Code map](dev/code-map.md) | Where each part is in the code, linked to the [code documentation](https://hrose.me/carrel/) |
+| [Interfaces](dev/interfaces.md) | Every capability in the command line, the interactive mode and the app, and the allowed deviations |
 | [What separating the parts costs](dev/overhead.md) | Measured time, memory and disk, and what the separation buys |
 | [The on-device runner](dev/on-device-runner.md) | The tests and weekly benchmark on the owner's Mac, and setting it up |
 | [Providers](providers.md) | The protocol for provider programs |

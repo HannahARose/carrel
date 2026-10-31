@@ -28,6 +28,7 @@ PAGES = {
     "docs/guide/commands.md": "Command-Line Tool",
     "docs/guide/editors.md": "Neovim-and-Emacs",
     "docs/dev/architecture.md": "Architecture",
+    "docs/dev/interfaces.md": "Interfaces",
     "docs/dev/code-map.md": "Code-Map",
     "docs/dev/development-setup.md": "Development-Setup",
     "docs/dev/overhead.md": "Overhead",
