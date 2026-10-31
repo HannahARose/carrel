@@ -1,0 +1,318 @@
+# How a person might describe each benchmark item when looking for it, for the findability
+# test (docs/design/search.md, "Measuring it"; docs/design/benchmark.md).
+#
+# Written by hand, in the words someone would type into search months later, not copied from
+# the item's file name or title: what it is, what it's for, or a detail inside it. Each item
+# has two to four. A description is scored by whether the item comes back in the top five.
+items:
+  "2025 bank statement March.txt":
+    - "my current account transactions for one month in spring"
+    - "the statement that shows the rent going out and my salary coming in"
+    - "Northbridge account balance after moving money into savings"
+  "tax return summary 2024.md":
+    - "what I declared to the tax office for last year, nothing owed"
+    - "self assessment figures for employment income and interest"
+    - "the overview of my filed return from January"
+  "pension annual statement.txt":
+    - "how much is in my retirement pot"
+    - "yearly letter from Harbour about contributions from me and my employer"
+    - "projected income when I retire at 67"
+  "fund report q2.txt":
+    - "how my index fund investment did over the summer quarter"
+    - "units held in the global equity tracker and their price"
+    - "Greenfield investor update"
+  "letter from tax office.txt":
+    - "HMRC telling me my tax code changed"
+    - "notice that my code is now 1257L because of a change in work benefits"
+    - "official letter about my income tax from June"
+  "order confirmation laptop.txt":
+    - "proof I bought my new computer, for the warranty"
+    - "order for the Aero 14 and a USB-C dock"
+    - "the email confirming what I paid for my notebook PC"
+  "receipt desk chair.txt":
+    - "what I paid for my office seat"
+    - "Furnish & Co till slip with the floor protector"
+    - "proof of purchase for the ergonomic chair, five year frame guarantee"
+  "invoice monitor arm.md":
+    - "bill for the screen mount that clamps to my desk"
+    - "the dual display bracket I can claim as a home-working expense"
+    - "August purchase of something to hold two monitors"
+  "phone repair receipt.txt":
+    - "when my Pixel screen was fixed"
+    - "QuickFix bill with the 90-day guarantee"
+    - "cost of replacing a cracked phone display"
+  "prescription amoxicillin.txt":
+    - "the antibiotics Dr Shah gave me for a chest infection"
+    - "capsules three times a day for a week"
+    - "medicine I was prescribed in January"
+  "blood test results.txt":
+    - "lab results that showed my iron was low"
+    - "ferritin and vitamin D levels from the hospital"
+    - "my full blood count from St Anne's"
+  "physio appointment.txt":
+    - "when my back follow-up session is booked"
+    - "Riverside booking with Sam Okafor"
+    - "confirmation of a Thursday morning appointment for back pain"
+  "referral letter for physio.txt":
+    - "the GP's letter sending me to have my back treated"
+    - "doctor's note I can use for the health insurance claim"
+    - "six weeks of lower back pain, no red flags"
+  "vaccination record.md":
+    - "which jabs I've had and when"
+    - "tetanus, hepatitis A and flu dates for travelling"
+    - "my immunisation history from the surgery"
+  "tenancy agreement.md":
+    - "the lease for my flat"
+    - "my rental contract with Oakfield Lettings and the deposit amount"
+    - "how much rent I pay and when the term started"
+  "electricity bill september.txt":
+    - "how much power I used last month and what it cost"
+    - "Brightspark energy invoice paid by direct debit"
+    - "162 kWh"
+  "boiler repair note.txt":
+    - "when the heating lost pressure and the engineer fixed it"
+    - "the landlord's engineer replacing a valve"
+    - "check the gauge weekly, call if under 1 bar"
+  "building notice water off.txt":
+    - "the day the water supply was going to be cut for the valve work"
+    - "notice to residents from the managing agent"
+    - "fill a kettle beforehand"
+  "internet contract.txt":
+    - "my broadband deal and how fast it is"
+    - "two year contract with Fibrelink at 29 a month"
+    - "the welcome letter that says I have to give the router back"
+  "message to landlord.txt":
+    - "what I wrote asking for the dripping tap to be fixed"
+    - "note about the cracked bathroom window seal"
+    - "asking for a repair visit, in after 4 on weekdays"
+  "home contents policy.txt":
+    - "what my possessions in the flat are insured for"
+    - "Cedar Mutual cover with accidental damage"
+    - "household insurance schedule, 11.40 a month"
+  "car insurance renewal.txt":
+    - "how much it costs to insure the Fiesta next year"
+    - "my motor premium going up from 389 to 412"
+    - "letter about the no claims discount from Lighthouse"
+  "travel insurance certificate.txt":
+    - "proof I was covered for the Portugal trip"
+    - "Wayfarer policy with medical expenses and cancellation"
+    - "the emergency assistance number for my holiday"
+  "claim physio costs.md":
+    - "asking Brightwell to pay me back for my back treatment"
+    - "health cover reimbursement for three sessions"
+    - "165 for physiotherapy in September and October"
+  "travel insurance claim lost bag.md":
+    - "the claim for my suitcase that went missing on the way home"
+    - "luggage the airline lost, with the camera receipts"
+    - "LIS-88213"
+  "letter from grandma.txt":
+    - "the letter where she says the snowdrops are out"
+    - "Gran asking me to come for Sunday lunch"
+    - "grandad working on the vegetable patch again"
+  "email from sam about visit.txt":
+    - "when my friend is coming to stay in September"
+    - "message about walking along the coast on Saturday"
+    - "Sam bringing the good waterproofs"
+  "birthday card from sister.txt":
+    - "what Jess wrote for my birthday"
+    - "the one about never beating her at chess"
+    - "dinner in Leeds next time"
+  "dishwasher manual.txt":
+    - "instructions for the slimline dishwasher"
+    - "how to clean the filter and which programme to use"
+    - "Eco 50 and setting water hardness with salt"
+  "drill safety and warranty.txt":
+    - "guarantee terms for my cordless power tool"
+    - "register within 28 days for three years cover"
+    - "wear eye protection, remove battery before changing bits"
+  "coffee machine descaling.txt":
+    - "how to get the limescale out of the espresso maker"
+    - "what to do when the light keeps flashing on the Barista Mini"
+    - "hold the steam and coffee buttons for three seconds"
+  "router quick start.md":
+    - "setting up the broadband hub"
+    - "what it means when the light on the Hub 3 is red"
+    - "which cable goes into the WAN port"
+  "receipt and manual blender.txt":
+    - "proof of purchase for the PowerBlend and its quick guide"
+    - "don't fill above the MAX line, wash the blades by hand"
+    - "Kitchen Plus purchase with a two year guarantee"
+  "paper kuramoto synchronization.txt":
+    - "Strogatz's review of the onset of synchrony"
+    - "coupled limit-cycle oscillators and the phase transition"
+    - "the Physica D article I downloaded for my literature review"
+  "rfc 9110 http semantics notes.md":
+    - "the web protocol spec on methods, status codes and headers"
+    - "which section covers range requests"
+    - "IETF standard from 2022"
+  "darwin origin chapter 4 notes.md":
+    - "my summary of the natural selection chapter"
+    - "the diagram of divergence where varieties branch"
+    - "notes on sexual selection from the 1859 book"
+  "essay on attention.md":
+    - "the piece that says attention is a habit, not a spotlight"
+    - "we become what we keep coming back to"
+    - "magazine essay I saved in 2024"
+  "cell biology review.txt":
+    - "review of body clocks in individual cells"
+    - "how clocks get reset by light and feeding"
+    - "single-cell imaging of circadian rhythms"
+  "lab notebook oscillators week 12.md":
+    - "the week I ran the simulation with 500 oscillators"
+    - "order parameter jumps near K = 1.6"
+    - "my March notes on the threshold with a Lorentzian spread"
+  "draft paper phase response.md":
+    - "the manuscript I'm writing about how cells synchronize in pairs"
+    - "unfinished paper where the methods still say TODO"
+    - "draft for Priya and Dr Lin to check"
+  "dataset description.md":
+    - "what's in the imaging data from the 48 wells"
+    - "TIFF stacks on the lab server, one per well"
+    - "columns of the summary CSV for the May recording"
+  "talk slides outline.md":
+    - "plan for my 15 minute presentation to the group"
+    - "where theory and data disagree, for the November talk"
+    - "outline of what I'm going to say at group meeting"
+  "conference registration.txt":
+    - "confirmation for Dynamics Days in Edinburgh"
+    - "where I'm presenting the poster on synchrony thresholds"
+    - "the September meeting I paid 280 for"
+  "employment contract lumen.md":
+    - "my terms of employment at Lumen"
+    - "how much notice I have to give and how many days holiday"
+    - "the document with my starting salary of 41,000"
+  "payslip october.txt":
+    - "last month's pay and deductions"
+    - "how much National Insurance and pension came out of my salary"
+    - "net pay 2,711.63"
+  "performance review 2025.md":
+    - "what Jordan said about my work this summer"
+    - "feedback about presenting to senior leadership"
+    - "on track for promotion"
+  "team meeting notes.md":
+    - "minutes from the data team's weekly meeting"
+    - "when the warehouse migration slipped to November"
+    - "interviews for the junior analyst role"
+  "cv alex morgan.md":
+    - "my résumé"
+    - "list of my jobs and my MSc in applied statistics"
+    - "what I send when applying for analyst jobs"
+  "flight booking lisbon.txt":
+    - "my plane tickets to Portugal"
+    - "booking reference K7Q2PX"
+    - "the Gatwick departure at 07:10 in June"
+  "hotel booking porto.txt":
+    - "where we're staying in Porto"
+    - "room with a river view and breakfast"
+    - "free cancellation until 11 June"
+  "train tickets porto.txt":
+    - "the rail journey from Lisbon up north"
+    - "Alfa Pendular seat 61, coach 4"
+    - "Comboios de Portugal booking for 18 June"
+  "itinerary portugal.md":
+    - "the plan for the June holiday, which nights where"
+    - "staying in Alfama and then Casa do Rio"
+    - "day by day plan of the trip"
+  "lentil dal.md":
+    - "quick curry with red lentils and turmeric"
+    - "something to cook on a weeknight that freezes well"
+    - "simmer 25 minutes, finish with coriander"
+  "sourdough loaf.md":
+    - "how I bake bread with a starter"
+    - "four sets of folds and prove in the fridge overnight"
+    - "my note that 330 g water works better"
+  "lemon drizzle cake.txt":
+    - "Gran's citrus loaf cake"
+    - "bake at 180 for 45 minutes in a loaf tin"
+    - "the cake where you pour the sugar syrup over while warm"
+  "plant monitor readme.md":
+    - "the soil moisture sensor project for my houseplants"
+    - "ESP32 firmware that posts readings to a web page"
+    - "wire the sensor to GPIO 34"
+  "amplifier build log.txt":
+    - "notes from building my headphone amp"
+    - "the hum from the transformer, move the input wiring"
+    - "etching the board and soldering the op-amp socket"
+  "budget app notes.md":
+    - "idea for a terminal program to categorise my spending"
+    - "design for reading CSV exports from the bank"
+    - "the Python and Textual app I haven't started"
+  "short story draft.md":
+    - "the fiction I'm writing about a lighthouse"
+    - "Mara climbing the stairs to the lamp"
+    - "second draft, storm should arrive earlier"
+  "old us tax form.txt":
+    - "my American tax return from when I lived in Boston"
+    - "the 1040 with my social security number"
+    - "federal return filed in April 2021"
+  "card replacement letter.txt":
+    - "the letter that came with my new debit card"
+    - "Northbridge sending a replacement card that expires 09/29"
+    - "cut up your old card"
+  "home office expenses.md":
+    - "what I spent working from home, for the tax return"
+    - "list of the monitor arm, chair and share of electricity"
+    - "self assessment working-from-home costs"
+  "untitled scan text.txt":
+    - "page from a contract about custody of an item in schedule B"
+    - "a stray second page of some legal agreement"
+  "wifi and alarm codes.txt":
+    - "instructions I leave for the house-sitter"
+    - "when the bins go out and how much to feed the cat"
+    - "the flat's password for guests"
+  "misc notes.txt":
+    - "my to-do scribbles about batteries and a film"
+    - "the film Priya recommended"
+  "kettle manual.zip":
+    - "instructions for the BrewSwift"
+    - "how to descale with white vinegar"
+    - "boil and discard the water twice before first use"
+  "label printer driver.zip":
+    - "the installer for the QL-700"
+    - "software to print address labels from my Mac"
+    - "driver for 62 mm continuous tape"
+  "lamp dimmer firmware.zip":
+    - "the rotary encoder code for my desk lamp"
+    - "RP2040 project flashed with probe-rs"
+    - "PWM brightness control for the LED strip"
+  "IMG_2041.jpg":
+    - "photo of the till receipt for the kettle from the hardware shop"
+    - "Hartley & Sons receipt with descaler sachets"
+    - "proof I bought the KX-170 kettle in June"
+  "IMG_3310.jpg":
+    - "the whiteboard from sprint planning at work"
+    - "to do, doing and done columns from the October meeting"
+  "IMG_4127.jpg":
+    - "picture of the ginger cat asleep on the sofa"
+    - "drawing of a sleeping cat at home"
+  "IMG_1876.jpg":
+    - "the departures board at the station in Porto"
+    - "São Bento train times, photographed on the trip"
+  "IMG_1502.jpg":
+    - "Gran's handwritten recipe for oat biscuits"
+    - "photo of a recipe card on the kitchen counter"
+  "Screenshot 2025-08-28 at 09.14.03.png":
+    - "the email from the letting agent about the rent going up"
+    - "rent review for 4 Elm Court"
+  "Screenshot 2025-10-03 at 08.41.55.png":
+    - "my banking app showing the balance"
+    - "Northbridge app with recent transactions and my account number"
+  "scan0007.png":
+    - "the letter thanking me for the scarf"
+    - "scanned note from my friend in Hebden Bridge"
+  "export.png":
+    - "wiring diagram for version 2 of the plant monitor"
+    - "how the pump, battery and moisture sensor connect"
+    - "deep sleep 15 minutes between readings"
+  "part_v3_final.stl":
+    - "the L-shaped bracket I designed in 3 mm plate"
+    - "3D model of a right-angle mounting bracket"
+  "print_0412.stl":
+    - "the square tray I 3D printed"
+    - "60 mm tray with thin walls, for printing"
+  "ring_v2.stl":
+    - "the finger ring model for the printer"
+    - "a band 18 mm across inside"
+  "scan_0007.stl":
+    - "the little figurine with a round body and a head"
+    - "3D printable statuette on a base"

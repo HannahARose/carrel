@@ -198,6 +198,16 @@ Search compares vectors, and vectors from different models can't be compared, so
 - **The MLX provider** offers a folder in `mlx/` named after a catalog embedding model (`carrel models download embeddinggemma-300m --format mlx`) as `embed`, never as a text model.
 - **Apple's sentence embedding** needs no download, but only Apple devices have it, and only for English. An archive also searched from Linux or Windows couldn't use it, so it's never the default: an archive chooses it. It's pinned to revision 1 of macOS's English sentence embedding; a later revision would be another model, since its vectors couldn't be compared. It reads up to 256 words of each text.
 
+### How search uses it
+
+- **Documents:** for each item, Carrel sends one request with the card as the first text (its title, summary, tags, collection, dates and kind, a line each), then the item's text in passages of about 500 tokens, up to 20, all with `purpose: document`. A restricted item's request has its card only. The vectors are kept in `_System/index/<model>/` as 16-bit floats.
+- **Queries:** what's typed into search, without its filters, is sent alone with `purpose: query`, and compared with every stored vector by cosine similarity.
+- **When it fails:** an error, or an answer that doesn't check out, leaves the item behind in the index, to be tried again by the worker; a query that can't be embedded is searched by words only, and search says why.
+
+### Measuring a model
+
+`carrel bench --search` looks up the benchmark's hand-written descriptions (`fixtures/bench/descriptions.yaml`) with each embedding model on offer, and reports how often each item comes back in the top five ([docs/bench](bench/README.md#findability)). A provider offering a new model can be measured the same way before it's proposed for the catalog.
+
 ## Errors
 
 Providers report failures as JSON-RPC errors. Besides the standard codes (such as `-32601` for an unknown method), these codes tell Carrel what to do next:

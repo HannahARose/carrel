@@ -87,6 +87,24 @@ Every answer was valid, nothing was declined, and nothing was under-rated.
 
 So descriptions are worth keeping on: they cost little, they help when Apple's model files alone or Gemma isn't installed, and they give photos titles and summaries that say what's in them.
 
+## Findability
+
+How well search finds things (`docs/design/search.md`, "Measuring it"). Each item in the test set has two to four descriptions in [`fixtures/bench/descriptions.yaml`](../../fixtures/bench/descriptions.yaml), written by hand the way a person would search for it months later: what it is ("the lease for my flat"), what it's for ("proof I bought my new computer, for the warranty"), or a detail inside it ("booking reference K7Q2PX"), never its file name. `carrel bench --search` files every item in its expected collection, then looks up each description three ways:
+
+- **words alone:** the word index, over the cards and the item's text;
+- **meaning alone:** the embedding index, with each embedding model on offer;
+- **both:** the two merged by reciprocal rank fusion, as `carrel search` does.
+
+Each is scored by **top-five recall** (the share of descriptions whose item is among the first five items that come back) and **mean reciprocal rank** (1 for first place, ½ for second, and so on, 0 when it isn't in the first 100). The report lists every description that missed, with where its item came and what came back instead, so a miss can be read: a bad description, a card that says too little, or a model that doesn't understand.
+
+The cards are titled by file name unless `--cards RESULTS` gives a `results.json` from a filing run, whose drafted titles and summaries are used instead; the tags, dates and sensitivity are the expected ones. Item text is read by the providers on the device, as search reads it, so the scores depend on what the device can read (images and PDFs need Apple's or the extraction provider).
+
+```bash
+carrel bench --search --out bench-results
+```
+
+It writes `bench-results/search/results.json` and `report.md`. The filed archive and each model's index are kept in `bench-results/search/archive`, so a second run embeds only what changed and says it reused the index; `--fresh` starts over, and `--model NAME` measures one embedding model. Not run yet: it needs the embedding models downloaded on the reference machine. The first run confirms, or not, EmbeddingGemma 300M as the default.
+
 ## Running it again
 
 ```bash

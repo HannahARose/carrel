@@ -2413,3 +2413,91 @@ fn the_index_is_rebuilt_reported_and_caught_up_by_the_worker() {
     );
     assert_eq!(found["results"][0]["found"]["title"], "Flat lease");
 }
+
+#[test]
+fn bench_search_scores_findability_and_reuses_each_models_index() {
+    let sandbox = Sandbox::new();
+    let bin = sandbox.path("bin");
+    std::fs::create_dir(&bin).unwrap();
+    let suffix = std::env::consts::EXE_SUFFIX;
+    std::fs::copy(
+        echo_provider(),
+        bin.join(format!("carrel-provider-echo{suffix}")),
+    )
+    .unwrap();
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/bench");
+    let out = sandbox.path("results");
+    let corpus = corpus.to_str().unwrap();
+    let out_arg = out.to_str().unwrap();
+    let args = ["bench", "--search", "--corpus", corpus, "--out", out_arg];
+    let cwd = sandbox.dir.path().to_owned();
+
+    let first = run_with_providers(&sandbox, &cwd, &bin, &args);
+    assert!(
+        first.status.success(),
+        "{}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+    let text = String::from_utf8_lossy(&first.stdout).into_owned();
+    assert!(text.contains("| Words alone | none |"), "{text}");
+    assert!(text.contains("| Meaning alone | echo-embed |"), "{text}");
+    assert!(
+        text.contains("| Words and meaning | echo-embed |"),
+        "{text}"
+    );
+    assert!(text.contains("Built an index for echo-embed"), "{text}");
+    let report = std::fs::read_to_string(out.join("search/report.md")).unwrap();
+    assert!(report.contains("## Not in the top five"), "{report}");
+    assert!(
+        out.join("search/archive/_System/index/echo-embed/index.json")
+            .is_file()
+    );
+    let results: Value =
+        serde_json::from_str(&std::fs::read_to_string(out.join("search/results.json")).unwrap())
+            .unwrap();
+    let rankings = results["rankings"].as_array().unwrap();
+    assert_eq!(rankings.len(), 3);
+    assert_eq!(rankings[0]["way"], "words");
+    let described = results["descriptions"].as_u64().unwrap();
+    assert_eq!(rankings[0]["score"]["descriptions"], described);
+    assert!(rankings[0]["score"]["top_five"].as_f64().unwrap() > 0.3);
+
+    // Run again, the archive and index are reused: nothing is embedded again.
+    let again = json_of(&run_with_providers(
+        &sandbox,
+        &cwd,
+        &bin,
+        &[args.as_slice(), &["--json"]].concat(),
+    ));
+    let note = again["notes"][0].as_str().unwrap();
+    assert!(
+        note.starts_with("Reused the index for echo-embed") && note.contains("0 embedded again"),
+        "{note}"
+    );
+
+    // Without an embedding model on offer, words alone are measured, and a missing one fails.
+    let nothing = sandbox.path("no-providers");
+    std::fs::create_dir(&nothing).unwrap();
+    let words = json_of(&run_with_providers(
+        &sandbox,
+        &cwd,
+        &nothing,
+        &[args.as_slice(), &["--json"]].concat(),
+    ));
+    assert_eq!(words["rankings"].as_array().unwrap().len(), 1);
+    assert!(
+        words["notes"][0]
+            .as_str()
+            .unwrap()
+            .contains("No embedding model is on offer"),
+        "{words}"
+    );
+    let missing = run_with_providers(
+        &sandbox,
+        &cwd,
+        &nothing,
+        &[args.as_slice(), &["--model", "nope"]].concat(),
+    );
+    assert_eq!(missing.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&missing.stderr).contains("no embedding model nope"));
+}
