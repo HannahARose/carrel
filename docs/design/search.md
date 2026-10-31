@@ -32,7 +32,7 @@ The spec settles the shape: **one embedding model per archive**, shared by every
 
 ## Search
 
-- **Words and meaning together.** A word index (BM25 over cards, item text, collection documents and the glossary) catches exact names, numbers and codes that embeddings blur ("invoice 2057-4038", "AS1115"); the embedding index catches descriptions. Their rankings are merged (reciprocal rank fusion), so either can surface an item.
+- **Words and meaning together.** A word index (BM25 over cards, item text, collection documents and the glossary) catches exact names, numbers and codes that embeddings blur ("invoice 2057-4038", "AS1115"); the embedding index catches descriptions. Their rankings are merged, so either can surface an item: items with the query's rare exact names and numbers first, then weighted reciprocal rank fusion. With a strong model meaning ranks and the words only break near-ties; with a weak one (Apple's) it's the other way round. The weights come from replaying the findability benchmark (#249, `docs/bench/`).
 - **Filters** narrow it: `collection:Finances`, `tag:receipts`, `kind:folder`, `after:2025-01`, `before:2026`, `sensitivity:sensitive`, `checked-out`.
 - **Each result says why:** the title and collection, the passage that matched with the words highlighted, and the date.
 - **Where:** `carrel search QUERY [--json]` on the command line, and `/` in Browse, which today only matches words in titles and summaries. Both use the same search.

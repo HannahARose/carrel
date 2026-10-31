@@ -12,7 +12,7 @@ use carrel_core::index::{ByMeaning, Index, embed_query, plan};
 use carrel_core::providers::Registry;
 use carrel_core::search::query::Query;
 use carrel_core::search::texts::{Unindexed, fill, tidy};
-use carrel_core::search::{Found, Hit, Meaning, Ranking, Search};
+use carrel_core::search::{Found, Hit, Meaning, Merge, Ranking, Search};
 use serde_json::json;
 
 use crate::commands::{locate, plural};
@@ -143,8 +143,11 @@ pub fn search(
     let mut search = Search::build(&archive)?;
     let mut words_only = None;
     if !words {
+        let merge = model
+            .as_deref()
+            .map_or_else(Merge::default, Merge::for_model);
         match by_meaning(&archive, model, index, registry, &query.text)? {
-            Ok(ranking) => search = search.with_meaning(ranking),
+            Ok(ranking) => search = search.with_meaning(ranking).with_merge(merge),
             Err(why) => words_only = Some(why),
         }
     }
@@ -186,6 +189,7 @@ pub fn search(
     Ok(Report::new(
         text,
         json!({
+            "root": crate::commands::root_of(&archive),
             "query": typed,
             "total": results.total,
             "meaning": results.meaning,

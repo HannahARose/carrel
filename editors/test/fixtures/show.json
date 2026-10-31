@@ -1,0 +1,46 @@
+{
+  "root": "@ROOT@",
+  "card": "Holding/furniture-bill.txt.md",
+  "item": "Holding/furniture-bill.txt",
+  "collection": "Holding",
+  "fields": {
+    "carrel": "card",
+    "format": "1.0",
+    "id": "01a18701-0500-776a-9867-080c8c427e79",
+    "kind": "file",
+    "title": "Furniture shop bill",
+    "item": "furniture-bill.txt",
+    "summary": "The bill for a café chair from the furniture shop.",
+    "tags": [
+      "receipts"
+    ],
+    "dates": {
+      "document": "2025-03-02",
+      "added": "2026-10-26"
+    },
+    "sensitivity": "sensitive",
+    "size": 52
+  },
+  "problems": [
+    {
+      "field": "tags",
+      "message": "receipts isn't in the collection's vocabulary"
+    }
+  ],
+  "history": [
+    {
+      "id": "4f3c2a1b0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b",
+      "summary": "Filed Furniture shop bill in Holding",
+      "operation": "file",
+      "person": null,
+      "device": null,
+      "snapshot": null,
+      "items": [
+        "01a18701-0500-776a-9867-080c8c427e79"
+      ],
+      "moves": [],
+      "reverts": null,
+      "time": "2026-10-26T10:15:00Z"
+    }
+  ]
+}

@@ -18,7 +18,7 @@
 
 'area: cli':
   - changed-files:
-      - any-glob-to-any-file: 'crates/carrel-cli/**'
+      - any-glob-to-any-file: ['crates/carrel-cli/**', 'editors/**']
 
 'area: apple-apps':
   - changed-files:

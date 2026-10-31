@@ -201,6 +201,11 @@ fn show_finds_items_by_id_card_or_item_path() {
     let root = sandbox.sample();
     let by_item = sandbox.json(&root, &["show", "Projects/Hardware/parts-list.csv"]);
     assert_eq!(by_item["card"], "Projects/Hardware/parts-list.csv.md");
+    assert_eq!(
+        Path::new(by_item["root"].as_str().unwrap()),
+        root.canonicalize().unwrap(),
+        "paths are relative to the root it gives"
+    );
     assert_eq!(by_item["item"], "Projects/Hardware/parts-list.csv");
     assert_eq!(by_item["collection"], "Projects/Hardware");
     assert_eq!(by_item["fields"]["title"], "Desk lamp parts list");
@@ -1888,6 +1893,10 @@ fn search_finds_items_by_their_words_with_filters_and_reasons() {
     assert_eq!(
         found["total"], 1,
         "the restricted statement's text isn't searched: {found}"
+    );
+    assert_eq!(
+        Path::new(found["root"].as_str().unwrap()),
+        root.canonicalize().unwrap()
     );
     let first = &found["results"][0];
     assert_eq!(first["found"]["type"], "item");

@@ -1,0 +1,10 @@
+{
+  "root": "@ROOT@",
+  "query": "nothing",
+  "total": 0,
+  "meaning": {
+    "state": "off"
+  },
+  "words_only": "This archive has no embedding model yet, so this was searched by words only.",
+  "results": []
+}

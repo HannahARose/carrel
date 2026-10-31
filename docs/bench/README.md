@@ -93,7 +93,7 @@ How well search finds things (`docs/design/search.md`, "Measuring it"). Each ite
 
 - **words alone:** the word index, over the cards and the item's text;
 - **meaning alone:** the embedding index, with each embedding model on offer;
-- **both:** the two merged by reciprocal rank fusion, as `carrel search` does.
+- **both:** the two merged as `carrel search` merges them, with the model's weights (`search::Merge`).
 
 Each is scored by **top-five recall** (the share of descriptions whose item is among the first five items that come back) and **mean reciprocal rank** (1 for first place, ½ for second, and so on, 0 when it isn't in the first 100). The report lists every description that missed, with where its item came and what came back instead, so a miss can be read: a bad description, a card that says too little, or a model that doesn't understand.
 
@@ -103,7 +103,28 @@ The cards are titled by file name unless `--cards RESULTS` gives a `results.json
 carrel bench --search --out bench-results
 ```
 
-It writes `bench-results/search/results.json` and `report.md`. The filed archive and each model's index are kept in `bench-results/search/archive`, so a second run embeds only what changed and says it reused the index; `--fresh` starts over, and `--model NAME` measures one embedding model. Not run yet: it needs the embedding models downloaded on the reference machine. The first run confirms, or not, EmbeddingGemma 300M as the default.
+It writes `bench-results/search/results.json` and `report.md`. For words alone and meaning alone, `results.json` keeps each description's whole ranking (`places`, up to 100, with each score and exact-match count), so how search merges them can be replayed and tuned without the models: `crates/carrel-core/tests/replay.rs` replays a run's rankings with each merge strategy. Runs before November 2026 kept only the first five, and the replay estimates the rest. The filed archive and each model's index are kept in `bench-results/search/archive`, so a second run embeds only what changed and says it reused the index; `--fresh` starts over, and `--model NAME` measures one embedding model.
+
+### 2026-10-31
+
+On DeskBook, an M2 Max MacBook Pro with 32 GB (the on-device runner), with Carrel from `dev` at 860cdf0, the embedding models through llama.cpp and Apple's NaturalLanguage. 230 descriptions of 81 items. [Full report](2026-10-31/findability/report.md) · [results.json](2026-10-31/findability/results.json) · [with drafted cards](2026-10-31/findability-drafted-cards/report.md)
+
+| Ranking | Model | Top five | Mean reciprocal rank | Missed |
+| --- | --- | --- | --- | --- |
+| Words alone | none | 90% | 0.84 | 22 |
+| **Meaning alone** | **EmbeddingGemma 300M** | **97%** | **0.92** | **6** |
+| Words and meaning | EmbeddingGemma 300M | 94% | 0.88 | 13 |
+| Meaning alone | Qwen3-Embedding 0.6B | 97% | 0.88 | 7 |
+| Words and meaning | Qwen3-Embedding 0.6B | 92% | 0.88 | 19 |
+| Meaning alone | Apple NaturalLanguage (English) | 39% | 0.28 | 141 |
+| Words and meaning | Apple NaturalLanguage (English) | 84% | 0.62 | 37 |
+
+- **EmbeddingGemma 300M stays the default.** It finds 97% of descriptions in the top five by meaning alone, ties Qwen3-Embedding at half its size (334 MB against 639 MB), and ranks the right item higher (0.92 against 0.88).
+- **Words alone miss descriptions** that share no words with the card: "my résumé" for `cv alex morgan.md`, "which jabs I've had" for a vaccination record. Meaning finds those, which is what the embedding index is for.
+- **Merging the two ranks lower than meaning alone** with either open model: 94% against 97% for EmbeddingGemma. Reciprocal rank fusion weighs a weak word match as much as a strong meaning match. Replayed with the merge from #249 (exact names and numbers first, then meaning, with the words breaking near-ties), the same rankings give 97% and 0.92 for EmbeddingGemma and 97% and 0.91 for Qwen3-Embedding, at least as good as meaning alone.
+- **Apple's sentence embedding is too weak for search** on its own (39%), and drags the merge below words alone. It stays available to Apple-only archives but isn't recommended.
+- **With drafted cards** (only the 9 items in the image run had them; the rest kept file names) every ranking does a point or two better, EmbeddingGemma reaching 98%.
+- Embedding all 81 items took under a minute per model on the M2 Max.
 
 ## Running it again
 

@@ -52,7 +52,7 @@ Versions stay at 0.x, one minor per roadmap phase, until 1.0, the first release 
 
 ## Releasing
 
-1. Set the version in the workspace `Cargo.toml` and the providers' `version:` lines, write the release notes in `docs/releases/vVERSION.md`, and merge it to `dev`, then `dev` to `main`.
+1. Set the version in the workspace `Cargo.toml`, the providers' `version:` lines and the `Version:` header of `editors/emacs/carrel.el`, write the release notes in `docs/releases/vVERSION.md`, and merge it to `dev`, then `dev` to `main`.
 2. Tag `main` as `vVERSION` (for example `v0.2.0`) and push the tag.
 3. `.github/workflows/release.yml` checks the tag matches the crates' version and is on `main`, builds every platform's archive, and publishes the release with checksums and attestations. Versions with a `-` are marked as pre-releases.
 

@@ -211,6 +211,7 @@ Items waiting on a question aren't approved in bulk until it's answered or dismi
 - **Recent**, on the Status screen (`1`) and in `carrel status`, lists the last ten things filed, changed or worked on across the archive: each recorded change, and each approved work session on the day it happened.
 - `carrel show ITEM` prints a card, the items related to it (its links, and those nearest it by meaning), and the changes that touched it, each with the identifier `carrel undo` takes.
 - `ARCHIVE.md` and each collection's design document end with a generated list of its contents, so the archive is browsable in Finder or Obsidian too.
+- **From Neovim or Emacs:** `:CarrelSearch` and `M-x carrel-search` search the same way and open what you choose; `:CarrelShow` and `M-x carrel-show` show the card of the file you're in. See [Neovim and Emacs](editors.md).
 
 ### Searching
 
@@ -238,7 +239,7 @@ The first search reads the text of items that haven't been read yet, with a prog
 
 ### Searching by meaning
 
-Words find exact names and numbers; meaning finds descriptions. With the archive's embedding model on this device, `carrel search the lease for the flat` finds a tenancy agreement whose card never says "lease". Search ranks items both ways and merges the two (reciprocal rank fusion), so either can bring an item back; `matched: meaning` says it was found by what it means, with the passage nearest your words.
+Words find exact names and numbers; meaning finds descriptions. With the archive's embedding model on this device, `carrel search the lease for the flat` finds a tenancy agreement whose card never says "lease". Search ranks items both ways and merges the two, so either can bring an item back: items with an exact name or number from your words, such as `invoice 2057-4038` or `AS1115`, come first, then the rest mostly by meaning; `matched: meaning` says it was found by what it means, with the passage nearest your words.
 
 Every device uses the archive's one embedding model, chosen when it's created (`embedding.model`, EmbeddingGemma 300M by default), since vectors from different models can't be compared. Download it with `carrel models download embeddinggemma-300m`, then build the index with `carrel index rebuild`. It embeds each item's card (title, summary, tags, collection, dates and kind) as one text, and its text in passages of about 500 tokens, up to 20 an item, so a long document is found by what's inside it. **Restricted items are embedded by their card only**, so nothing in their text can be found, or reconstructed, from the index.
 

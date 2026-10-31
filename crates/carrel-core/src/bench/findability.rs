@@ -9,6 +9,8 @@
 //! compared are words alone and both merged, as search gives them ([`by_search`]), and meaning
 //! alone ([`by_meaning`]).
 
+pub mod replay;
+
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Write as _;
 use std::path::Path;
@@ -306,8 +308,91 @@ pub fn by_meaning<S: std::hash::BuildHasher>(
         .collect()
 }
 
+/// One place in a ranking, as a run saves it so merges can be replayed without the models
+/// ([`replay`]).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Place {
+    /// The item's file name; for a collection, glossary fact or card without contents, what
+    /// it is.
+    pub item: String,
+    /// Its score in the ranking: BM25 for the words, cosine similarity for meaning.
+    pub score: f64,
+    /// How many of the query's rare exact names and numbers it has, among the words.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub exact: usize,
+    /// Whether it isn't an item with contents, so it takes a place in the merge but doesn't
+    /// count as one among the items found.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub other: bool,
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)] // serde's signature
+fn is_zero(n: &usize) -> bool {
+    *n == 0
+}
+
+/// The word ranking alone for `description`, every document it found up to [`DEPTH`] with
+/// its score and exact matches, as [`replay`] needs it.
+#[must_use]
+pub fn word_places(search: &Search, description: &str) -> Vec<Place> {
+    let Ok(query) = Query::parse(description) else {
+        return Vec::new();
+    };
+    search
+        .by_words(&query)
+        .into_iter()
+        .take(DEPTH)
+        .map(|(found, score, exact)| {
+            let (item, other) = match &found {
+                Found::Item(item) => match item.item.as_ref().and_then(|i| i.rsplit('/').next()) {
+                    Some(name) => (name.to_owned(), false),
+                    None => (format!("card {}", item.title), true),
+                },
+                Found::Collection { path, .. } => (format!("collection {path}"), true),
+                Found::Glossary { term } => (format!("glossary {term}"), true),
+            };
+            Place {
+                item,
+                score,
+                exact,
+                other,
+            }
+        })
+        .collect()
+}
+
+/// The meaning ranking alone for `description`, up to [`DEPTH`] items by their file `names`,
+/// each with its similarity, as [`replay`] needs it.
+#[must_use]
+pub fn meaning_places<S: std::hash::BuildHasher>(
+    ranking: &dyn Ranking,
+    names: &HashMap<Id, String, S>,
+    description: &str,
+) -> Vec<Place> {
+    ranking
+        .rank(description, &|_| true, DEPTH)
+        .into_iter()
+        .filter_map(|ranked| {
+            Some(Place {
+                item: names.get(&ranked.id)?.clone(),
+                score: ranked.score,
+                exact: 0,
+                other: false,
+            })
+        })
+        .collect()
+}
+
+/// Saves the ranking `places` gives for each of `lookups`' descriptions with it, so a later
+/// [`replay`] can merge it.
+pub fn keep_places(lookups: &mut [Lookup], places: &mut dyn FnMut(&str) -> Vec<Place>) {
+    for lookup in lookups {
+        lookup.places = places(&lookup.description);
+    }
+}
+
 /// Where one description's item came back.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Lookup {
     /// The item described, by its file name.
     pub item: String,
@@ -317,6 +402,10 @@ pub struct Lookup {
     pub rank: Option<usize>,
     /// The items found first, up to [`TOP`], for seeing what came back instead.
     pub top: Vec<String>,
+    /// The whole ranking, up to [`DEPTH`], for the words alone and meaning alone, so merges
+    /// can be replayed ([`replay`]). Runs before 2026-11 didn't save it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub places: Vec<Place>,
 }
 
 impl Lookup {
@@ -346,6 +435,7 @@ pub fn look_up(
                     .position(|f| f == item)
                     .map(|p| p + 1),
                 top: found.into_iter().take(TOP).collect(),
+                places: Vec::new(),
             });
         }
     }
@@ -390,6 +480,7 @@ mod tests {
             description: "d".into(),
             rank,
             top: Vec::new(),
+            places: Vec::new(),
         }
     }
 

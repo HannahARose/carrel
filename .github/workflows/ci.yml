@@ -322,6 +322,22 @@ jobs:
         run: sudo apt-get update -q && sudo apt-get install -yq tesseract-ocr poppler-utils
       - run: cargo test -p carrel-provider-extract --locked
 
+  editors:
+    # The Neovim plugin and the Emacs package (editors/) against a fake carrel that prints
+    # fixture JSON: headless Neovim tests, ERT, a byte-compile with warnings as errors,
+    # checkdoc and package-lint. Neovim and Emacs come from Ubuntu's own packages.
+    name: Editor plugins
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Neovim and Emacs
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -yq --no-install-recommends neovim emacs-nox elpa-package-lint
+      - run: editors/test/run.sh
+
   kopia:
     # Backups against the real kopia program and a throwaway filesystem repository.
     name: Kopia backups (${{ matrix.os }})
@@ -379,7 +395,7 @@ jobs:
     # The single required check for branch protection. It passes only if every job above passed.
     name: CI passed
     if: always()
-    needs: [fmt, clippy, test, docs, swift, app, swift-format, mlx, llama, cad, extract, kopia, deny, zizmor, hygiene]
+    needs: [fmt, clippy, test, docs, swift, app, swift-format, mlx, llama, cad, extract, kopia, editors, deny, zizmor, hygiene]
     runs-on: ubuntu-latest
     steps:
       - name: Check job results
