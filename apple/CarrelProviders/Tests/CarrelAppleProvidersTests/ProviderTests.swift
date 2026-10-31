@@ -30,7 +30,7 @@ func send(_ server: Server, _ request: [String: Any]) async throws -> [String: A
     return try #require(JSONSerialization.jsonObject(with: Data(reply.utf8)) as? [String: Any])
 }
 
-let server = Server(name: "Apple", version: "0.1.0", extractors: [PDFText()])
+let server = Server(name: "Apple", version: "0.2.0", extractors: [PDFText()])
 
 @Test func initializeReportsTheProtocolAndOffers() async throws {
     let reply = try await send(server, ["jsonrpc": "2.0", "id": 1, "method": "initialize",

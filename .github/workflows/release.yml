@@ -194,6 +194,10 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       TAG: ${{ github.ref_name }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: docs/releases
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: dist
@@ -209,8 +213,13 @@ jobs:
           # Versions such as 0.2.0-beta.1 are pre-releases (CONTRIBUTING.md, Versioning).
           prerelease=""
           case "$VERSION" in *-*) prerelease="--prerelease" ;; esac
+          # The notes written for the release, else GitHub's list of merged pull requests.
+          notes=(--generate-notes)
+          if [ -f "docs/releases/$TAG.md" ]; then
+            notes=(--notes-file "docs/releases/$TAG.md")
+          fi
           gh release create "$TAG" dist/* $prerelease \
             --repo "$GITHUB_REPOSITORY" \
             --title "Carrel $VERSION" \
-            --generate-notes \
+            "${notes[@]}" \
             --verify-tag

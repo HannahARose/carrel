@@ -5,7 +5,7 @@ import CarrelAppleProviders
 import Foundation
 
 let server = Server(
-    name: "Apple", version: "0.1.0", models: [FoundationModel()],
+    name: "Apple", version: "0.2.0", models: [FoundationModel()],
     // PDFKit first: a PDF's text layer is exact, and OCR is only needed when there isn't one.
     // The image reader before OCR: it reads an image's text too, and what the image is.
     extractors: [PDFText(), ImageReader(), VisionOCR()])

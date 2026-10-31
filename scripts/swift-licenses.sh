@@ -6,14 +6,22 @@
 #
 #   scripts/swift-licenses.sh PACKAGE_DIR OUT
 #
-# The package's dependencies must be resolved (swift package resolve, or a build).
+# The package's dependencies must be resolved: by SwiftPM (swift package resolve, or swift
+# build), which checks them out in .build/checkouts, or by xcodebuild with
+# -derivedDataPath .build/xcode, which uses .build/xcode/SourcePackages/checkouts.
 set -euo pipefail
 
 package="$1"
 out="$2"
-checkouts="$package/.build/checkouts"
-if [ ! -d "$checkouts" ]; then
-  echo "swift-licenses: $checkouts is missing; resolve the package first" >&2
+checkouts=""
+for candidate in "$package/.build/checkouts" "$package/.build/xcode/SourcePackages/checkouts"; do
+  if [ -d "$candidate" ]; then
+    checkouts="$candidate"
+    break
+  fi
+done
+if [ -z "$checkouts" ]; then
+  echo "swift-licenses: no checkouts in $package/.build; resolve the package first" >&2
   exit 1
 fi
 
