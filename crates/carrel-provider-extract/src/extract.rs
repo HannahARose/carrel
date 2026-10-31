@@ -101,7 +101,8 @@ impl Extractor {
                 capability: Capability::ExtractText,
                 id: MODEL_DETAILS.into(),
                 label: Some("3D printing and CAD file details".into()),
-                priority: priority::PORTABLE,
+                // Below the CAD provider, which reads STEP and IGES headers too, and draws them.
+                priority: models::PRIORITY,
                 available: true,
                 reason: None,
                 media_types: models::MEDIA_TYPES.map(str::to_owned).to_vec(),

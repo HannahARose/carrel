@@ -104,9 +104,19 @@ public struct ImageReader: TextExtractor {
     /// says what a picture Carrel was given is, such as a 3D print project's thumbnail.
     static func describe(_ source: CGImageSource, labels: [String], context: String? = nil) async -> String? {
         guard canSee, let image = scaled(source) else { return nil }
-        var hint = labels.isEmpty ? "" : " Vision's labels for it: \(labels.joined(separator: ", "))."
+        let hint = labels.isEmpty ? "" : " Vision's labels for it: \(labels.joined(separator: ", "))."
         if let context, !context.isEmpty {
-            hint = " It's \(context)." + hint
+            // Told what the picture is, the model tends to say it back; asked what the thing in
+            // it is, it looks.
+            return await describe(
+                image,
+                instructions: """
+                    You describe pictures for a personal archive's catalog. You're told what \
+                    kind of picture each one is. Say plainly what the thing in it is and what \
+                    it's likely for, in one or two sentences. Don't repeat what you were told, \
+                    and never mention the views, the catalog or the archive.
+                    """,
+                prompt: "This picture is \(context). What is the thing in it?")
         }
         return await describe(
             image,

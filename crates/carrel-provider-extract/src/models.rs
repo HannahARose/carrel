@@ -18,10 +18,19 @@ pub const MODEL_DETAILS: &str = "model-details";
 /// The media types it reads.
 pub const MEDIA_TYPES: [&str; 4] = ["model/3mf", "text/x-gcode", "model/step", "model/iges"];
 
+/// The offer's priority: just below portable providers', so `carrel-provider-cad`, which
+/// reads the same headers and draws the models too, comes first when it's installed.
+pub const PRIORITY: i32 = carrel_core::providers::priority::PORTABLE - 10;
+
 /// The most names listed, of parts or objects.
 const MAX_NAMES: usize = 40;
 
 /// Reads the file at `path`, of `media_type`.
+///
+/// # Errors
+///
+/// Unsupported for other types, and failed when the file can't be read or says nothing
+/// about itself.
 pub fn read(path: &Path, media_type: &str) -> Result<Extraction, ProviderError> {
     let failed = |e: std::io::Error| ProviderError::Failed(format!("{}: {e}", path.display()));
     let details = match media_type {
