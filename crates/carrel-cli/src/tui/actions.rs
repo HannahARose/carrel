@@ -4,6 +4,7 @@
 //! filed compressed file (`carrel expand`). The commands do the work; this asks for what they
 //! need.
 
+use std::fmt::Write as _;
 use std::path::PathBuf;
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
@@ -331,10 +332,10 @@ pub fn confirm_text(confirm: &Confirm) -> (&'static str, String, String, &'stati
         Confirm::NewCollection(new) => {
             let mut about = String::from("A folder with a design document");
             if let Some(description) = &new.description {
-                about.push_str(&format!(" starting “{description}”"));
+                write!(about, " starting “{description}”").unwrap();
             }
             if !new.tags.is_empty() {
-                about.push_str(&format!(", and the tags {}", new.tags.join(", ")));
+                write!(about, ", and the tags {}", new.tags.join(", ")).unwrap();
             }
             (
                 " New collection ",
@@ -459,7 +460,10 @@ mod tests {
             app.message.as_deref(),
             Some("soon isn't a date; give it as YYYY-MM-DD")
         );
-        assert!(matches!(purpose(&app), InputPurpose::Due { .. }), "asked again");
+        assert!(
+            matches!(purpose(&app), InputPurpose::Due { .. }),
+            "asked again"
+        );
         enter(&mut app, "2026-12-01");
         let text = screen(&app, 120, 30);
         assert!(
@@ -476,7 +480,10 @@ mod tests {
         assert_eq!(purpose(&app), &InputPurpose::CheckoutFolder);
         enter(&mut app, &out.display().to_string());
         enter(&mut app, "");
-        assert!(matches!(app.confirm, Some(Confirm::Checkout { due: None, .. })));
+        assert!(matches!(
+            app.confirm,
+            Some(Confirm::Checkout { due: None, .. })
+        ));
         assert_eq!(
             app.key(key(KeyCode::Char('y'))),
             Some(Effect::Checkout {
@@ -521,7 +528,11 @@ mod tests {
         app.key(key(KeyCode::Char('x')));
         assert_eq!(
             app.keys(),
-            vec![("y", "keep its card"), ("d", "delete its card"), ("n", "no")]
+            vec![
+                ("y", "keep its card"),
+                ("d", "delete its card"),
+                ("n", "no")
+            ]
         );
         let text = screen(&app, 120, 30);
         assert!(text.contains("Take “Thesis” off the desk?"), "{text}");
@@ -569,7 +580,12 @@ mod tests {
 
         choose_parts_list(&mut app);
         assert_eq!(app.key(key(KeyCode::Char('f'))), None);
-        assert!(app.message.as_deref().unwrap().contains("already in the archive"));
+        assert!(
+            app.message
+                .as_deref()
+                .unwrap()
+                .contains("already in the archive")
+        );
         let (busy, _) =
             super::super::archive_work(app.archive.root().to_owned(), Effect::DeskAdd(notes));
         assert_eq!(busy, "Putting it on the desk and drafting its card…");
@@ -601,14 +617,14 @@ mod tests {
             Some(Confirm::NewCollection(NewCollection {
                 path: "Projects/Lamp".into(),
                 description: Some("The desk lamp build".into()),
-                tags: vec![
-                    "wiring=diagrams".into(),
-                    "parts=bills of materials".into()
-                ],
+                tags: vec!["wiring=diagrams".into(), "parts=bills of materials".into()],
             }))
         );
         let text = screen(&app, 120, 30);
-        assert!(text.contains("Create the collection Projects/Lamp?"), "{text}");
+        assert!(
+            text.contains("Create the collection Projects/Lamp?"),
+            "{text}"
+        );
         assert!(text.contains("undo can reverse"), "{text}");
         assert!(matches!(
             app.key(key(KeyCode::Char('y'))),
@@ -629,16 +645,16 @@ mod tests {
         browse_to(&mut app, PARTS);
         assert!(app.keys().contains(&("r", "rename")));
         app.key(key(KeyCode::Char('r')));
-        assert!(matches!(purpose(&app), InputPurpose::Rename { from, .. } if from == "parts-list.csv"));
+        assert!(
+            matches!(purpose(&app), InputPurpose::Rename { from, .. } if from == "parts-list.csv")
+        );
         assert_eq!(app.input.as_ref().unwrap().text, "parts-list.csv");
         app.key(key(KeyCode::Enter));
         assert_eq!(app.message.as_deref(), Some("Same name; nothing changed"));
 
         app.key(key(KeyCode::Char('r')));
         enter(&mut app, "lamp-parts.csv");
-        assert!(
-            screen(&app, 120, 30).contains("Rename “parts-list.csv” to “lamp-parts.csv”?")
-        );
+        assert!(screen(&app, 120, 30).contains("Rename “parts-list.csv” to “lamp-parts.csv”?"));
         assert_eq!(
             app.key(key(KeyCode::Char('y'))),
             Some(Effect::Rename {
@@ -721,12 +737,21 @@ mod tests {
         browse_to(&mut app, &setup);
         app.key(key(KeyCode::Char('z')));
         assert!(
-            matches!(&app.confirm, Some(Confirm::Expand { anyway: Some(_), .. })),
+            matches!(
+                &app.confirm,
+                Some(Confirm::Expand {
+                    anyway: Some(_),
+                    ..
+                })
+            ),
             "{:?}",
             app.confirm
         );
         let text = screen(&app, 120, 30);
-        assert!(text.contains("Expand “Utility.zip” all the same?"), "{text}");
+        assert!(
+            text.contains("Expand “Utility.zip” all the same?"),
+            "{text}"
+        );
         assert!(text.contains("It's kept compressed:"), "{text}");
         assert_eq!(
             app.key(key(KeyCode::Char('y'))),
@@ -735,7 +760,10 @@ mod tests {
                 anyway: true
             })
         );
-        assert!(Path::new(app.archive.root()).join(&notes).is_file(), "nothing changed yet");
+        assert!(
+            Path::new(app.archive.root()).join(&notes).is_file(),
+            "nothing changed yet"
+        );
         assert_eq!(app.tab, Tab::Browse);
     }
 }

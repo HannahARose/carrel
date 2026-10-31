@@ -540,14 +540,14 @@ fn active_work(root: PathBuf, effect: Effect) -> (String, Work) {
     }
 }
 
+/// Work on the archive at the path it's given.
+type ArchiveWork = Box<dyn FnOnce(&Path) -> Result<Report, Failure> + Send>;
+
 /// The work for checking out, the desk, and Browse's actions, which `carrel checkout`,
 /// `carrel desk`, `carrel collection new`, `carrel rename` and `carrel expand` do. Each changes
 /// the archive, so a worker brings the search index up to date after it.
 fn archive_work(root: PathBuf, effect: Effect) -> (String, Work) {
-    let (busy, work): (
-        &str,
-        Box<dyn FnOnce(&Path) -> Result<Report, Failure> + Send>,
-    ) = match effect {
+    let (busy, work): (&str, ArchiveWork) = match effect {
         Effect::Checkout { item, to, due } => (
             "Checking it out…",
             Box::new(move |root| {
