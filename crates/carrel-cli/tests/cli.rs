@@ -2501,3 +2501,193 @@ fn bench_search_scores_findability_and_reuses_each_models_index() {
     assert_eq!(missing.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&missing.stderr).contains("no embedding model nope"));
 }
+
+/// The sample archive with history, searched with `echo-embed` and its index built, and a
+/// folder of providers offering `echo-embed` and `echo-embed-wide`.
+fn echo_archive(sandbox: &Sandbox) -> (PathBuf, PathBuf) {
+    let bin = sandbox.path("bin");
+    std::fs::create_dir(&bin).unwrap();
+    let suffix = std::env::consts::EXE_SUFFIX;
+    for name in ["carrel-provider-echo", "carrel-provider-echo-wide"] {
+        std::fs::copy(echo_provider(), bin.join(format!("{name}{suffix}"))).unwrap();
+    }
+    let root = sandbox.sample();
+    sandbox.ok(&root, &["init", root.to_str().unwrap()]);
+    file_with_card(
+        &root,
+        "Holding",
+        "lease.txt",
+        "The landlord repairs the boiler. The tenant keeps the garden tidy.",
+        "title: \"Tenancy agreement\"\nsensitivity: personal\n",
+    );
+    set_embedding_model(&root, Some("echo-embed"));
+    json_of(&run_with_providers(
+        sandbox,
+        &root,
+        &bin,
+        &["index", "rebuild", "--json"],
+    ));
+    (root, bin)
+}
+
+#[test]
+fn index_model_lists_the_models_here_and_refuses_others() {
+    let sandbox = Sandbox::new();
+    let (root, bin) = echo_archive(&sandbox);
+    let run = |args: &[&str]| run_with_providers(&sandbox, &root, &bin, args);
+    let new = root.join("_System/index/echo-embed-wide");
+
+    // Without a name: the model in use and the ones this device has.
+    let listed = json_of(&run(&["index", "model", "--json"]));
+    assert_eq!(listed["model"], "echo-embed");
+    assert_eq!(listed["switch"], Value::Null);
+    let available: Vec<&str> = listed["available"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| m["model"].as_str().unwrap())
+        .collect();
+    assert!(available.contains(&"echo-embed-wide"), "{listed}");
+    let text = String::from_utf8_lossy(&run(&["index", "model"]).stdout).into_owned();
+    assert!(
+        text.contains("echo-embed-wide  through echo-wide, 4 numbers"),
+        "{text}"
+    );
+    assert!(text.contains("download it with"), "{text}");
+
+    // A model no provider here offers is refused, saying which can be used.
+    let out = run(&["index", "model", "qwen3-embedding-0.6b"]);
+    assert!(!out.status.success());
+    let error = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        error.contains("no provider on this device offers"),
+        "{error}"
+    );
+    assert!(
+        error.contains("this device can embed with echo-embed"),
+        "{error}"
+    );
+    assert!(error.contains("echo-embed-wide"), "{error}");
+    assert!(error.contains("carrel models download"), "{error}");
+    assert!(!new.exists());
+}
+
+#[test]
+fn index_model_switches_models_while_the_old_index_serves() {
+    let sandbox = Sandbox::new();
+    let (root, bin) = echo_archive(&sandbox);
+    let run = |args: &[&str]| run_with_providers(&sandbox, &root, &bin, args);
+    let old = root.join("_System/index/echo-embed");
+    let new = root.join("_System/index/echo-embed-wide");
+
+    // Stopped part way: the switch is recorded, and search keeps using the old index.
+    let out = stopped_switch(&sandbox, &root, &bin);
+    assert!(!out.status.success());
+    assert_eq!(
+        archive_settings(&root)["embedding"],
+        json!({ "model": "echo-embed", "switching_to": "echo-embed-wide" })
+    );
+    let status = json_of(&run(&["index", "status", "--json"]));
+    assert_eq!(status["model"], "echo-embed");
+    assert_eq!(status["switch"]["to"], "echo-embed-wide");
+    assert_eq!(status["switch"]["embedded"], 2);
+    // Another device without the new model sees the switch too.
+    let text = sandbox.ok(&root, &["index", "status"]);
+    assert!(
+        text.contains("Switching to echo-embed-wide: 2 of"),
+        "{text}"
+    );
+    assert!(text.contains("search uses echo-embed until"), "{text}");
+    let found = json_of(&run(&["search", "boiler", "--json"]));
+    assert_eq!(found["meaning"]["state"], "current", "{found}");
+    assert!(old.join("index.json").is_file());
+
+    // Run again, it carries on, switches, and removes the old index.
+    let switched = json_of(&run(&["index", "model", "echo-embed-wide", "--json"]));
+    assert_eq!(switched["resumed"], true);
+    assert_eq!(switched["switched"], true);
+    assert_eq!(switched["from"], "echo-embed");
+    assert_eq!(switched["dimensions"], 4);
+    assert_eq!(
+        switched["embedded"],
+        switched["items"].as_u64().unwrap() - 2
+    );
+    assert_eq!(
+        archive_settings(&root)["embedding"],
+        json!({ "model": "echo-embed-wide" })
+    );
+    assert!(!old.exists());
+    let status = json_of(&run(&["index", "status", "--json"]));
+    assert_eq!(status["model"], "echo-embed-wide");
+    assert_eq!(status["switch"], Value::Null);
+    assert_eq!(status["behind"], 0);
+    let found = json_of(&run(&["search", "boiler", "--json"]));
+    assert_eq!(found["meaning"]["state"], "current", "{found}");
+    let log = sandbox.ok(&root, &["log"]);
+    assert!(
+        log.contains("Switch the embedding model from echo-embed to echo-embed-wide"),
+        "{log}"
+    );
+
+    // The worker uses the new model.
+    let card = root.join("Holding/lease.txt.md");
+    let text = std::fs::read_to_string(&card).unwrap();
+    std::fs::write(&card, text.replace("Tenancy agreement", "Flat lease")).unwrap();
+    let worked = json_of(&run(&["worker", "--json"]));
+    assert_eq!(worked["embedded"], 1);
+    assert!(!old.exists());
+
+    // A device without the new model searches by words, and says why.
+    let found = sandbox.json(&root, &["search", "boiler"]);
+    assert_eq!(found["meaning"]["state"], "off");
+    assert!(
+        found["words_only"]
+            .as_str()
+            .unwrap()
+            .contains("No provider on this device runs echo-embed-wide"),
+        "{found}"
+    );
+
+    // Switching back runs to the end; a switch stopped part way is given up by choosing the
+    // archive's model again.
+    let back = json_of(&run(&["index", "model", "echo-embed", "--json"]));
+    assert_eq!(back["from"], "echo-embed-wide");
+    assert!(!new.exists());
+    let interrupted = stopped_switch(&sandbox, &root, &bin);
+    assert!(!interrupted.status.success());
+    assert!(new.is_dir());
+    let text = String::from_utf8_lossy(&run(&["index", "model", "echo-embed"]).stdout).into_owned();
+    assert!(
+        text.contains("Stopped switching to echo-embed-wide"),
+        "{text}"
+    );
+    assert_eq!(
+        archive_settings(&root)["embedding"],
+        json!({ "model": "echo-embed" })
+    );
+    assert!(!new.exists());
+    assert!(old.join("index.json").is_file());
+    let text = String::from_utf8_lossy(&run(&["index", "model", "echo-embed"]).stdout).into_owned();
+    assert!(text.contains("already searched with echo-embed"), "{text}");
+}
+
+/// The archive's shared settings.
+fn archive_settings(root: &Path) -> Value {
+    serde_json::from_str(&std::fs::read_to_string(root.join("_System/settings.json")).unwrap())
+        .unwrap()
+}
+
+/// `carrel index model echo-embed-wide`, with the wide echo provider stopping after the test
+/// query and two items.
+fn stopped_switch(sandbox: &Sandbox, root: &Path, bin: &Path) -> Output {
+    std::process::Command::new(env!("CARGO_BIN_EXE_carrel"))
+        .args(["index", "model", "echo-embed-wide"])
+        .current_dir(root)
+        .env("PATH", bin)
+        .env("CARREL_CONFIG_DIR", sandbox.path("config"))
+        .env("CARREL_TRASH_DIR", sandbox.path("Trash"))
+        .env("CARREL_WORKER", "off")
+        .env("ECHO_EMBED_FAIL_AFTER", "3")
+        .output()
+        .unwrap()
+}

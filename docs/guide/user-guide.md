@@ -252,7 +252,9 @@ The meaning index has three commands:
 | --- | --- |
 | `carrel index status` (or `carrel index`) | The archive's model, how many items are embedded, how many are behind, and whether the worker is catching up |
 | `carrel index rebuild` | Embeds every item again, with a progress bar; interrupted, it carries on where it stopped |
-| `carrel index model NAME` | Switches the archive to another embedding model: the new index is built in the background, in its own folder, while the old one keeps serving searches, so the archive is never unsearchable while it changes |
+| `carrel index model NAME` | Switches the archive to another embedding model, building the new index while the old one keeps serving (below) |
+
+To switch the archive to another model, run `carrel index model NAME` (`carrel index model` alone lists the models this device can embed with). A provider on this device must offer the model. The new model's index is built beside the old one, with a progress bar, and search keeps using the old one until the new one is complete. Then the archive switches, on every device: `embedding.model` changes and the old index is removed. The switch is recorded in the archive's settings as soon as it starts, so every device's `carrel index status` shows how far it's got. If it's interrupted, running the same command again carries on. To give up a switch part way, run `carrel index model` with the archive's current model. A device without a provider for the new model searches by words once the switch is done, and says why.
 
 Switching re-embeds the whole archive, on every device that searches it, so it's worth doing only for a reason: a model that finds your things better, or one that every device you search from can run. The benchmark's findability test ([docs/bench](../bench/README.md)) compares the models on offer.
 
