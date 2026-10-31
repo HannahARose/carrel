@@ -662,6 +662,10 @@ mod tests {
             text.contains("Waiting for you: 1 proposal (2 to review), 0 questions (3 to answer).")
         );
         assert!(text.contains("items in"), "the status report");
+        assert!(
+            text.contains("Recent:") && text.contains("Worked on “oscillator-sim” for 45m"),
+            "what was worked on lately: {text}"
+        );
         let help = text.lines().last().unwrap();
         assert!(help.contains("? help  q quit"), "{help}");
     }

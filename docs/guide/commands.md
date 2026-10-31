@@ -17,7 +17,7 @@ Exit status is `0` on success, `1` when the command failed, and `2` for a usage 
 | --- | --- |
 | `carrel init [PATH] [--name NAME] [--allow-existing-files]` | Creates an archive in `PATH` (or the current folder) and starts its history. With `--allow-existing-files`, files already there become uncataloged items to ingest. Inside an archive that has no history yet, it starts the history. |
 | `carrel open [PATH]` | Chooses the archive commands use outside one; with no path, shows the choice. |
-| `carrel status` | Summarizes the archive: items by kind, cards with problems, names that won't work everywhere, **Structure** signals, the last change and backup, and who is writing. |
+| `carrel status` | Summarizes the archive: items by kind, cards with problems, names that won't work everywhere, **Structure** signals, the last change and backup, who is writing, and **Recent**: the latest changes and work sessions, archive-wide. |
 | `carrel show ITEM` | Shows an item's card, its links, and every change that touched it, newest first (undo one with `carrel undo CHANGE`). `ITEM` is its identifier, or the path of the item or its card. |
 | `carrel log [-n COUNT]` | Lists recorded changes, newest first. |
 | `carrel undo CHANGE` | Undoes a change with a new change that reverses it. `CHANGE` is its identifier from `carrel log`, or its start. The change that created the history can't be undone. |
@@ -106,7 +106,7 @@ Backups need [Kopia](https://kopia.io), beside `carrel` or on `PATH`.
 
 | Key | Screen |
 | --- | --- |
-| `1` | **Status**: what `carrel status` shows, and what's waiting for you |
+| `1` | **Status**: what `carrel status` shows, including Recent, and what's waiting for you |
 | `2` | **Review**: `a` approve, `h` hold, `m` move, `e` edit, `x` reject, `Space` mark, `A` approve all high-confidence |
 | `3` | **Active**: what's checked out and on this device's desk, with their pending history entries; `r` return the chosen checkout, `x` cancel it, `o` open the working copy, `a` approve, `c` combine, `d` drop pending entries (all, or those marked with `Space`) |
 | `4` | **Questions**: `Enter` to answer, `d` to dismiss |
