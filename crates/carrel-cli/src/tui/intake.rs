@@ -118,6 +118,22 @@ impl App {
         self.browser = Some(super::browser::Browser::open(self.start_folder.clone()));
     }
 
+    /// Makes `folder` where picking files for ingest starts next time, here and in this
+    /// device's preferences. Folders picked for backups aren't remembered: they'd send the
+    /// next ingest to the backup drive.
+    pub(super) fn remember_folder(&mut self, folder: PathBuf) {
+        if self.picking != super::app::Picking::Ingest || !folder.is_dir() {
+            return;
+        }
+        if self.preferences == super::app::Preferences::Saved
+            && let Ok(mut prefs) = crate::config::Prefs::load()
+        {
+            prefs.last_folder = Some(folder.clone());
+            let _ = prefs.save();
+        }
+        self.start_folder = folder;
+    }
+
     /// What was picked goes where `picking` says: an ingest plan, or backup setup.
     pub(super) fn picked(&mut self, paths: Vec<PathBuf>) {
         if self.picking == super::app::Picking::BackupFolder {
