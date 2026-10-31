@@ -115,6 +115,38 @@ jobs:
           CARREL_TEST_APPLE_PROVIDER="$bin/carrel-provider-apple" cargo test --locked -p carrel-core --test apple_provider
           PATH="$bin:$PATH" cargo run --locked --bin carrel -- providers
 
+  app:
+    # The Mac app (apple/CarrelApp): its tests, then a development build, signed ad hoc and
+    # kept as the "Carrel" artifact for 30 days. Developer ID signing and notarization wait
+    # for v1.0 (#47), so there are no signing secrets here.
+    name: Mac app
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - run: rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+      - name: Build the XCFramework
+        run: scripts/build-xcframework.sh
+      - name: App tests
+        run: |
+          xcodebuild -project apple/CarrelApp/CarrelApp.xcodeproj -scheme Carrel \
+            -derivedDataPath target/xcode-app test
+      - name: Build the app
+        run: |
+          xcodebuild -project apple/CarrelApp/CarrelApp.xcodeproj -scheme Carrel \
+            -configuration Release -derivedDataPath target/xcode-app build
+          app=target/xcode-app/Build/Products/Release/Carrel.app
+          codesign --verify --strict --verbose=2 "$app"
+          ditto -c -k --keepParent "$app" target/Carrel.zip
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Carrel
+          path: target/Carrel.zip
+          retention-days: 30
+          if-no-files-found: error
+
   swift-format:
     # Swift style, as set in .swift-format. swift-format comes with Xcode.
     name: Swift format
@@ -363,7 +395,7 @@ jobs:
     # The single required check for branch protection. It passes only if every job above passed.
     name: CI passed
     if: always()
-    needs: [fmt, clippy, test, docs, swift, swift-format, mlx, llama, cad, extract, kopia, editors, deny, zizmor, hygiene]
+    needs: [fmt, clippy, test, docs, swift, app, swift-format, mlx, llama, cad, extract, kopia, editors, deny, zizmor, hygiene]
     runs-on: ubuntu-latest
     steps:
       - name: Check job results

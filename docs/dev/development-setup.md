@@ -145,6 +145,12 @@ scripts/swift-format.sh
 scripts/swift-format.sh --check
 ```
 
+`apple/CarrelApp` is the Mac app, an Xcode project over CarrelKit; its [README](../../apple/CarrelApp/README.md) says how to build it. After building the framework, its view-model tests run with:
+
+```bash
+xcodebuild -project apple/CarrelApp/CarrelApp.xcodeproj -scheme Carrel test
+```
+
 `apple/CarrelProviders` is the Apple provider (`carrel-provider-apple`), a separate Swift package that needs no Rust build: run `swift test` there. `CARREL_TEST_APPLE_PROVIDER=<path to the built program> cargo test -p carrel-core --test apple_provider` tests it through the provider protocol, as CI does.
 
 The app's Describe button asks Apple's on-device model (Foundation Models, macOS 26 and later with Apple Intelligence turned on) to describe the archive through Rust. Without it, a stand-in that only counts is used.
