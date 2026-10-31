@@ -14,6 +14,7 @@ mod desk;
 mod edit;
 mod expand;
 mod formats;
+mod index;
 mod ingest;
 mod models;
 mod paths;
@@ -91,6 +92,12 @@ enum Command {
         /// Show at most this many results.
         #[arg(short = 'n', long, value_name = "COUNT", default_value_t = search::DEFAULT_LIMIT)]
         limit: usize,
+    },
+    /// The embedding index search finds items by meaning with: how many items are embedded
+    /// and how many are behind, or rebuild it. The worker keeps it current after changes.
+    Index {
+        #[command(subcommand)]
+        action: Option<IndexAction>,
     },
     /// List recorded changes, newest first.
     Log {
@@ -241,6 +248,16 @@ enum Command {
         #[command(subcommand)]
         action: Option<ModelsAction>,
     },
+}
+
+#[derive(Debug, Clone, Copy, Subcommand)]
+enum IndexAction {
+    /// Show the archive's embedding model, how many items are embedded and how many are
+    /// behind.
+    Status,
+    /// Embed every item again with the archive's embedding model, showing progress. If it's
+    /// interrupted, running it again carries on where it stopped.
+    Rebuild,
 }
 
 #[derive(Debug, Subcommand)]
@@ -733,7 +750,8 @@ fn main() -> ExitCode {
             )
             .exit();
     };
-    if changes_archive(&command) {
+    let changes = changes_archive(&command);
+    if changes {
         sessions::record_before_command(cli.archive.as_deref(), cli.json);
     }
     let result = match command {
@@ -756,6 +774,7 @@ fn main() -> ExitCode {
         Command::Search { query, limit } => {
             search::search(cli.archive.as_deref(), &query, limit, cli.json)
         }
+        Command::Index { action } => index_command(cli.archive.as_deref(), action, cli.json),
         Command::Log { max_count } => commands::log(cli.archive.as_deref(), max_count),
         Command::Providers => Ok(providers::list()),
         Command::Formats => Ok(formats::list()),
@@ -817,7 +836,32 @@ fn main() -> ExitCode {
             cli.json,
         ),
     };
-    finish(result, cli.json)
+    finish(after(result, changes, cli.archive.as_deref()), cli.json)
+}
+
+/// `result`, after starting a worker to embed the changed items for search when `changed`
+/// filed items and the command succeeded.
+fn after(
+    result: Result<Report, Failure>,
+    changed: bool,
+    archive: Option<&std::path::Path>,
+) -> Result<Report, Failure> {
+    if changed && result.is_ok() {
+        worker::after_change(archive);
+    }
+    result
+}
+
+/// `carrel index` and its subcommands.
+fn index_command(
+    archive: Option<&std::path::Path>,
+    action: Option<IndexAction>,
+    json: bool,
+) -> Result<Report, Failure> {
+    match action {
+        Some(IndexAction::Rebuild) => index::rebuild(archive, json),
+        None | Some(IndexAction::Status) => index::status(archive),
+    }
 }
 
 /// `carrel models` and its subcommands.
