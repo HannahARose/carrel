@@ -15,6 +15,8 @@ pub enum Key {
     CrowdedItems,
     /// How changes made outside Carrel are handled.
     OutsideEdits,
+    /// What happens to compressed files at ingest.
+    CompressedFiles,
     /// The model every device embeds with for search. It can be chosen once; switching
     /// models means re-embedding the archive (`docs/design/search.md`).
     EmbeddingModel,
@@ -28,8 +30,9 @@ const EMBEDDING_MODELS: [&str; 2] = [
 
 impl Key {
     /// Every setting, in the order they're shown.
-    pub const ALL: [Self; 4] = [
+    pub const ALL: [Self; 5] = [
         Self::Originals,
+        Self::CompressedFiles,
         Self::CrowdedItems,
         Self::OutsideEdits,
         Self::EmbeddingModel,
@@ -42,6 +45,7 @@ impl Key {
             Self::Originals => "ingest.originals",
             Self::CrowdedItems => "signals.crowded_items",
             Self::OutsideEdits => "outside_edits",
+            Self::CompressedFiles => "compressed_files",
             Self::EmbeddingModel => "embedding.model",
         }
     }
@@ -65,6 +69,9 @@ impl Key {
             Self::OutsideEdits => {
                 "What to do with changes made outside Carrel: flag them for review, record them as edits, or offer to undo them"
             }
+            Self::CompressedFiles => {
+                "What happens to zip and other compressed files when they're approved: expanded so what's inside can be browsed, kept compressed, or asked about each time"
+            }
             Self::EmbeddingModel => {
                 "The model every device uses to search by meaning; chosen once, as switching re-embeds the archive"
             }
@@ -77,6 +84,7 @@ impl Key {
         match self {
             Self::Originals => Some(&["move", "keep"]),
             Self::OutsideEdits => Some(&["flag", "reconcile", "drift"]),
+            Self::CompressedFiles => Some(&["expand", "keep", "ask"]),
             Self::EmbeddingModel => Some(&EMBEDDING_MODELS),
             Self::CrowdedItems => None,
         }
@@ -96,6 +104,7 @@ impl Key {
                 OutsideEdits::Reconcile => "reconcile".into(),
                 OutsideEdits::Drift => "drift".into(),
             },
+            Self::CompressedFiles => settings.compressed_files.as_str().into(),
             Self::EmbeddingModel => settings.embedding_model().unwrap_or("none").to_owned(),
         }
     }
@@ -130,6 +139,10 @@ impl Key {
                     "drift" => OutsideEdits::Drift,
                     _ => return Err(wrong()),
                 };
+            }
+            Self::CompressedFiles => {
+                settings.compressed_files =
+                    crate::compressed::plan::Choice::parse(value).ok_or_else(wrong)?;
             }
             Self::EmbeddingModel => {
                 if !EMBEDDING_MODELS.contains(&value) {

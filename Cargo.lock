@@ -511,6 +511,7 @@ dependencies = [
  "pdf-extract",
  "serde_json",
  "tempfile",
+ "zip",
 ]
 
 [[package]]

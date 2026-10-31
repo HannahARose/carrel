@@ -153,6 +153,10 @@ pub struct Settings {
     /// When the structure shows signs of needing a restructure.
     #[serde(default, skip_serializing_if = "SignalSettings::is_default")]
     pub signals: SignalSettings,
+    /// What happens to compressed files at ingest: `expand`, `keep` or `ask`
+    /// (`docs/design/compressed.md`).
+    #[serde(default, skip_serializing_if = "is_default_choice")]
+    pub compressed_files: crate::compressed::plan::Choice,
     /// Keys this version doesn't know.
     #[serde(flatten)]
     pub extra: Extra,
@@ -245,6 +249,11 @@ pub enum Originals {
     Keep,
 }
 
+#[allow(clippy::trivially_copy_pass_by_ref)] // serde passes a reference
+fn is_default_choice(choice: &crate::compressed::plan::Choice) -> bool {
+    *choice == crate::compressed::plan::Choice::default()
+}
+
 /// Reminders on by default (FORMAT.md §7.2).
 fn default_reminders() -> Vec<String> {
     ["idle", "weekly", "menu-bar"].map(String::from).to_vec()
@@ -333,6 +342,7 @@ impl Default for Settings {
             backups: None,
             ingest: IngestSettings::default(),
             signals: SignalSettings::default(),
+            compressed_files: crate::compressed::plan::Choice::default(),
             extra: Extra::new(),
         }
     }

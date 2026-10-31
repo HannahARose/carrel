@@ -296,6 +296,14 @@ fn read_compressed(registry: &Registry, rules: &Rules, path: &Path, inside: &Ins
         note: None,
         unread: None,
     };
+    if inside.split {
+        text.text = format!(
+            "Compressed file: {} (one part of a {} archive split into several)\n",
+            path.file_name().unwrap_or_default().to_string_lossy(),
+            inside.format.name()
+        );
+        return text;
+    }
     let Some(listing) = &inside.listing else {
         text.method = "none".into();
         text.note.clone_from(&inside.unread);

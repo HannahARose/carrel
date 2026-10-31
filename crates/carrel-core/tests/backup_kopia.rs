@@ -80,6 +80,14 @@ fn set_up_snapshot_list_verify_and_restore() {
         "restore never overwrites"
     );
 
+    // A snapshot can be forgotten, pinned as it is; the others stay.
+    let second = kopia.snapshot(archive.root(), "second").unwrap();
+    assert_eq!(kopia.list(archive.root()).unwrap().len(), 2);
+    kopia.forget(&second.id).unwrap();
+    let listed = kopia.list(archive.root()).unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].id, snapshot.id);
+
     // Reconnecting with the wrong password fails clearly; the right one connects.
     let other = dir.path().join("config/other.config");
     assert!(matches!(
