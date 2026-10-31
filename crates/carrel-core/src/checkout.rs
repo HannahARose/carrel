@@ -9,8 +9,12 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::card::{Checksum, Id};
+use crate::archive::{Archive, ItemRef};
+use crate::card::{Checkout, Checksum, DateOrTime, Extra, Id};
+use crate::card_file::CardFile;
+use crate::coordinator::WriterLease;
 use crate::detect::Rules;
+use crate::history::{Change, History, HistoryError, Operation};
 use crate::manifest::{Diff, Entry, Manifest, ManifestError};
 
 /// Why an item couldn't be compared or locked.
@@ -27,6 +31,16 @@ pub enum CheckoutError {
     },
     /// The working copy isn't there.
     Missing(PathBuf),
+    /// A card-only item has nothing to check out.
+    CardOnly(String),
+    /// The item is already checked out, to this path.
+    AlreadyOut(String),
+    /// The card couldn't be read or written.
+    Card(String),
+    /// The copy didn't match the item, so nothing was checked out.
+    CopyChanged(PathBuf),
+    /// The history couldn't be written.
+    History(HistoryError),
 }
 
 impl std::fmt::Display for CheckoutError {
@@ -39,6 +53,15 @@ impl std::fmt::Display for CheckoutError {
                 "the working copy isn't at {}; give its new place with --from",
                 path.display()
             ),
+            Self::CardOnly(card) => write!(f, "{card} has no contents to check out"),
+            Self::AlreadyOut(to) => write!(f, "it's already checked out, to {to}"),
+            Self::Card(why) => f.write_str(why),
+            Self::CopyChanged(path) => write!(
+                f,
+                "the copy at {} doesn't match the item, so nothing was checked out",
+                path.display()
+            ),
+            Self::History(e) => write!(f, "{e}"),
         }
     }
 }
@@ -49,6 +72,159 @@ impl From<ManifestError> for CheckoutError {
     fn from(e: ManifestError) -> Self {
         Self::Manifest(e)
     }
+}
+
+impl From<HistoryError> for CheckoutError {
+    fn from(e: HistoryError) -> Self {
+        Self::History(e)
+    }
+}
+
+/// An item that's been checked out.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CheckedOut {
+    /// The item.
+    pub item: Id,
+    /// Its title.
+    pub title: String,
+    /// Where the working copy is.
+    pub working: PathBuf,
+    /// The history commit that recorded it.
+    pub commit: Option<String>,
+}
+
+/// Where the item as it was checked out is kept, to compare with on return. Manifests aren't
+/// in the history (FORMAT.md §8.1), so this one isn't either.
+#[must_use]
+pub fn manifest_path(archive: &Archive, item: Id) -> PathBuf {
+    archive
+        .root()
+        .join(format!("_System/manifests/{item}.checkout.tsv"))
+}
+
+/// Checks `item` out into the folder `destination`, holding `lease` (`docs/design/checkout.md`):
+/// saves what it holds now, copies it (under a free name, checked against what was saved),
+/// records `checked_out` on its card, with the commit a Git repository is at, makes the
+/// archive copy read-only, and commits it all as one `checkout`. If any step fails, what was
+/// done is undone.
+///
+/// # Errors
+///
+/// [`CheckoutError::CardOnly`] or [`CheckoutError::AlreadyOut`] when it can't come out, or a
+/// failure reading, copying or recording it.
+pub fn check_out(
+    archive: &Archive,
+    item: &ItemRef,
+    destination: &Path,
+    due: Option<DateOrTime>,
+    lease: &WriterLease,
+) -> Result<CheckedOut, CheckoutError> {
+    let Some(contents) = &item.item else {
+        return Err(CheckoutError::CardOnly(item.card.clone()));
+    };
+    let root = archive.root();
+    let card_path = root.join(&item.card);
+    let original = std::fs::read_to_string(&card_path).map_err(io(&card_path))?;
+    let mut file = CardFile::parse(&original).map_err(|e| CheckoutError::Card(e.to_string()))?;
+    if let Some(out) = &file.card().checked_out {
+        return Err(CheckoutError::AlreadyOut(out.to.clone()));
+    }
+    let source = root.join(contents);
+    let rules = archive
+        .rules()
+        .map_err(|e| CheckoutError::Card(e.to_string()))?;
+    let manifest = snapshot(&source, item.id, &rules)?;
+    let saved = manifest_path(archive, item.id);
+    if let Some(parent) = saved.parent() {
+        std::fs::create_dir_all(parent).map_err(io(parent))?;
+    }
+    std::fs::write(&saved, manifest.to_tsv()).map_err(io(&saved))?;
+
+    std::fs::create_dir_all(destination).map_err(io(destination))?;
+    let name = source
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let working = destination
+        .join(crate::ingest::filing::free_name(destination, &name).map_err(io(destination))?);
+    let undo_copy = |working: &Path| {
+        let _ = if working.is_dir() {
+            std::fs::remove_dir_all(working)
+        } else {
+            std::fs::remove_file(working)
+        };
+    };
+    crate::ingest::filing::copy(&source, &working)
+        .map_err(|e| CheckoutError::Card(e.to_string()))?;
+    if !compare(&manifest, &working, &rules)?.is_empty() {
+        undo_copy(&working);
+        return Err(CheckoutError::CopyChanged(working));
+    }
+
+    let title = file.card().title.clone();
+    let mut extra = Extra::new();
+    if let Some(head) = git_head(&source) {
+        extra.insert("git_head".into(), serde_json::Value::String(head));
+    }
+    file.card_mut().checked_out = Some(Checkout {
+        to: working.display().to_string(),
+        device: lease.info().device,
+        person: lease.info().person,
+        since: DateOrTime(
+            jiff::Zoned::now()
+                .strftime("%Y-%m-%dT%H:%M:%S%:z")
+                .to_string(),
+        ),
+        due,
+        manifest: Some(manifest.checksum()),
+        extra,
+    });
+    let result = (|| -> Result<Option<String>, CheckoutError> {
+        let text = file
+            .to_text()
+            .map_err(|e| CheckoutError::Card(e.to_string()))?;
+        write_card(&card_path, &text)?;
+        lock(&source)?;
+        let mut change = Change::new(
+            Operation::Checkout,
+            format!("Check out “{title}”"),
+            lease.info().person,
+            lease.info().device,
+        );
+        change.items = vec![item.id];
+        Ok(History::open(archive)?.commit(archive, &change, lease)?)
+    })();
+    match result {
+        Ok(commit) => Ok(CheckedOut {
+            item: item.id,
+            title,
+            working,
+            commit,
+        }),
+        Err(e) => {
+            let _ = unlock(&source);
+            let _ = write_card(&card_path, &original);
+            undo_copy(&working);
+            Err(e)
+        }
+    }
+}
+
+/// The commit a Git repository at `path` is at, if it is one.
+fn git_head(path: &Path) -> Option<String> {
+    if !path.join(".git").exists() {
+        return None;
+    }
+    let repo = git2::Repository::open(path).ok()?;
+    let head = repo.head().ok()?.peel_to_commit().ok()?;
+    Some(head.id().to_string())
+}
+
+/// Writes a card in full, through a temporary file beside it.
+fn write_card(path: &Path, text: &str) -> Result<(), CheckoutError> {
+    let temp = path.with_extension("md.tmp-checkout");
+    std::fs::write(&temp, text).map_err(io(&temp))?;
+    std::fs::rename(&temp, path).map_err(io(path))
 }
 
 fn io(path: &Path) -> impl FnOnce(std::io::Error) -> CheckoutError + '_ {

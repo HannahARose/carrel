@@ -6,6 +6,7 @@
 
 mod backup;
 mod bench;
+mod checkout;
 mod commands;
 mod config;
 mod ingest;
@@ -113,6 +114,20 @@ enum Command {
         /// The new name; without one, the portable name `carrel status` suggests.
         new_name: Option<String>,
     },
+    /// Check an item out to work on: a copy goes to a working folder, and the archive copy is
+    /// read-only until it's returned.
+    Checkout {
+        /// The item: its identifier, or its card's or contents' path.
+        item: String,
+        /// The folder to put the copy in; the Desktop by default.
+        #[arg(long, value_name = "FOLDER")]
+        to: Option<PathBuf>,
+        /// When it's due back, as YYYY-MM-DD.
+        #[arg(long, value_name = "DATE")]
+        due: Option<String>,
+    },
+    /// List what's checked out, where, and whether it has changed.
+    Checkouts,
     /// Create collections: folders with a design document saying what belongs in them.
     Collection {
         #[command(subcommand)]
@@ -486,6 +501,10 @@ fn main() -> ExitCode {
         Command::Rename { item, new_name } => {
             commands::rename(cli.archive.as_deref(), &item, new_name.as_deref())
         }
+        Command::Checkout { item, to, due } => {
+            checkout::checkout(cli.archive.as_deref(), &item, to.as_deref(), due.as_deref())
+        }
+        Command::Checkouts => checkout::list(cli.archive.as_deref()),
         Command::Collection { action } => match action {
             CollectionAction::New {
                 path,

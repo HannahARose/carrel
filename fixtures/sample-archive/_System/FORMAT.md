@@ -542,7 +542,7 @@ src/main.rs	sha256:e3b0c442…	2048	2026-09-14T10:02:11.137401922-07:00
 - **Encoding:** in paths, `%`, tab, carriage return and line feed are written as `%25`, `%09`, `%0D` and `%0A`; nothing else is encoded.
 - **What's listed:** every file, including those inside `.git`, except ignored files (§2.8) and the contents of regenerable folders (§4.3), which change too often to track and can be rebuilt.
 - **Symbolic links** are listed, not followed: the checksum is of the link's target path, and the size is that path's length in bytes.
-- **Storage:** manifests are stored at `_System/manifests/<item-id>.tsv`. They sync with the archive but are not part of the history repository (§8.1).
+- **Storage:** manifests are stored at `_System/manifests/<item-id>.tsv`. They sync with the archive but are not part of the history repository (§8.1). While an item is checked out, the manifest of what it held when it went out is kept beside them as `<item-id>.checkout.tsv`, for comparing with on return (§9.1); it's deleted when the item comes back.
 - **Content checksum:** the card's `manifest.checksum` identifies the item's contents, not the manifest file. It is the checksum of the text made by writing, for every row in order, the encoded path, a tab, the checksum, a tab, the size and a line feed. Modification times and the header are left out, so touching a file without changing it never changes the card, and a manifest rebuilt from a backup can be checked exactly against history.
 - **Reusing checksums:** a program may reuse an entry's checksum when a file's size and modification time both match the previous manifest, instead of reading the file again.
 - **Past manifests** can be rebuilt from the backup snapshot named in a history commit's `Carrel-Snapshot` trailer, using the rules in `_System/rules/` as of that commit, and checked against the `manifest.checksum` in the card as of that commit.
@@ -773,6 +773,7 @@ checked_out:
   since: "2026-10-29T09:12:00-07:00"
   due: "2026-11-12"           # optional
   manifest: "sha256:…"        # manifest checksum at checkout
+  git_head: "3f9a…"           # optional: the commit a Git repository was at
 ```
 
 The archive copy **must not** be modified while `checked_out` is present, except by the return that removes it.

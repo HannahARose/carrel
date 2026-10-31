@@ -725,3 +725,49 @@ fn settings_are_listed_set_and_undone() {
     assert!(device["model_in_use"].is_string());
     sandbox.ok(&root, &["settings", "set", "model", "default"]);
 }
+
+#[test]
+fn checkout_copies_an_item_out_and_locks_the_archive_copy() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    let desk = sandbox.path("desk");
+    let out = sandbox.json(
+        &root,
+        &[
+            "checkout",
+            "Projects/Hardware/parts-list.csv",
+            "--to",
+            desk.to_str().unwrap(),
+            "--due",
+            "2026-12-01",
+        ],
+    );
+    let working = PathBuf::from(out["working"].as_str().unwrap());
+    assert_eq!(working, desk.join("parts-list.csv"));
+    assert_eq!(
+        std::fs::read(&working).unwrap(),
+        std::fs::read(root.join("Projects/Hardware/parts-list.csv")).unwrap()
+    );
+    assert!(out["commit"].is_string());
+    assert!(
+        std::fs::write(root.join("Projects/Hardware/parts-list.csv"), "x").is_err(),
+        "the archive copy is read-only"
+    );
+    let shown = sandbox.json(&root, &["show", "Projects/Hardware/parts-list.csv"]);
+    assert_eq!(shown["fields"]["checked_out"]["due"], "2026-12-01");
+
+    let listed = sandbox.json(&root, &["checkouts"]);
+    assert_eq!(listed["checked_out"][0]["state"], "unchanged");
+    std::fs::write(&working, "changed,on,the,desk\n").unwrap();
+    assert_eq!(
+        sandbox.json(&root, &["checkouts"])["checked_out"][0]["state"],
+        "changed"
+    );
+
+    let again = sandbox.run_in(&root, &["checkout", "Projects/Hardware/parts-list.csv"]);
+    assert!(!again.status.success());
+    assert!(String::from_utf8_lossy(&again.stderr).contains("already checked out"));
+    let log = sandbox.json(&root, &["log"]);
+    assert_eq!(log[0]["operation"], "checkout");
+}
