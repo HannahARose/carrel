@@ -150,7 +150,8 @@ impl Model {
 /// The models Carrel can download. Each is open weights under a permissive license, not gated
 /// behind an account, and loadable by the llama.cpp Carrel ships. Their MLX builds are the
 /// model makers' own where there is one (IBM's), else `mlx-community`'s 4-bit conversion,
-/// with the files `carrel-provider-mlx` reads.
+/// with the files `carrel-provider-mlx` reads. The embedding models' are 8-bit, nearest the
+/// GGUFs' `Q8_0`, so their vectors stay close to the llama.cpp provider's.
 pub const CATALOG: &[Model] = &[
     Model {
         name: "granite-4.2-3b",
@@ -423,7 +424,32 @@ pub const CATALOG: &[Model] = &[
         license: "Gemma",
         memory_gb: 2,
         recommended: false,
-        mlx: None,
+        mlx: Some(MlxBuild {
+            repository: "mlx-community/embeddinggemma-300m-8bit",
+            revision: "c8316c9e35cf8830541b04d315398c67faa6e497",
+            files: &[
+                ModelFile {
+                    path: "config.json",
+                    size: 1_726,
+                    sha256: "c4498b5ab0058828f8c535fa4198a1ea117f6ad533c3d774d9f8784eb13b38cb",
+                },
+                ModelFile {
+                    path: "model.safetensors",
+                    size: 326_958_701,
+                    sha256: "fcd54e677a802889db7cde3f4cce2e620c55b5239203379d8b7431e2252af286",
+                },
+                ModelFile {
+                    path: "tokenizer.json",
+                    size: 33_385_008,
+                    sha256: "6852f8d561078cc0cebe70ca03c5bfdd0d60a45f9d2e0e1e4cc05b68e9ec329e",
+                },
+                ModelFile {
+                    path: "tokenizer_config.json",
+                    size: 1_155_346,
+                    sha256: "9076840490613047bc9115963ee96b7702018b0d26ba644240bf856efda93118",
+                },
+            ],
+        }),
         embedding: Some(Embedding {
             dimensions: 768,
             context_tokens: 2048,
@@ -444,7 +470,32 @@ pub const CATALOG: &[Model] = &[
         license: "Apache-2.0",
         memory_gb: 2,
         recommended: false,
-        mlx: None,
+        mlx: Some(MlxBuild {
+            repository: "mlx-community/Qwen3-Embedding-0.6B-8bit",
+            revision: "407ad2329cd30702720aafe83f74a1ba30fdfbca",
+            files: &[
+                ModelFile {
+                    path: "config.json",
+                    size: 857,
+                    sha256: "65fb46306262bac47c6a89e5ad8a766c3d40d559057c1931e9c10976266a4fc7",
+                },
+                ModelFile {
+                    path: "model.safetensors",
+                    size: 633_152_041,
+                    sha256: "fe956e8d346b4f08215a3cfc48a874354f900c20a59e965b75df0d9d77c54b28",
+                },
+                ModelFile {
+                    path: "tokenizer.json",
+                    size: 11_423_705,
+                    sha256: "def76fb086971c7867b829c23a26261e38d9d74e02139253b38aeb9df8b4b50a",
+                },
+                ModelFile {
+                    path: "tokenizer_config.json",
+                    size: 5_404,
+                    sha256: "443bfa629eb16387a12edbf92a76f6a6f10b2af3b53d87ba1550adfcf45f7fa0",
+                },
+            ],
+        }),
         embedding: Some(Embedding {
             dimensions: 1024,
             context_tokens: 8192,
