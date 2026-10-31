@@ -212,6 +212,123 @@ pub fn rename(
     })
 }
 
+/// Moves `item` and its card, keeping their names, into the collection folder `to_folder`,
+/// holding `lease`, with the card written as `file` (already changed by the caller, as a
+/// correction changes it). Links to it from other cards follow, its own links are rewritten
+/// for its new folder, both collections' changelogs get a line, and it's all one `move`
+/// commit described by `summary`, so undo puts it back.
+///
+/// # Errors
+///
+/// [`RenameError`]: the item is checked out, or its name is taken in the new folder, or a
+/// file operation failed. Nothing has moved when a name is taken.
+pub fn refile(
+    archive: &Archive,
+    item: &ItemRef,
+    to_folder: &str,
+    mut file: CardFile,
+    summary: &str,
+    lease: &WriterLease,
+) -> Result<Renamed, RenameError> {
+    if file.card().checked_out.is_some() {
+        return Err(RenameError::CheckedOut);
+    }
+    let root = archive.root();
+    let to_folder = to_folder.trim_matches('/');
+    let (from_folder, card_name) = parent_and_name(&item.card);
+    let folder = root.join(to_folder);
+    let join = |name: &str| {
+        if to_folder.is_empty() {
+            name.to_owned()
+        } else {
+            format!("{to_folder}/{name}")
+        }
+    };
+    let (from, to) = match &item.item {
+        Some(contents) => (contents.clone(), join(parent_and_name(contents).1)),
+        None => (item.card.clone(), join(card_name)),
+    };
+    for name in [parent_and_name(&to).1, card_name] {
+        if !is_free(&folder, name, &[])? {
+            return Err(RenameError::Taken(name.to_owned()));
+        }
+    }
+    let card_path = join(card_name);
+    let new_card = root.join(&card_path);
+
+    // Its own links are relative to its folder, so they follow it.
+    let items = archive.items()?;
+    for link in &mut file.card_mut().links {
+        if link.path.is_some()
+            && let Some(other) = items.iter().find(|i| i.id == link.id)
+        {
+            link.path = Some(crate::listing::relative(to_folder, &other.card));
+        }
+    }
+    file.card_mut().placement = None;
+    let text = file.to_text()?;
+
+    if item.item.is_some() {
+        let (source, target) = (root.join(&from), root.join(&to));
+        std::fs::rename(&source, &target).map_err(io(&source))?;
+    }
+    let temp = folder.join(format!(".{card_name}.tmp-{}", item.id));
+    std::fs::write(&temp, text).map_err(io(&temp))?;
+    std::fs::rename(&temp, &new_card).map_err(io(&new_card))?;
+    let old_card = root.join(&item.card);
+    if old_card != new_card {
+        std::fs::remove_file(&old_card).map_err(io(&old_card))?;
+    }
+
+    let relinked = relink(archive, item, &card_path)?;
+    let title = file.card().title.clone();
+    let link = format!(
+        "[{}]({})",
+        escape_link_text(&title),
+        crate::listing::link_destination(card_name)
+    );
+    if !from_folder.is_empty() {
+        crate::listing::add_to_changelog(
+            archive,
+            from_folder,
+            &format!("moved “{}” to {to_folder}", title.replace('|', "\\|")),
+        )
+        .map_err(io(&root.join(from_folder).join("CHANGELOG.md")))?;
+    }
+    if !to_folder.is_empty() {
+        crate::listing::add_to_changelog(
+            archive,
+            to_folder,
+            &format!("moved {link} here from {from_folder}"),
+        )
+        .map_err(io(&folder.join("CHANGELOG.md")))?;
+    }
+    crate::listing::refresh(archive)?;
+
+    let mut change = Change::new(
+        Operation::Move,
+        summary,
+        lease.info().person,
+        lease.info().device,
+    );
+    change.items = vec![item.id];
+    if item.item.is_some() {
+        change.moves = vec![Move {
+            item: item.id,
+            from: from.clone(),
+            to: to.clone(),
+        }];
+    }
+    let commit = History::open(archive)?.commit(archive, &change, lease)?;
+    Ok(Renamed {
+        from,
+        to,
+        card: card_path,
+        relinked,
+        commit,
+    })
+}
+
 /// The item's path before and after, and its card's new name.
 fn names_for(
     folder: &Path,

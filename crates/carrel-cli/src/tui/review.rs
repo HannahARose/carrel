@@ -133,7 +133,7 @@ impl App {
         }
         let decision = matches!(
             key.code,
-            KeyCode::Char('a' | 'h' | 'm' | 'x' | 'e' | 'A' | ' ' | 'v' | 'b' | 's')
+            KeyCode::Char('a' | 'h' | 'm' | 'x' | 'e' | 'c' | 'A' | ' ' | 'v' | 'b' | 's')
         );
         if !decision {
             return Handled::No;
@@ -196,6 +196,7 @@ impl App {
                 None
             }
             KeyCode::Char('e') => self.queue.get(self.chosen).map(|e| Effect::Edit(e.id)),
+            KeyCode::Char('c') => self.queue.get(self.chosen).map(|e| Effect::Correct(e.id)),
             KeyCode::Char('m') => {
                 match self.archive.collections() {
                     Ok(collections) => {

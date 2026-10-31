@@ -535,24 +535,39 @@ pub fn teach(
     fact: &str,
     holder: Holder,
 ) -> Result<Option<String>, ActionError> {
+    let commit = learn(archive, &question.subject, fact, holder)?;
+    QuestionQueue::of(archive).remove(question.id)?;
+    Ok(commit)
+}
+
+/// Teaches the glossary that `term` means `fact`, as one history commit made as `holder`, as
+/// answering a question or agreeing to a fact from a correction does. Returns the commit.
+///
+/// # Errors
+///
+/// [`ActionError::Lease`], [`ActionError::Io`] for the glossary, or a history error.
+pub fn learn(
+    archive: &Archive,
+    term: &str,
+    fact: &str,
+    holder: Holder,
+) -> Result<Option<String>, ActionError> {
     let lease = DiskLock::for_archive(archive).acquire(holder, "glossary", DEFAULT_LEASE)?;
     let result = (|| -> Result<Option<String>, ActionError> {
-        add_fact(archive, &question.subject, fact).map_err(|source| ActionError::Io {
+        add_fact(archive, term, fact).map_err(|source| ActionError::Io {
             path: archive.root().join(crate::questions::GLOSSARY),
             source,
         })?;
         let change = Change::new(
             Operation::Edit,
-            format!("Add “{}” to the glossary", question.subject),
+            format!("Add “{term}” to the glossary"),
             holder.person,
             holder.device,
         );
         Ok(History::open(archive)?.commit(archive, &change, &lease)?)
     })();
     lease.release()?;
-    let commit = result?;
-    QuestionQueue::of(archive).remove(question.id)?;
-    Ok(commit)
+    result
 }
 
 /// Answers a collection question: every waiting proposal is pointed at the collection at
@@ -942,4 +957,137 @@ pub fn apply_draft(
         entry.state = State::Proposed;
     }
     Ok(Edited::Changed)
+}
+
+/// A correction to a proposal, worked out but not saved: the entry as it would be, the
+/// fields changed, where it would now go if that changed, tags left off there, and whether
+/// a lower sensitivity the owner asked for was kept at sensitive because a rule found a
+/// restricted value.
+#[derive(Debug, Clone)]
+pub struct CorrectedProposal {
+    /// The proposal with the correction applied.
+    pub entry: ReviewEntry,
+    /// The fields changed, by name.
+    pub changed: Vec<&'static str>,
+    /// The collection it now goes to, when that changed.
+    pub to: Option<String>,
+    /// Tags left off because they don't apply in the new collection.
+    pub dropped: Vec<String>,
+    /// Whether the sensitivity was kept at sensitive although the owner asked for lower.
+    pub kept_sensitive: bool,
+}
+
+/// Applies `worked`, said as `words`, to a copy of `entry`: the card's fields change, a
+/// collection the owner named is taken, and when what the item is changed, it's routed again
+/// with `registry`. Nothing is saved; save the returned entry with [`ReviewQueue::save`] once
+/// the owner agrees.
+///
+/// # Errors
+///
+/// [`ActionError::Invalid`] for a collection that doesn't exist, or an error reading the
+/// archive's collections.
+pub fn correct_proposal(
+    archive: &Archive,
+    registry: &Registry,
+    entry: &ReviewEntry,
+    worked: &crate::correct::Worked,
+    words: &str,
+) -> Result<CorrectedProposal, ActionError> {
+    use crate::correct::Correctable as _;
+
+    let mut entry = entry.clone();
+    let mut fields = entry.card.fields();
+    let at = crate::card::DateOrTime(
+        jiff::Zoned::now()
+            .strftime("%Y-%m-%dT%H:%M:%S%:z")
+            .to_string(),
+    );
+    let changed = crate::correct::apply(&mut fields, worked, words, &at);
+    let kept_sensitive = fields.sensitivity < Sensitivity::Sensitive
+        && entry
+            .sensitivity_reasons
+            .iter()
+            .any(|r| crate::ingest::sensitivity::restricted_by_rule(r));
+    if kept_sensitive {
+        fields.sensitivity = Sensitivity::Sensitive;
+    }
+    entry.card.set_fields(fields);
+    if let Some(new) = &worked
+        .changes
+        .tags
+        .as_ref()
+        .and_then(|t| t.value.new.clone())
+        && !entry.proposed_tags.contains(new)
+    {
+        entry.proposed_tags = vec![new.clone()];
+    }
+
+    let collections = archive.collections()?;
+    let before = entry.destination.path.clone();
+    let mut dropped = Vec::new();
+    if let Some(named) = &worked.changes.collection {
+        let target = collection(&collections, &named.value)?;
+        dropped = redirect(
+            archive,
+            &collections,
+            &mut entry,
+            target,
+            "chosen by the owner",
+        );
+    } else if worked.changes.reroute {
+        let rules = crate::ingest::route::RoutingRules::of(archive, &collections);
+        let router = crate::ingest::route::Router::new(archive, &collections, &rules);
+        let candidate = crate::ingest::Candidate {
+            path: entry.source.path.clone(),
+            kind: entry.kind,
+            sealed: entry.sealed,
+            markers: Vec::new(),
+            checksum: entry.source.checksum.clone(),
+            size: entry.source.size,
+            duplicate_of: None,
+            likely: Vec::new(),
+            same_as: None,
+        };
+        let draft = crate::ingest::card::Draft {
+            title: entry.card.title.clone(),
+            summary: entry.card.summary.clone(),
+            tags: entry.card.tags.clone(),
+            new_tag: entry.proposed_tags.first().cloned(),
+            created: entry.card.dates.as_ref().and_then(|d| d.created.clone()),
+            generated: None,
+            attempts: Vec::new(),
+            problems: Vec::new(),
+        };
+        let source = entry
+            .source
+            .path
+            .parent()
+            .unwrap_or(&entry.source.path)
+            .to_owned();
+        let route = router.route(registry, &candidate, &source, &draft);
+        entry.attempts.extend(route.attempts.iter().cloned());
+        if let Some(target) = route
+            .collection
+            .and_then(|id| collections.iter().find(|c| c.doc.id == id))
+            .filter(|c| c.path != before)
+        {
+            dropped = redirect(
+                archive,
+                &collections,
+                &mut entry,
+                target,
+                "routed again after the owner's correction",
+            );
+            entry.destination.confidence = route.confidence;
+            entry.destination.reasons.extend(route.reasons);
+        }
+    }
+    let to = (entry.destination.path != before).then(|| entry.destination.path.clone());
+    Ok(CorrectedProposal {
+        entry,
+        changed,
+        to,
+        dropped,
+        kept_sensitive,
+    })
 }
