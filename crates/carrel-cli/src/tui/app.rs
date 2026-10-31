@@ -68,6 +68,16 @@ impl Tab {
     }
 }
 
+/// Where what the interactive mode learns about the owner, such as the folder they pick
+/// from, is kept.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Preferences {
+    /// In this device's preferences, for next time.
+    Saved,
+    /// For this session only.
+    InMemory,
+}
+
 /// What the file picker is choosing for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Picking {
@@ -265,6 +275,9 @@ pub struct App {
     pub start_folder: std::path::PathBuf,
     /// What the file picker is choosing for.
     pub picking: Picking,
+    /// Whether the folder picking ends in is saved to this device's preferences, or only kept
+    /// for this session, as in tests, which must never write the real configuration.
+    pub preferences: Preferences,
     /// Whether every key is shown.
     pub help: bool,
     /// Whether to leave.
@@ -325,6 +338,11 @@ impl App {
             picker_preference: None,
             start_folder: std::path::PathBuf::from("."),
             picking: Picking::Ingest,
+            preferences: if cfg!(test) {
+                Preferences::InMemory
+            } else {
+                Preferences::Saved
+            },
             help: false,
             quit: false,
         };
@@ -533,27 +551,8 @@ impl App {
         if self.input.is_some() {
             return self.input_key(key);
         }
-        if let Some(browser) = &mut self.browser {
-            match browser.key(key) {
-                super::browser::Outcome::Browsing => {}
-                super::browser::Outcome::Add(paths) => {
-                    self.browser = None;
-                    self.picked(paths);
-                }
-                super::browser::Outcome::Type => {
-                    self.browser = None;
-                    if self.picking == Picking::BackupFolder {
-                        self.picking = Picking::Ingest;
-                        self.ask_for_backup_folder();
-                    } else {
-                        self.ask_for_paths();
-                    }
-                }
-                super::browser::Outcome::Cancel => {
-                    self.browser = None;
-                    self.picking = Picking::Ingest;
-                }
-            }
+        if self.browser.is_some() {
+            self.browser_key(key);
             return None;
         }
         if self.picker.is_some() {
@@ -608,6 +607,39 @@ impl App {
             _ => {}
         }
         None
+    }
+
+    /// Handles a key while the built-in browser is open.
+    fn browser_key(&mut self, key: KeyEvent) {
+        let Some(browser) = self.browser.as_mut() else {
+            return;
+        };
+        let outcome = browser.key(key);
+        if outcome != super::browser::Outcome::Browsing {
+            // Picking starts here next time, wherever the browser was left.
+            let dir = browser.dir.clone();
+            self.remember_folder(dir);
+        }
+        match outcome {
+            super::browser::Outcome::Browsing => {}
+            super::browser::Outcome::Add(paths) => {
+                self.browser = None;
+                self.picked(paths);
+            }
+            super::browser::Outcome::Type => {
+                self.browser = None;
+                if self.picking == Picking::BackupFolder {
+                    self.picking = Picking::Ingest;
+                    self.ask_for_backup_folder();
+                } else {
+                    self.ask_for_paths();
+                }
+            }
+            super::browser::Outcome::Cancel => {
+                self.browser = None;
+                self.picking = Picking::Ingest;
+            }
+        }
     }
 
     /// Handles the mouse: the wheel scrolls, and a click on the top line picks a screen.

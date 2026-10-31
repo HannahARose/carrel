@@ -120,12 +120,7 @@ fn event_loop(
                 leave();
                 let picked = crate::picker::run(&words, &app.start_folder);
                 *terminal = enter();
-                if let Some(folder) = picked_files(app, picked)
-                    && let Ok(mut prefs) = crate::config::Prefs::load()
-                {
-                    prefs.last_folder = Some(folder);
-                    let _ = prefs.save();
-                }
+                picked_files(app, picked);
             }
             Some(effect) if running.is_none() => {
                 if let Some(work) = background(app, effect) {
@@ -262,25 +257,21 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
 
 /// Plans what the picker chose; if the picker couldn't run, says why and opens the built-in
 /// browser instead. Returns the folder picked from, to start in next time.
-fn picked_files(app: &mut App, picked: Result<Vec<PathBuf>, Failure>) -> Option<PathBuf> {
+fn picked_files(app: &mut App, picked: Result<Vec<PathBuf>, Failure>) {
     match picked {
         Ok(paths) if paths.is_empty() => {
             app.message = Some("Nothing chosen".into());
             app.picking = app::Picking::Ingest;
-            None
         }
         Ok(paths) => {
-            let folder = paths[0].parent().filter(|f| f.is_dir()).map(Path::to_owned);
-            if let Some(folder) = &folder {
-                folder.clone_into(&mut app.start_folder);
+            if let Some(folder) = paths[0].parent().filter(|f| f.is_dir()) {
+                app.remember_folder(folder.to_owned());
             }
             app.picked(paths);
-            folder
         }
         Err(Failure(e)) => {
             app.message = Some(format!("{e}; using the built-in browser"));
             app.open_browser();
-            None
         }
     }
 }
@@ -703,6 +694,51 @@ mod tests {
             super::app::Picking::Ingest,
             "picking goes back to ingest"
         );
+    }
+
+    #[test]
+    fn the_browser_opens_where_it_was_last_left() {
+        let (_dir, mut app) = sample(false);
+        app.picker_preference = Some("builtin".into());
+        let parent = app.archive.root().parent().unwrap().to_owned();
+        let inbox = parent.join("Inbox");
+        std::fs::create_dir_all(&inbox).unwrap();
+        std::fs::write(inbox.join("letter.txt"), "hi").unwrap();
+        app.start_folder = parent.clone();
+
+        app.key(key(KeyCode::Char('i')));
+        let at = app
+            .browser
+            .as_ref()
+            .unwrap()
+            .entries
+            .iter()
+            .position(|(name, _)| name == "Inbox")
+            .unwrap();
+        for _ in 0..at {
+            app.key(key(KeyCode::Down));
+        }
+        app.key(key(KeyCode::Enter));
+        assert_eq!(app.browser.as_ref().unwrap().dir, inbox);
+        app.key(key(KeyCode::Esc));
+        assert_eq!(app.start_folder, inbox, "closing remembers where it was");
+
+        app.key(key(KeyCode::Char('i')));
+        assert_eq!(
+            app.browser.as_ref().unwrap().dir,
+            inbox,
+            "and opens there again"
+        );
+        app.key(key(KeyCode::Char('i')));
+        assert_eq!(app.start_folder, inbox);
+
+        // A backup folder isn't remembered for ingest.
+        app.key(key(KeyCode::Esc));
+        app.key(key(KeyCode::Char('8')));
+        app.key(key(KeyCode::Char('s')));
+        app.key(key(KeyCode::Left));
+        app.key(key(KeyCode::Esc));
+        assert_eq!(app.start_folder, inbox);
     }
 
     #[test]
