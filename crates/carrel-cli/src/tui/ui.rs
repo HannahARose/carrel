@@ -273,6 +273,10 @@ fn draw_help(frame: &mut Frame, theme: Theme, area: Rect) {
             "a duplicate: file as a version, keep both, skip; other matches (Review)",
         ),
         (
+            "z",
+            "unpack a zip when it's approved, or keep it compressed (Review)",
+        ),
+        (
             "Space  A",
             "mark several; approve all high-confidence (Review)",
         ),

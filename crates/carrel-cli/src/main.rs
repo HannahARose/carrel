@@ -12,6 +12,7 @@ mod config;
 mod correct;
 mod desk;
 mod edit;
+mod expand;
 mod formats;
 mod ingest;
 mod models;
@@ -122,6 +123,16 @@ enum Command {
     Edit {
         /// The item: its identifier, or its card's or contents' path.
         item: String,
+    },
+    /// Expand a filed compressed file (zip, tar, gzip and the like) so what it holds can be
+    /// browsed: it takes the compressed file's place, which goes to the Trash. One change undo
+    /// can reverse.
+    Expand {
+        /// The item: its identifier, or its card's or contents' path.
+        item: String,
+        /// Expand software or a very large archive all the same.
+        #[arg(long)]
+        anyway: bool,
     },
     /// Correct a filed item's card in plain words, narrowly ("it's from 2019") or broadly
     /// ("it's a picture of A, not B"), or with `field: value` lines. The changes are shown
@@ -544,6 +555,18 @@ enum ReviewAction {
     },
 }
 
+/// `carrel questions` and its subcommands.
+fn questions_command(
+    archive: Option<&Path>,
+    action: Option<QuestionsAction>,
+) -> Result<Report, Failure> {
+    match action.unwrap_or(QuestionsAction::List) {
+        QuestionsAction::List => questions::list(archive),
+        QuestionsAction::Answer { id, answer } => questions::answer(archive, &id, &answer),
+        QuestionsAction::Dismiss { id } => questions::dismiss(archive, &id),
+    }
+}
+
 /// `carrel desk` and its subcommands.
 fn desk_command(archive: Option<&Path>, action: Option<DeskAction>) -> Result<Report, Failure> {
     match action.unwrap_or(DeskAction::List) {
@@ -725,6 +748,7 @@ fn main() -> ExitCode {
         },
         Command::Review { all, action } => review_command(cli.archive.as_deref(), all, action),
         Command::Edit { item } => edit::edit(cli.archive.as_deref(), &item),
+        Command::Expand { item, anyway } => expand::expand(cli.archive.as_deref(), &item, anyway),
         Command::Correct {
             item,
             words,
@@ -762,13 +786,7 @@ fn main() -> ExitCode {
             } => commands::collection_new(cli.archive.as_deref(), &path, description, &tags),
         },
         Command::Backup { action } => backup_command(cli.archive.as_deref(), action),
-        Command::Questions { action } => match action.unwrap_or(QuestionsAction::List) {
-            QuestionsAction::List => questions::list(cli.archive.as_deref()),
-            QuestionsAction::Answer { id, answer } => {
-                questions::answer(cli.archive.as_deref(), &id, &answer)
-            }
-            QuestionsAction::Dismiss { id } => questions::dismiss(cli.archive.as_deref(), &id),
-        },
+        Command::Questions { action } => questions_command(cli.archive.as_deref(), action),
         Command::Bench(args) => bench::bench(&args, cli.json),
         Command::Models { action } => models_command(
             action.unwrap_or(ModelsAction::List),
@@ -800,6 +818,7 @@ fn changes_archive(command: &Command) -> bool {
         Command::Undo { .. }
         | Command::Correct { .. }
         | Command::Edit { .. }
+        | Command::Expand { .. }
         | Command::Rename { .. }
         | Command::Checkout { .. }
         | Command::Return { .. }

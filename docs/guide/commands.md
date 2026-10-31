@@ -33,6 +33,7 @@ Exit status is `0` on success, `1` when the command failed, and `2` for a usage 
 | `carrel sessions edit ITEM N` | Opens pending entry `N`'s text in your editor (`$VISUAL` or `$EDITOR`) and saves what you write as its text, still pending, in one history change. The card is read again when the editor closes, so changes made meanwhile are kept. Text that would read as another entry or break the history section isn't saved; the message says where your text is. |
 | `carrel edit ITEM` | Opens a filed item's card in your editor (`e` in Browse). It's checked as proposals are: a title, real dates, tags that apply in its collection, and no sensitivity below what a rule found. The body below the fields is kept exactly. Delete a line to clear it, such as a wrong date. One change, which `carrel undo` reverses. |
 | `carrel correct ITEM [WORDS…] [--yes] [--learn]` | Corrects a filed item's card the same way, and refiles it when the collection changes. One change, which `carrel undo` reverses. |
+| `carrel expand ITEM [--anyway]` | Unpacks a filed zip or other compressed file in place: what it held becomes the item, unwrapped as at filing, its card follows (with `expanded_from`), and the compressed file goes to the Trash. Software and very large archives need `--anyway`; encrypted, split and unsafe ones are refused. One change, which `carrel undo` reverses; then put the compressed file back from the Trash. |
 | `carrel rename ITEM [NEW_NAME]` | Renames an item and its card together, and updates links to it. Without a new name, uses the portable name `carrel status` suggests. Can be undone. |
 | `carrel collection new PATH [--description TEXT] [--tag NAME=MEANING]...` | Creates a collection with a design document to fill in. `PATH` is a name, or `Parent/Name` inside an existing collection. |
 
@@ -58,6 +59,8 @@ Exit status is `0` on success, `1` when the command failed, and `2` for a usage 
 | `carrel review approve ID... --related-to [ITEM]` | Files them beside the archived item, with a `related` link. |
 | `carrel review hold ID...` | Files the items in Holding, to place later. |
 | `carrel review move-to ID COLLECTION` | Proposes another collection; the item is filed there when approved. |
+| `carrel review expand ID...` | Unpacks compressed files (zip, tar, gzip and the like) when they're approved, even if they were going to be kept or asked about. A large archive is unpacked without the size limits; an encrypted, split or unreadable one can't be. `z` in Review switches between this and keeping it compressed. |
+| `carrel review keep-compressed ID...` | Files compressed files as they are when they're approved, rather than unpacking them. |
 | `carrel review edit ID` | Opens the card in your editor, checks it when you save, and reopens it with the problems listed until it checks out. |
 | `carrel review correct ID [WORDS…] [--yes] [--learn]` | Corrects a proposal in plain words ("it's from 2019", "it's a picture of Annecy, not Geneva") or `field: value` lines. Shows each change before and after, and saves only when you agree (`--yes` saves without asking). A broad correction can route it again. `--learn` adds a lasting fact it states to the glossary without asking. |
 | `carrel review reject ID...` | Rejects proposals; the items stay where they are. |
@@ -100,7 +103,7 @@ Backups need [Kopia](https://kopia.io), beside `carrel` or on `PATH`.
 | Command | What it does |
 | --- | --- |
 | `carrel settings` | Lists this device's preferences and the archive's shared settings. |
-| `carrel settings set KEY VALUE` | Changes one. `picker`, `editor`, `model` and `second_model` are this device's (an empty value, or `default`, clears them); `model` takes `provider/offer`, the offer alone, or a provider such as `apple`, and must be one that's available; `second_model` also takes `off`. `ingest.originals`, `signals.crowded_items`, `outside_edits` and `embedding.model` are shared by every device, and each change can be undone from History. `embedding.model` can only be chosen once, as switching models re-embeds the archive. |
+| `carrel settings set KEY VALUE` | Changes one. `picker`, `editor`, `model` and `second_model` are this device's (an empty value, or `default`, clears them); `model` takes `provider/offer`, the offer alone, or a provider such as `apple`, and must be one that's available; `second_model` also takes `off`. `ingest.originals`, `compressed_files`, `signals.crowded_items`, `outside_edits` and `embedding.model` are shared by every device, and each change can be undone from History. `embedding.model` can only be chosen once, as switching models re-embeds the archive. |
 
 ## The interactive mode
 
@@ -109,7 +112,7 @@ Backups need [Kopia](https://kopia.io), beside `carrel` or on `PATH`.
 | Key | Screen |
 | --- | --- |
 | `1` | **Status**: what `carrel status` shows, including Recent, and what's waiting for you |
-| `2` | **Review**: `a` approve, `h` hold, `m` move, `e` edit, `x` reject, `Space` mark, `A` approve all high-confidence |
+| `2` | **Review**: `a` approve, `h` hold, `m` move, `e` edit, `x` reject, `z` unpack a zip or keep it compressed, `Space` mark, `A` approve all high-confidence |
 | `3` | **Active**: what's checked out and on this device's desk, with their pending history entries; `r` return the chosen checkout, `x` cancel it, `o` open the working copy, `a` approve, `c` combine, `d` drop pending entries (all, or those marked with `Space`) |
 | `4` | **Questions**: `Enter` to answer, `d` to dismiss |
 | `5` | **Browse**: collections and items; `/` to search; `Enter` on an item for its changes and links, then `u` to undo the chosen change, `Enter` to go to a linked item |
@@ -127,6 +130,7 @@ Backups need [Kopia](https://kopia.io), beside `carrel` or on `PATH`.
 | `CARREL_CONFIG_DIR` | Where Carrel keeps this device's files, instead of the default (see the [User guide](user-guide.md#what-carrel-keeps-on-this-device)) |
 | `CARREL_MODELS_DIR` | Where local models are kept |
 | `CARREL_WORKER=off` | Never start a worker in the background |
+| `CARREL_TRASH_DIR` | Put files Carrel trashes (such as a zip after it's unpacked) in this folder instead of the system Trash |
 | `CARREL_OCR_LANGUAGES` | Tesseract's languages for OCR, such as `eng+deu` |
 | `CARREL_IMAGE_DESCRIPTIONS=off` | Read images on a Mac without asking Apple's model to describe them, to measure what the descriptions add |
 | `VISUAL`, `EDITOR` | The editor for cards, unless the `editor` setting is set |

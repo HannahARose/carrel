@@ -128,6 +128,33 @@ When a card is wrong, say what's wrong: `c` on a proposal in Review or on an ite
 - **It sticks.** Fields you stated outright stop being marked as model-written, so later model work never overwrites them. Fields the model worked out from a broad correction stay model-written, but the correction is kept with the card, so a later re-check can't undo it. Each correction is one change in history, with your words, and `carrel undo` reverses it.
 - **Lasting facts.** When a correction says something true beyond the item ("Acme Property is my landlord"), Carrel offers to add it to the glossary.
 
+### Zips and other compressed files
+
+A zip is usually a folder someone packed up to send. Carrel unpacks it, so you can see and search what it holds in Finder, Obsidian and Carrel. This applies to zip, tar, gzip, bzip2, xz and zstd files, and to 7z and RAR when 7-Zip or `unar` is installed.
+
+- **Drafting reads inside without unpacking.** It looks at the list of files, the README, and project files such as `Cargo.toml`, so the card and collection come from what's in it, as for a folder. A zip holding one document, such as `report.pdf.zip`, is read as that document.
+- **Review shows the plan.** For example, "will be expanded: 440 files, 1.8 GB, into Projects/Lab/Spectrometer export", or "kept compressed: it holds an installer".
+- **Nothing is unpacked until you approve.** Then what it held is filed in its place:
+  - one file inside becomes that file
+  - one folder wrapping everything becomes that folder
+  - anything else becomes a folder named after the zip
+
+  Modification times and execute permissions are kept, and `__MACOSX`, `.DS_Store` and `._` files are left out. The card records the zip it came from (`expanded_from`). The zip goes to the Trash once every file has been checked against it, so you can still get it back.
+- **What's kept compressed, and why:**
+  - software: an app, an installer (`.pkg`, `.dmg`, `.exe`, `.msi`) or anything with a code signature
+  - encrypted archives (Carrel never asks for passwords)
+  - archives split into parts
+  - anything nothing on this device can open, which is listed in `carrel formats`
+- **What Carrel asks about:** an archive that would unpack to more than ten times its size and over 1 GB, holds more than 100,000 files, or has paths that would land outside its folder.
+- **Your choice:**
+  - for one proposal: `z` in Review, or `carrel review expand ID` and `carrel review keep-compressed ID`
+  - for a collection: `compressed_files: keep` in its `_collection.md`
+  - for a routing rule: `keep_compressed: true`
+  - for the whole archive: the `compressed_files` setting
+- **Already filed?** `carrel expand ITEM` unpacks a compressed item with the same checks, as one change. `carrel undo` reverses it; then put the zip back from the Trash.
+
+Documents that are zip files inside, such as `.docx`, `.xlsx`, `.epub` or `.jar`, are never unpacked.
+
 ### When a model declines
 
 Apple's on-device model has safety filters that sometimes refuse documents, often medical or financial ones. When that happens, Carrel tries the next model it has. The proposal says which model declined and whether another stepped in; if none could draft the card, you write it yourself (`e` in Review). Downloading a local model with `carrel models` gives Carrel one to fall back on.
@@ -140,6 +167,7 @@ Review is where proposals become filed items. In the interactive mode (`2`), eac
 | --- | --- | --- |
 | File it where proposed | `a` | `carrel review approve ID` |
 | Choose another collection | `m` | `carrel review move-to ID COLLECTION` |
+| Unpack a zip, or keep it compressed | `z` | `carrel review expand ID`, `carrel review keep-compressed ID` |
 | Change the card first | `e` | `carrel review edit ID` |
 | File it in Holding | `h` | `carrel review hold ID` |
 | Leave the file where it is | `x` | `carrel review reject ID` |
@@ -273,6 +301,7 @@ The Settings screen (`8`), or `carrel settings`, shows two kinds:
 | Setting | Values | Default |
 | --- | --- | --- |
 | `ingest.originals` | `move` the original into the archive on approval, or `keep` it where it was and copy it in | `move` |
+| `compressed_files` | `expand` zips and other compressed files on approval, `keep` them as they are, or `ask` in Review each time (see [Zips and other compressed files](#zips-and-other-compressed-files)) | `expand` |
 | `signals.crowded_items` | How many loose items make a collection crowded | `30` |
 | `outside_edits` | `flag` changes made outside Carrel for review, `reconcile` them as edits, or treat them as `drift` to undo. Stored now; it takes effect when Carrel starts watching for outside changes, in a later version | `flag` |
 
