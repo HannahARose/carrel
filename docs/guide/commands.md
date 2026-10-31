@@ -23,6 +23,8 @@ Exit status is `0` on success, `1` when the command failed, and `2` for a usage 
 | `carrel undo CHANGE` | Undoes a change with a new change that reverses it. `CHANGE` is its identifier from `carrel log`, or its start. The change that created the history can't be undone. |
 | `carrel checkout ITEM [--to FOLDER] [--due DATE]` | Checks an item out to work on: copies it to `FOLDER` (the Desktop by default), checked against what it held, and makes the archive copy read-only until it's returned. Records it on the card, with the commit a Git repository was at, in one history change. |
 | `carrel checkouts` | Lists what's checked out, where, since when, and whether the working copy has changed. |
+| `carrel return ITEM [--from PATH] [--yes]` | Returns a checked-out item. Shows what changed (files changed, added, removed and renamed, and a Git repository's commits since checkout, with a warning about uncommitted work), and the history entry it adds, and asks. Then takes a backup snapshot, writes the working copy beside the archive copy, checks it, swaps it in, and records it all as one history change. The working copy stays where it is for you to delete. `--from` gives its new place if it moved. |
+| `carrel return ITEM --discard` | Cancels a checkout: the archive copy is unlocked as it was, and the working copy's changes aren't brought back. |
 | `carrel rename ITEM [NEW_NAME]` | Renames an item and its card together, and updates links to it. Without a new name, uses the portable name `carrel status` suggests. Can be undone. |
 | `carrel collection new PATH [--description TEXT] [--tag NAME=MEANING]...` | Creates a collection with a design document to fill in. `PATH` is a name, or `Parent/Name` inside an existing collection. |
 

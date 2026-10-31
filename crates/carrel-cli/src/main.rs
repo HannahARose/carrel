@@ -128,6 +128,22 @@ enum Command {
     },
     /// List what's checked out, where, and whether it has changed.
     Checkouts,
+    /// Return a checked-out item: shows what changed and the history entry it adds, asks,
+    /// then replaces the archive copy with the working copy.
+    Return {
+        /// The item: its identifier, or its card's or contents' path.
+        item: String,
+        /// Where the working copy is now, if it moved.
+        #[arg(long, value_name = "PATH")]
+        from: Option<PathBuf>,
+        /// Return without asking.
+        #[arg(long)]
+        yes: bool,
+        /// Cancel the checkout instead: unlock the archive copy as it was, without the
+        /// working copy's changes.
+        #[arg(long, conflicts_with = "from")]
+        discard: bool,
+    },
     /// Create collections: folders with a design document saying what belongs in them.
     Collection {
         #[command(subcommand)]
@@ -505,6 +521,12 @@ fn main() -> ExitCode {
             checkout::checkout(cli.archive.as_deref(), &item, to.as_deref(), due.as_deref())
         }
         Command::Checkouts => checkout::list(cli.archive.as_deref()),
+        Command::Return {
+            item,
+            from,
+            yes,
+            discard,
+        } => checkout::return_item(cli.archive.as_deref(), &item, from.as_deref(), yes, discard),
         Command::Collection { action } => match action {
             CollectionAction::New {
                 path,
