@@ -9,7 +9,9 @@ struct LetterCounter: Embedder {
         Offer(capability: .embed, id: "letters", priority: 10, contextTokens: 64, dimensions: 2)
     }
 
-    func embed(_ texts: [String], purpose: EmbeddingPurpose) async throws(ProviderError) -> Embeddings {
+    func embed(_ texts: [String], purpose: EmbeddingPurpose) async throws(ProviderError)
+        -> Embeddings
+    {
         let vectors = texts.map { text in
             let letters = Float(text.filter(\.isLetter).count)
             return unitLength([letters, purpose == .query ? 1 : 0])
@@ -36,7 +38,8 @@ func embedRequest(_ params: [String: Any]) -> [String: Any] {
 }
 
 @Test func textEmbedAnswersOneVectorPerText() async throws {
-    let reply = try await send(embedServer, embedRequest(["offer": "letters", "texts": ["abc", "", "a b"]]))
+    let reply = try await send(
+        embedServer, embedRequest(["offer": "letters", "texts": ["abc", "", "a b"]]))
     let result = try #require(reply["result"] as? [String: Any])
     #expect(result["model"] as? String == "letters")
     #expect(result["dimensions"] as? Int == 2)
@@ -62,14 +65,18 @@ func embedRequest(_ params: [String: Any]) -> [String: Any] {
 @Test func vectorsAreWrittenShort() async throws {
     struct Fixed: Embedder {
         var offer: Offer { Offer(capability: .embed, id: "fixed", dimensions: 3) }
-        func embed(_ texts: [String], purpose: EmbeddingPurpose) async throws(ProviderError) -> Embeddings {
+        func embed(_ texts: [String], purpose: EmbeddingPurpose) async throws(ProviderError)
+            -> Embeddings
+        {
             Embeddings(vectors: [[0.0213, 1e-05, -0.5]], model: "fixed", dimensions: 3)
         }
     }
     let line = String(
-        data: try JSONSerialization.data(withJSONObject: embedRequest(["offer": "fixed", "texts": ["a"]])),
+        data: try JSONSerialization.data(
+            withJSONObject: embedRequest(["offer": "fixed", "texts": ["a"]])),
         encoding: .utf8)!
-    let reply = try #require(await Server(name: "T", version: "0", embedders: [Fixed()]).reply(to: line))
+    let reply = try #require(
+        await Server(name: "T", version: "0", embedders: [Fixed()]).reply(to: line))
     #expect(reply.contains("[[0.0213,0.00001,-0.5]]"), "\(reply)")
 }
 
@@ -94,7 +101,10 @@ struct SentenceEmbeddingTests {
     @Test(.enabled(if: available, "the English sentence embedding isn't on this Mac"))
     func theNearerTextScoresHigher() async throws {
         let embeddings = try await SentenceEmbedding().embed(
-            ["Tenancy agreement for the flat on Cowley Road", "Receipt for a desk chair", "", "!!"],
+            [
+                "Tenancy agreement for the flat on Cowley Road", "Receipt for a desk chair", "",
+                "!!",
+            ],
             purpose: .document)
         #expect(embeddings.model == "apple-nl-sentence-en")
         #expect(embeddings.vectors.count == 4)

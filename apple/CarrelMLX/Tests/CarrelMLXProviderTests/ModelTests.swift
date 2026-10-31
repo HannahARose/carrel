@@ -18,10 +18,11 @@ struct ModelTests {
     func answersFollowTheSchemaAndCountTokens() async throws {
         let model = MLXModel(folder: try #require(Self.folder))
         #expect(model.offer.available, "\(model.offer.reason ?? "")")
-        let schema = JSONValue(parsing: """
-            {"type": "object", "properties": {"title": {"type": "string"},
-             "year": {"type": "integer"}}, "required": ["title", "year"]}
-            """)
+        let schema = JSONValue(
+            parsing: """
+                {"type": "object", "properties": {"title": {"type": "string"},
+                 "year": {"type": "integer"}}, "required": ["title", "year"]}
+                """)
         let answer = try await model.complete(
             CompletionRequest(
                 system: "You file documents.",

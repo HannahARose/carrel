@@ -34,7 +34,9 @@ public struct ModelReader: TextExtractor {
     init(describes: Bool) { self.describes = describes }
 
     public var offer: Offer {
-        Offer(capability: .extractText, id: "model3d", label: "3D model reader", mediaTypes: Self.modelTypes)
+        Offer(
+            capability: .extractText, id: "model3d", label: "3D model reader",
+            mediaTypes: Self.modelTypes)
     }
 
     public func extract(_ url: URL, mediaType: String) async throws(ProviderError) -> Extraction {
@@ -68,7 +70,8 @@ public struct ModelReader: TextExtractor {
             lines.append("Shows: " + description)
         }
         return Extraction(
-            text: lines.joined(separator: "\n"), method: description == nil ? "geometry" : "rendered")
+            text: lines.joined(separator: "\n"),
+            method: description == nil ? "geometry" : "rendered")
     }
 
     /// The format's name for the text: `STL`, `OBJ`, `PLY`, `USDZ` or `USD`.
@@ -125,9 +128,11 @@ public struct ModelReader: TextExtractor {
         renderer.pointOfView = camera
 
         let side = tile * 2
-        guard let grid = CGContext(
-            data: nil, width: side, height: side, bitsPerComponent: 8, bytesPerRow: 0,
-            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)
+        guard
+            let grid = CGContext(
+                data: nil, width: side, height: side, bitsPerComponent: 8, bytesPerRow: 0,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)
         else { return nil }
         grid.setFillColor(CGColor(gray: 1, alpha: 1))
         grid.fill(CGRect(x: 0, y: 0, width: side, height: side))
@@ -146,12 +151,17 @@ public struct ModelReader: TextExtractor {
                 center.z + from.z / length * distance)
             camera.look(at: center, up: up, localFront: SCNVector3(0, 0, -1))
             let snapshot = renderer.snapshot(
-                atTime: 0, with: CGSize(width: tile, height: tile), antialiasingMode: .multisampling4X)
-            guard let image = snapshot.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+                atTime: 0, with: CGSize(width: tile, height: tile),
+                antialiasingMode: .multisampling4X)
+            guard let image = snapshot.cgImage(forProposedRect: nil, context: nil, hints: nil)
+            else {
                 return nil
             }
             // Core Graphics counts rows from the bottom: the first two views go on top.
-            grid.draw(image, in: CGRect(x: index % 2 * tile, y: (1 - index / 2) * tile, width: tile, height: tile))
+            grid.draw(
+                image,
+                in: CGRect(
+                    x: index % 2 * tile, y: (1 - index / 2) * tile, width: tile, height: tile))
         }
         return grid.makeImage()
     }
@@ -179,7 +189,9 @@ struct Geometry: Equatable {
         var corners: [SIMD3<Int32>: Int] = [:]
         var joined = Joined()
         for case let mesh as MDLMesh in asset.childObjects(of: MDLMesh.self) {
-            guard let positions = mesh.vertexAttributeData(forAttributeNamed: MDLVertexAttributePosition, as: .float3)
+            guard
+                let positions = mesh.vertexAttributeData(
+                    forAttributeNamed: MDLVertexAttributePosition, as: .float3)
             else { continue }
             let corner = { (vertex: Int) -> Int in
                 let point = positions.dataStart.advanced(by: vertex * positions.stride)
@@ -193,7 +205,8 @@ struct Geometry: Equatable {
                 corners[key] = new
                 return new
             }
-            for case let submesh as MDLSubmesh in mesh.submeshes ?? [] where submesh.geometryType == .triangles {
+            for case let submesh as MDLSubmesh in mesh.submeshes ?? []
+            where submesh.geometryType == .triangles {
                 let buffer = submesh.indexBuffer(asIndexType: .uInt32)
                 let indices = buffer.map().bytes.assumingMemoryBound(to: UInt32.self)
                 let count = submesh.indexCount - submesh.indexCount % 3

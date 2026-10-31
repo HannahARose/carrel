@@ -112,7 +112,8 @@ public struct Extraction: Equatable, Sendable {
     public var located: Bool?
 
     public init(
-        text: String, method: String, pages: Int? = nil, created: String? = nil, located: Bool? = nil
+        text: String, method: String, pages: Int? = nil, created: String? = nil,
+        located: Bool? = nil
     ) {
         self.text = text
         self.method = method
@@ -132,7 +133,8 @@ public protocol TextExtractor: Sendable {
 
     /// The same, for a picture Carrel was given to describe: `context` says what it is, since
     /// its file's name says nothing. Extractors that don't describe images ignore it.
-    func extract(_ url: URL, mediaType: String, context: String?) async throws(ProviderError) -> Extraction
+    func extract(_ url: URL, mediaType: String, context: String?) async throws(ProviderError)
+        -> Extraction
 }
 
 extension TextExtractor {
@@ -184,8 +186,9 @@ public enum JSONValue: Sendable, Equatable {
 
     /// Parses JSON text.
     public init?(parsing text: String) {
-        guard let object = try? JSONSerialization.jsonObject(
-            with: Data(text.utf8), options: [.fragmentsAllowed])
+        guard
+            let object = try? JSONSerialization.jsonObject(
+                with: Data(text.utf8), options: [.fragmentsAllowed])
         else { return nil }
         self.init(object)
     }
@@ -215,7 +218,9 @@ public struct CompletionRequest: Sendable, Equatable {
     public var schema: JSONValue?
     public var maxTokens: Int?
 
-    public init(system: String? = nil, prompt: String, schema: JSONValue? = nil, maxTokens: Int? = nil) {
+    public init(
+        system: String? = nil, prompt: String, schema: JSONValue? = nil, maxTokens: Int? = nil
+    ) {
         self.system = system
         self.prompt = prompt
         self.schema = schema
@@ -287,7 +292,8 @@ public protocol Embedder: Sendable {
 
     /// One vector for each of `texts`, each embedded on its own. A text longer than the
     /// model's context is cut.
-    func embed(_ texts: [String], purpose: EmbeddingPurpose) async throws(ProviderError) -> Embeddings
+    func embed(_ texts: [String], purpose: EmbeddingPurpose) async throws(ProviderError)
+        -> Embeddings
 }
 
 /// `vector` scaled to unit length, or as it is if it's all zeros.
@@ -381,7 +387,8 @@ public struct Server: Sendable {
             }
             return json
         case "text/count-tokens":
-            guard let offerID = params["offer"] as? String, let text = params["text"] as? String else {
+            guard let offerID = params["offer"] as? String, let text = params["text"] as? String
+            else {
                 throw .invalidParams("text/count-tokens needs offer and text")
             }
             guard let model = models.first(where: { $0.offer.id == offerID }) else {

@@ -38,7 +38,8 @@ public struct SentenceEmbedding: Embedder {
             return "macOS's English sentence embedding (revision \(revision)) isn't on this Mac"
         }
         guard embedding.dimension == dimensions else {
-            return "macOS's English sentence embedding has \(embedding.dimension) dimensions, not \(dimensions)"
+            return
+                "macOS's English sentence embedding has \(embedding.dimension) dimensions, not \(dimensions)"
         }
         return nil
     }
