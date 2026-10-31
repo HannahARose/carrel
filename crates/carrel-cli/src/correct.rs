@@ -16,8 +16,8 @@ use serde_json::json;
 use crate::commands::locate;
 use crate::{Failure, Report};
 
-/// The owner's words: those given, or asked for on the terminal.
-fn words(given: &[String]) -> Result<String, Failure> {
+/// The owner's words: those given, or asked for on the terminal under the card's `title`.
+fn words(given: &[String], title: &str) -> Result<String, Failure> {
     let joined = given.join(" ");
     if !joined.trim().is_empty() {
         return Ok(joined);
@@ -27,7 +27,12 @@ fn words(given: &[String]) -> Result<String, Failure> {
             "say what's wrong, such as `carrel review correct ID \"it's from 2019\"`",
         ));
     }
-    eprint!("What's wrong with it? ");
+    eprintln!("Correcting “{title}”");
+    eprintln!(
+        "Say what's wrong (\"it's from 2019\", \"it's a picture of A, not B\"), or write \
+         `field: value`, such as `created: 2019-03-31`. Enter on its own cancels."
+    );
+    eprint!("\nWhat's wrong with it? ");
     let _ = std::io::stderr().flush();
     let mut line = String::new();
     std::io::stdin().lock().read_line(&mut line)?;
@@ -35,6 +40,22 @@ fn words(given: &[String]) -> Result<String, Failure> {
         return Err(Failure::new("nothing to correct"));
     }
     Ok(line.trim().to_owned())
+}
+
+/// Says a model is working, on a terminal, when the words aren't `field: value` lines: it
+/// takes several seconds.
+fn working(words: &str) {
+    let lines = words.lines().all(|l| {
+        l.split_once(':').is_some_and(|(f, _)| {
+            matches!(
+                f.trim().to_lowercase().as_str(),
+                "title" | "summary" | "created" | "date" | "tags" | "sensitivity" | "collection"
+            )
+        })
+    });
+    if !lines && std::io::stderr().is_terminal() {
+        eprintln!("Working out what that changes…");
+    }
 }
 
 /// The archive's collections as the model sees them, by path with what each is for.
@@ -222,7 +243,7 @@ pub fn review(
     let entry = actions::proposals(&archive, &[id.to_owned()])?
         .pop()
         .ok_or_else(|| Failure::new(format!("no proposal {id}")))?;
-    let words = words(given)?;
+    let words = words(given, &entry.card.title)?;
     let (registry, _) = crate::providers::registry();
     let collections = collections(&archive)?;
     let vocabulary = Vocabulary::of(&archive, &archive.collections()?);
@@ -236,6 +257,7 @@ pub fn review(
         collections: &collections,
         vocabulary: &vocabulary,
     };
+    working(&words);
     let worked = work_out(&registry, &subject, &words, &earlier)?;
     let corrected = actions::correct_proposal(&archive, &registry, &entry, &worked, &words)?;
     let after = corrected.entry.card.fields();
@@ -345,7 +367,7 @@ pub fn filed(
     let item = crate::commands::find_item(&archive, &items, query)?.clone();
     let card_path = archive.root().join(&item.card);
     let mut file = CardFile::parse(&std::fs::read_to_string(&card_path)?)?;
-    let words = words(given)?;
+    let words = words(given, &file.card().title)?;
     let (registry, _) = crate::providers::registry();
     let collections = collections(&archive)?;
     let all = archive.collections()?;
@@ -365,6 +387,7 @@ pub fn filed(
         collections: &collections,
         vocabulary: &vocabulary,
     };
+    working(&words);
     let worked = work_out(&registry, &subject, &words, &earlier)?;
     let (after, changed, kept_sensitive) =
         corrected(&before, &worked, &words, contents.as_deref(), &text);
@@ -582,5 +605,9 @@ fn reroute(
     };
     let source = path.parent().unwrap_or(&path).to_owned();
     let route = router.route(registry, &candidate, &source, &draft);
-    route.collection.map(|_| route.path)
+    // Only somewhere it fits: an unsure answer, or Holding, leaves it where it is.
+    (route.collection.is_some()
+        && route.confidence != carrel_core::review::Confidence::Low
+        && route.path != "Holding")
+        .then_some(route.path)
 }

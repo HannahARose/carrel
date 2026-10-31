@@ -1066,10 +1066,13 @@ pub fn correct_proposal(
             .to_owned();
         let route = router.route(registry, &candidate, &source, &draft);
         entry.attempts.extend(route.attempts.iter().cloned());
+        // Routing again only moves it somewhere it fits: an unsure answer, or Holding, leaves
+        // it where it was, as the owner can still move it.
+        let sure = route.confidence != Confidence::Low;
         if let Some(target) = route
             .collection
             .and_then(|id| collections.iter().find(|c| c.doc.id == id))
-            .filter(|c| c.path != before)
+            .filter(|c| sure && c.path != before && c.path != "Holding")
         {
             dropped = redirect(
                 archive,

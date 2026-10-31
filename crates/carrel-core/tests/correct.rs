@@ -286,3 +286,61 @@ fn a_lasting_fact_is_offered_with_what_it_is_about() {
     assert_eq!(fact.about, "Acme Property");
     assert_eq!(fact.fact, "Acme Property is the owner's landlord.");
 }
+
+#[test]
+fn the_models_answer_is_held_to_what_the_owner_said() {
+    let archive = sample();
+    let collections_list = collections();
+    let vocabulary = Vocabulary::of(&archive, &archive.collections().unwrap());
+    let card = photo_card();
+    let tags: Vec<String> = vocabulary
+        .tags
+        .iter()
+        .take(3)
+        .map(|(t, _)| t.0.clone())
+        .collect();
+    // As a model answered in the interactive mode: everything "dictated", tags nobody named,
+    // and a "fact" about the item itself.
+    let mut answer = unchanged();
+    answer["title"] = json!("Bedroom lamp at dusk");
+    answer["title_dictated"] = json!(true);
+    answer["created"] = json!("2019-03-01");
+    answer["created_dictated"] = json!(true);
+    answer["add_tags"] = json!(tags);
+    answer["tags_dictated"] = json!(true);
+    answer["fact"] = json!("This item was made for the bedroom lamp.");
+    answer["fact_about"] = json!("bedroom lamp");
+    let registry = registry_of(vec![answer]);
+    let subject = Subject {
+        card: &card,
+        collection: "Holding",
+        text: "",
+        collections: &collections_list,
+        vocabulary: &vocabulary,
+    };
+    let words = "it was made in March 2019 and it is for the bedroom lamp";
+    let changes = work_out(&registry, &subject, words, &[]).unwrap().changes;
+    assert!(
+        !changes.title.unwrap().dictated,
+        "the owner didn't give this title"
+    );
+    assert!(changes.created.unwrap().dictated, "the owner gave the year");
+    assert!(
+        changes.tags.is_none(),
+        "a narrow correction names no tags, so none change"
+    );
+    assert!(
+        changes.fact.is_none(),
+        "a fact about the item itself isn't lasting"
+    );
+
+    // Asking for a tag by name adds it.
+    let mut tagged = unchanged();
+    tagged["add_tags"] = json!([tags[0].clone()]);
+    let registry = registry_of(vec![tagged]);
+    let asked = format!("tag it {}", tags[0].replace('-', " "));
+    let changes = work_out(&registry, &subject, &asked, &[]).unwrap().changes;
+    let edit = changes.tags.unwrap();
+    assert_eq!(edit.value.add, vec![Tag(tags[0].clone())]);
+    assert!(edit.dictated);
+}
