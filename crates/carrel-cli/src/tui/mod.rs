@@ -1,6 +1,7 @@
 //! The interactive mode (`docs/design/interactive.md`): `carrel` in a terminal, or
 //! `carrel tui`. Everything it does is also a command.
 
+mod actions;
 mod active;
 mod app;
 mod backups;
@@ -420,6 +421,13 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
             }),
         ),
         Effect::Keep { id, kept, target } => keep(root, id, kept, target),
+        effect @ (Effect::Checkout { .. }
+        | Effect::DeskAdd(_)
+        | Effect::DeskRemove { .. }
+        | Effect::DeskArchive(_)
+        | Effect::NewCollection(_)
+        | Effect::Rename { .. }
+        | Effect::Expand { .. }) => archive_work(root, effect),
     };
     app.busy = Some(busy);
     let (send, receive) = std::sync::mpsc::channel();
@@ -437,6 +445,7 @@ fn picked_files(app: &mut App, picked: Result<Vec<PathBuf>, Failure>) {
         Ok(paths) if paths.is_empty() => {
             app.message = Some("Nothing chosen".into());
             app.picking = app::Picking::Ingest;
+            app.checking_out = None;
         }
         Ok(paths) => {
             if let Some(folder) = paths[0].parent().filter(|f| f.is_dir()) {
@@ -529,6 +538,58 @@ fn active_work(root: PathBuf, effect: Effect) -> (String, Work) {
         ),
         _ => unreachable!("only the Active screen's effects come here"),
     }
+}
+
+/// The work for checking out, the desk, and Browse's actions, which `carrel checkout`,
+/// `carrel desk`, `carrel collection new`, `carrel rename` and `carrel expand` do. Each changes
+/// the archive, so a worker brings the search index up to date after it.
+fn archive_work(root: PathBuf, effect: Effect) -> (String, Work) {
+    let (busy, work): (
+        &str,
+        Box<dyn FnOnce(&Path) -> Result<Report, Failure> + Send>,
+    ) = match effect {
+        Effect::Checkout { item, to, due } => (
+            "Checking it out…",
+            Box::new(move |root| {
+                crate::checkout::checkout(Some(root), &item, Some(&to), due.as_deref())
+            }),
+        ),
+        Effect::DeskAdd(path) => (
+            "Putting it on the desk and drafting its card…",
+            Box::new(move |root| crate::desk::add_item(Some(root), &path, None, None)),
+        ),
+        Effect::DeskRemove { path, delete_card } => (
+            "Taking it off the desk…",
+            Box::new(move |root| crate::desk::remove_item(Some(root), &path, delete_card)),
+        ),
+        Effect::DeskArchive(path) => (
+            "Queueing it for the archive…",
+            Box::new(move |root| crate::desk::archive_desk_item(Some(root), &path)),
+        ),
+        Effect::NewCollection(new) => (
+            "Creating the collection…",
+            Box::new(move |root| {
+                crate::commands::collection_new(Some(root), &new.path, new.description, &new.tags)
+            }),
+        ),
+        Effect::Rename { item, new_name } => (
+            "Renaming it…",
+            Box::new(move |root| crate::commands::rename(Some(root), &item, Some(&new_name))),
+        ),
+        Effect::Expand { item, anyway } => (
+            "Expanding it…",
+            Box::new(move |root| crate::expand::expand(Some(root), &item, anyway)),
+        ),
+        _ => unreachable!("only the archive's actions come here"),
+    };
+    (
+        busy.into(),
+        Box::new(move || {
+            let result = work(&root);
+            changed(&root, &result);
+            result
+        }),
+    )
 }
 
 /// Opens `path` in the system's own app for it (Finder, a file manager, or what the file's
@@ -1820,8 +1881,9 @@ mod tests {
         assert!(text.contains("No pending history entries"), "{text}");
         let keys = app.keys();
         assert!(
-            keys.iter()
-                .all(|(k, _)| !["r", "x", "a", "Space"].contains(k)),
+            keys.iter().all(|(k, _)| !["r", "a", "Space"].contains(k))
+                && keys.contains(&("x", "take off"))
+                && keys.contains(&("f", "archive")),
             "only what a desk item without entries answers to: {keys:?}"
         );
         assert_eq!(app.key(key(KeyCode::Char('r'))), None);
