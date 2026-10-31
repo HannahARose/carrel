@@ -1,0 +1,152 @@
+{
+  "fill": {
+    "linear-gradient": [
+      "srgb:0.16863,0.20392,0.32157,1.00000",
+      "srgb:0.07059,0.09020,0.15686,1.00000"
+    ],
+    "orientation": {
+      "start": {
+        "x": 0.5,
+        "y": 0
+      },
+      "stop": {
+        "x": 0.5,
+        "y": 1
+      }
+    }
+  },
+  "groups": [
+    {
+      "name": "Lamp",
+      "layers": [
+        {
+          "name": "lamp",
+          "image-name": "lamp.svg",
+          "glass": true
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
+      },
+      "translucency": {
+        "enabled": false,
+        "value": 0.5
+      }
+    },
+    {
+      "name": "Desk",
+      "layers": [
+        {
+          "name": "pull",
+          "image-name": "pull.svg",
+          "glass": false,
+          "fill-specializations": [
+            {
+              "appearance": "tinted",
+              "value": {
+                "solid": "srgb:0.78000,0.78000,0.80000,1.00000"
+              }
+            }
+          ]
+        },
+        {
+          "name": "drawer",
+          "image-name": "drawer.svg",
+          "glass": false,
+          "fill-specializations": [
+            {
+              "appearance": "tinted",
+              "value": {
+                "solid": "srgb:0.32000,0.32000,0.34000,1.00000"
+              }
+            }
+          ]
+        },
+        {
+          "name": "found",
+          "image-name": "found.svg",
+          "glass": false,
+          "fill-specializations": [
+            {
+              "appearance": "tinted",
+              "value": {
+                "solid": "srgb:1.00000,1.00000,1.00000,1.00000"
+              }
+            }
+          ]
+        },
+        {
+          "name": "cards",
+          "image-name": "cards.svg",
+          "glass": false,
+          "fill-specializations": [
+            {
+              "appearance": "tinted",
+              "value": {
+                "solid": "srgb:0.78000,0.78000,0.80000,1.00000"
+              }
+            }
+          ]
+        },
+        {
+          "name": "beam",
+          "image-name": "beam.svg",
+          "glass": false
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.4
+      },
+      "translucency": {
+        "enabled": false,
+        "value": 0.5
+      }
+    },
+    {
+      "name": "Carrel",
+      "layers": [
+        {
+          "name": "booth",
+          "image-name": "booth.svg",
+          "glass": true,
+          "fill-specializations": [
+            {
+              "appearance": "tinted",
+              "value": {
+                "solid": "srgb:0.32000,0.32000,0.34000,1.00000"
+              }
+            }
+          ]
+        },
+        {
+          "name": "interior",
+          "image-name": "interior.svg",
+          "glass": false,
+          "fill-specializations": [
+            {
+              "appearance": "tinted",
+              "value": {
+                "solid": "srgb:0.18000,0.18000,0.20000,1.00000"
+              }
+            }
+          ]
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.4
+      },
+      "translucency": {
+        "enabled": false,
+        "value": 0.5
+      }
+    }
+  ],
+  "supported-platforms": {
+    "squares": [
+      "macOS"
+    ]
+  }
+}

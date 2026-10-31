@@ -146,10 +146,12 @@ fn embedding_offer(id: &str, embedding: &Embedding) -> Offer {
     }
 }
 
-/// How to use the model `id`, if the catalog lists it as an embedding model. Its file is
-/// named after it, so a downloaded catalog model is found by its name.
+/// How to use the model `id`, if the catalog lists it as an embedding model that's downloaded
+/// as a GGUF. Its file is named after it, so a downloaded catalog model is found by its name.
 fn embedding(id: &str) -> Option<Embedding> {
-    carrel_core::models::find(id).and_then(|m| m.embedding)
+    carrel_core::models::find(id)
+        .filter(|m| m.comes_with.is_none())
+        .and_then(|m| m.embedding)
 }
 
 /// The `.gguf` files in `dir`, by name, identified by their file stem.
@@ -429,6 +431,9 @@ fn embed(
     let pooling = match embedding.pooling {
         Pooling::Mean => LlamaPoolingType::Mean,
         Pooling::Last => LlamaPoolingType::Last,
+        // Only models that come with another provider pool on their own, and they're never
+        // offered here.
+        Pooling::Own => LlamaPoolingType::Unspecified,
     };
     // The whole text goes through in one batch, as models that read in both directions need.
     let params = LlamaContextParams::default()
@@ -519,8 +524,16 @@ mod tests {
         dir
     }
 
+    /// The first text model in the folder: the folder may hold embedding models too, which
+    /// can't answer prompts.
     fn first_model(provider: &LlamaProvider) -> String {
-        provider.offers()[0].id.clone()
+        provider
+            .offers()
+            .iter()
+            .find(|o| o.capability != Capability::Embed)
+            .expect("a text model in the folder")
+            .id
+            .clone()
     }
 
     #[test]
@@ -635,7 +648,14 @@ mod tests {
         let Some(dir) = models() else { return };
         let provider = LlamaProvider::with_context(Some(&dir), 2048);
         let model = first_model(&provider);
-        assert!(provider.offers()[0].available);
+        assert!(
+            provider
+                .offers()
+                .iter()
+                .find(|o| o.id == model)
+                .unwrap()
+                .available
+        );
         let answer = provider
             .complete(
                 &model,

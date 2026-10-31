@@ -555,6 +555,7 @@ fn io(path: &Path) -> impl FnOnce(std::io::Error) -> CheckoutError + '_ {
 ///
 /// [`CheckoutError::Missing`] if nothing is at `path`, or an error reading it.
 pub fn snapshot(path: &Path, item: Id, rules: &Rules) -> Result<Manifest, CheckoutError> {
+    let built = std::time::SystemTime::now();
     let meta = match std::fs::symlink_metadata(path) {
         Ok(meta) => meta,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
@@ -578,6 +579,7 @@ pub fn snapshot(path: &Path, item: Id, rules: &Rules) -> Result<Manifest, Checko
             size: meta.len(),
             modified: crate::manifest::timestamp(modified),
         }],
+        built: Some(built),
     })
 }
 

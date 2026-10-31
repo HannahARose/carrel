@@ -205,12 +205,13 @@ Items waiting on a question aren't approved in bulk until it's answered or dismi
 
 ## Finding things
 
-- `carrel search WORDS` finds items by what's in their cards and their contents (below).
+- `carrel search WORDS` finds items by what's in their cards and their contents, and by what they mean (below).
 - **Browse** (`5`) lists collections and their items, with each card in full. `/` searches the whole archive the way `carrel search` does, filters and all (below).
-- **An item's view:** below its card, Browse lists every change that touched the item, newest first, from its filing to its latest correction or return, and the items its card links to (`version-of`, `related`, `part-of`). `Enter` on an item moves into its view: `u` undoes the chosen change (after asking, as History does), `Enter` on a linked item goes to it, and `←` or `Esc` go back.
+- **An item's view:** below its card, Browse lists every change that touched the item, newest first, from its filing to its latest correction or return, then under **Related** the items its card links to (`version-of`, `related`, `part-of`) and the five items nearest it by meaning (`near`; see [Related items](#related-items)). `Enter` on an item moves into its view: `u` undoes the chosen change (after asking, as History does), `Enter` on a related item goes to it, and `←` or `Esc` go back.
 - **Recent**, on the Status screen (`1`) and in `carrel status`, lists the last ten things filed, changed or worked on across the archive: each recorded change, and each approved work session on the day it happened.
-- `carrel show ITEM` prints a card, its links, and the changes that touched it, each with the identifier `carrel undo` takes.
+- `carrel show ITEM` prints a card, the items related to it (its links, and those nearest it by meaning), and the changes that touched it, each with the identifier `carrel undo` takes.
 - `ARCHIVE.md` and each collection's design document end with a generated list of its contents, so the archive is browsable in Finder or Obsidian too.
+- **From Neovim or Emacs:** `:CarrelSearch` and `M-x carrel-search` search the same way and open what you choose; `:CarrelShow` and `M-x carrel-show` show the card of the file you're in. See [Neovim and Emacs](editors.md).
 
 ### Searching
 
@@ -234,7 +235,41 @@ A value with spaces goes in quotes: `collection:"Tax returns"`. `carrel search t
 
 **Restricted items are found by their card only, never by their text**, so a card number or password inside one can't be searched for. Their text isn't kept for search at all. Sensitive items are searched like any other; the results are only ever shown to you.
 
-The first search reads the text of items that haven't been read yet, with a progress bar. Text is kept in `_System/cache.nosync/text/`, one file per item's contents, so each item is read once; drafting keeps the text it reads there too. It's a cache: left out of history, backups and sync, and safe to delete. A file nothing on this device can read is tried again a week later, in case a provider that reads it has been added. Search by meaning, so that "the lease for the flat" finds a tenancy agreement, follows in a later version.
+The first search reads the text of items that haven't been read yet, with a progress bar. Text is kept in `_System/cache.nosync/text/`, one file per item's contents, so each item is read once; drafting keeps the text it reads there too. It's a cache: left out of history, backups and sync, and safe to delete. A file nothing on this device can read is tried again a week later, in case a provider that reads it has been added.
+
+### Searching by meaning
+
+Words find exact names and numbers; meaning finds descriptions. With the archive's embedding model on this device, `carrel search the lease for the flat` finds a tenancy agreement whose card never says "lease". Search ranks items both ways and merges the two, so either can bring an item back: items with an exact name or number from your words, such as `invoice 2057-4038` or `AS1115`, come first, then the rest mostly by meaning; `matched: meaning` says it was found by what it means, with the passage nearest your words.
+
+Every device uses the archive's one embedding model, chosen when it's created (`embedding.model`, EmbeddingGemma 300M by default), since vectors from different models can't be compared. Download it with `carrel models download embeddinggemma-300m`, then build the index with `carrel index rebuild`. It embeds each item's card (title, summary, tags, collection, dates and kind) as one text, and its text in passages of about 500 tokens, up to 20 an item, so a long document is found by what's inside it. **Restricted items are embedded by their card only**, so nothing in their text can be found, or reconstructed, from the index.
+
+After that it keeps itself current: filing, corrections, edits, renames, returns and undo start the worker, which embeds what changed in the background, so the change never waits for the model. Until it catches up, those items are found by their words, and search says the meaning index is behind. When there's no index, or no provider on this device runs the model, search uses words only and says so. `carrel index status` shows how many items are embedded and how many are behind.
+
+The index is kept in `_System/index/`, a folder for each model. Like the text cache it's regenerable, so it's left out of history and backups, and `carrel index rebuild` makes it again; interrupted, the rebuild carries on where it stopped.
+
+The meaning index has three commands:
+
+| Command | What it does |
+| --- | --- |
+| `carrel index status` (or `carrel index`) | The archive's model, how many items are embedded, how many are behind, and whether the worker is catching up |
+| `carrel index rebuild` | Embeds every item again, with a progress bar; interrupted, it carries on where it stopped |
+| `carrel index model NAME` | Switches the archive to another embedding model, building the new index while the old one keeps serving (below) |
+
+To switch the archive to another model, run `carrel index model NAME` (`carrel index model` alone lists the models this device can embed with). A provider on this device must offer the model. The new model's index is built beside the old one, with a progress bar, and search keeps using the old one until the new one is complete. Then the archive switches, on every device: `embedding.model` changes and the old index is removed. The switch is recorded in the archive's settings as soon as it starts, so every device's `carrel index status` shows how far it's got. If it's interrupted, running the same command again carries on. To give up a switch part way, run `carrel index model` with the archive's current model. A device without a provider for the new model searches by words once the switch is done, and says why.
+
+Switching re-embeds the whole archive, on every device that searches it, so it's worth doing only for a reason: a model that finds your things better, or one that every device you search from can run. The benchmark's findability test ([docs/bench](../bench/README.md)) compares the models on offer.
+
+### Related items
+
+An item's view in Browse and `carrel show` list, under **Related**, the items its card links to and the five items nearest it in the meaning index, so a paper leads to its notes and an invoice to its receipt, whatever each is called. The item is compared by what its card says (its title, summary, tags, collection, dates and kind) against every card and passage in the index, so an item whose text is about the same thing comes up too. The item itself and the items it already links to aren't listed again.
+
+Nothing is embedded to show them: the item's card is already in the index, so they're there as soon as the item is opened, without the model, and on a device that doesn't have it. **Restricted items are compared by their card only**, as search compares them, and a restricted or sensitive neighbour is listed like any other, marked **[restricted]** or **[sensitive]**.
+
+When the archive has no meaning index yet, or the index hasn't caught up with the item (it was just filed or changed and the worker hasn't embedded it again), only the links are listed, with a line saying why. `carrel show --json` gives the near items as `near` (each with its card, title, sensitivity and score) and the reason as `links_only`.
+
+### What sensitive and restricted items show
+
+Search is for you alone, so sensitive and restricted items come back like any other, marked **[sensitive]** or **[restricted]**. A sensitive item is found by its card, its text and its meaning, and its passage is shown. A **restricted** item is found only by its card: its title, summary, tags, collection and dates, by words and, from its card alone, by meaning. Its passage is from its card (its summary, or your notes on it), never its text, since its text isn't kept for search or embedded. So a restricted bank statement is found by "bank statement March", but not by the account number printed in it.
 
 **In Browse,** `/` runs the same search: type words, filters or both, and press `Enter`. The items found are listed best first, with their collection and a mark for sensitive and restricted ones, and above the chosen item's card is what matched and the passage, your words underlined. Collections and glossary facts that match are counted in the list's title; `carrel search` lists them. Browse doesn't stop to read text that hasn't been read yet: items filed before search arrived are found by their cards until a `carrel search` has read them (anything drafted since kept its text when it was drafted). `Esc` clears the search.
 

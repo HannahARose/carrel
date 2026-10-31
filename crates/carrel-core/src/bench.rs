@@ -4,6 +4,11 @@
 //! The test set lives in `fixtures/bench`: an archive, the items to ingest, and
 //! `answers.yaml`. [`check`] makes sure they agree; [`outcomes`] reads what a [`Run`] proposed;
 //! [`score`] compares the two.
+//!
+//! [`findability`] measures search on the same test set, with hand-written descriptions of each
+//! item in `descriptions.yaml`.
+
+pub mod findability;
 
 use std::collections::BTreeMap;
 use std::path::Path;

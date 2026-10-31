@@ -23,9 +23,10 @@ pub enum Key {
 }
 
 /// The embedding models an archive can choose: the catalog's, the default first.
-const EMBEDDING_MODELS: [&str; 2] = [
+const EMBEDDING_MODELS: [&str; 3] = [
     crate::models::DEFAULT_EMBEDDING_MODEL,
     "qwen3-embedding-0.6b",
+    "apple-nl-sentence-en",
 ];
 
 impl Key {
@@ -151,7 +152,7 @@ impl Key {
                 match settings.embedding_model() {
                     Some(chosen) if chosen != value => {
                         return Err(format!(
-                            "this archive is searched with {chosen}; switching models re-embeds the archive, which isn't possible yet"
+                            "this archive is searched with {chosen}; switching models re-embeds the archive, so use `carrel index model {value}`"
                         ));
                     }
                     _ => settings.set_embedding_model(value),
@@ -226,28 +227,48 @@ pub fn change(
             commit: None,
         });
     }
-    let path = archive.root().join("_System/settings.json");
-    let text = serde_json::to_string_pretty(&settings)
-        .map_err(std::io::Error::other)
-        .map_err(SettingsError::Io)?;
-    std::fs::write(&path, text + "\n").map_err(SettingsError::Io)?;
-    let change = Change::new(
-        Operation::Edit,
-        format!("Set {} to {to}", key.as_str()),
-        lease.info().person,
-        lease.info().device,
-    );
-    let reopened = Archive::open(archive.root()).map_err(SettingsError::Archive)?;
-    let commit = History::open(&reopened)
-        .map_err(SettingsError::History)?
-        .commit(&reopened, &change, lease)
-        .map_err(SettingsError::History)?;
+    let commit = save(
+        archive,
+        &settings,
+        &format!("Set {} to {to}", key.as_str()),
+        lease,
+    )?;
     Ok(Changed {
         key,
         from,
         to,
         commit,
     })
+}
+
+/// Writes `settings` as `archive`'s and records it in history as `summary`, holding `lease`.
+/// Returns the history commit, if anything changed.
+///
+/// # Errors
+///
+/// [`SettingsError`] if writing or committing fails.
+pub fn save(
+    archive: &Archive,
+    settings: &Settings,
+    summary: &str,
+    lease: &WriterLease,
+) -> Result<Option<String>, SettingsError> {
+    let path = archive.root().join("_System/settings.json");
+    let text = serde_json::to_string_pretty(settings)
+        .map_err(std::io::Error::other)
+        .map_err(SettingsError::Io)?;
+    std::fs::write(&path, text + "\n").map_err(SettingsError::Io)?;
+    let change = Change::new(
+        Operation::Edit,
+        summary,
+        lease.info().person,
+        lease.info().device,
+    );
+    let reopened = Archive::open(archive.root()).map_err(SettingsError::Archive)?;
+    History::open(&reopened)
+        .map_err(SettingsError::History)?
+        .commit(&reopened, &change, lease)
+        .map_err(SettingsError::History)
 }
 
 #[cfg(test)]

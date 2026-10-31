@@ -3,8 +3,11 @@
 //! text model turns that into field changes, each marked as dictated by the owner or inferred
 //! by the model. Lines of `field: value` are applied without a model.
 //!
-//! This module works out the changes and applies them to a card; showing them, asking for
-//! the owner's yes, refiling and committing are the caller's.
+//! This module works out the changes and applies them to a card; [`prepare`] holds a
+//! correction until the owner's yes, then saves it, refiling and committing a filed item.
+//! Showing it and asking are the caller's.
+
+pub mod prepare;
 
 use std::fmt::Write as _;
 

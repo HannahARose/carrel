@@ -33,13 +33,17 @@ struct ModelFolderTests {
         let set = ModelFolder.modelsRoot(environment: ["CARREL_MODELS_DIR": "/tmp/models"])
         #expect(set?.path(percentEncoded: false) == "/tmp/models/")
         let unset = ModelFolder.modelsRoot(environment: [:])
-        #expect(unset?.path(percentEncoded: false).hasSuffix("Application Support/Carrel/models/") == true)
+        #expect(
+            unset?.path(percentEncoded: false).hasSuffix("Application Support/Carrel/models/")
+                == true)
     }
 
     @Test func aModelNeedsTwiceItsSizeInMemory() {
         let model = ModelFolder(name: "big", url: URL(filePath: "/x"), size: 5_000_000_000)
         #expect(model.tooBig(forMemory: 16_000_000_000) == nil)
-        #expect(model.tooBig(forMemory: 8_000_000_000) == "big needs about 10 GB of memory; this Mac has 8 GB")
+        #expect(
+            model.tooBig(forMemory: 8_000_000_000)
+                == "big needs about 10 GB of memory; this Mac has 8 GB")
 
         let offer = MLXModel(folder: model, environment: [:], memory: 8_000_000_000).offer
         #expect(offer.available == false)
@@ -63,13 +67,15 @@ typealias Value = CarrelAppleProviders.JSONValue
 
 struct SchemaTextTests {
     @Test func propertiesFollowRequiredThenName() throws {
-        let schema = try #require(Value(parsing: """
-            {"type": "object", "required": ["title", "summary", "created"],
-             "properties": {"created": {"type": "string"}, "new_tag": {"type": "string"},
-                            "summary": {"type": "string", "description": "Say \\"what\\""},
-                            "title": {"type": "string"}},
-             "additionalProperties": false}
-            """))
+        let schema = try #require(
+            Value(
+                parsing: """
+                    {"type": "object", "required": ["title", "summary", "created"],
+                     "properties": {"created": {"type": "string"}, "new_tag": {"type": "string"},
+                                    "summary": {"type": "string", "description": "Say \\"what\\""},
+                                    "title": {"type": "string"}},
+                     "additionalProperties": false}
+                    """))
         let text = SchemaText.write(schema)
         let order = ["\"title\"", "\"summary\"", "\"created\"", "\"new_tag\""].map {
             text.range(of: $0)!.lowerBound

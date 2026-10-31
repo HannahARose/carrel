@@ -1,7 +1,7 @@
 // swift-tools-version: 6.0
 // CarrelKit: carrel-core for Swift, through the UniFFI bindings in carrel-ffi.
-// Run scripts/build-xcframework.sh first; it builds CarrelFFI.xcframework and the generated
-// Swift sources this package compiles.
+// Run scripts/build-xcframework.sh first; it builds CarrelFFI.xcframework, which this package
+// links. The generated Swift bindings in Sources/CarrelKit/Generated are committed.
 
 import PackageDescription
 

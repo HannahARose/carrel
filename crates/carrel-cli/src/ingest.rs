@@ -122,11 +122,7 @@ fn wait(archive: &Archive, queued: &Queued, json: bool) -> Result<Report, Failur
         // Another worker has the queue; follow it until our items are gone from it.
         let total = ours.len();
         loop {
-            let (left, _) = carrel_core::intake::IntakeQueue::of(archive).list()?;
-            let remaining = left
-                .iter()
-                .filter(|e| ours.contains(&e.id) && !e.stuck())
-                .count();
+            let remaining = intake::remaining(archive, &ours)?;
             let current = crate::worker::status(archive).and_then(|s| s.item);
             display.count("items", total - remaining, total, current.as_deref());
             if remaining == 0 || !crate::worker::running(archive)? {
@@ -287,7 +283,10 @@ fn plural(n: usize, word: &str) -> String {
 pub fn queue_status(archive: Option<&Path>) -> Result<Report, Failure> {
     let archive = locate(archive)?;
     let identity = crate::config::Identity::load_or_create()?;
-    let entries = intake::waiting(&archive, identity.device, true)?;
+    let intake::Listing {
+        waiting,
+        failed: stuck,
+    } = intake::listing(&archive, identity.device)?;
     let worker = crate::worker::status(&archive);
     let running = crate::worker::running(&archive)?;
     let mut text = String::new();
@@ -307,7 +306,6 @@ pub fn queue_status(archive: Option<&Path>) -> Result<Report, Failure> {
         (None, true) => text.push_str("Worker: starting\n"),
         (None, false) => text.push_str("Worker: not running\n"),
     }
-    let (stuck, waiting): (Vec<_>, Vec<_>) = entries.iter().partition(|e| e.stuck());
     if waiting.is_empty() && stuck.is_empty() {
         text.push_str("The queue is empty.\n");
     }
@@ -369,12 +367,7 @@ pub fn change_queued(archive: Option<&Path>, id: &str, change: Change) -> Result
     let archive = locate(archive)?;
     let identity = crate::config::Identity::load_or_create()?;
     let entry = match change {
-        Change::Remove => {
-            let queue = intake::IntakeQueue::of(&archive);
-            let entry = queue.find(id)?;
-            queue.remove(entry.id)?;
-            entry
-        }
+        Change::Remove => intake::remove(&archive, id)?,
         Change::First => intake::move_to_front(&archive, id, identity.device)?,
         Change::Retry => {
             let entry = intake::retry(&archive, id)?;

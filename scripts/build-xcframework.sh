@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
-# Builds carrel-ffi for macOS, iOS and the iOS Simulator, packages it as
-# apple/CarrelKit/CarrelFFI.xcframework, and generates the Swift bindings into the
-# CarrelKit package. Run it after changing carrel-ffi; the outputs aren't committed.
+# Builds carrel-ffi for macOS, iOS and the iOS Simulator (Apple silicon only), packages it as
+# apple/CarrelKit/CarrelFFI.xcframework, and regenerates the Swift bindings in the CarrelKit
+# package (scripts/generate-bindings.sh). Run it after changing carrel-ffi. The framework
+# isn't committed; the bindings are.
 #
 #   scripts/build-xcframework.sh            release build
 #   PROFILE=dev scripts/build-xcframework.sh  faster debug build
 #
-# Needs the Apple targets: rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+# Needs the Apple targets:
+#   rustup target add aarch64-apple-ios aarch64-apple-ios-sim
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -23,20 +25,21 @@ targets="aarch64-apple-darwin aarch64-apple-ios aarch64-apple-ios-sim"
 package=apple/CarrelKit
 work=target/xcframework
 
+installed="$(rustup target list --installed)"
+for target in $targets; do
+  if ! grep -qx "$target" <<<"$installed"; then
+    echo "The $target Rust target isn't installed. Add it with:" >&2
+    echo "  rustup target add $target" >&2
+    exit 1
+  fi
+done
+
 for target in $targets; do
   cargo build --locked -p carrel-ffi --lib --profile "$profile" --target "$target"
 done
 
-# Generate the Swift side from the macOS library, which carries the interface metadata.
-rm -rf "$work"
-mkdir -p "$work/generated" "$work/headers"
-cargo run --locked -q -p uniffi-bindgen -- generate \
-  --library "target/aarch64-apple-darwin/$out/libcarrel_ffi.dylib" \
-  --language swift --out-dir "$work/generated"
-cp "$work/generated/carrel_ffiFFI.h" "$work/headers/"
-cp "$work/generated/carrel_ffiFFI.modulemap" "$work/headers/module.modulemap"
-mkdir -p "$package/Sources/CarrelKit/Generated"
-cp "$work/generated/carrel_ffi.swift" "$package/Sources/CarrelKit/Generated/"
+# The Swift side comes from the macOS library, which carries the interface metadata.
+LIBRARY="target/aarch64-apple-darwin/$out/libcarrel_ffi.dylib" scripts/generate-bindings.sh
 
 rm -rf "$package/CarrelFFI.xcframework"
 args=()

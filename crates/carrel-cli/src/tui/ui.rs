@@ -720,7 +720,7 @@ fn draw_browse(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
                 |(i, (_, title))| match app.searched.hit(i).map(|h| &h.found) {
                     Some(Found::Item(item)) => ListItem::new(format!(
                         "{title}{}  ({})",
-                        sensitivity_mark(item.sensitivity),
+                        crate::related::mark(item.sensitivity),
                         item.collection
                     )),
                     _ => ListItem::new(title.as_str()),
@@ -739,17 +739,6 @@ fn draw_browse(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
         &mut items_state,
     );
     draw_item(frame, app, theme, card_area);
-}
-
-/// The chosen item: its card, then its changes and related items, which the owner moves
-/// among in the item's own pane.
-/// How a search result is marked when the item is sensitive or restricted.
-fn sensitivity_mark(sensitivity: Sensitivity) -> &'static str {
-    match sensitivity {
-        Sensitivity::Restricted => "  [restricted]",
-        Sensitivity::Sensitive => "  [sensitive]",
-        _ => "",
-    }
 }
 
 /// Why a search result came back: where it matched, and the passage with the words marked.
@@ -777,6 +766,8 @@ fn why_lines(hit: &Hit, theme: Theme) -> Vec<Line<'static>> {
     lines
 }
 
+/// The chosen item: its card, then its changes and related items, which the owner moves
+/// among in the item's own pane.
 fn draw_item(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
     let view = &app.item;
     let block = Block::new().borders(ratatui::widgets::Borders::LEFT);
@@ -804,8 +795,21 @@ fn draw_item(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
             ),
             Row::Related(related) => match &related.relation {
                 Relation::Link(how) => format!("{how}  {}", related.title),
+                Relation::Near(sensitivity) => {
+                    format!(
+                        "near  {}{}",
+                        related.title,
+                        crate::related::mark(*sensitivity)
+                    )
+                }
             },
         }));
+    }
+    if let Some(why) = &view.links_only {
+        if view.related.is_empty() {
+            rows.push(ListItem::new(Line::styled("Related", bold)));
+        }
+        rows.push(ListItem::new(Line::styled(why.clone(), theme.dim())));
     }
     let list_height = u16::try_from(rows.len())
         .unwrap_or(u16::MAX)

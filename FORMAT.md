@@ -479,6 +479,7 @@ Archive-level settings that every device follows. Version 1.0 defines:
 | `sessions.idle_minutes` | integer | `45` |
 | `reminders` | list of `idle`, `weekly`, `menu-bar`, `due-date` | `["idle", "weekly", "menu-bar"]` |
 | `embedding.model` | model identifier | chosen at creation |
+| `embedding.switching_to` | model identifier: the model the archive is switching to, while its index (§7.11) is built. Programs keep searching with `embedding.model` until the switch finishes, then set `embedding.model` to it and remove this key | none |
 | `backups` | map describing the backup repository: `type` (`kopia`), `repository` (the backup system's identifier for it) and `description`. Never its path, which differs between devices, and never the password | none |
 | `ingest.originals` | `move` (the original is moved into the archive on approval) or `keep` (it's copied, and the original is left for the owner to delete) | `move` |
 | `signals.crowded_items` | integer: how many loose items make a collection with no subcollections crowded, as a restructure signal | `30` |
@@ -540,12 +541,12 @@ Patterns use `*` for any run of characters within a name and match whole names, 
 A manifest records the files in a folder or bundle, one per line, as tab-separated values:
 
 ```text
-# carrel manifest 1.0	id=01928f3a-7c41-7d2e-9b6a-3f0c5e2a1b44
+# carrel manifest 1.0	id=01928f3a-7c41-7d2e-9b6a-3f0c5e2a1b44	built=2026-09-14T10:05:00.5-07:00
 README.md	sha256:9f86d081…	512	2026-09-09T18:30:00.25-07:00
 src/main.rs	sha256:e3b0c442…	2048	2026-09-14T10:02:11.137401922-07:00
 ```
 
-- **Header:** the first line is `# carrel manifest 1.0` followed by tab-separated `key=value` fields, including the item's `id`. Readers ignore fields they don't know.
+- **Header:** the first line is `# carrel manifest 1.0` followed by tab-separated `key=value` fields, including the item's `id` and, optionally, `built`: when the manifest was built, taken just before its files were read. Readers ignore fields they don't know.
 - **Columns:** path relative to the folder with `/` separators, checksum, size in bytes, modification time. Modification times keep the file system's full precision (fractional seconds).
 - **Order:** rows are sorted by path in byte order (UTF-8), and a path appears at most once.
 - **Encoding:** in paths, `%`, tab, carriage return and line feed are written as `%25`, `%09`, `%0D` and `%0A`; nothing else is encoded.
@@ -553,7 +554,7 @@ src/main.rs	sha256:e3b0c442…	2048	2026-09-14T10:02:11.137401922-07:00
 - **Symbolic links** are listed, not followed: the checksum is of the link's target path, and the size is that path's length in bytes.
 - **Storage:** manifests are stored at `_System/manifests/<item-id>.tsv`. They sync with the archive but are not part of the history repository (§8.1). While an item is checked out, the manifest of what it held when it went out is kept beside them as `<item-id>.checkout.tsv`, for comparing with on return (§9.1); it's deleted when the item comes back.
 - **Content checksum:** the card's `manifest.checksum` identifies the item's contents, not the manifest file. It is the checksum of the text made by writing, for every row in order, the encoded path, a tab, the checksum, a tab, the size and a line feed. Modification times and the header are left out, so touching a file without changing it never changes the card, and a manifest rebuilt from a backup can be checked exactly against history.
-- **Reusing checksums:** a program may reuse an entry's checksum when a file's size and modification time both match the previous manifest, instead of reading the file again.
+- **Reusing checksums:** a program may reuse an entry's checksum when a file's size and modification time both match the previous manifest, instead of reading the file again, but only when that modification time is at least two seconds before the previous manifest's `built` time. File systems stamp writes from a coarse clock (about 16 ms on Windows, up to two seconds on FAT), so a file edited just after it was read can keep the modification time recorded for it; such files, and every file when `built` is missing, are read again.
 - **Past manifests** can be rebuilt from the backup snapshot named in a history commit's `Carrel-Snapshot` trailer, using the rules in `_System/rules/` as of that commit, and checked against the `manifest.checksum` in the card as of that commit.
 
 ### 7.8 Inboxes
@@ -705,6 +706,15 @@ Once a question is answered or dismissed, programs remove it and clear the probl
 ### 7.11 Search index
 
 `_System/index/` holds the search index. Its files are tagged with the embedding model identifier and version from `settings.json`. The index can always be rebuilt from cards and items, so readers may ignore it.
+
+Each model's index is a folder named for its identifier, with characters other than ASCII letters, digits, `-`, `_` and `.` replaced by `_` (`_System/index/embeddinggemma-300m/`). It holds:
+
+- `index.json`: `format` (`1`), `model` (the identifier), `dimensions` (the numbers in each vector), and `rebuilding: true` while a rebuild, or the build of a model the archive is switching to, hasn't finished.
+- Up to 256 shards, `00.shard` to `ff.shard`, each holding the items whose identifier's last byte is its name. A shard is one line of JSON, `{"items": [...]}`, then a newline, then the vectors. Each item is `id`; `card`, the SHA-256 checksum of the card text that was embedded; `text`, the content checksum (§4.3) of the contents whose text was cut into passages, if any; and `parts`, what each of its vectors is of, in order: `{"of": "card"}` first, then `{"of": "passage", "start", "end"}` for each passage, in bytes of the item's text as drafting read it. The vectors follow in the same order, each `dimensions` little-endian IEEE 754 16-bit floats, of unit length.
+
+The card text is the card's title, summary, tags (`Tags: a, b`), collection (`Collection: Parent / Child`), document, created and added dates (`Dates: document 2025-03-02, added 2026-10-29`) and kind (`Kind: file`), one line each, leaving out lines with nothing in them. An item is behind when it has no entry, its card text's checksum differs, or its passages are from other contents. Restricted items have only their card embedded. A shard whose vectors don't match its entries is ignored, and its items embedded again.
+
+While the archive switches models (`embedding.switching_to`, §7.2), the new model's folder is built beside the current model's, which search keeps using. Once the new index is complete (no `rebuilding`), `embedding.model` changes to the new model and the old model's folder is removed. A switch that's given up removes the new model's folder. Folders for models that are neither `embedding.model` nor `embedding.switching_to` may be removed.
 
 ### 7.12 `cache.nosync/`
 

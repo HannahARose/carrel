@@ -87,6 +87,58 @@ Every answer was valid, nothing was declined, and nothing was under-rated.
 
 So descriptions are worth keeping on: they cost little, they help when Apple's model files alone or Gemma isn't installed, and they give photos titles and summaries that say what's in them.
 
+## Findability
+
+How well search finds things (`docs/design/search.md`, "Measuring it"). Each item in the test set has two to four descriptions in [`fixtures/bench/descriptions.yaml`](../../fixtures/bench/descriptions.yaml), written by hand the way a person would search for it months later: what it is ("the lease for my flat"), what it's for ("proof I bought my new computer, for the warranty"), or a detail inside it ("booking reference K7Q2PX"), never its file name. `carrel bench --search` files every item in its expected collection, then looks up each description three ways:
+
+- **words alone:** the word index, over the cards and the item's text;
+- **meaning alone:** the embedding index, with each embedding model on offer;
+- **both:** the two merged as `carrel search` merges them, with the model's weights (`search::Merge`).
+
+Each is scored by **top-five recall** (the share of descriptions whose item is among the first five items that come back) and **mean reciprocal rank** (1 for first place, ½ for second, and so on, 0 when it isn't in the first 100). The report lists every description that missed, with where its item came and what came back instead, so a miss can be read: a bad description, a card that says too little, or a model that doesn't understand.
+
+The cards are titled by file name unless `--cards RESULTS` gives a `results.json` from a filing run, whose drafted titles and summaries are used instead; the tags, dates and sensitivity are the expected ones. Item text is read by the providers on the device, as search reads it, so the scores depend on what the device can read (images and PDFs need Apple's or the extraction provider).
+
+```bash
+carrel bench --search --out bench-results
+```
+
+It writes `bench-results/search/results.json` and `report.md`. For words alone and meaning alone, `results.json` keeps each description's whole ranking (`places`, up to 100, with each score and exact-match count), so how search merges them can be replayed and tuned without the models: `crates/carrel-core/tests/replay.rs` replays a run's rankings with each merge strategy. Runs before November 2026 kept only the first five, and the replay estimates the rest. The filed archive and each model's index are kept in `bench-results/search/archive`, so a second run embeds only what changed and says it reused the index; `--fresh` starts over, and `--model NAME` measures one embedding model.
+
+### 2026-10-31
+
+On DeskBook, an M2 Max MacBook Pro with 32 GB (the on-device runner), with Carrel from `dev` at 860cdf0, the embedding models through llama.cpp and Apple's NaturalLanguage. 230 descriptions of 81 items. [Full report](2026-10-31/findability/report.md) · [results.json](2026-10-31/findability/results.json) · [with drafted cards](2026-10-31/findability-drafted-cards/report.md)
+
+| Ranking | Model | Top five | Mean reciprocal rank | Missed |
+| --- | --- | --- | --- | --- |
+| Words alone | none | 90% | 0.84 | 22 |
+| **Meaning alone** | **EmbeddingGemma 300M** | **97%** | **0.92** | **6** |
+| Words and meaning | EmbeddingGemma 300M | 94% | 0.88 | 13 |
+| Meaning alone | Qwen3-Embedding 0.6B | 97% | 0.88 | 7 |
+| Words and meaning | Qwen3-Embedding 0.6B | 92% | 0.88 | 19 |
+| Meaning alone | Apple NaturalLanguage (English) | 39% | 0.28 | 141 |
+| Words and meaning | Apple NaturalLanguage (English) | 84% | 0.62 | 37 |
+
+- **EmbeddingGemma 300M stays the default.** It finds 97% of descriptions in the top five by meaning alone, ties Qwen3-Embedding at half its size (334 MB against 639 MB), and ranks the right item higher (0.92 against 0.88).
+- **Words alone miss descriptions** that share no words with the card: "my résumé" for `cv alex morgan.md`, "which jabs I've had" for a vaccination record. Meaning finds those, which is what the embedding index is for.
+- **Merging the two ranks lower than meaning alone** with either open model: 94% against 97% for EmbeddingGemma. Reciprocal rank fusion weighs a weak word match as much as a strong meaning match. Replayed with the merge from #249 (exact names and numbers first, then meaning, with the words breaking near-ties), the same rankings give 97% and 0.92 for EmbeddingGemma and 97% and 0.91 for Qwen3-Embedding, at least as good as meaning alone.
+- **Apple's sentence embedding is too weak for search** on its own (39%), and drags the merge below words alone. It stays available to Apple-only archives but isn't recommended.
+- **With drafted cards** (only the 9 items in the image run had them; the rest kept file names) every ranking does a point or two better, EmbeddingGemma reaching 98%.
+- Embedding all 81 items took under a minute per model on the M2 Max.
+
+After #251 changed the merge (exact names and numbers first, then words weighted by how strong the embedding model is), the same run on DeskBook at e8c0c1c gives [these results](2026-10-31/findability-merged/report.md) (the full rankings, for replaying merges, are in `results.json.gz`):
+
+| Ranking | Model | Top five | Mean reciprocal rank | Missed |
+| --- | --- | --- | --- | --- |
+| Words alone | none | 91% | 0.85 | 21 |
+| Meaning alone | EmbeddingGemma 300M | 97% | 0.92 | 6 |
+| **Words and meaning** | **EmbeddingGemma 300M** | **98%** | **0.92** | **5** |
+| Meaning alone | Qwen3-Embedding 0.6B | 97% | 0.88 | 7 |
+| Words and meaning | Qwen3-Embedding 0.6B | 97% | 0.90 | 7 |
+| Words and meaning | Apple NaturalLanguage (English) | 91% | 0.84 | 20 |
+
+The merge now beats meaning alone with EmbeddingGemma, and with Apple's weak embedding it no longer falls below words alone (91%, up from 84%).
+
 ## Running it again
 
 ```bash

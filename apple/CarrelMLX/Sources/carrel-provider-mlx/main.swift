@@ -6,8 +6,9 @@ import CarrelMLXProvider
 import Foundation
 
 let folders = ModelFolder.modelsRoot().map(ModelFolder.discover) ?? []
+let offered = offerFolders(folders)
 let server = Server(
-    name: "MLX", version: "0.3.0", models: folders.map { MLXModel(folder: $0) })
+    name: "MLX", version: "0.4.0", models: offered.models, embedders: offered.embedders)
 FileHandle.standardError.write(
     Data("carrel-provider-mlx: started with \(folders.count) model(s)\n".utf8))
 while let line = readLine(strippingNewline: true) {

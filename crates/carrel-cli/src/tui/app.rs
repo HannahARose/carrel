@@ -335,6 +335,9 @@ pub struct App {
     pub searched: super::search::Searched,
     /// The chosen item: its card, its changes and related items.
     pub item: super::item::ItemView,
+    /// The archive's embedding index, which the item's view finds the items nearest it in,
+    /// read again only when it changes on disk.
+    pub index: crate::related::Cached,
     /// A line being typed, while it's open.
     pub input: Option<Input>,
     /// A line for the owner about the last thing that happened.
@@ -417,6 +420,7 @@ impl App {
             search: None,
             searched: super::search::Searched::default(),
             item: super::item::ItemView::default(),
+            index: crate::related::Cached::default(),
             input: None,
             message: None,
             confirm: None,

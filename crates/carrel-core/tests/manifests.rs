@@ -1,6 +1,7 @@
 //! Checksums and manifests (FORMAT.md §2.6, §7.7).
 
 use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime};
 
 use carrel_core::card::{Card, Checksum, DateOrTime, Id, Kind};
 use carrel_core::card_file::CardFile;
@@ -14,6 +15,12 @@ fn sample_archive() -> PathBuf {
 fn write(path: &Path, contents: &str) {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(path, contents).unwrap();
+}
+
+/// Sets a file's modification time, as a coarse file system clock would.
+fn set_modified(path: &Path, time: SystemTime) {
+    let file = std::fs::File::options().write(true).open(path).unwrap();
+    file.set_modified(time).unwrap();
 }
 
 fn paths(m: &Manifest) -> Vec<&str> {
@@ -86,7 +93,7 @@ fn tsv_round_trips_including_awkward_names() {
     write(&dir.path().join("café/naïve.txt"), "d");
     let m = Manifest::build(dir.path(), Id::new_v7(), &Rules::default(), None).unwrap();
     let tsv = m.to_tsv();
-    assert!(tsv.starts_with(&format!("# carrel manifest 1.0\tid={}\n", m.item)));
+    assert!(tsv.starts_with(&format!("# carrel manifest 1.0\tid={}\tbuilt=", m.item)));
     assert_eq!(
         tsv.lines().count(),
         if control { 5 } else { 3 },
@@ -141,6 +148,7 @@ fn the_content_checksum_ignores_times_but_not_contents() {
     let empty = Manifest {
         item: m.item,
         entries: vec![],
+        built: None,
     };
     assert_eq!(empty.checksum(), Checksum::of_bytes(b""));
 }
@@ -210,8 +218,11 @@ fn diffs_find_added_removed_changed_and_renamed_files() {
 #[test]
 fn rebuilding_reuses_checksums_of_unchanged_files() {
     let dir = tempfile::tempdir().unwrap();
-    write(&dir.path().join("a.txt"), "aaa");
-    write(&dir.path().join("b.txt"), "bbb");
+    let an_hour_ago = SystemTime::now() - Duration::from_secs(3600);
+    for (name, contents) in [("a.txt", "aaa"), ("b.txt", "bbb")] {
+        write(&dir.path().join(name), contents);
+        set_modified(&dir.path().join(name), an_hour_ago);
+    }
     let rules = Rules::default();
     let first = Manifest::build(dir.path(), Id::new_v7(), &rules, None).unwrap();
 
@@ -229,16 +240,66 @@ fn rebuilding_reuses_checksums_of_unchanged_files() {
     planted.entries[0].modified = DateOrTime("2000-01-01T00:00:00+00:00".into());
     let reread = Manifest::build(dir.path(), first.item, &rules, Some(&planted)).unwrap();
     assert_eq!(reread.entries[0].checksum, Checksum::of_bytes(b"aaa"));
+
+    // The build time survives writing and reading the manifest, and still allows reuse.
+    let mut planted = Manifest::parse(&first.to_tsv()).unwrap();
+    assert_eq!(planted.built, first.built);
+    planted.entries[0].checksum = marker.clone();
+    let reused = Manifest::build(dir.path(), first.item, &rules, Some(&planted)).unwrap();
+    assert_eq!(reused.entries[0].checksum, marker, "after a round trip");
+
+    // Without a build time, nothing is known to be safe to reuse.
+    planted.built = None;
+    let reread = Manifest::build(dir.path(), first.item, &rules, Some(&planted)).unwrap();
+    assert_eq!(reread.entries[0].checksum, Checksum::of_bytes(b"aaa"));
+}
+
+#[test]
+fn files_modified_around_the_previous_build_are_read_again() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("a.txt");
+    write(&path, "aaa");
+    set_modified(&path, SystemTime::now() - Duration::from_secs(3600));
+    let rules = Rules::default();
+    let first = Manifest::build(dir.path(), Id::new_v7(), &rules, None).unwrap();
+    let marker = Checksum(format!("sha256:{}", "f".repeat(64)));
+    let built = first.built.unwrap();
+    // Within the window either side of the build, a same-size edit could hide behind an
+    // unchanged modification time, so the planted checksum must not survive.
+    let second = Duration::from_secs(1);
+    for (time, when) in [
+        (built - second, "a second before"),
+        (built, "at"),
+        (built + second, "a second after"),
+    ] {
+        set_modified(&path, time);
+        let mut planted = Manifest::build(dir.path(), first.item, &rules, None).unwrap();
+        planted.built = Some(built);
+        planted.entries[0].checksum = marker.clone();
+        let rebuilt = Manifest::build(dir.path(), first.item, &rules, Some(&planted)).unwrap();
+        assert_eq!(
+            rebuilt.entries[0].checksum,
+            Checksum::of_bytes(b"aaa"),
+            "modified {when} the build"
+        );
+    }
 }
 
 #[test]
 fn a_same_size_edit_within_the_same_second_is_noticed() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("note.txt");
-    write(&path, "version 1");
+    // A coarse clock (about 16 ms on Windows, a second or two on some file systems) gives
+    // both writes the same modification time; pin it so every platform sees that case.
+    let tick = SystemTime::now();
+    let write_at_tick = |contents: &str| {
+        write(&path, contents);
+        set_modified(&path, tick);
+    };
+    write_at_tick("version 1");
     let rules = Rules::default();
     let first = Manifest::build(dir.path(), Id::new_v7(), &rules, None).unwrap();
-    write(&path, "version 2"); // same size, immediately after
+    write_at_tick("version 2"); // same size, same modification time
     let second = Manifest::build(dir.path(), first.item, &rules, Some(&first)).unwrap();
     assert_eq!(first.diff(&second).changed, ["note.txt"]);
     assert_eq!(second.entries[0].checksum, Checksum::of_bytes(b"version 2"));
@@ -335,7 +396,7 @@ fn large_trees_rebuild_quickly() {
     let t = std::time::Instant::now();
     let second = Manifest::build(dir.path(), first.item, &rules, Some(&first)).unwrap();
     let incremental = t.elapsed();
-    assert_eq!(first, second);
+    assert_eq!(first.entries, second.entries);
     let t = std::time::Instant::now();
     let tsv = first.to_tsv();
     let parsed = Manifest::parse(&tsv).unwrap();

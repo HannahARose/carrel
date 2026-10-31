@@ -9,16 +9,20 @@ import Testing
 
 struct ModelTests {
     static let folder: ModelFolder? = ProcessInfo.processInfo.environment["CARREL_TEST_MLX_MODELS"]
-        .flatMap { ModelFolder.discover(in: URL(filePath: $0, directoryHint: .isDirectory)).first }
+        .flatMap {
+            offerFolders(ModelFolder.discover(in: URL(filePath: $0, directoryHint: .isDirectory)))
+                .models.first?.folder
+        }
 
     @Test(.enabled(if: folder != nil, "CARREL_TEST_MLX_MODELS isn't set"))
     func answersFollowTheSchemaAndCountTokens() async throws {
         let model = MLXModel(folder: try #require(Self.folder))
         #expect(model.offer.available, "\(model.offer.reason ?? "")")
-        let schema = JSONValue(parsing: """
-            {"type": "object", "properties": {"title": {"type": "string"},
-             "year": {"type": "integer"}}, "required": ["title", "year"]}
-            """)
+        let schema = JSONValue(
+            parsing: """
+                {"type": "object", "properties": {"title": {"type": "string"},
+                 "year": {"type": "integer"}}, "required": ["title", "year"]}
+                """)
         let answer = try await model.complete(
             CompletionRequest(
                 system: "You file documents.",

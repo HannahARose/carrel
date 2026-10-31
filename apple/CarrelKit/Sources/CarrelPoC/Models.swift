@@ -3,6 +3,7 @@
 
 import CarrelKit
 import Foundation
+
 #if canImport(FoundationModels)
 import FoundationModels
 #endif
@@ -30,7 +31,8 @@ final class OnDeviceModel: TextModel {
         let done = DispatchSemaphore(value: 0)
         Task.detached {
             do {
-                result.value = .success(try await LanguageModelSession().respond(to: prompt).content)
+                result.value = .success(
+                    try await LanguageModelSession().respond(to: prompt).content)
             } catch {
                 result.value = .failure(error)
             }
@@ -54,7 +56,9 @@ final class OnDeviceModel: TextModel {
 final class OfflineModel: TextModel {
     func complete(prompt: String) throws -> String {
         let lines = prompt.split(separator: "\n")
-        let collections = lines.drop { $0 != "Collections:" }.dropFirst().prefix { $0.hasPrefix("- ") }
+        let collections = lines.drop { $0 != "Collections:" }.dropFirst().prefix {
+            $0.hasPrefix("- ")
+        }
         let items = lines.drop { $0 != "Items:" }.dropFirst().prefix { $0.hasPrefix("- ") }
         return "An archive of \(items.count) items in \(collections.count) collections. "
             + "(No on-device model is available, so this summary only counts.)"

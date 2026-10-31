@@ -59,11 +59,18 @@ The test set for the model benchmark ([docs/design/benchmark.md](../docs/design/
 - **`archive/`:** an archive with thirteen collections and Holding, whose design documents sometimes overlap on purpose (Receipts and Manuals, Health and Insurance, Reading and Research). It has no routing rules, so models make every choice.
 - **`items/`:** 65 short documents of the kinds a Downloads folder holds. Every person, address and number in them is invented; the card number, IBAN and social security number are well-known example values. Some are hard on purpose: they fit two collections, belong in Holding, or are sensitive because of one line. Four more are invented 3D models (`*.stl`: a bracket, a tray, a ring and a figurine) with uninformative names, so they're placed only when a reader can draw and describe them; `scripts/bench-models.py` writes them.
 - **`answers.yaml`:** each item's acceptable destinations, expected sensitivity, date and tags.
+- **`descriptions.yaml`:** for the findability test, two to four ways a person might describe each item when searching for it, written by hand: what it is, what it's for, or a detail inside it, never its file name.
 
-`crates/carrel-core/tests/bench.rs` checks on every test run that the three agree: every item has an answer, every destination and tag exists, and no expected level is below what the sensitivity rules alone give. To run the benchmark itself (it needs a text model, and takes minutes per model):
+`crates/carrel-core/tests/bench.rs` checks on every test run that they agree: every item has an answer and two to four descriptions, every destination and tag exists, no expected level is below what the sensitivity rules alone give, and no description copies a file name or would be read as a search filter. To run the benchmark itself (it needs a text model, and takes minutes per model):
 
 ```bash
 cargo run -p carrel-cli -- bench --out bench-results
 ```
 
 It can be stopped at any point and continued by running the same command again; add `--fresh` to start over after changing prompts, checks or models.
+
+The findability test needs no text model, only an embedding model for the meaning part, and takes a minute or two per model:
+
+```bash
+cargo run -p carrel-cli -- bench --search --out bench-results
+```

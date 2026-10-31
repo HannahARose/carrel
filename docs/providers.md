@@ -54,8 +54,8 @@ Response:
      "media_types": ["image/png", "image/jpeg", "image/heic", "application/pdf"]},
     {"capability": "extract-text", "id": "model3d", "label": "3D model reader", "priority": 100,
      "available": true, "media_types": ["model/stl", "model/obj", "model/ply"]},
-    {"capability": "embed", "id": "embeddinggemma-300m", "label": "EmbeddingGemma 300M", "priority": 100,
-     "available": true, "dimensions": 768, "context_tokens": 2048}
+    {"capability": "embed", "id": "apple-nl-sentence-en", "label": "Apple sentence embedding (English)",
+     "priority": 100, "available": true, "dimensions": 512, "context_tokens": 256}
   ]
 }}
 ```
@@ -183,6 +183,30 @@ Search compares vectors, and vectors from different models can't be compared, so
 ```
 
 `vectors` has one vector for each text, in order, each of unit length and `dimensions` numbers long. `model` is the model's identifier, as in the offer. Carrel checks all three, and treats an answer that doesn't match as failed (code 3).
+
+### Carrel's embedding models
+
+`carrel models` lists them with the text models. An archive chooses one when it's created (`carrel init --embedding-model`), or on first use.
+
+| Model | Dimensions | Context | Provided by |
+| --- | --- | --- | --- |
+| `embeddinggemma-300m` (the default) | 768 | 2,048 tokens | llama.cpp (priority 50) and MLX (90), once downloaded |
+| `qwen3-embedding-0.6b` | 1,024 | 8,192 tokens | llama.cpp and MLX, once downloaded |
+| `apple-nl-sentence-en` | 512 | 256 words | `carrel-provider-apple` (100), built into macOS |
+
+- **The same model gives the same vectors on every provider.** A query embedded through MLX on a Mac can be compared with an index built through llama.cpp on Linux. Each provider uses the catalog's prompts and pooling, and runs EmbeddingGemma reading in both directions, as it was trained: the MLX provider has its own EmbeddingGemma for this, since MLXEmbedders' reads one way only, as Gemma 3 generates text.
+- **The MLX provider** offers a folder in `mlx/` named after a catalog embedding model (`carrel models download embeddinggemma-300m --format mlx`) as `embed`, never as a text model.
+- **Apple's sentence embedding** needs no download, but only Apple devices have it, and only for English. An archive also searched from Linux or Windows couldn't use it, so it's never the default: an archive chooses it. It's pinned to revision 1 of macOS's English sentence embedding; a later revision would be another model, since its vectors couldn't be compared. It reads up to 256 words of each text.
+
+### How search uses it
+
+- **Documents:** for each item, Carrel sends one request with the card as the first text (its title, summary, tags, collection, dates and kind, a line each), then the item's text in passages of about 500 tokens, up to 20, all with `purpose: document`. A restricted item's request has its card only. The vectors are kept in `_System/index/<model>/` as 16-bit floats.
+- **Queries:** what's typed into search, without its filters, is sent alone with `purpose: query`, and compared with every stored vector by cosine similarity.
+- **When it fails:** an error, or an answer that doesn't check out, leaves the item behind in the index, to be tried again by the worker; a query that can't be embedded is searched by words only, and search says why.
+
+### Measuring a model
+
+`carrel bench --search` looks up the benchmark's hand-written descriptions (`fixtures/bench/descriptions.yaml`) with each embedding model on offer, and reports how often each item comes back in the top five ([docs/bench](bench/README.md#findability)). A provider offering a new model can be measured the same way before it's proposed for the catalog.
 
 ## Errors
 

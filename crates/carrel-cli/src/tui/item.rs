@@ -1,7 +1,9 @@
 //! An item's view in Browse (`docs/design/search.md`, Browsing): its card, every change that
-//! touched it, with undo from there, and the items related to it.
+//! touched it, with undo from there, and the items related to it: those its card links to,
+//! and those nearest it in the embedding index.
 
 use carrel_core::archive::Archive;
+use carrel_core::card::Sensitivity;
 use carrel_core::history::Entry;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 
@@ -23,8 +25,11 @@ pub enum Pane {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Relation {
     /// The shown item's card links to it this way: `version-of`, `related`, `part-of`, and so
-    /// on. The items nearest it in the embedding index join these once there is one.
+    /// on.
     Link(String),
+    /// It's among the items nearest the shown one in the embedding index, and this sensitive,
+    /// so a restricted or sensitive one is marked.
+    Near(Sensitivity),
 }
 
 /// An item related to the one shown.
@@ -56,40 +61,57 @@ pub struct ItemView {
     pub text: Vec<String>,
     /// Every change that touched it, newest first.
     pub history: Vec<Entry>,
-    /// The items related to it.
+    /// The items related to it: its links, then the items nearest it by meaning.
     pub related: Vec<Related>,
+    /// Why no items near it by meaning are listed, when they can't be.
+    pub links_only: Option<String>,
     /// The chosen row: a change, then a related item.
     pub chosen: usize,
 }
 
 impl ItemView {
-    /// The view of the item whose card is at `card`, with its changes from `history`.
-    pub fn load(archive: &Archive, card: &str, history: &[Entry]) -> Self {
-        match crate::commands::describe(archive, card) {
-            Ok(shown) => Self {
-                card: Some(card.to_owned()),
-                text: shown.text.lines().map(str::to_owned).collect(),
-                history: history
-                    .iter()
-                    .filter(|e| e.touches(shown.id))
-                    .cloned()
-                    .collect(),
-                related: shown
-                    .links
-                    .into_iter()
-                    .map(|link| Related {
-                        relation: Relation::Link(link.link_type),
-                        title: link.title.unwrap_or_else(|| link.id.to_string()),
-                        card: link.card,
-                    })
-                    .collect(),
-                chosen: 0,
-            },
-            Err(crate::Failure(e)) => Self {
-                card: Some(card.to_owned()),
-                text: vec![e],
-                ..Self::default()
-            },
+    /// The view of the item whose card is at `card`, with its changes from `history` and the
+    /// items nearest it in the archive's embedding index, as `index` last read it from disk.
+    pub fn load(
+        archive: &Archive,
+        card: &str,
+        history: &[Entry],
+        index: &mut crate::related::Cached,
+    ) -> Self {
+        let shown = match crate::commands::describe(archive, card) {
+            Ok(shown) => shown,
+            Err(crate::Failure(e)) => {
+                return Self {
+                    card: Some(card.to_owned()),
+                    text: vec![e],
+                    ..Self::default()
+                };
+            }
+        };
+        let near = index
+            .get(archive)
+            .and_then(|index| crate::related::nearest(archive, index, &shown));
+        let links = shown.links.iter().map(|link| Related {
+            relation: Relation::Link(link.link_type.clone()),
+            title: link.title.clone().unwrap_or_else(|| link.id.to_string()),
+            card: link.card.clone(),
+        });
+        let nearby = near.as_deref().unwrap_or_default().iter().map(|n| Related {
+            relation: Relation::Near(n.sensitivity),
+            title: n.title.clone(),
+            card: Some(n.card.clone()),
+        });
+        Self {
+            card: Some(card.to_owned()),
+            text: shown.text.lines().map(str::to_owned).collect(),
+            history: history
+                .iter()
+                .filter(|e| e.touches(shown.id))
+                .cloned()
+                .collect(),
+            related: links.chain(nearby).collect(),
+            links_only: near.err(),
+            chosen: 0,
         }
     }
 
@@ -115,7 +137,7 @@ impl App {
             self.item = ItemView::default();
             return;
         };
-        let mut view = ItemView::load(&self.archive, card, &self.history);
+        let mut view = ItemView::load(&self.archive, card, &self.history, &mut self.index);
         if view.card == self.item.card {
             view.chosen = self.item.chosen.min(view.rows().len().saturating_sub(1));
         }
@@ -123,7 +145,7 @@ impl App {
     }
 
     /// Handles a key in an item's view: ↑↓ choose a change or related item, `u` undoes the
-    /// chosen change, Enter goes to the chosen related item, and ← or Esc go back to the items.
+    /// chosen change, Enter goes to the chosen related item, linked or near it, and ← or Esc go back to the items.
     pub(super) fn item_key(&mut self, key: KeyEvent) -> Handled {
         match key.code {
             KeyCode::Left | KeyCode::Char('h') | KeyCode::Esc => {
