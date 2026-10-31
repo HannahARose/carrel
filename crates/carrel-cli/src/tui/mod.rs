@@ -697,7 +697,7 @@ mod tests {
         }
     }
 
-    fn sample(with_history: bool) -> (tempfile::TempDir, App) {
+    pub(super) fn sample(with_history: bool) -> (tempfile::TempDir, App) {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().join("archive");
         copy_dir(
@@ -719,7 +719,7 @@ mod tests {
         (dir, App::new(archive).unwrap())
     }
 
-    fn screen(app: &App, width: u16, height: u16) -> String {
+    pub(super) fn screen(app: &App, width: u16, height: u16) -> String {
         let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
         terminal
             .draw(|frame| ui::draw(frame, app, ui::Theme::plain()))
@@ -737,7 +737,7 @@ mod tests {
             .join("\n")
     }
 
-    fn key(code: KeyCode) -> KeyEvent {
+    pub(super) fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
     }
 
@@ -1779,7 +1779,7 @@ mod tests {
     /// The sample archive with its parts list checked out to `out/`, due back on 30 November,
     /// changed there and with two pending history entries, and a folder on the desk of the
     /// device the app shows.
-    fn active_sample() -> (tempfile::TempDir, App) {
+    pub(super) fn active_sample() -> (tempfile::TempDir, App) {
         use carrel_core::card_file::CardFile;
         use carrel_core::entries::HistoryEntry;
         let (dir, app) = sample(true);
@@ -1827,7 +1827,7 @@ mod tests {
     }
 
     /// Chooses the parts list on the Active screen, and returns it.
-    fn choose_parts_list(app: &mut App) -> super::active::ActiveItem {
+    pub(super) fn choose_parts_list(app: &mut App) -> super::active::ActiveItem {
         let i = app
             .active
             .iter()

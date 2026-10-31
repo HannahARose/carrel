@@ -372,3 +372,370 @@ pub fn confirm_text(confirm: &Confirm) -> (&'static str, String, String, &'stati
         _ => (" ", String::new(), String::new(), " yes   "),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::{Path, PathBuf};
+
+    use ratatui::crossterm::event::KeyCode;
+
+    use super::super::app::{App, Confirm, Effect, Picking, Tab};
+    use super::super::item::Pane;
+    use super::super::screens::InputPurpose;
+    use super::super::tests::{active_sample, choose_parts_list, key, sample, screen};
+    use super::NewCollection;
+
+    /// Types `text` into the open line, replacing what's there, and enters it.
+    fn enter(app: &mut App, text: &str) -> Option<Effect> {
+        while app.input.as_ref().is_some_and(|i| !i.text.is_empty()) {
+            app.key(key(KeyCode::Backspace));
+        }
+        for c in text.chars() {
+            app.key(key(KeyCode::Char(c)));
+        }
+        app.key(key(KeyCode::Enter))
+    }
+
+    /// Chooses the item whose card is at `card` in Browse, in the items pane.
+    fn browse_to(app: &mut App, card: &str) {
+        app.key(key(KeyCode::Char('5')));
+        let (folder, _) = card.rsplit_once('/').unwrap();
+        app.browse_collection = app
+            .collections
+            .iter()
+            .position(|c| c.path == folder)
+            .unwrap();
+        app.browse_item = 0;
+        app.load_items();
+        app.browse_item = app
+            .browse_items
+            .iter()
+            .position(|(c, _)| c == card)
+            .unwrap_or_else(|| panic!("{card} in {:?}", app.browse_items));
+        app.browse_pane = Pane::Items;
+        app.load_card();
+    }
+
+    fn purpose(app: &App) -> &InputPurpose {
+        &app.input.as_ref().expect("a line is open").purpose
+    }
+
+    const PARTS: &str = "Projects/Hardware/parts-list.csv.md";
+
+    #[test]
+    fn an_item_is_checked_out_to_a_chosen_folder_with_a_due_date() {
+        let (dir, mut app) = sample(true);
+        let out = dir.path().join("Work");
+        std::fs::create_dir_all(&out).unwrap();
+        app.picker_preference = Some("builtin".into());
+        app.start_folder = dir.path().to_owned();
+        browse_to(&mut app, PARTS);
+        let title = app.browse_items[app.browse_item].1.clone();
+        assert!(app.keys().contains(&("o", "check out")), "{:?}", app.keys());
+        app.key(key(KeyCode::Right));
+        assert_eq!(app.browse_pane, Pane::Item, "and from the item's view");
+        assert!(app.keys().contains(&("o", "check out")), "{:?}", app.keys());
+
+        assert_eq!(app.key(key(KeyCode::Char('o'))), None);
+        assert_eq!(app.picking, Picking::CheckoutFolder);
+        let browser = app.browser.as_ref().expect("the built-in browser opens");
+        let at = browser
+            .entries
+            .iter()
+            .position(|(name, _)| name == "Work")
+            .unwrap();
+        assert!(app.keys().contains(&("i", "check out here")));
+        for _ in 0..at {
+            app.key(key(KeyCode::Down));
+        }
+        app.key(key(KeyCode::Char('i')));
+        assert!(app.browser.is_none());
+        assert!(matches!(purpose(&app), InputPurpose::Due { to, .. } if *to == out));
+        assert_eq!(app.picking, Picking::Ingest, "picking goes back to ingest");
+        assert!(screen(&app, 120, 30).contains(&format!("When is “{title}” due back?")));
+
+        assert_eq!(enter(&mut app, "soon"), None);
+        assert_eq!(
+            app.message.as_deref(),
+            Some("soon isn't a date; give it as YYYY-MM-DD")
+        );
+        assert!(matches!(purpose(&app), InputPurpose::Due { .. }), "asked again");
+        enter(&mut app, "2026-12-01");
+        let text = screen(&app, 120, 30);
+        assert!(
+            text.contains(&format!("Check out “{title}” to {}?", out.display())),
+            "{text}"
+        );
+        assert!(text.contains("due back 2026-12-01"), "{text}");
+        assert_eq!(app.key(key(KeyCode::Char('n'))), None);
+        assert_eq!(app.message.as_deref(), Some("Nothing changed"));
+
+        // Typed rather than browsed to, and with no due date.
+        app.key(key(KeyCode::Char('o')));
+        app.key(key(KeyCode::Char('/')));
+        assert_eq!(purpose(&app), &InputPurpose::CheckoutFolder);
+        enter(&mut app, &out.display().to_string());
+        enter(&mut app, "");
+        assert!(matches!(app.confirm, Some(Confirm::Checkout { due: None, .. })));
+        assert_eq!(
+            app.key(key(KeyCode::Char('y'))),
+            Some(Effect::Checkout {
+                item: PARTS.into(),
+                to: out.clone(),
+                due: None,
+            })
+        );
+
+        // Cancelling the browser forgets the item.
+        app.key(key(KeyCode::Char('o')));
+        app.key(key(KeyCode::Esc));
+        assert_eq!(app.checking_out, None);
+        assert_eq!(app.picking, Picking::Ingest);
+
+        let (busy, _) = super::super::archive_work(
+            app.archive.root().to_owned(),
+            Effect::Checkout {
+                item: PARTS.into(),
+                to: out,
+                due: Some("2026-12-01".into()),
+            },
+        );
+        assert_eq!(busy, "Checking it out…");
+    }
+
+    #[test]
+    fn active_puts_things_on_the_desk_takes_them_off_and_archives_them() {
+        let (dir, mut app) = active_sample();
+        app.picker_preference = Some("builtin".into());
+        app.start_folder = dir.path().to_owned();
+        app.key(key(KeyCode::Char('3')));
+        app.key(key(KeyCode::End));
+        let desk = app.active_item().unwrap().clone();
+        assert_eq!(desk.title, "Thesis");
+        let keys = screen(&app, 100, 30).lines().last().unwrap().to_owned();
+        for shown in ["n add to desk", "x take off", "f archive"] {
+            assert!(keys.contains(shown), "{shown}: {keys}");
+        }
+        assert!(keys.ends_with("? help  q quit"), "it fits: {keys}");
+
+        app.key(key(KeyCode::Char('x')));
+        assert_eq!(
+            app.keys(),
+            vec![("y", "keep its card"), ("d", "delete its card"), ("n", "no")]
+        );
+        let text = screen(&app, 120, 30);
+        assert!(text.contains("Take “Thesis” off the desk?"), "{text}");
+        assert!(text.contains("d delete its card too"), "{text}");
+        assert_eq!(
+            app.key(key(KeyCode::Char('d'))),
+            Some(Effect::DeskRemove {
+                path: desk.working.clone(),
+                delete_card: true
+            })
+        );
+        app.key(key(KeyCode::Char('x')));
+        assert_eq!(
+            app.key(key(KeyCode::Char('y'))),
+            Some(Effect::DeskRemove {
+                path: desk.working.clone(),
+                delete_card: false
+            })
+        );
+        app.key(key(KeyCode::Char('x')));
+        assert_eq!(app.key(key(KeyCode::Char('n'))), None);
+        assert_eq!(app.message.as_deref(), Some("Nothing changed"));
+
+        app.key(key(KeyCode::Char('f')));
+        assert!(screen(&app, 120, 30).contains("Archive “Thesis”?"));
+        assert_eq!(
+            app.key(key(KeyCode::Char('y'))),
+            Some(Effect::DeskArchive(desk.working.clone()))
+        );
+
+        let notes = dir.path().join("Notes");
+        std::fs::create_dir_all(&notes).unwrap();
+        assert_eq!(app.key(key(KeyCode::Char('n'))), None);
+        assert_eq!(app.picking, Picking::DeskItem);
+        assert!(app.keys().contains(&("i", "put on the desk")));
+        app.key(key(KeyCode::Char('/')));
+        assert_eq!(purpose(&app), &InputPurpose::DeskPath);
+        enter(&mut app, &notes.display().to_string());
+        assert_eq!(app.confirm, Some(Confirm::DeskAdd(notes.clone())));
+        assert!(screen(&app, 120, 30).contains("on the desk?"));
+        assert_eq!(
+            app.key(key(KeyCode::Char('y'))),
+            Some(Effect::DeskAdd(notes.clone()))
+        );
+
+        choose_parts_list(&mut app);
+        assert_eq!(app.key(key(KeyCode::Char('f'))), None);
+        assert!(app.message.as_deref().unwrap().contains("already in the archive"));
+        let (busy, _) =
+            super::super::archive_work(app.archive.root().to_owned(), Effect::DeskAdd(notes));
+        assert_eq!(busy, "Putting it on the desk and drafting its card…");
+    }
+
+    #[test]
+    fn a_collection_is_created_with_its_description_and_tags() {
+        let (_dir, mut app) = sample(true);
+        app.key(key(KeyCode::Char('5')));
+        app.key(key(KeyCode::Down));
+        assert!(app.keys().contains(&("n", "new collection")));
+        app.key(key(KeyCode::Char('n')));
+        assert_eq!(purpose(&app), &InputPurpose::CollectionPath);
+        assert_eq!(
+            app.input.as_ref().unwrap().text,
+            "Projects/",
+            "it starts in the chosen collection"
+        );
+        app.key(key(KeyCode::Char('L')));
+        app.key(key(KeyCode::Char('a')));
+        app.key(key(KeyCode::Char('m')));
+        app.key(key(KeyCode::Char('p')));
+        app.key(key(KeyCode::Enter));
+        assert!(screen(&app, 120, 30).contains("What belongs in Projects/Lamp"));
+        enter(&mut app, "The desk lamp build");
+        enter(&mut app, "wiring=diagrams; parts=bills of materials");
+        assert_eq!(
+            app.confirm,
+            Some(Confirm::NewCollection(NewCollection {
+                path: "Projects/Lamp".into(),
+                description: Some("The desk lamp build".into()),
+                tags: vec![
+                    "wiring=diagrams".into(),
+                    "parts=bills of materials".into()
+                ],
+            }))
+        );
+        let text = screen(&app, 120, 30);
+        assert!(text.contains("Create the collection Projects/Lamp?"), "{text}");
+        assert!(text.contains("undo can reverse"), "{text}");
+        assert!(matches!(
+            app.key(key(KeyCode::Char('y'))),
+            Some(Effect::NewCollection(_))
+        ));
+
+        app.key(key(KeyCode::Char('n')));
+        assert_eq!(enter(&mut app, ""), None);
+        assert_eq!(
+            app.message.as_deref(),
+            Some("No path given; nothing created")
+        );
+    }
+
+    #[test]
+    fn an_item_is_renamed_from_the_name_suggested() {
+        let (dir, mut app) = sample(true);
+        browse_to(&mut app, PARTS);
+        assert!(app.keys().contains(&("r", "rename")));
+        app.key(key(KeyCode::Char('r')));
+        assert!(matches!(purpose(&app), InputPurpose::Rename { from, .. } if from == "parts-list.csv"));
+        assert_eq!(app.input.as_ref().unwrap().text, "parts-list.csv");
+        app.key(key(KeyCode::Enter));
+        assert_eq!(app.message.as_deref(), Some("Same name; nothing changed"));
+
+        app.key(key(KeyCode::Char('r')));
+        enter(&mut app, "lamp-parts.csv");
+        assert!(
+            screen(&app, 120, 30).contains("Rename “parts-list.csv” to “lamp-parts.csv”?")
+        );
+        assert_eq!(
+            app.key(key(KeyCode::Char('y'))),
+            Some(Effect::Rename {
+                item: PARTS.into(),
+                new_name: "lamp-parts.csv".into()
+            })
+        );
+        let (busy, _) = super::super::archive_work(
+            dir.path().to_owned(),
+            Effect::Rename {
+                item: PARTS.into(),
+                new_name: "x".into(),
+            },
+        );
+        assert_eq!(busy, "Renaming it…");
+    }
+
+    /// Files a zip holding `files` at `Projects/Hardware/NAME`, with its card.
+    fn file_zip(app: &mut App, name: &str, files: &[(&str, &[u8])]) -> String {
+        use std::io::Write as _;
+        let folder = app.archive.root().join("Projects/Hardware");
+        let path: PathBuf = folder.join(name);
+        let mut zip = zip::ZipWriter::new(std::fs::File::create(&path).unwrap());
+        for (name, bytes) in files {
+            zip.start_file(*name, zip::write::SimpleFileOptions::default())
+                .unwrap();
+            zip.write_all(bytes).unwrap();
+        }
+        zip.finish().unwrap();
+        let card = format!(
+            "---\ncarrel: card\nformat: \"1.0\"\nid: {}\nkind: file\ntitle: \"{name}\"\n\
+             item: \"{name}\"\ndates:\n  added: \"2026-10-31\"\nsensitivity: personal\n---\n",
+            carrel_core::card::Id::new_v7()
+        );
+        std::fs::write(folder.join(format!("{name}.md")), card).unwrap();
+        app.reload().unwrap();
+        format!("Projects/Hardware/{name}.md")
+    }
+
+    #[test]
+    fn a_filed_zip_is_expanded_after_asking_and_all_the_same_only_when_asked() {
+        let (_dir, mut app) = sample(true);
+        browse_to(&mut app, PARTS);
+        assert!(
+            !app.keys().iter().any(|(k, _)| *k == "z"),
+            "only a compressed file offers it: {:?}",
+            app.keys()
+        );
+        app.key(key(KeyCode::Char('z')));
+        assert!(app.confirm.is_none());
+        assert!(
+            app.message
+                .as_deref()
+                .unwrap()
+                .contains("isn't a compressed file"),
+            "{:?}",
+            app.message
+        );
+
+        let notes = file_zip(&mut app, "Spectra.zip", &[("a.txt", b"a"), ("b.txt", b"b")]);
+        browse_to(&mut app, &notes);
+        assert!(app.keys().contains(&("z", "expand")), "{:?}", app.keys());
+        app.key(key(KeyCode::Char('z')));
+        assert!(
+            matches!(&app.confirm, Some(Confirm::Expand { anyway: None, .. })),
+            "{:?} {:?}",
+            app.confirm,
+            app.message
+        );
+        assert!(screen(&app, 120, 30).contains("Expand “Spectra.zip”?"));
+        assert_eq!(
+            app.key(key(KeyCode::Char('y'))),
+            Some(Effect::Expand {
+                item: notes.clone(),
+                anyway: false
+            })
+        );
+
+        let setup = file_zip(&mut app, "Utility.zip", &[("Setup.exe", b"MZ")]);
+        browse_to(&mut app, &setup);
+        app.key(key(KeyCode::Char('z')));
+        assert!(
+            matches!(&app.confirm, Some(Confirm::Expand { anyway: Some(_), .. })),
+            "{:?}",
+            app.confirm
+        );
+        let text = screen(&app, 120, 30);
+        assert!(text.contains("Expand “Utility.zip” all the same?"), "{text}");
+        assert!(text.contains("It's kept compressed:"), "{text}");
+        assert_eq!(
+            app.key(key(KeyCode::Char('y'))),
+            Some(Effect::Expand {
+                item: setup,
+                anyway: true
+            })
+        );
+        assert!(Path::new(app.archive.root()).join(&notes).is_file(), "nothing changed yet");
+        assert_eq!(app.tab, Tab::Browse);
+    }
+}
