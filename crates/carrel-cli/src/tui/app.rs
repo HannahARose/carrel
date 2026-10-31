@@ -32,11 +32,13 @@ pub enum Tab {
     Ingest,
     /// This device's and the archive's settings.
     Settings,
+    /// Backups: snapshots, and taking, checking and restoring from them.
+    Backups,
 }
 
 impl Tab {
     /// Every tab, in order.
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::Status,
         Self::Review,
         Self::Questions,
@@ -44,6 +46,7 @@ impl Tab {
         Self::History,
         Self::Ingest,
         Self::Settings,
+        Self::Backups,
     ];
 
     /// The tab's name.
@@ -56,6 +59,7 @@ impl Tab {
             Self::History => "History",
             Self::Ingest => "Ingest",
             Self::Settings => "Settings",
+            Self::Backups => "Backups",
         }
     }
 
@@ -152,6 +156,24 @@ pub enum Effect {
     },
     /// Download this catalog model.
     Download(String),
+    /// Take a backup snapshot now.
+    BackupNow,
+    /// Check the backups, reading back a share of the files.
+    BackupVerify,
+    /// Restore an item as of a change's snapshot, beside the archive.
+    BackupRestore {
+        /// The item: its identifier, or its card's or contents' path.
+        item: String,
+        /// The history commit whose snapshot to restore from.
+        at: String,
+    },
+    /// Create or connect to a backup repository.
+    BackupSetup {
+        /// Where it is or will be.
+        repository: std::path::PathBuf,
+        /// Its password, handed to Kopia, which keeps it in the keychain.
+        password: super::backups::Secret,
+    },
 }
 
 /// The interactive mode's state.
@@ -224,6 +246,8 @@ pub struct App {
     pub settings: Vec<super::settings::Shown>,
     /// The chosen setting.
     pub settings_chosen: usize,
+    /// The chosen snapshot on the Backups screen.
+    pub backup_chosen: usize,
     /// The built-in file browser, while it's open.
     pub browser: Option<super::browser::Browser>,
     /// The `picker` preference.
@@ -285,6 +309,7 @@ impl App {
             worker: super::intake::Worker::default(),
             settings: Vec::new(),
             settings_chosen: 0,
+            backup_chosen: 0,
             browser: None,
             picker_preference: None,
             start_folder: std::path::PathBuf::from("."),
@@ -417,6 +442,13 @@ impl App {
                 ("r", "retry"),
             ]),
             Tab::History => keys.extend([("↑↓", "choose"), ("u", "undo")]),
+            Tab::Backups => keys.extend([
+                ("↑↓", "choose"),
+                ("n", "snapshot now"),
+                ("v", "verify"),
+                ("r", "restore"),
+                ("s", "set up"),
+            ]),
             Tab::Questions => {
                 keys.extend([("↑↓", "choose"), ("Enter", "answer"), ("d", "dismiss")]);
             }
@@ -442,6 +474,8 @@ impl App {
             self.intake_move(delta);
         } else if self.tab == Tab::Settings {
             self.settings_move(delta);
+        } else if self.tab == Tab::Backups {
+            self.backups_move(delta);
         } else if self.tab == Tab::History {
             let last = self.history.len().saturating_sub(1);
             let next = i64::try_from(self.selected).unwrap_or(0) + i64::from(delta);
@@ -505,6 +539,7 @@ impl App {
             Tab::Browse => self.browse_key(key),
             Tab::Ingest => self.intake_key(key),
             Tab::Settings => self.settings_key(key),
+            Tab::Backups => self.backups_key(key),
             _ => Handled::No,
         };
         if let Handled::Yes(effect) = handled {
@@ -520,7 +555,7 @@ impl App {
                 });
             }
             KeyCode::Char('i') => return self.start_ingest(),
-            KeyCode::Char(c @ '1'..='7') => {
+            KeyCode::Char(c @ '1'..='8') => {
                 self.tab = Tab::ALL[usize::from(c as u8 - b'1')];
             }
             KeyCode::Tab | KeyCode::Right => {

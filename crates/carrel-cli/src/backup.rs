@@ -76,28 +76,43 @@ fn password(new: bool) -> Result<String, Failure> {
     Ok(first)
 }
 
-/// `carrel backup setup PATH`: creates or connects to a repository for this archive.
+/// Whether `repository` holds a backup repository already, so setting up connects to it
+/// rather than creating one.
+#[must_use]
+pub fn exists(repository: &Path) -> bool {
+    repository.join("kopia.repository.f").exists()
+}
+
+/// What to tell the owner before they choose a password for a new repository.
+pub const PASSWORD_WARNING: &str = "Backups are encrypted with a password. Keep it in a \
+    password manager: if it's lost, the backups can't be read.";
+
+/// `carrel backup setup PATH`: creates or connects to a repository for this archive. The
+/// password is `given` (the interactive mode asks for it itself), else `KOPIA_PASSWORD`, else
+/// asked for on the terminal. Except from `KOPIA_PASSWORD`, it's kept in this device's
+/// keychain by Kopia, never by Carrel.
 pub fn setup(
     archive: Option<&Path>,
     repository: &Path,
     description: Option<&str>,
+    given: Option<&str>,
 ) -> Result<Report, Failure> {
     let archive = locate(archive)?;
     if Kopia::program().is_none() {
         return Err(BackupError::NotInstalled.into());
     }
     let identity = Identity::load_or_create()?;
-    let new = !repository.join("kopia.repository.f").exists();
-    if new {
-        eprintln!(
-            "Backups are encrypted with a password. Keep it in a password manager: if it's lost, \
-             the backups can't be read."
-        );
-    }
-    let supplied = supplied_password();
-    let password = match &supplied {
-        Some(password) => password.clone(),
-        None => password(new)?,
+    let new = !exists(repository);
+    let supplied = given.is_none().then(supplied_password).flatten();
+    let password = match (given, &supplied) {
+        (Some(given), _) => given.to_owned(),
+        (None, Some(password)) => password.clone(),
+        (None, None) => {
+            if new {
+                eprintln!("{PASSWORD_WARNING}");
+            }
+            password(new)?
+        }
     };
     let keep = supplied.is_none();
     let config = Kopia::config_for(&archive)
