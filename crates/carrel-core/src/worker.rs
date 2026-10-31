@@ -163,6 +163,89 @@ pub trait DeviceLock {
     fn try_lock(&self) -> Result<Option<Self::Held>, WorkerError>;
 }
 
+/// The worker lock the CLI's worker and the app's agent share: an operating-system lock on
+/// a file in the workers' folder (`<archive id>.lock`), which goes with the process, so a
+/// crashed worker never leaves a stale one.
+#[derive(Debug, Clone)]
+pub struct FileLock {
+    /// The lock file.
+    pub path: PathBuf,
+}
+
+/// Held while a worker runs for an archive on this device; dropping it lets go.
+#[derive(Debug)]
+pub struct Held {
+    file: std::fs::File,
+}
+
+impl Drop for Held {
+    fn drop(&mut self) {
+        let _ = self.file.unlock();
+    }
+}
+
+impl FileLock {
+    /// The lock for `archive`'s worker in the workers' folder `folder`.
+    #[must_use]
+    pub fn new(folder: &Path, archive: &Archive) -> Self {
+        Self {
+            path: file_in(folder, archive, "lock"),
+        }
+    }
+
+    /// Takes the lock, creating its file and folder, or `None` if another worker holds it.
+    ///
+    /// # Errors
+    ///
+    /// [`std::io::Error`] if the lock file can't be opened.
+    pub fn take(&self) -> std::io::Result<Option<Held>> {
+        if let Some(dir) = self.path.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(&self.path)?;
+        match file.try_lock() {
+            Ok(()) => Ok(Some(Held { file })),
+            Err(std::fs::TryLockError::WouldBlock) => Ok(None),
+            Err(std::fs::TryLockError::Error(e)) => Err(e),
+        }
+    }
+
+    /// Whether a worker holds the lock. Only looks: a missing lock file means no worker has
+    /// ever run here, and nothing is created.
+    ///
+    /// # Errors
+    ///
+    /// [`std::io::Error`] if the lock file can't be opened.
+    pub fn is_held(&self) -> std::io::Result<bool> {
+        let file = match std::fs::OpenOptions::new().write(true).open(&self.path) {
+            Ok(file) => file,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+            Err(e) => return Err(e),
+        };
+        match file.try_lock() {
+            Ok(()) => {
+                let _ = file.unlock();
+                Ok(false)
+            }
+            Err(std::fs::TryLockError::WouldBlock) => Ok(true),
+            Err(std::fs::TryLockError::Error(e)) => Err(e),
+        }
+    }
+}
+
+impl DeviceLock for FileLock {
+    type Held = Held;
+
+    fn try_lock(&self) -> Result<Option<Held>, WorkerError> {
+        self.take()
+            .map_err(|e| WorkerError::Lock(format!("{}: {e}", self.path.display())))
+    }
+}
+
 /// What the loop tells whoever runs it as it goes. Every method does nothing unless
 /// implemented.
 pub trait Progress {

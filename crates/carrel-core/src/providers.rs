@@ -10,6 +10,7 @@
 //! app gives the core in-process providers instead. [`PlainText`] is built in. [`serve::serve`]
 //! is the other end: it offers any [`Provider`] written in Rust as a provider program.
 
+pub mod device;
 #[cfg(not(any(
     target_os = "ios",
     target_os = "tvos",

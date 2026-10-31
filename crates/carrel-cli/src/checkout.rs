@@ -8,15 +8,10 @@ use std::time::SystemTime;
 
 use carrel_core::archive::{Archive, ItemRef};
 use carrel_core::backup::{Backups as _, Kopia, Snapshot};
-use carrel_core::card::{DateOrTime, Id};
+use carrel_core::card::DateOrTime;
 use carrel_core::card_file::CardFile;
-use carrel_core::checkout::{
-    CheckoutError, ReturnPlan, cancel_checkout, check_out, compare, finish_return, manifest_path,
-    plan_return,
-};
+use carrel_core::checkout::{ReturnPlan, cancel_checkout, check_out, finish_return, plan_return};
 use carrel_core::coordinator::{Coordinator as _, DEFAULT_LEASE, DiskLock};
-use carrel_core::detect::Rules;
-use carrel_core::manifest::{Diff, Manifest};
 use serde_json::{Value, json};
 
 use crate::commands::{find_item, holder, locate};
@@ -129,27 +124,7 @@ pub fn list(archive: Option<&Path>) -> Result<Report, Failure> {
     Ok(Report::new(text, json!({ "checked_out": out })))
 }
 
-/// How the working copy at `working` compares with `item` as it went out: `unchanged`,
-/// `changed`, `missing` or not compared, with what changed when it could tell.
-pub fn compared(
-    archive: &Archive,
-    rules: &Rules,
-    item: Id,
-    working: &Path,
-) -> (&'static str, Option<Diff>) {
-    let Some(then) = std::fs::read_to_string(manifest_path(archive, item))
-        .ok()
-        .and_then(|t| Manifest::parse(&t).ok())
-    else {
-        return ("not compared (no saved manifest)", None);
-    };
-    match compare(&then, working, rules) {
-        Ok(diff) if diff.is_empty() => ("unchanged", Some(diff)),
-        Ok(diff) => ("changed", Some(diff)),
-        Err(CheckoutError::Missing(_)) => ("missing", None),
-        Err(_) => ("not compared", None),
-    }
-}
+pub use carrel_core::checkout::compared;
 
 /// `carrel return ITEM [--from PATH] [--yes] [--trim-snapshots]`, or `--discard` to cancel:
 /// shows what changed and the history entry it adds, asks, then brings the working copy back.

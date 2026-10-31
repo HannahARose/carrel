@@ -29,14 +29,7 @@ pub const REQUEST_TIMEOUT: Duration = Duration::from_mins(10);
 /// How many of a provider's last log lines are kept for error messages.
 const LOG_LINES: usize = 20;
 
-/// A provider program found on this device.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Found {
-    /// The provider's name: the program's name without `carrel-provider-` or `.exe`.
-    pub name: String,
-    /// Where the program is.
-    pub path: PathBuf,
-}
+pub use super::device::Found;
 
 /// Finds provider programs in `folders`, in order. When the same name appears in several
 /// folders, the first is used.
@@ -76,7 +69,8 @@ pub fn find_program(name: &str, folders: &[PathBuf]) -> Option<PathBuf> {
         .find(|path| is_executable(path))
 }
 
-/// The folders Carrel looks in: the one holding the running program, then `PATH`.
+/// The folders Carrel looks in: the one holding the running program, an app bundle's
+/// `Contents/Helpers` when it runs from one, then `PATH`.
 #[must_use]
 pub fn default_folders() -> Vec<PathBuf> {
     let mut folders = Vec::new();
@@ -84,6 +78,11 @@ pub fn default_folders() -> Vec<PathBuf> {
         && let Some(dir) = exe.parent()
     {
         folders.push(dir.to_owned());
+        if dir.ends_with("Contents/MacOS")
+            && let Some(contents) = dir.parent()
+        {
+            folders.push(contents.join("Helpers"));
+        }
     }
     if let Some(path) = std::env::var_os("PATH") {
         folders.extend(std::env::split_paths(&path));

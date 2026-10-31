@@ -8,11 +8,10 @@ use std::path::Path;
 
 use carrel_core::archive::Archive;
 use carrel_core::card::Sensitivity;
-use carrel_core::index::{ByMeaning, Index, embed_query, plan};
 use carrel_core::providers::Registry;
 use carrel_core::search::query::Query;
 use carrel_core::search::texts::{Unindexed, fill, tidy};
-use carrel_core::search::{Found, Hit, Meaning, Merge, Ranking, Search};
+use carrel_core::search::{Found, Hit, Meaning};
 use serde_json::json;
 
 use crate::commands::{locate, plural};
@@ -51,61 +50,6 @@ pub fn read_texts(archive: &Archive, registry: &Registry, json: bool) -> Result<
     read_wanted(archive, registry, wanted, json)
 }
 
-/// The ranking by meaning for `query` from the archive's embedding `index` for `model`, or why
-/// there's none and the search is by words only. Takes `registry`, to embed queries with.
-fn by_meaning(
-    archive: &Archive,
-    model: Option<String>,
-    index: Option<Index>,
-    registry: Option<Registry>,
-    query: &str,
-) -> Result<Result<Box<dyn Ranking>, String>, Failure> {
-    let Some(model) = model else {
-        return Ok(Err(
-            "This archive has no embedding model yet, so it was searched by words only; see `carrel index status`."
-                .into(),
-        ));
-    };
-    let Some(index) = index else {
-        return Ok(Err(format!(
-            "There's no meaning index for {model} yet, so this was searched by words only; build it with `carrel index rebuild`."
-        )));
-    };
-    let Some(registry) = registry.filter(|r| crate::index::offered(r, &model)) else {
-        let how = crate::index::how_to_get(&model)
-            .unwrap_or_else(|| "see `carrel index model` for the models this device has".into());
-        return Ok(Err(format!(
-            "No provider on this device runs {model}, the archive's embedding model, so this was searched by words only; {how}."
-        )));
-    };
-    let vector = match embed_query(&registry, &model, query) {
-        Ok(vector) => vector,
-        Err(e) => {
-            return Ok(Err(format!(
-                "{model} couldn't embed the query ({e}), so this was searched by words only."
-            )));
-        }
-    };
-    let behind = plan(archive, Some(&index))
-        .map_err(|e| crate::index::failure(e, &model))?
-        .pending
-        .len();
-    let asked = query.to_owned();
-    let embed = Box::new(move |text: &str| {
-        if text == asked {
-            Some(vector.clone())
-        } else {
-            embed_query(&registry, &model, text).ok()
-        }
-    });
-    Ok(Ok(Box::new(ByMeaning::new(
-        archive,
-        Box::new(index),
-        behind,
-        embed,
-    ))))
-}
-
 /// `carrel search WORDS... [--limit N]`.
 ///
 /// # Errors
@@ -126,32 +70,23 @@ pub fn search(
         ));
     }
     let archive = locate(archive)?;
-    let (wanted, _) = tidy(&archive)?;
-    let model = archive.settings().embedding_model().map(str::to_owned);
-    let words = query.text.trim().is_empty();
-    let index = match &model {
-        Some(model) if !words => Index::open(&archive, model)
-            .map_err(|e| crate::index::failure(e, model))?
-            .filter(|index| !index.is_empty()),
-        _ => None,
-    };
-    // Providers are only started when there's text to read or a query to embed.
-    let registry = (!wanted.is_empty() || index.is_some()).then(|| crate::providers::registry().0);
-    if let Some(registry) = &registry {
-        read_wanted(&archive, registry, wanted, json)?;
+    let mut display = None;
+    let searched = carrel_core::search::run::search(
+        &archive,
+        &query,
+        limit,
+        || crate::providers::registry().0,
+        &mut |done, total, item| {
+            display
+                .get_or_insert_with(|| crate::progress::Display::new("Reading text", json))
+                .count("items", done, total, item);
+        },
+    )
+    .map_err(|e| Failure::new(e.to_string()))?;
+    if let Some(mut display) = display {
+        display.finish();
     }
-    let mut search = Search::build(&archive)?;
-    let mut words_only = None;
-    if !words {
-        let merge = model
-            .as_deref()
-            .map_or_else(Merge::default, Merge::for_model);
-        match by_meaning(&archive, model, index, registry, &query.text)? {
-            Ok(ranking) => search = search.with_meaning(ranking).with_merge(merge),
-            Err(why) => words_only = Some(why),
-        }
-    }
-    let results = search.search(&query, limit);
+    let (results, words_only) = (searched.results, searched.words_only);
     let marks = if std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none() {
         ("\x1b[1m", "\x1b[0m")
     } else {

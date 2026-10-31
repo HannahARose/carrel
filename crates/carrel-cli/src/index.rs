@@ -13,37 +13,20 @@ use carrel_core::archive::Archive;
 use carrel_core::coordinator::{Coordinator as _, DEFAULT_LEASE, DiskLock};
 use carrel_core::index::switch::{self, Switch};
 use carrel_core::index::{Index, IndexError, embed_query, plan};
-use carrel_core::models::{Model, embedding_models, find};
-use carrel_core::providers::{Capability, ProviderError, Registry};
+use carrel_core::models::embedding_models;
+use carrel_core::providers::{Capability, Registry};
 use serde_json::{Value, json};
 
 use crate::commands::{holder, locate, plural};
 use crate::config::Identity;
 use crate::{Failure, Report};
 
-/// How to get `model` on this device, if Carrel's catalog has it: a download, or the provider
-/// it comes with.
-pub fn how_to_get(model: &str) -> Option<String> {
-    match find(model)? {
-        Model {
-            comes_with: Some(provider),
-            ..
-        } => Some(format!(
-            "it comes with {provider}, which only Apple devices have"
-        )),
-        _ => Some(format!("download it with `carrel models download {model}`")),
-    }
-}
+pub use carrel_core::search::run::how_to_get;
 
 /// `error`, in words, with how to get `model` when no provider here has it.
+#[allow(clippy::needless_pass_by_value)] // `map_err` hands the error over.
 pub fn failure(error: IndexError, model: &str) -> Failure {
-    match error {
-        IndexError::Provider(e @ ProviderError::Unavailable(_)) => match how_to_get(model) {
-            Some(how) => Failure::new(format!("{e}; {how}")),
-            None => Failure::new(e.to_string()),
-        },
-        e => Failure::new(e.to_string()),
-    }
+    Failure::new(carrel_core::search::run::index_failure(&error, model))
 }
 
 /// The embedding models providers on this device offer, best first, each once, with the

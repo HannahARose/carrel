@@ -21,6 +21,7 @@
 
 pub mod chunk;
 pub mod half;
+pub mod related;
 pub mod switch;
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};

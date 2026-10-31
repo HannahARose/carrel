@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 use carrel_core::archive::Archive;
 use carrel_core::backup::Backups;
 use carrel_core::intake::Processed;
-use carrel_core::worker::{DeviceLock, Progress, Worker, WorkerError, file_in, now};
+use carrel_core::worker::{FileLock, Progress, Worker, WorkerError, file_in, now};
 use serde_json::json;
 
 use crate::commands::{holder, locate};
@@ -66,14 +66,11 @@ fn open_log(path: &Path) -> Result<File, Failure> {
 }
 
 /// Held while a worker runs for an archive on this device.
-pub struct Lock {
-    file: File,
-}
+pub type Lock = carrel_core::worker::Held;
 
-impl Drop for Lock {
-    fn drop(&mut self) {
-        let _ = self.file.unlock();
-    }
+/// The worker lock for `archive`.
+fn lock_for(archive: &Archive) -> Result<FileLock, Failure> {
+    Ok(FileLock::new(&folder()?, archive))
 }
 
 /// Takes the worker lock for `archive`, or `None` if another worker holds it.
@@ -82,32 +79,8 @@ impl Drop for Lock {
 ///
 /// [`Failure`] if the lock file can't be opened.
 pub fn try_lock(archive: &Archive) -> Result<Option<Lock>, Failure> {
-    let path = file_for(archive, "lock")?;
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| Failure::io(dir, &e))?;
-    }
-    let file = std::fs::OpenOptions::new()
-        .create(true)
-        .truncate(false)
-        .write(true)
-        .open(&path)
-        .map_err(|e| Failure::io(&path, &e))?;
-    match file.try_lock() {
-        Ok(()) => Ok(Some(Lock { file })),
-        Err(std::fs::TryLockError::WouldBlock) => Ok(None),
-        Err(std::fs::TryLockError::Error(e)) => Err(Failure::io(&path, &e)),
-    }
-}
-
-/// The worker lock for one archive, as the core's loop takes it.
-struct Locks<'a>(&'a Archive);
-
-impl DeviceLock for Locks<'_> {
-    type Held = Lock;
-
-    fn try_lock(&self) -> Result<Option<Lock>, WorkerError> {
-        try_lock(self.0).map_err(|Failure(e)| WorkerError::Lock(e))
-    }
+    let lock = lock_for(archive)?;
+    lock.take().map_err(|e| Failure::io(&lock.path, &e))
 }
 
 /// Whether a worker is running for `archive` on this device.
@@ -116,22 +89,8 @@ impl DeviceLock for Locks<'_> {
 ///
 /// [`Failure`] if the lock file can't be opened.
 pub fn running(archive: &Archive) -> Result<bool, Failure> {
-    // Only looks: a missing lock file means no worker has ever run here, and nothing is
-    // created, so asking never writes to the configuration folder.
-    let path = file_for(archive, "lock")?;
-    let file = match std::fs::OpenOptions::new().write(true).open(&path) {
-        Ok(file) => file,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-        Err(e) => return Err(Failure::io(&path, &e)),
-    };
-    match file.try_lock() {
-        Ok(()) => {
-            let _ = file.unlock();
-            Ok(false)
-        }
-        Err(std::fs::TryLockError::WouldBlock) => Ok(true),
-        Err(std::fs::TryLockError::Error(e)) => Err(Failure::io(&path, &e)),
-    }
+    let lock = lock_for(archive)?;
+    lock.is_held().map_err(|e| Failure::io(&lock.path, &e))
 }
 
 /// The running worker's status, if there is a worker and it has written one.
@@ -246,7 +205,7 @@ pub fn work(
     let backups = backups.as_ref().map(|b| b as &dyn Backups);
     let worker = worker(archive, &registry, backups)?;
     let mut calls = Calls { on_item, on_done };
-    Ok(worker.draft(&Locks(archive), lock, &mut calls)?)
+    Ok(worker.draft(&lock_for(archive)?, lock, &mut calls)?)
 }
 
 /// Starts a worker for the archive at `archive` (or the current one) after a change to filed
@@ -280,7 +239,7 @@ pub fn run(archive: Option<&Path>) -> Result<Report, Failure> {
     let (backups, _) = crate::backup::for_batch(&archive);
     let backups = backups.as_ref().map(|b| b as &dyn Backups);
     let worker = worker(&archive, &registry, backups)?;
-    let ran = worker.run(&Locks(&archive), lock, &mut Log::default())?;
+    let ran = worker.run(&lock_for(&archive)?, lock, &mut Log::default())?;
     let (done, embedded) = (ran.drafted, ran.embedded);
     let mut text = format!("Drafted {done} queued items.\n");
     if embedded > 0 {
