@@ -1,6 +1,7 @@
 //! The interactive mode (`docs/design/interactive.md`): `carrel` in a terminal, or
 //! `carrel tui`. Everything it does is also a command.
 
+mod active;
 mod app;
 mod backups;
 mod browser;
@@ -24,6 +25,7 @@ use serde_json::Value;
 use crate::commands::locate;
 use crate::{Failure, Report};
 
+use crate::sessions::Decision;
 pub use app::App;
 use app::{Confirm, Effect, Step};
 use carrel_core::actions::Kept;
@@ -123,6 +125,13 @@ fn event_loop(
                 *terminal = enter();
                 finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
             }
+            Some(Effect::Open(path)) => {
+                // Opening needs no lease, so it doesn't wait for other work.
+                app.message = Some(match open(&path) {
+                    Ok(()) => format!("Opened {}", path.display()),
+                    Err(Failure(e)) => e,
+                });
+            }
             Some(Effect::Correction(step)) if preparing.is_none() => {
                 correction(app, step, &mut preparing);
             }
@@ -164,6 +173,7 @@ fn finished(app: &mut App, result: Result<String, String>) {
         [first, rest @ ..] => format!("{first} (+{} more)", rest.len()),
     });
     app.marked.clear();
+    app.active_marked.clear();
     if let Err(Failure(message)) = app.reload() {
         app.message = Some(message);
     }
@@ -262,9 +272,11 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
             return None;
         }
         // The run loop does these itself, on the terminal or in the pop-up.
-        Effect::Edit(_) | Effect::EditItem(_) | Effect::Pick(_) | Effect::Correction(_) => {
-            return None;
-        }
+        Effect::Edit(_)
+        | Effect::EditItem(_)
+        | Effect::Pick(_)
+        | Effect::Correction(_)
+        | Effect::Open(_) => return None,
         Effect::Dismiss(id) => {
             let result = crate::questions::dismiss(Some(&root), &id.to_string());
             finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
@@ -274,6 +286,9 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
             let result = crate::settings::set(Some(&root), &key, &value);
             finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
             return None;
+        }
+        effect @ (Effect::Return(_) | Effect::CancelCheckout(_) | Effect::Entries { .. }) => {
+            active_work(root, effect)
         }
         Effect::Download(name) => (
             format!("Downloading {name}…"),
@@ -305,21 +320,7 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
         Effect::Decide {
             ids: chosen,
             holding,
-        } => {
-            let count = chosen.len();
-            let chosen = ids(&chosen);
-            let busy = format!(
-                "{} {count} proposal{}…",
-                if holding { "Holding" } else { "Filing" },
-                if count == 1 { "" } else { "s" }
-            );
-            let work: Work = if holding {
-                Box::new(move || crate::review::hold(Some(&root), &chosen))
-            } else {
-                Box::new(move || crate::review::approve(Some(&root), &chosen, false, None, None))
-            };
-            (busy, work)
-        }
+        } => decide(root, ids(&chosen), holding),
         effect @ (Effect::BackupNow
         | Effect::BackupVerify
         | Effect::BackupRestore { .. }
@@ -410,6 +411,76 @@ fn backup_work(root: PathBuf, effect: Effect) -> (String, Work) {
         ),
         _ => unreachable!("only backup effects come here"),
     }
+}
+
+/// The work for the Active screen's effects, which `carrel return` and `carrel sessions` do.
+fn active_work(root: PathBuf, effect: Effect) -> (String, Work) {
+    match effect {
+        Effect::Return(id) => (
+            "Returning it…".into(),
+            Box::new(move || crate::checkout::return_now(Some(&root), &id.to_string())),
+        ),
+        Effect::CancelCheckout(id) => (
+            "Cancelling the checkout…".into(),
+            Box::new(move || crate::checkout::cancel_now(Some(&root), &id.to_string())),
+        ),
+        Effect::Entries {
+            item,
+            numbers,
+            decision,
+        } => (
+            match decision {
+                Decision::Approve => "Approving…",
+                Decision::Combine => "Combining…",
+                Decision::Drop => "Dropping…",
+            }
+            .into(),
+            Box::new(move || crate::sessions::decide(Some(&root), &item, &numbers, decision)),
+        ),
+        _ => unreachable!("only the Active screen's effects come here"),
+    }
+}
+
+/// Opens `path` in the system's own app for it (Finder, a file manager, or what the file's
+/// type opens with), leaving the interactive mode where it is.
+fn open(path: &Path) -> Result<(), Failure> {
+    if !path.exists() {
+        return Err(Failure::new(format!("{} isn't there", path.display())));
+    }
+    let program = if cfg!(target_os = "macos") {
+        "open"
+    } else if cfg!(windows) {
+        "explorer"
+    } else {
+        "xdg-open"
+    };
+    std::process::Command::new(program)
+        .arg(path)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map(|mut child| {
+            // Waited for elsewhere, so it doesn't linger once it's done.
+            std::thread::spawn(move || child.wait());
+        })
+        .map_err(|e| Failure::new(format!("couldn't run {program}: {e}")))
+}
+
+/// The work for [`Effect::Decide`]: filing proposals where proposed, or in Holding.
+fn decide(root: PathBuf, chosen: Vec<String>, holding: bool) -> (String, Work) {
+    let count = chosen.len();
+    let busy = format!(
+        "{} {count} proposal{}…",
+        if holding { "Holding" } else { "Filing" },
+        if count == 1 { "" } else { "s" }
+    );
+    let work: Work = if holding {
+        Box::new(move || crate::review::hold(Some(&root), &chosen))
+    } else {
+        Box::new(move || crate::review::approve(Some(&root), &chosen, false, None, None))
+    };
+    (busy, work)
 }
 
 /// The work for [`Effect::Keep`]: filing a proposal linked to the archived item it duplicates.
@@ -508,7 +579,9 @@ mod tests {
         let (_dir, app) = sample(false);
         let text = screen(&app, 100, 30);
         assert!(
-            text.starts_with("  1 Status   2 Review   3 Questions   4 Browse   5 History"),
+            text.starts_with(
+                "  1 Status   2 Review   3 Active   4 Questions   5 Browse   6 History"
+            ),
             "{text}"
         );
         assert!(text.contains(" Sample archive "));
@@ -534,7 +607,7 @@ mod tests {
     #[test]
     fn keys_and_clicks_switch_screens_help_and_quit() {
         let (_dir, mut app) = sample(false);
-        app.key(key(KeyCode::Char('3')));
+        app.key(key(KeyCode::Char('4')));
         assert_eq!(app.tab, Tab::Questions);
         app.key(key(KeyCode::Tab));
         assert_eq!(app.tab, Tab::Browse);
@@ -544,6 +617,8 @@ mod tests {
             "the tree, indented:\n{browse}"
         );
         app.key(key(KeyCode::BackTab));
+        app.key(key(KeyCode::BackTab));
+        assert_eq!(app.tab, Tab::Active);
         app.key(key(KeyCode::BackTab));
         assert_eq!(app.tab, Tab::Review);
         assert!(screen(&app, 100, 30).contains("Desk lamp diffuser (print file)"));
@@ -555,7 +630,7 @@ mod tests {
             row: 0,
             modifiers: KeyModifiers::NONE,
         };
-        app.mouse(click(starts[4] + 2), &starts);
+        app.mouse(click(starts[5] + 2), &starts);
         assert_eq!(app.tab, Tab::History);
         app.mouse(click(starts[0]), &starts);
         assert_eq!(app.tab, Tab::Status);
@@ -572,7 +647,7 @@ mod tests {
     #[test]
     fn undo_from_history_asks_first() {
         let (_dir, mut app) = sample(true);
-        app.key(key(KeyCode::Char('5')));
+        app.key(key(KeyCode::Char('6')));
         let text = screen(&app, 100, 30);
         assert!(text.contains("Start history of “Sample archive”"), "{text}");
         app.key(key(KeyCode::Char('u')));
@@ -678,7 +753,7 @@ mod tests {
     fn backups_are_set_up_with_a_masked_password_typed_twice() {
         let (_dir, mut app) = sample(false);
         app.picker_preference = Some("builtin".into());
-        app.key(key(KeyCode::Char('8')));
+        app.key(key(KeyCode::Char('9')));
         assert_eq!(app.tab, Tab::Backups);
         let text = screen(&app, 120, 30);
         assert!(text.contains("No backups set up"), "{text}");
@@ -746,7 +821,7 @@ mod tests {
         let parent = app.archive.root().parent().unwrap().to_owned();
         std::fs::create_dir_all(parent.join("Backups")).unwrap();
         app.start_folder = parent.clone();
-        app.key(key(KeyCode::Char('8')));
+        app.key(key(KeyCode::Char('9')));
         assert_eq!(app.key(key(KeyCode::Char('s'))), None);
         let browser = app.browser.as_ref().expect("the built-in browser opens");
         let at = browser
@@ -818,7 +893,7 @@ mod tests {
 
         // A backup folder isn't remembered for ingest.
         app.key(key(KeyCode::Esc));
-        app.key(key(KeyCode::Char('8')));
+        app.key(key(KeyCode::Char('9')));
         app.key(key(KeyCode::Char('s')));
         app.key(key(KeyCode::Left));
         app.key(key(KeyCode::Esc));
@@ -952,7 +1027,7 @@ mod tests {
         assert!(app.keys().iter().any(|(k, v)| *k == "c" && *v == "correct"));
 
         let (_dir, mut app) = sample(false);
-        app.key(key(KeyCode::Char('4')));
+        app.key(key(KeyCode::Char('5')));
         app.key(key(KeyCode::Char('c')));
         assert!(app.input.is_none(), "a collection isn't an item");
         app.key(key(KeyCode::Right));
@@ -998,7 +1073,7 @@ mod tests {
     #[test]
     fn e_edits_the_browsed_item_in_the_editor() {
         let (_dir, mut app) = sample(false);
-        app.key(key(KeyCode::Char('4')));
+        app.key(key(KeyCode::Char('5')));
         assert_eq!(
             app.key(key(KeyCode::Char('e'))),
             None,
@@ -1016,7 +1091,7 @@ mod tests {
     #[test]
     fn browse_moves_through_collections_items_and_cards_and_searches() {
         let (_dir, mut app) = sample(false);
-        app.key(key(KeyCode::Char('4')));
+        app.key(key(KeyCode::Char('5')));
         assert_eq!(app.collections[app.browse_collection].path, "Holding");
         assert!(screen(&app, 120, 30).contains("Untitled scan"));
         app.key(key(KeyCode::Down));
@@ -1080,7 +1155,7 @@ mod tests {
         queue.save(&term).unwrap();
         queue.save(&place).unwrap();
         let mut app = App::new(app.archive.clone()).unwrap();
-        app.key(key(KeyCode::Char('3')));
+        app.key(key(KeyCode::Char('4')));
         let text = screen(&app, 160, 30);
         assert!(
             text.contains("Which collection do items about “lamp” belong in?  (2 items)"),
@@ -1221,7 +1296,7 @@ mod tests {
     #[test]
     fn settings_are_shown_and_changed_the_way_the_command_does() {
         let (_dir, mut app) = sample(false);
-        app.key(key(KeyCode::Char('7')));
+        app.key(key(KeyCode::Char('8')));
         assert_eq!(app.tab, Tab::Settings);
         let screen_text = screen(&app, 120, 30);
         assert!(screen_text.contains("This device"), "{screen_text}");
@@ -1250,5 +1325,245 @@ mod tests {
         let pickers = app.picker.clone().expect("a choice of pickers");
         assert!(pickers.collections.contains(&"builtin".to_owned()));
         assert!(pickers.collections.contains(&"yazi".to_owned()));
+    }
+
+    /// The sample archive with its parts list checked out to `out/`, due back on 30 November,
+    /// changed there and with two pending history entries, and a folder on the desk of the
+    /// device the app shows.
+    fn active_sample() -> (tempfile::TempDir, App) {
+        use carrel_core::card_file::CardFile;
+        use carrel_core::entries::HistoryEntry;
+        let (dir, app) = sample(true);
+        let archive = app.archive.clone();
+        let device = Id::new_v7();
+        let holder = Holder {
+            person: Id::new_v7(),
+            device,
+        };
+        let lease = DiskLock::for_archive(&archive)
+            .acquire(holder, "test", DEFAULT_LEASE)
+            .unwrap();
+        let items = archive.items().unwrap();
+        let item = items
+            .iter()
+            .find(|i| i.card == "Projects/Hardware/parts-list.csv.md")
+            .unwrap();
+        let out = dir.path().join("out");
+        std::fs::create_dir_all(&out).unwrap();
+        let due = carrel_core::card::DateOrTime("2026-11-30".into());
+        let checked =
+            carrel_core::checkout::check_out(&archive, item, &out, Some(due), &lease).unwrap();
+        let card = archive.root().join(&item.card);
+        let mut file = CardFile::parse(&std::fs::read_to_string(&card).unwrap()).unwrap();
+        let mut log = file.history().unwrap();
+        for (date, minutes) in [("2026-10-30", 70), ("2026-10-31", 20)] {
+            log.add(HistoryEntry::pending(
+                date,
+                Some(minutes),
+                vec!["Changed 1 file(s): parts-list.csv".into()],
+            ));
+        }
+        file.set_history(&log).unwrap();
+        std::fs::write(&card, file.to_text().unwrap()).unwrap();
+        let thesis = dir.path().join("Thesis");
+        std::fs::create_dir_all(&thesis).unwrap();
+        std::fs::write(thesis.join("draft.md"), "# Draft\n").unwrap();
+        carrel_core::desk::add(&archive, &thesis, Some("Thesis"), None, &lease).unwrap();
+        lease.release().unwrap();
+        std::fs::write(&checked.working, "part,count\nlamp,2\n").unwrap();
+        let mut app = App::new(archive).unwrap();
+        app.device = Some(device);
+        app.reload().unwrap();
+        (dir, app)
+    }
+
+    /// Chooses the parts list on the Active screen, and returns it.
+    fn choose_parts_list(app: &mut App) -> super::active::ActiveItem {
+        let i = app
+            .active
+            .iter()
+            .position(|a| a.card.ends_with("parts-list.csv.md"))
+            .unwrap();
+        app.active_chosen = app
+            .active_rows()
+            .iter()
+            .position(|r| *r == super::active::Row::Item(i))
+            .unwrap();
+        app.active[i].clone()
+    }
+
+    #[test]
+    fn active_lists_checkouts_and_desk_items_with_their_pending_entries() {
+        let (_dir, mut app) = active_sample();
+        app.key(key(KeyCode::Char('3')));
+        assert_eq!(app.tab, Tab::Active);
+        assert_eq!(
+            app.active.len(),
+            3,
+            "the sample's own checkout, ours, and the desk"
+        );
+        let title = choose_parts_list(&mut app).title;
+        let keys = screen(&app, 100, 30).lines().last().unwrap().to_owned();
+        assert!(keys.ends_with("? help  q quit"), "it fits: {keys}");
+        let text = screen(&app, 140, 30);
+        assert!(
+            text.contains(&format!("out   {title}  (changed, 2 pending)")),
+            "{text}"
+        );
+        assert!(
+            text.contains("2. 2026-10-30 · 1h 10m"),
+            "newest first: {text}"
+        );
+        assert!(text.contains("desk  Thesis  (on the desk)"), "{text}");
+        assert!(text.contains("Working copy:"), "the details: {text}");
+        assert!(text.contains("Due 2026-11-30"), "{text}");
+        assert!(text.contains("Files: 1 changed"), "{text}");
+        assert!(text.contains("Pending history entries:"), "{text}");
+        let keys = text.lines().last().unwrap();
+        for shown in ["r return", "o open", "a approve", "c combine", "d drop"] {
+            assert!(keys.contains(shown), "{shown}: {keys}");
+        }
+        assert!(keys.contains("x cancel"), "{keys}");
+
+        app.key(key(KeyCode::End));
+        assert_eq!(app.active_item().unwrap().title, "Thesis");
+        let text = screen(&app, 140, 30);
+        assert!(text.contains("On the desk at "), "{text}");
+        assert!(text.contains("No pending history entries"), "{text}");
+        let keys = app.keys();
+        assert!(
+            keys.iter()
+                .all(|(k, _)| !["r", "x", "a", "Space"].contains(k)),
+            "only what a desk item without entries answers to: {keys:?}"
+        );
+        assert_eq!(app.key(key(KeyCode::Char('r'))), None);
+        assert!(
+            app.message
+                .as_deref()
+                .unwrap()
+                .contains("isn't checked out")
+        );
+        assert_eq!(app.key(key(KeyCode::Char('a'))), None);
+        assert!(app.message.as_deref().unwrap().contains("no pending"));
+
+        app.key(key(KeyCode::Char('?')));
+        assert!(screen(&app, 100, 30).contains("return, open, cancel checkout (Active)"));
+        app.key(key(KeyCode::Char('?')));
+        app.picker_preference = Some("builtin".into());
+        app.start_folder = app.archive.root().to_owned();
+        app.key(key(KeyCode::Char('i')));
+        assert!(
+            app.keys().iter().any(|(_, what)| *what == "hidden"),
+            "the browser's keys while it's open: {:?}",
+            app.keys()
+        );
+    }
+
+    #[test]
+    fn active_keys_open_decide_entries_and_return_after_asking() {
+        let (_dir, mut app) = active_sample();
+        app.key(key(KeyCode::Char('3')));
+        let item = choose_parts_list(&mut app);
+        let row = app.active_chosen;
+        assert_eq!(
+            app.key(key(KeyCode::Char('o'))),
+            Some(Effect::Open(item.working.clone()))
+        );
+        let entries = |numbers: Vec<usize>, decision| Effect::Entries {
+            item: item.id.to_string(),
+            numbers,
+            decision,
+        };
+        assert_eq!(
+            app.key(key(KeyCode::Char('a'))),
+            Some(entries(vec![], crate::sessions::Decision::Approve)),
+            "all of them, with none marked"
+        );
+        app.key(key(KeyCode::Down));
+        app.key(key(KeyCode::Char(' ')));
+        assert_eq!(app.active_chosen, row + 2, "marking moves on");
+        assert!(screen(&app, 140, 30).contains("1 marked"));
+        assert_eq!(
+            app.key(key(KeyCode::Char('d'))),
+            Some(entries(vec![1], crate::sessions::Decision::Drop))
+        );
+        app.key(key(KeyCode::Char(' ')));
+        app.key(key(KeyCode::Up));
+        assert_eq!(
+            app.key(key(KeyCode::Char('c'))),
+            Some(entries(vec![1, 2], crate::sessions::Decision::Combine))
+        );
+
+        assert_eq!(
+            app.key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL)),
+            None
+        );
+        assert!(app.confirm.is_none(), "Ctrl-R refreshes; it doesn't return");
+        app.active_chosen = row;
+        app.key(key(KeyCode::Char('r')));
+        assert!(matches!(app.confirm, Some(Confirm::Return { .. })));
+        let text = screen(&app, 140, 30);
+        assert!(
+            text.contains(&format!(
+                "Return “{}”, replacing the archive copy?",
+                item.title
+            )),
+            "{text}"
+        );
+        assert!(text.contains("changed"), "what changed: {text}");
+        assert!(text.contains("History entry:"), "{text}");
+        assert_eq!(app.keys(), vec![("y", "yes"), ("n", "no")]);
+        assert_eq!(app.key(key(KeyCode::Char('n'))), None);
+        assert_eq!(app.message.as_deref(), Some("Nothing changed"));
+        app.key(key(KeyCode::Char('r')));
+        assert_eq!(
+            app.key(key(KeyCode::Char('y'))),
+            Some(Effect::Return(item.id))
+        );
+
+        app.key(key(KeyCode::Char('x')));
+        assert!(screen(&app, 140, 30).contains("Cancel the checkout of"));
+        assert_eq!(
+            app.key(key(KeyCode::Char('y'))),
+            Some(Effect::CancelCheckout(item.id))
+        );
+    }
+
+    #[test]
+    fn active_effects_run_as_the_commands_do() {
+        let (dir, mut app) = active_sample();
+        let item = choose_parts_list(&mut app);
+        let (busy, _) = super::active_work(
+            app.archive.root().to_owned(),
+            Effect::Entries {
+                item: item.query(),
+                numbers: vec![2],
+                decision: crate::sessions::Decision::Approve,
+            },
+        );
+        assert_eq!(busy, "Approving…");
+        assert_eq!(
+            super::active_work(app.archive.root().to_owned(), Effect::Return(item.id)).0,
+            "Returning it…"
+        );
+        let desk = app.active.last().unwrap();
+        assert_eq!(
+            desk.query(),
+            desk.card.display().to_string(),
+            "a desk item is named by its card"
+        );
+        let missing = dir.path().join("nowhere");
+        assert!(super::open(&missing).unwrap_err().0.contains("isn't there"));
+
+        // As the run loop does when the work is done: marks go, and everything is read again.
+        app.active_marked.insert((item.id, 1));
+        std::fs::remove_file(&item.working).unwrap();
+        super::finished(&mut app, Ok("Approve 1 history entry of it".into()));
+        assert!(app.active_marked.is_empty());
+        assert_eq!(choose_parts_list(&mut app).state, "missing");
+        assert_eq!(
+            app.message.as_deref(),
+            Some("Approve 1 history entry of it")
+        );
     }
 }

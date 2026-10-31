@@ -8,7 +8,8 @@ let server = Server(
     name: "Apple", version: "0.2.0", models: [FoundationModel()],
     // PDFKit first: a PDF's text layer is exact, and OCR is only needed when there isn't one.
     // The image reader before OCR: it reads an image's text too, and what the image is.
-    extractors: [PDFText(), ImageReader(), VisionOCR()])
+    // The model reader reads only 3D models, so its place doesn't matter.
+    extractors: [PDFText(), ImageReader(), VisionOCR(), ModelReader()])
 FileHandle.standardError.write(Data("carrel-provider-apple: started\n".utf8))
 while let line = readLine(strippingNewline: true) {
     if let reply = await server.reply(to: line) {
