@@ -8,10 +8,11 @@ use std::path::{Path, PathBuf};
 
 use crate::archive::{Archive, ArchiveError, Collection, escape_link_text};
 use crate::card::{
-    Card, CardMarker, Checksum, DateOrTime, Extra, Id, Kind, ManifestRef, PlacedBy,
+    Card, CardMarker, Checksum, DateOrTime, ExpandedFrom, Extra, Id, Kind, ManifestRef, PlacedBy,
     PlacementConfidence, PlacementRecord,
 };
 use crate::card_file::{CardFile, CardFileError};
+use crate::compressed::{self, plan::Choice};
 use crate::coordinator::{CoordinatorError, DEFAULT_LEASE, WriterLease};
 use crate::documents::{CollectionDoc, Originals, TagDef};
 use crate::history::{Change, History, HistoryError, Operation};
@@ -37,8 +38,13 @@ pub struct Filed {
     pub path: String,
     /// Its card's path, relative to the archive root.
     pub card: String,
-    /// Where the original was, when it was left there (`ingest.originals: keep`).
+    /// Where the original was, when it was left there (`ingest.originals: keep`, or a
+    /// compressed file the Trash couldn't take).
     pub kept_original: Option<PathBuf>,
+    /// The compressed file it was expanded from.
+    pub expanded_from: Option<PathBuf>,
+    /// Why the expanded compressed file couldn't go to the Trash, when it couldn't.
+    pub trash_problem: Option<String>,
 }
 
 /// Why one item couldn't be filed. The batch goes on without it.
@@ -67,6 +73,10 @@ pub enum FilingError {
     Archive(ArchiveError),
     /// The writer lease was lost, so nothing more may be written.
     Lease(CoordinatorError),
+    /// The compressed file is waiting for the owner to say whether to expand it.
+    Undecided(String),
+    /// The compressed file couldn't be expanded; it's left where it was.
+    Expand(String),
 }
 
 impl FilingError {
@@ -76,7 +86,12 @@ impl FilingError {
     pub fn needs_owner(&self) -> bool {
         matches!(
             self,
-            Self::Missing(_) | Self::Changed(_) | Self::NoCollection(_) | Self::Card(_)
+            Self::Missing(_)
+                | Self::Changed(_)
+                | Self::NoCollection(_)
+                | Self::Card(_)
+                | Self::Undecided(_)
+                | Self::Expand(_)
         )
     }
 }
@@ -99,6 +114,14 @@ impl std::fmt::Display for FilingError {
             Self::Manifest(e) => write!(f, "{e}"),
             Self::Archive(e) => write!(f, "{e}"),
             Self::Lease(e) => write!(f, "{e}"),
+            Self::Undecided(reason) => write!(
+                f,
+                "{reason}: say whether to expand it or keep it compressed"
+            ),
+            Self::Expand(reason) => write!(
+                f,
+                "it couldn't be expanded, so it was left where it was: {reason}"
+            ),
         }
     }
 }
@@ -319,7 +342,10 @@ pub fn file_batch(
 }
 
 /// Files one proposal: places the item, writes its manifest and card, adds an approved new
-/// tag to the collection's vocabulary and a line to its changelog.
+/// tag to the collection's vocabulary and a line to its changelog. A compressed file the
+/// proposal plans to expand is expanded first, into a temporary folder in the archive, and
+/// filed as what it held; once that's in place, the compressed file goes to the system Trash
+/// (`docs/design/compressed.md`).
 ///
 /// # Errors
 ///
@@ -337,6 +363,17 @@ pub fn file_one(
     let source = &entry.source.path;
     if std::fs::symlink_metadata(source).is_err() {
         return Err(FilingError::Missing(source.clone()));
+    }
+    if let Some(plan) = entry
+        .compressed
+        .as_ref()
+        .filter(|p| p.action == Choice::Ask)
+    {
+        return Err(FilingError::Undecided(
+            plan.reason
+                .clone()
+                .unwrap_or_else(|| "the owner decides".into()),
+        ));
     }
     let rules = archive
         .rules()
@@ -356,9 +393,82 @@ pub fn file_one(
             Placement::Holding => HOLDING.into(),
         })
     })?;
+    let expansion = expand(archive, entry, &rules)?;
+    let filed = file_item(
+        archive,
+        entry,
+        placement,
+        collection,
+        &rules,
+        expansion.as_ref(),
+    );
+    if let Some(expansion) = &expansion {
+        let _ = remove(&expansion.temp);
+    }
+    filed
+}
 
+/// A compressed file expanded for filing.
+struct Expansion {
+    /// The temporary folder it was expanded into, removed afterwards.
+    temp: PathBuf,
+    /// What it held, inside `temp`.
+    item: PathBuf,
+    /// What that is.
+    kind: Kind,
+    /// For a bundle, how it's sealed.
+    sealed: Option<crate::card::Sealing>,
+}
+
+/// Expands `entry`'s compressed file when its plan says to, into a temporary folder on the
+/// archive's volume; `None` when there's nothing to expand.
+fn expand(
+    archive: &Archive,
+    entry: &ReviewEntry,
+    rules: &crate::detect::Rules,
+) -> Result<Option<Expansion>, FilingError> {
+    let Some(plan) = entry
+        .compressed
+        .as_ref()
+        .filter(|p| p.action == Choice::Expand)
+    else {
+        return Ok(None);
+    };
+    let temp = archive
+        .root()
+        .join("_System/cache.nosync/expanding")
+        .join(Id::new_v7().to_string());
+    std::fs::create_dir_all(&temp).map_err(io(&temp))?;
+    let limits = (!plan.by_owner).then_some(&compressed::Limits::DEFAULT);
+    let expanded = match compressed::expand(&entry.source.path, plan.format, &temp, limits) {
+        Ok(expanded) => expanded,
+        Err(error) => {
+            let _ = remove(&temp);
+            return Err(FilingError::Expand(error.to_string()));
+        }
+    };
+    let detected = rules.detect(&expanded.path).map_err(io(&expanded.path))?;
+    Ok(Some(Expansion {
+        temp,
+        item: expanded.path,
+        kind: detected.kind,
+        sealed: detected.sealed,
+    }))
+}
+
+/// Places the item (or what an expanded compressed file held) and writes its card.
+fn file_item(
+    archive: &Archive,
+    entry: &ReviewEntry,
+    placement: Placement,
+    collection: &Collection,
+    rules: &crate::detect::Rules,
+    expansion: Option<&Expansion>,
+) -> Result<Filed, FilingError> {
+    let source = &entry.source.path;
     let id = Id::new_v7();
-    let original_name = source
+    let original_name = expansion
+        .map_or(source.as_path(), |e| e.item.as_path())
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .ok_or_else(|| FilingError::Missing(source.clone()))?;
@@ -367,6 +477,20 @@ pub fn file_one(
     let portable = crate::names::portable(&original_name);
     let name = free_name(&folder, &portable).map_err(io(&folder))?;
     let mut card = card_for(entry, id, &name, placement, collection);
+    let kind = expansion.map_or(entry.kind, |e| e.kind);
+    if let Some(expansion) = expansion {
+        card.kind = expansion.kind;
+        card.sealed = expansion.sealed;
+        card.expanded_from = Some(ExpandedFrom {
+            name: source
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            size: entry.source.size,
+            checksum: entry.source.checksum.clone(),
+            extra: Extra::new(),
+        });
+    }
     let problems: Vec<String> = card
         .problems()
         .into_iter()
@@ -379,19 +503,71 @@ pub fn file_one(
 
     let target = folder.join(&name);
     let originals = archive.settings().ingest.originals;
-    place(
-        source,
-        &target,
-        &entry.source.checksum,
-        entry.kind,
-        &rules,
-        originals,
-    )?;
-    if entry.kind == Kind::File {
+    if let Some(expansion) = expansion {
+        std::fs::create_dir_all(&folder).map_err(io(&folder))?;
+        std::fs::rename(&expansion.item, &target).map_err(io(&target))?;
+    } else {
+        place(
+            source,
+            &target,
+            &entry.source.checksum,
+            entry.kind,
+            rules,
+            originals,
+        )?;
+    }
+    if expansion.is_none() && kind == Kind::File {
         card.checksum = Some(entry.source.checksum.clone());
         card.size = Some(entry.source.size);
     } else {
-        let manifest = Manifest::build(&target, id, &rules, None)?;
+        describe_contents(archive, &mut card, &target, id, kind, rules)?;
+    }
+    let note = name_note(&name, &portable, &original_name);
+    let card_name = format!("{name}.md");
+    let text = CardFile::new(card, &note)?.to_text()?;
+    write_new(&folder.join(&card_name), &text)?;
+
+    if placement == Placement::Destination {
+        add_tags(archive, collection, entry)?;
+    }
+    add_to_changelog(archive, collection, &entry.card.title, &card_name)?;
+    // The compressed file goes to the Trash only once what it held is filed, and stays where
+    // it was if the Trash can't take it.
+    let mut trash_problem = None;
+    if expansion.is_some()
+        && originals == Originals::Move
+        && let Err(error) = crate::trash::put(source)
+    {
+        trash_problem = Some(error.to_string());
+    }
+    Ok(Filed {
+        entry: entry.id,
+        item: id,
+        title: entry.card.title.clone(),
+        path: format!("{}/{name}", collection.path),
+        card: format!("{}/{card_name}", collection.path),
+        kept_original: (originals == Originals::Keep || trash_problem.is_some())
+            .then(|| source.clone()),
+        expanded_from: expansion.map(|_| source.clone()),
+        trash_problem,
+    })
+}
+
+/// Fills in the card fields that describe the placed item's contents: a file's checksum and
+/// size, or a folder's manifest.
+fn describe_contents(
+    archive: &Archive,
+    card: &mut Card,
+    target: &Path,
+    id: Id,
+    kind: Kind,
+    rules: &crate::detect::Rules,
+) -> Result<(), FilingError> {
+    if kind == Kind::File {
+        card.checksum = Some(Checksum::of_file(target).map_err(io(target))?);
+        card.size = Some(std::fs::metadata(target).map_err(io(target))?.len());
+    } else {
+        let manifest = Manifest::build(target, id, rules, None)?;
         let path = format!("_System/manifests/{id}.tsv");
         let file = archive.root().join(&path);
         write_new(&file, &manifest.to_tsv())?;
@@ -402,34 +578,23 @@ pub fn file_one(
             extra: Extra::new(),
         });
     }
-    let note = if name == original_name {
+    Ok(())
+}
+
+/// The note a card gets when the item was filed under another name.
+fn name_note(name: &str, portable: &str, original_name: &str) -> String {
+    if name == original_name {
         String::new()
     } else if portable != original_name {
         format!(
             "\nFiled as “{name}”: “{original_name}” {}, so it wouldn't work on every system.\n",
-            crate::names::problems(&original_name).join(" and ")
+            crate::names::problems(original_name).join(" and ")
         )
     } else {
         format!(
             "\nFiled as “{name}”: the collection already had an item named “{original_name}”.\n"
         )
-    };
-    let card_name = format!("{name}.md");
-    let text = CardFile::new(card, &note)?.to_text()?;
-    write_new(&folder.join(&card_name), &text)?;
-
-    if placement == Placement::Destination {
-        add_tags(archive, collection, entry)?;
     }
-    add_to_changelog(archive, collection, &entry.card.title, &card_name)?;
-    Ok(Filed {
-        entry: entry.id,
-        item: id,
-        title: entry.card.title.clone(),
-        path: format!("{}/{name}", collection.path),
-        card: format!("{}/{card_name}", collection.path),
-        kept_original: (originals == Originals::Keep).then(|| source.clone()),
-    })
 }
 
 /// A file's checksum, or a folder's manifest content checksum.
@@ -533,6 +698,7 @@ fn card_for(
         generated: draft.generated.clone(),
         placement: placement_record(entry, placement),
         removed: None,
+        expanded_from: None,
         extra: draft.extra.clone(),
     }
 }

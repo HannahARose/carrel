@@ -173,6 +173,17 @@
           "type": "null"
         }
       ]
+    },
+    "expanded_from": {
+      "description": "The compressed file the item was expanded from (FORMAT.md §5.2).",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ExpandedFrom"
+        },
+        {
+          "type": "null"
+        }
+      ]
     }
   },
   "required": [
@@ -622,6 +633,31 @@
         "at",
         "reason",
         "former_kind"
+      ]
+    },
+    "ExpandedFrom": {
+      "description": "The compressed file an item was expanded from (FORMAT.md §5.2), so it's clear the item\nwas, say, a zip, and which one.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "The compressed file's name.",
+          "type": "string"
+        },
+        "size": {
+          "description": "Its size in bytes.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "checksum": {
+          "description": "Its checksum.",
+          "$ref": "#/$defs/Checksum"
+        }
+      },
+      "required": [
+        "name",
+        "size",
+        "checksum"
       ]
     }
   }

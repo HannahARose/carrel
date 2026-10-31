@@ -213,6 +213,7 @@ pub fn add(
         generated: None,
         placement: None,
         removed: None,
+        expanded_from: None,
         extra: Extra::new(),
     };
     let file = CardFile::new(card_value, "").map_err(|e| DeskError::Io {
