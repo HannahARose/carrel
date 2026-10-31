@@ -166,3 +166,81 @@ fn system_and_tool_files_are_ignored() {
         assert!(!is_ignored(name), "{name:?}");
     }
 }
+
+#[test]
+fn compressed_files_are_told_from_zip_based_documents() {
+    use carrel_core::detect::{Compressed, is_zip_package, split_part};
+
+    let dir = tempfile::tempdir().unwrap();
+    let write = |name: &str, bytes: &[u8]| {
+        let path = dir.path().join(name);
+        std::fs::write(&path, bytes).unwrap();
+        path
+    };
+    for (name, format) in [
+        ("Export.zip", Compressed::Zip),
+        ("src.tar", Compressed::Tar),
+        ("src.tar.gz", Compressed::TarGz),
+        ("src.TGZ", Compressed::TarGz),
+        ("src.tar.bz2", Compressed::TarBz2),
+        ("src.tar.xz", Compressed::TarXz),
+        ("src.tar.zst", Compressed::TarZst),
+        ("data.csv.gz", Compressed::Gz),
+        ("data.csv.bz2", Compressed::Bz2),
+        ("data.csv.xz", Compressed::Xz),
+        ("data.csv.zst", Compressed::Zst),
+        ("photos.7z", Compressed::SevenZ),
+        ("photos.rar", Compressed::Rar),
+    ] {
+        assert_eq!(Compressed::of(&write(name, b"")), Some(format), "{name}");
+    }
+    for name in [
+        "Thesis.docx",
+        "Budget.xlsx",
+        "Talk.pptx",
+        "Letter.odt",
+        "Novel.epub",
+        "Bracket.3mf",
+        "tool.jar",
+        "app.apk",
+        "App.ipa",
+        "pkg-1.0-py3-none-any.whl",
+        "chair.usdz",
+    ] {
+        assert!(is_zip_package(name), "{name}");
+        assert_eq!(
+            Compressed::of(&write(name, b"PK\x03\x04..")),
+            None,
+            "{name}"
+        );
+    }
+    assert_eq!(
+        Compressed::of(&write("download", b"PK\x03\x04....")),
+        Some(Compressed::Zip),
+        "a nameless zip is found by its bytes"
+    );
+    assert_eq!(
+        Compressed::of(&write("notes.txt", b"PK\x03\x04....")),
+        None,
+        "a name that says otherwise wins"
+    );
+    assert_eq!(Compressed::of(&write(".zip", b"")), None, "a bare ending");
+    std::fs::create_dir(dir.path().join("Folder.zip")).unwrap();
+    assert_eq!(Compressed::of(&dir.path().join("Folder.zip")), None);
+
+    for (name, part) in [
+        ("backup.z01", 1),
+        ("backup.zip.001", 1),
+        ("backup.7z.002", 2),
+        ("film.part2.rar", 2),
+        ("film.r00", 0),
+    ] {
+        assert_eq!(split_part(name), Some(part), "{name}");
+        assert_eq!(Compressed::of(&write(name, b"")), None, "{name}");
+    }
+    assert_eq!(split_part("track.001.mp3"), None);
+    assert_eq!(split_part("report.2024.pdf"), None);
+
+    assert!(Compressed::Zip.is_archive() && !Compressed::Gz.is_archive());
+    assert!(!Compressed::Rar.is_portable() && Compressed::TarZst.is_portable());
+}
