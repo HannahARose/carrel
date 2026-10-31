@@ -54,6 +54,21 @@ This design reads all three in the Apple provider, so every image gets real text
 5. A benchmark addition: a handful of invented images (a receipt photo, a screenshot, a whiteboard, a pet photo) with known answers, measured with and without the description.
 6. The user guide and `docs/providers.md`.
 
+## Measured (2026-10-31)
+
+Nine invented images in the benchmark, run three times each with and without descriptions (`CARREL_IMAGE_DESCRIPTIONS=off`). Full results are in [docs/bench](../bench/README.md#2026-10-31-images-with-and-without-descriptions).
+
+| Setup | Routing with / without | Sensitivity exact with / without | s/item with / without |
+| --- | --- | --- | --- |
+| Apple, then Gemma (recommended) | 100% / 100% | 44% / 30% | 15.0 / 12.4 |
+| Apple's model alone | 85% / 63% | 52% / 33% | 9.6 / 7.1 |
+| Gemma 4 E4B alone | 100% / 100% | 100% / 100% | 21.5 / 19.8 |
+
+- **Descriptions help where routing is weakest:** Apple's model alone files a third more of the images with them. With Gemma as the second opinion, the OCR text and labels were already enough to file all nine.
+- **They make titles and summaries say what a picture shows,** such as "Illustration of a cat" instead of "Photo on iPhone", and make sensitivity a little more exact. They cost about 2.5 seconds an image.
+- **Photos' dates came from their metadata** in every run, and every located photo got its reason and stayed `personal`.
+- **So descriptions stay on by default.**
+
 ## Decisions (accepted 2026-10-30)
 
 1. **One `image` offer in the Apple provider that returns metadata, labels, OCR and a description as one text,** rather than passing images to the card, routing and rating calls. Recommended: nothing downstream changes, it's one model call per image, and every model, including a second opinion that can't see images, benefits.

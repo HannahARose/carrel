@@ -111,7 +111,7 @@ pub fn check(answers: &Answers, archive: &Archive, items: &Path) -> Result<Vec<S
         {
             problems.push(format!("{file}: {date} isn't a date"));
         }
-        // Binary items, such as 3D models, are checked by whatever text they hold.
+        // Binary items, such as images and 3D models, are checked by whatever text they hold.
         let bytes = std::fs::read(path).map_err(|e| format!("{file}: {e}"))?;
         let text = String::from_utf8_lossy(&bytes);
         let ruled = floor(file, &text, default).level;
@@ -142,6 +142,9 @@ pub struct Outcome {
     pub confidence: Option<String>,
     /// The level given.
     pub sensitivity: Option<Sensitivity>,
+    /// Why it was given that level.
+    #[serde(default)]
+    pub reasons: Vec<String>,
     /// The creation date drafted, as `YYYY-MM-DD`.
     pub date: Option<String>,
     /// The tags drafted, with any new one proposed.
@@ -204,6 +207,7 @@ pub fn outcomes(run: &Run) -> Vec<Outcome> {
                 destination: route.map(|r| r.path.clone()),
                 confidence: route.map(|r| format!("{:?}", r.confidence).to_lowercase()),
                 sensitivity: assessment.map(|a| a.level),
+                reasons: assessment.map(|a| a.reasons.clone()).unwrap_or_default(),
                 date: draft
                     .and_then(|d| d.created.as_ref())
                     .map(|c| c.0.chars().take(10).collect()),
@@ -458,6 +462,7 @@ items:
             destination: Some(destination.into()),
             confidence: Some("medium".into()),
             sensitivity: Some(level),
+            reasons: Vec::new(),
             date: None,
             tags: tags.iter().map(|t| (*t).to_owned()).collect(),
             title: "t".into(),
