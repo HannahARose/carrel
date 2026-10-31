@@ -110,6 +110,39 @@ fn init_creates_an_archive_with_history_recorded_by_this_device() {
 }
 
 #[test]
+fn status_shows_what_was_changed_or_worked_on_lately() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    let recent = &sandbox.json(&root, &["status"])["recent"];
+    assert_eq!(
+        recent,
+        &json!([{
+            "kind": "work",
+            "date": "2026-10-27",
+            "item": "01a18701-0500-776a-9867-080924eb019c",
+            "title": "oscillator-sim",
+            "duration": "45m",
+            "summary": "Set up the project and the basic Euler integration loop.",
+        }]),
+        "approved sessions only, not pending ones"
+    );
+
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    let recent = &sandbox.json(&root, &["status"])["recent"];
+    assert_eq!(
+        recent[0]["kind"], "change",
+        "today's change first: {recent}"
+    );
+    assert_eq!(recent[1]["kind"], "work");
+    let text = sandbox.ok(&root, &["status"]);
+    assert!(text.contains("\nRecent:\n"), "{text}");
+    assert!(
+        text.contains("  2026-10-27        Worked on “oscillator-sim” for 45m: Set up the project"),
+        "{text}"
+    );
+}
+
+#[test]
 fn status_counts_items_and_reports_card_problems() {
     let sandbox = Sandbox::new();
     let root = sandbox.sample();

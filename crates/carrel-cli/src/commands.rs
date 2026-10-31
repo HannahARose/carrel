@@ -9,6 +9,7 @@ use carrel_core::archive::{Archive, ArchiveError, InitOptions, ItemRef};
 use carrel_core::card::{Card, Id};
 use carrel_core::card_file::CardFile;
 use carrel_core::coordinator::{Coordinator, DEFAULT_LEASE, DiskLock, Holder, LockInfo};
+use carrel_core::entries::HistoryEntry;
 use carrel_core::history::{Entry, History, HistoryError, Operation};
 use serde_json::{Value, json};
 
@@ -191,13 +192,84 @@ struct LoadedCard {
 }
 
 fn load_card(archive: &Archive, item: &ItemRef) -> Result<LoadedCard, Failure> {
-    let path = archive.root().join(&item.card);
-    let text = std::fs::read_to_string(&path).map_err(|e| Failure::io(&path, &e))?;
-    let file = CardFile::parse(&text).map_err(|e| Failure::new(format!("{}: {e}", item.card)))?;
     Ok(LoadedCard {
         item: item.clone(),
-        card: file.card().clone(),
+        card: load_file(archive, item)?.card().clone(),
     })
+}
+
+fn load_file(archive: &Archive, item: &ItemRef) -> Result<CardFile, Failure> {
+    let path = archive.root().join(&item.card);
+    let text = std::fs::read_to_string(&path).map_err(|e| Failure::io(&path, &e))?;
+    CardFile::parse(&text).map_err(|e| Failure::new(format!("{}: {e}", item.card)))
+}
+
+/// How many lines `carrel status` gives Recent.
+const RECENT: usize = 10;
+
+/// Something filed, changed or worked on lately, for Recent.
+struct Recent {
+    /// When, as `YYYY-MM-DD HH:MM` for a change and `YYYY-MM-DD` for work, so they sort
+    /// together.
+    when: String,
+    /// What happened, for people.
+    what: String,
+    /// The same for programs.
+    json: Value,
+}
+
+/// A work session's approved history entry, as Recent shows it.
+fn worked_on(item: Id, title: &str, entry: &HistoryEntry) -> Option<Recent> {
+    let duration = entry.duration.as_ref()?;
+    let first = entry.lines.iter().map(|l| l.trim()).find(|l| !l.is_empty());
+    let mut what = format!("Worked on “{title}” for {duration}");
+    if let Some(first) = first {
+        write!(what, ": {first}").unwrap();
+    }
+    Some(Recent {
+        when: entry.date.clone(),
+        json: json!({
+            "kind": "work",
+            "date": entry.date,
+            "item": item,
+            "title": title,
+            "duration": duration,
+            "summary": first,
+        }),
+        what,
+    })
+}
+
+/// The latest changes and work sessions, newest first. Recording or approving a session is
+/// left out: the session itself is shown, on the day it happened.
+fn recent(history: Option<&[Entry]>, mut work: Vec<Recent>) -> Vec<Recent> {
+    let changes = history
+        .unwrap_or_default()
+        .iter()
+        .filter(|e| e.operation != Some(Operation::Session))
+        .take(RECENT)
+        .map(|e| Recent {
+            when: local_time(e.time),
+            what: e.summary.clone(),
+            json: json!({ "kind": "change", "change": entry_json(e) }),
+        });
+    work.extend(changes);
+    work.sort_by(|a, b| b.when.cmp(&a.when));
+    work.truncate(RECENT);
+    work
+}
+
+/// The part of `carrel status` about what was filed, changed or worked on lately.
+fn recent_section(recent: &[Recent]) -> String {
+    let mut text = String::new();
+    if recent.is_empty() {
+        return text;
+    }
+    text.push_str("\nRecent:\n");
+    for r in recent {
+        writeln!(text, "  {:<16}  {}", r.when, r.what).unwrap();
+    }
+    text
 }
 
 /// The collection a card belongs to: the deepest collection folder containing it.
@@ -223,30 +295,8 @@ fn writer_json(lock: Option<&LockInfo>) -> Value {
     })
 }
 
-/// `carrel status`.
-pub fn status(archive: Option<&Path>) -> Result<Report, Failure> {
-    let archive = locate(archive)?;
-    let collections: Vec<String> = archive.collections()?.into_iter().map(|c| c.path).collect();
-    let items = archive.items()?;
-    let mut by_kind: BTreeMap<String, usize> = BTreeMap::new();
-    let mut problems = Vec::new();
-    for item in &items {
-        *by_kind.entry(kind_name(item)).or_default() += 1;
-        let loaded = load_card(&archive, item)?;
-        let found = loaded.card.problems();
-        if !found.is_empty() {
-            problems.push((item.card.clone(), found));
-        }
-    }
-    let history = match History::open(&archive) {
-        Ok(history) => Some(history.log()?),
-        Err(HistoryError::NotInitialized) => None,
-        Err(e) => return Err(e.into()),
-    };
-    let lock = DiskLock::for_archive(&archive).current()?;
-    let synced = DiskLock::is_synced_folder(archive.root());
-    let this_device = Identity::load()?.map(|i| i.device);
-
+/// The start of `carrel status`: the archive's name, where it is, and what it is.
+fn archive_header(archive: &Archive) -> String {
     let mut text = String::new();
     let info = archive.info();
     writeln!(text, "{}", archive.doc().name).unwrap();
@@ -261,6 +311,44 @@ pub fn status(archive: Option<&Path>) -> Result<Report, Failure> {
     .unwrap();
     writeln!(text, "  created   {}", info.created.0).unwrap();
     text.push('\n');
+    text
+}
+
+/// `carrel status`.
+pub fn status(archive: Option<&Path>) -> Result<Report, Failure> {
+    let archive = locate(archive)?;
+    let collections: Vec<String> = archive.collections()?.into_iter().map(|c| c.path).collect();
+    let items = archive.items()?;
+    let mut by_kind: BTreeMap<String, usize> = BTreeMap::new();
+    let mut problems = Vec::new();
+    let mut work = Vec::new();
+    for item in &items {
+        *by_kind.entry(kind_name(item)).or_default() += 1;
+        let file = load_file(&archive, item)?;
+        let found = file.card().problems();
+        if !found.is_empty() {
+            problems.push((item.card.clone(), found));
+        }
+        // A card whose history section can't be read shows its problem in `carrel show`.
+        if let Ok(log) = file.history() {
+            work.extend(
+                log.entries
+                    .iter()
+                    .filter(|e| !e.pending)
+                    .filter_map(|e| worked_on(item.id, &file.card().title, e)),
+            );
+        }
+    }
+    let history = match History::open(&archive) {
+        Ok(history) => Some(history.log()?),
+        Err(HistoryError::NotInitialized) => None,
+        Err(e) => return Err(e.into()),
+    };
+    let lock = DiskLock::for_archive(&archive).current()?;
+    let synced = DiskLock::is_synced_folder(archive.root());
+    let this_device = Identity::load()?.map(|i| i.device);
+
+    let mut text = archive_header(&archive);
     let kinds: Vec<String> = by_kind.iter().map(|(k, n)| format!("{n} {k}")).collect();
     writeln!(
         text,
@@ -277,6 +365,8 @@ pub fn status(archive: Option<&Path>) -> Result<Report, Failure> {
     text.push_str(&history_line(history.as_deref()));
     text.push_str(&crate::backup::status_line(&archive, history.as_deref()));
     text.push_str(&writer_line(lock.as_ref(), this_device));
+    let recent = recent(history.as_deref(), work);
+    text.push_str(&recent_section(&recent));
     if !problems.is_empty() {
         writeln!(text, "\n{} with problems:", plural(problems.len(), "card")).unwrap();
         for (card, found) in &problems {
@@ -309,6 +399,7 @@ pub fn status(archive: Option<&Path>) -> Result<Report, Failure> {
             "last": log.first().map(entry_json),
         })),
         "writer": writer_json(lock.as_ref()),
+        "recent": recent.iter().map(|r| &r.json).collect::<Vec<_>>(),
         "signals": signals,
         "names": names.iter().map(|f| json!({
             "path": f.path,
