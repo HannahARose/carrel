@@ -6,7 +6,7 @@
 use std::path::PathBuf;
 
 use crate::archive::Archive;
-use crate::card::Id;
+use crate::card::{Id, Sensitivity};
 use crate::ingest::card::{Context, Draft, Glossary, Vocabulary, draft};
 use crate::ingest::filing::{Placement, files_itself};
 use crate::ingest::questions::ask;
@@ -122,6 +122,21 @@ pub fn run(
     run_with_progress(archive, registry, paths, options, device, &mut |_| {})
 }
 
+/// How sensitive `candidate` is: its text's rating, and at least `personal` when the file
+/// records where it was made.
+fn rate(
+    registry: &Registry,
+    candidate: &Candidate,
+    text: &ItemText,
+    default: Sensitivity,
+) -> Assessment {
+    let mut assessment = assess(registry, &name(candidate), &text.text, default);
+    if text.located {
+        assessment.located();
+    }
+    assessment
+}
+
 /// [`run`], calling `progress` as each item starts and as each stage finishes.
 ///
 /// # Errors
@@ -205,12 +220,7 @@ pub fn run_with_progress(
         .map(|(i, (c, (t, r)))| {
             report(Stage::Rating, i);
             match (t, r) {
-                (Some(t), Some(r)) => Some(assess(
-                    registry,
-                    &name(c),
-                    &t.text,
-                    batch.default_sensitivity(r),
-                )),
+                (Some(t), Some(r)) => Some(rate(registry, c, t, batch.default_sensitivity(r))),
                 _ => None,
             }
         })

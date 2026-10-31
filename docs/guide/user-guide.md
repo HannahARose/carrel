@@ -52,7 +52,7 @@ Ingest is how files come into the archive. It never moves anything until you app
 1. **Choose files:** `i` in the interactive mode (with your file picker or the built-in browser), or `carrel ingest PATH...` in the shell. A folder is one item, unless you ask for each entry (`--each`, or `e` in the plan). A folder named like a pile (Downloads, Desktop, Inbox) makes you choose.
 2. **The plan** shows what will be added, its kind and size, and what's left out: duplicates of items already in the archive or of each other, items already waiting for review, files your rules ignore. `--dry-run` shows only the plan.
 3. **The queue:** each item waits in `_System/queue/intake/` until a **worker** drafts it. The worker runs in the background, one item at a time, and keeps going after you close the terminal. If it's stopped, it picks up where it left off the next time anything is added (or when you run `carrel worker`). `carrel ingest --status`, or the interactive mode's Ingest screen, shows what's waiting and what failed.
-4. **Drafting each item:** the worker reads the item's text (PDF text, OCR for scans and images), drafts its card with a model (title, summary, tags, dates), chooses a collection, and rates how sensitive it is. The proposal is saved as soon as it's ready, and appears in Review.
+4. **Drafting each item:** the worker reads the item's text (PDF text, OCR for scans, and for images what they show; see [Images](#images)), drafts its card with a model (title, summary, tags, dates), chooses a collection, and rates how sensitive it is. The proposal is saved as soon as it's ready, and appears in Review.
 
 An item's journey:
 
@@ -86,10 +86,22 @@ When an item is filed with low or medium confidence, its card keeps a `placement
 Every item is rated **public**, **personal**, **sensitive** or **restricted**:
 
 - Rules set a floor before any model: a card number, a bank account number (IBAN), a social security number, a private key or a written-down password makes it **restricted**; words like "diagnosis", "payslip", "tax return" or "insurance claim" make it at least **sensitive**.
+- A photo that records where it was taken is at least **personal**, with the reason "has the place it was taken". Most phone photos have a location, so it never raises them further.
 - A model may raise the level, never lower it.
 - The archive sets a default, **personal**.
 
 Sensitive and restricted items always wait for your approval, whatever rules say. The reasons are given in words, never by quoting what was found.
+
+### Images
+
+On a Mac, Carrel reads more of an image than its text. For each picture it notes:
+
+- what kind it is (a photo, a screenshot or another image), its size, when it was taken, and the camera or app that made it;
+- a few labels from Apple's Vision framework, such as `document`, `dog` or `beach`;
+- any text in it, by OCR;
+- on macOS 27 with Apple Intelligence, a sentence or two from Apple's on-device model on what it shows.
+
+The model drafts the card from all of that, so a photo named `IMG_0550.jpeg` gets a real title. When the model gives no date, the date the photo was taken becomes the card's **created** date. Where a photo was taken is never written into the text or the card; Carrel only notes that it has a location. Everything is read on the device.
 
 ### When a model declines
 
@@ -178,7 +190,7 @@ Carrel never sends your files anywhere. Everything it does with them runs on you
 
 | Provider | What it gives Carrel | Where |
 | --- | --- | --- |
-| `apple` | Apple's on-device model, PDF text (PDFKit), OCR (Vision) | Macs with Apple Intelligence |
+| `apple` | Apple's on-device model, PDF text (PDFKit), images (ImageIO, Vision and Apple's model), OCR (Vision) | Macs with Apple Intelligence |
 | `mlx` | Open models you download, through Apple's MLX, usually faster than llama.cpp on the same Mac | Apple-silicon Macs with twice the model's size in memory |
 | `llama` | Open models you download, through llama.cpp | Any platform |
 | `extract` | PDF text, and OCR through [Tesseract](https://tesseract-ocr.github.io) if it's installed | Any platform |

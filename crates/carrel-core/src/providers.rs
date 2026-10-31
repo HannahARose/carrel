@@ -150,11 +150,19 @@ pub struct ExtractionRequest {
 pub struct Extraction {
     /// The text.
     pub text: String,
-    /// `embedded` for text stored in the file, `ocr` for recognized text.
+    /// `embedded` for text stored in the file, `ocr` for recognized text, `described` when a
+    /// model also described an image.
     pub method: String,
     /// The number of pages, when the provider reports it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pages: Option<u32>,
+    /// When the file was made, if it says, such as a photo's date taken: a date, or a time
+    /// with its offset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created: Option<String>,
+    /// Whether it records where it was made, such as a photo's location.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub located: bool,
 }
 
 /// Why a provider couldn't do what was asked.
@@ -587,6 +595,8 @@ impl Provider for PlainText {
             text: String::from_utf8_lossy(&bytes).into_owned(),
             method: "embedded".into(),
             pages: None,
+            created: None,
+            located: false,
         })
     }
 }

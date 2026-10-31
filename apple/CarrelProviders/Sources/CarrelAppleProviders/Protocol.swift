@@ -93,14 +93,23 @@ public enum ProviderError: Error, Equatable {
 /// The text read from a file.
 public struct Extraction: Equatable, Sendable {
     public var text: String
-    /// `embedded` for text stored in the file, `ocr` for recognized text.
+    /// `embedded` for text stored in the file, `ocr` for recognized text, `described` when a
+    /// model also described an image.
     public var method: String
     public var pages: Int?
+    /// When the file was made, if it says: a date, or a time with its offset.
+    public var created: String?
+    /// Whether it records where it was made, such as a photo's location.
+    public var located: Bool?
 
-    public init(text: String, method: String, pages: Int? = nil) {
+    public init(
+        text: String, method: String, pages: Int? = nil, created: String? = nil, located: Bool? = nil
+    ) {
         self.text = text
         self.method = method
         self.pages = pages
+        self.created = created
+        self.located = located
     }
 }
 
@@ -299,6 +308,12 @@ public struct Server: Sendable {
             var json: [String: Any] = ["text": result.text, "method": result.method]
             if let pages = result.pages {
                 json["pages"] = pages
+            }
+            if let created = result.created {
+                json["created"] = created
+            }
+            if result.located == true {
+                json["located"] = true
             }
             return json
         case "text/count-tokens":
