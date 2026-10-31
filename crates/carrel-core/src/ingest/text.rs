@@ -82,7 +82,8 @@ impl Unread {
 }
 
 /// The media type of the file at `path`: from its first bytes when they're distinctive,
-/// otherwise from its extension, and `text/plain` for anything that reads as UTF-8 text.
+/// otherwise from its extension, and `text/plain` for anything that reads as UTF-8 text. The
+/// extension comes before that rule, so an ASCII STL or a STEP file is a 3D model, not text.
 #[must_use]
 pub fn media_type(path: &Path) -> String {
     let mut head = [0u8; 512];
@@ -160,6 +161,16 @@ fn from_extension(extension: &str) -> Option<&'static str> {
         "xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         "pptx" => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
         "zip" => "application/zip",
+        // 3D models, and the CAD and slicer files around them (`docs/design/models-3d.md`).
+        "stl" => "model/stl",
+        "obj" => "model/obj",
+        "ply" => "model/ply",
+        "usdz" => "model/vnd.usdz+zip",
+        "usd" | "usda" | "usdc" => "model/vnd.usd",
+        "3mf" => "model/3mf",
+        "step" | "stp" => "model/step",
+        "igs" | "iges" => "model/iges",
+        "gcode" | "gco" => "text/x-gcode",
         _ => return None,
     })
 }
