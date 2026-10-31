@@ -6,6 +6,7 @@
 import CarrelAppleProviders
 import Foundation
 import MLX
+import MLXEmbedders
 import MLXGuidedGeneration
 import MLXLLM
 import MLXLMCommon
@@ -25,12 +26,13 @@ let idleUnload: Duration = .seconds(300)
 /// A fixed seed, so the same prompt gives the same answer.
 let seed: UInt64 = 0x00ca_7e11
 
-/// The one model a provider process has loaded, if any. Loading another unloads it first, so
-/// at most one model's memory is held.
+/// The one model a provider process has loaded, if any: a text model or an embedding model.
+/// Loading another unloads it first, so at most one model's memory is held.
 public actor Loaded {
     public static let shared = Loaded()
 
     private var current: (name: String, container: ModelContainer)?
+    private var embedder: (name: String, container: EmbedderModelContainer)?
     private var tokenizers: [String: any MLXLMCommon.Tokenizer] = [:]
     private var biases: [String: Biases] = [:]
     private var lastUse = ContinuousClock.now
@@ -43,10 +45,28 @@ public actor Loaded {
             return current.container
         }
         current = nil
+        embedder = nil
         Memory.clearCache()
         let container = try await LLMModelFactory.shared.loadContainer(
             from: folder.url, using: LocalTokenizerLoader())
         current = (folder.name, container)
+        scheduleIdleUnload()
+        return container
+    }
+
+    /// `folder`'s embedding model, loading it with `factory` if it isn't the one loaded.
+    func embedder(for folder: ModelFolder, using factory: EmbedderModelFactory) async throws
+        -> EmbedderModelContainer
+    {
+        lastUse = .now
+        if let embedder, embedder.name == folder.name {
+            return embedder.container
+        }
+        current = nil
+        embedder = nil
+        Memory.clearCache()
+        let container = try await factory.loadContainer(from: folder.url, using: LocalTokenizerLoader())
+        embedder = (folder.name, container)
         scheduleIdleUnload()
         return container
     }
@@ -79,14 +99,15 @@ public actor Loaded {
     public func unload() {
         idleTask?.cancel()
         idleTask = nil
-        guard current != nil else { return }
+        guard isLoaded else { return }
         current = nil
+        embedder = nil
         Memory.clearCache()
         FileHandle.standardError.write(Data("carrel-provider-mlx: unloaded the model\n".utf8))
     }
 
     /// Whether a model is loaded, for tests.
-    public var isLoaded: Bool { current != nil }
+    public var isLoaded: Bool { current != nil || embedder != nil }
 
     private func scheduleIdleUnload() {
         idleTask?.cancel()
@@ -103,10 +124,10 @@ public actor Loaded {
     }
 
     private func idle(for duration: Duration) -> Bool {
-        current != nil && ContinuousClock.now - lastUse >= duration
+        isLoaded && ContinuousClock.now - lastUse >= duration
     }
 
-    fileprivate func touch() {
+    func touch() {
         lastUse = .now
     }
 }

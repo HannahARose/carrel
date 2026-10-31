@@ -599,7 +599,11 @@ fn models_lists_the_catalog_and_asks_before_downloading() {
     let listed = sandbox.json(&here, &["models"]);
     assert_eq!(listed["provisional"], false, "the benchmark has chosen");
     let catalog = listed["catalog"].as_array().unwrap();
-    assert!(catalog.iter().all(|m| m["state"] == "available"));
+    assert!(
+        catalog
+            .iter()
+            .all(|m| m["state"] == "available" || !m["comes_with"].is_null())
+    );
     assert!(catalog.iter().any(|m| m["name"] == "granite-4.2-3b"));
     assert_eq!(listed["others"][0]["name"], "mine");
 
@@ -2079,7 +2083,7 @@ fn texts_are_embedded_with_the_archives_model_and_no_other() {
 }
 
 #[test]
-fn embedding_models_are_listed_apart_and_unpinned_ones_are_never_downloaded() {
+fn embedding_models_are_listed_apart_and_built_in_ones_are_never_downloaded() {
     let sandbox = Sandbox::new();
     let here = sandbox.path("");
     let listed = sandbox.json(&here, &["models"]);
@@ -2094,18 +2098,25 @@ fn embedding_models_are_listed_apart_and_unpinned_ones_are_never_downloaded() {
             .iter()
             .any(|m| m["name"] == "qwen3-embedding-0.6b" && m["embedding"]["pooling"] == "last")
     );
+    assert_eq!(gemma["pinned"], true);
+    let apple = catalog
+        .iter()
+        .find(|m| m["name"] == "apple-nl-sentence-en")
+        .unwrap();
+    assert_eq!(apple["state"], "built in");
+    assert_eq!(apple["comes_with"], "carrel-provider-apple");
     let text = sandbox.ok(&here, &["models"]);
     assert!(text.contains("For search by meaning"), "{text}");
+    assert!(text.contains("nothing to download"), "{text}");
 
-    if gemma["pinned"] == false {
-        let out = sandbox.run_in(
-            &here,
-            &["models", "download", "embeddinggemma-300m", "--yes"],
-        );
-        assert!(!out.status.success());
-        assert!(String::from_utf8_lossy(&out.stderr).contains("isn't pinned"));
-        assert!(!sandbox.path("config/logs/network.log").exists());
-    }
+    let out = sandbox.run_in(
+        &here,
+        &["models", "download", "apple-nl-sentence-en", "--yes"],
+    );
+    assert!(!out.status.success());
+    let error = String::from_utf8_lossy(&out.stderr);
+    assert!(error.contains("nothing to download"), "{error}");
+    assert!(!sandbox.path("config/logs/network.log").exists());
 }
 
 #[test]

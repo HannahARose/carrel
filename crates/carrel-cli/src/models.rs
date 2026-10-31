@@ -44,6 +44,11 @@ fn known(name: &str) -> Result<&'static Model, Failure> {
 /// A catalog model that can be downloaded: one whose file is pinned to a checksum.
 fn downloadable(name: &str) -> Result<&'static Model, Failure> {
     let model = known(name)?;
+    if let Some(provider) = model.comes_with {
+        return Err(Failure::new(
+            carrel_core::models::ModelError::ComesWith(model.name.to_owned(), provider).to_string(),
+        ));
+    }
     if model.is_pinned() {
         Ok(model)
     } else {
@@ -55,6 +60,9 @@ fn downloadable(name: &str) -> Result<&'static Model, Failure> {
 
 /// A catalog model's state in the models folder.
 fn state(model: &Model, dir: &Path, found: &[Installed]) -> (&'static str, Option<u64>) {
+    if model.comes_with.is_some() {
+        return ("built in", None);
+    }
     if found.iter().any(|f| f.name == model.name) {
         return ("downloaded", None);
     }
@@ -73,6 +81,7 @@ fn state_note(model: &Model, state: &str, part: Option<u64>) -> String {
             human_size(model.size)
         ),
         None if state == "downloaded" => "downloaded".to_owned(),
+        None if state == "built in" => "nothing to download".to_owned(),
         None if !model.is_pinned() => "not yet pinned to a checksum".to_owned(),
         None => String::new(),
     };
@@ -99,6 +108,8 @@ fn row(
     let shown = state_note(model, state, part);
     let size = if model.is_pinned() {
         human_size(model.size)
+    } else if model.comes_with.is_some() {
+        "-".to_owned()
     } else {
         "?".to_owned()
     };
@@ -434,9 +445,18 @@ pub fn embed(archive: Option<&Path>, texts: &[String], query: bool) -> Result<Re
         },
     };
     let (embeddings, source, _) = registry.embed(&model, &request).map_err(|e| match e {
-        ProviderError::Unavailable(_) if find(&model).is_some() => Failure::new(format!(
-            "{e}; download it with `carrel models download {model}`"
-        )),
+        ProviderError::Unavailable(_) => match find(&model) {
+            Some(Model {
+                comes_with: Some(provider),
+                ..
+            }) => Failure::new(format!(
+                "{e}; it comes with {provider}, which only Apple devices have"
+            )),
+            Some(_) => Failure::new(format!(
+                "{e}; download it with `carrel models download {model}`"
+            )),
+            None => Failure::new(e.to_string()),
+        },
         _ => Failure::new(e.to_string()),
     })?;
     let mut text = format!(

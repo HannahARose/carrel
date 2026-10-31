@@ -10,6 +10,7 @@ Carrel providers built on Apple's frameworks, following the [provider protocol](
 | `pdfkit` | `extract-text` | PDFs with a text layer | Done |
 | `vision` (Vision OCR) | `extract-text` | Images, and PDFs without a text layer | Done |
 | `afm` (Foundation Models) | `text-model` | Prompts, with JSON Schema answers through guided generation; counts tokens on macOS 26.4 and later | Done |
+| `apple-nl-sentence-en` (NaturalLanguage) | `embed` | English texts, as 512 numbers each, for search; used only by archives that chose it | Done |
 
 PDFs without a text layer are reported as unsupported, so Carrel moves on to OCR: `pdfkit` is listed before `vision`, and a provider's offers of equal priority are tried in the order it lists them. Vision renders each PDF page at twice its size and reads lines top to bottom; pages are separated by a form feed.
 

@@ -23,9 +23,10 @@ pub enum Key {
 }
 
 /// The embedding models an archive can choose: the catalog's, the default first.
-const EMBEDDING_MODELS: [&str; 2] = [
+const EMBEDDING_MODELS: [&str; 3] = [
     crate::models::DEFAULT_EMBEDDING_MODEL,
     "qwen3-embedding-0.6b",
+    "apple-nl-sentence-en",
 ];
 
 impl Key {

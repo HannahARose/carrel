@@ -9,7 +9,10 @@ import Testing
 
 struct ModelTests {
     static let folder: ModelFolder? = ProcessInfo.processInfo.environment["CARREL_TEST_MLX_MODELS"]
-        .flatMap { ModelFolder.discover(in: URL(filePath: $0, directoryHint: .isDirectory)).first }
+        .flatMap {
+            offerFolders(ModelFolder.discover(in: URL(filePath: $0, directoryHint: .isDirectory)))
+                .models.first?.folder
+        }
 
     @Test(.enabled(if: folder != nil, "CARREL_TEST_MLX_MODELS isn't set"))
     func answersFollowTheSchemaAndCountTokens() async throws {
