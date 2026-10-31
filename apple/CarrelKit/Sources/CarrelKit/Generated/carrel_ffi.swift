@@ -650,6 +650,25 @@ open class ArchiveHandle: ArchiveHandleProtocol, @unchecked Sendable {
 
     
     /**
+     * Creates an archive named `name` in the empty folder `path` (creating it if needed),
+     * with its history started, as `carrel init` does, and opens it.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if `path` is already an archive or has files in it, or if
+     * anything can't be written.
+     */
+public static func create(path: String, name: String)throws  -> ArchiveHandle  {
+    return try  FfiConverterTypeArchiveHandle_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_constructor_archivehandle_create(
+        FfiConverterString.lower(path),
+        FfiConverterString.lower(name),uniffiCallStatus
+    )
+})
+}
+    
+    /**
      * Opens the archive containing `path`.
      *
      * # Errors
@@ -1576,6 +1595,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_textmodel_complete() != 62907) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_constructor_archivehandle_create() != 24558) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_constructor_archivehandle_open() != 50097) {
