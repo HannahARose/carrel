@@ -9,6 +9,7 @@ struct ArchiveWindow: View {
 
     @Environment(AppModel.self) private var app
     @Environment(\.dismissWindow) private var dismissWindow
+    @Environment(\.openWindow) private var openWindow
     @Environment(\.controlActiveState) private var activeState
     @State private var model: ArchiveWindowModel
 
@@ -49,10 +50,25 @@ struct ArchiveWindow: View {
         .task {
             dismissWindow(id: WelcomeView.windowID)
             await model.load()
+            choosePendingItem()
+        }
+        .onChange(of: app.pendingLink) { choosePendingItem() }
+        .handlesExternalEvents(preferring: [AgentLink.scheme], allowing: [AgentLink.scheme])
+        .onOpenURL { url in
+            app.open(link: url) { openWindow(id: Self.windowID, value: $0) }
         }
         .onChange(of: activeState, initial: true) {
             if activeState == .key { app.activeArchive = model.root }
         }
+    }
+}
+
+extension ArchiveWindow {
+    /// Chooses the item a link from the agent's menu asked for, on Active.
+    fileprivate func choosePendingItem() {
+        guard model.handle != nil, let item = app.takePendingItem(for: model.root) else { return }
+        model.screen = .active
+        model.selectedItemID = item
     }
 }
 

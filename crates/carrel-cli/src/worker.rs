@@ -13,6 +13,10 @@
 //! so a crashed worker never leaves a stale one. The worker writes its progress to a status
 //! file, which `carrel ingest --status` and the interactive mode read, and a log beside it.
 //!
+//! While the Mac app's agent looks after the archive on this device (it holds the agent lock,
+//! [`carrel_core::worker::agent_lock`]), the CLI starts no worker of its own and `carrel worker`
+//! steps aside: the agent notices the queue and changes as they happen.
+//!
 //! This module keeps what's the CLI's own: starting the worker detached, its lock, and its log.
 
 use std::fmt::Write as _;
@@ -93,6 +97,13 @@ pub fn running(archive: &Archive) -> Result<bool, Failure> {
     lock.is_held().map_err(|e| Failure::io(&lock.path, &e))
 }
 
+/// Whether the Mac app's agent looks after `archive` on this device, so the CLI's worker steps
+/// aside.
+#[must_use]
+pub fn agent(archive: &Archive) -> bool {
+    folder().is_ok_and(|folder| carrel_core::worker::agent_running(&folder, archive))
+}
+
 /// The running worker's status, if there is a worker and it has written one.
 #[must_use]
 pub fn status(archive: &Archive) -> Option<Status> {
@@ -102,14 +113,17 @@ pub fn status(archive: &Archive) -> Option<Status> {
     carrel_core::worker::read_status(&file_for(archive, "json").ok()?)
 }
 
-/// Starts a worker for `archive` in the background unless one is running or `CARREL_WORKER`
-/// is `off`. Returns whether one was started.
+/// Starts a worker for `archive` in the background unless one is running, the agent looks
+/// after the archive, or `CARREL_WORKER` is `off`. Returns whether one was started.
 ///
 /// # Errors
 ///
 /// [`Failure`] if the worker can't be started.
 pub fn start(archive: &Archive) -> Result<bool, Failure> {
-    if std::env::var(WORKER_ENV).is_ok_and(|v| v.eq_ignore_ascii_case("off")) || running(archive)? {
+    if std::env::var(WORKER_ENV).is_ok_and(|v| v.eq_ignore_ascii_case("off"))
+        || agent(archive)
+        || running(archive)?
+    {
         return Ok(false);
     }
     let exe =
@@ -222,13 +236,21 @@ pub fn after_change(archive: Option<&Path>) {
 
 /// `carrel worker`: drafts the queue for this device until it's empty, then embeds what's
 /// behind in the index. It's what adding to the queue and changing filed items start in the
-/// background; run by hand, it says if another is already running.
+/// background; run by hand, it says if another is already running. It steps aside while the
+/// Mac app's agent looks after the archive, which a worker started before the agent was may
+/// find.
 ///
 /// # Errors
 ///
 /// [`Failure`] if the archive or its queues can't be read or written.
 pub fn run(archive: Option<&Path>) -> Result<Report, Failure> {
     let archive = locate(archive)?;
+    if agent(&archive) {
+        return Ok(Report::new(
+            "The Carrel agent looks after this archive's queue and index on this device.\n",
+            json!({ "running": true, "agent": true, "done": 0 }),
+        ));
+    }
     let Some(lock) = try_lock(&archive)? else {
         return Ok(Report::new(
             "A worker is already drafting this archive's queue on this device.\n",

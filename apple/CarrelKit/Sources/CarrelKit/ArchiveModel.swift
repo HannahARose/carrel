@@ -475,9 +475,13 @@ public final class ArchiveModel {
         return added
     }
 
-    /// Drafts what's queued here, when the agent isn't running to do it.
+    /// Drafts what's queued here, when the agent isn't running to do it: with it running,
+    /// this does nothing and says so, and the agent drafts.
     @discardableResult
     public func draftQueued() async throws -> Drafted {
+        if handle.agentRunning() {
+            return Drafted(drafted: 0, embedded: 0, failures: [], alreadyRunning: true)
+        }
         let drafted = try await call(reporting: "Drafting") { handle, relay in
             try handle.draftQueued(progress: relay)
         }
