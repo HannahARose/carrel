@@ -22,6 +22,8 @@ public struct ModelReader: TextExtractor {
 
     /// Each view's side, in pixels; the four make one picture twice as wide and high.
     static let tile = 512
+    /// The camera's field of view, in degrees: narrow, so the views are nearly flat.
+    static let fieldOfView: CGFloat = 30
 
     /// Whether to draw the views and ask Apple's model about them. Off in tests that check the
     /// geometry.
@@ -94,12 +96,16 @@ public struct ModelReader: TextExtractor {
         let grey = SCNMaterial()
         grey.diffuse.contents = NSColor(white: 0.75, alpha: 1)
         grey.lightingModel = .physicallyBased
+        // Both sides: many files have some triangles wound the wrong way.
+        grey.isDoubleSided = true
         scene.rootNode.enumerateHierarchy { node, _ in
             node.geometry?.materials = [grey]
         }
         let (low, high) = scene.rootNode.boundingBox
         let center = SCNVector3((low.x + high.x) / 2, (low.y + high.y) / 2, (low.z + high.z) / 2)
-        let radius = max(high.x - low.x, high.y - low.y, high.z - low.z)
+        let (width, depth, height) = (high.x - low.x, high.y - low.y, high.z - low.z)
+        // The bounding sphere's radius: what fits in the picture from any side.
+        let radius = sqrt(width * width + depth * depth + height * height) / 2
         guard radius > 0 else { return nil }
         scene.background.contents = NSColor.white
         let ambient = SCNNode()
@@ -110,7 +116,7 @@ public struct ModelReader: TextExtractor {
 
         let camera = SCNNode()
         camera.camera = SCNCamera()
-        camera.camera?.fieldOfView = 30
+        camera.camera?.fieldOfView = fieldOfView
         camera.camera?.zFar = Double(radius * 20)
         scene.rootNode.addChildNode(camera)
         let renderer = SCNRenderer(device: device, options: nil)
@@ -134,7 +140,7 @@ public struct ModelReader: TextExtractor {
         ]
         for (index, (from, up)) in views.enumerated() {
             let length = sqrt(from.x * from.x + from.y * from.y + from.z * from.z)
-            let distance = radius * 2.2
+            let distance = radius / sin(fieldOfView / 2 * .pi / 180) * 1.1
             camera.position = SCNVector3(
                 center.x + from.x / length * distance, center.y + from.y / length * distance,
                 center.z + from.z / length * distance)

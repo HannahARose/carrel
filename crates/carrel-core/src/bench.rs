@@ -111,7 +111,9 @@ pub fn check(answers: &Answers, archive: &Archive, items: &Path) -> Result<Vec<S
         {
             problems.push(format!("{file}: {date} isn't a date"));
         }
-        let text = std::fs::read_to_string(path).map_err(|e| format!("{file}: {e}"))?;
+        // Binary items, such as 3D models, are checked by whatever text they hold.
+        let bytes = std::fs::read(path).map_err(|e| format!("{file}: {e}"))?;
+        let text = String::from_utf8_lossy(&bytes);
         let ruled = floor(file, &text, default).level;
         if answer.sensitivity < ruled {
             problems.push(format!(
