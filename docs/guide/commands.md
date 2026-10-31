@@ -17,7 +17,7 @@ Exit status is `0` on success, `1` when the command failed, and `2` for a usage 
 | --- | --- |
 | `carrel init [PATH] [--name NAME] [--allow-existing-files]` | Creates an archive in `PATH` (or the current folder) and starts its history. With `--allow-existing-files`, files already there become uncataloged items to ingest. Inside an archive that has no history yet, it starts the history. |
 | `carrel open [PATH]` | Chooses the archive commands use outside one; with no path, shows the choice. |
-| `carrel status` | Summarizes the archive: items by kind, cards with problems, names that won't work everywhere, **Structure** signals, the last change and backup, and who is writing. |
+| `carrel status` | Summarizes the archive: items by kind, cards with problems, names that won't work everywhere, **Structure** signals, the last change and backup, and who is writing. Also suggests folders on the Desktop or in `~/Code` that look like active work (changed in the last two weeks, or a Git repository) to put on the desk, and desk items unchanged for 60 days to archive; nothing is tracked or moved unless you ask. |
 | `carrel show ITEM` | Shows an item's card. `ITEM` is its identifier, or the path of the item or its card. |
 | `carrel log [-n COUNT]` | Lists recorded changes, newest first. |
 | `carrel undo CHANGE` | Undoes a change with a new change that reverses it. `CHANGE` is its identifier from `carrel log`, or its start. The change that created the history can't be undone. |

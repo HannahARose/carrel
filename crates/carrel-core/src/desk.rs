@@ -499,3 +499,161 @@ pub fn carry(entry: &mut crate::review::ReviewEntry, card: &Path) {
         serde_json::Value::String(card.to_string_lossy().into_owned()),
     );
 }
+
+/// How recently a folder must have changed to look like active work, in days.
+pub const ACTIVE_DAYS: u32 = 14;
+
+/// How long a desk item must have gone unchanged to be suggested for archiving, in days.
+pub const IDLE_DAYS: u32 = 60;
+
+/// The most entries looked at inside one folder when finding when it last changed, so a huge
+/// folder doesn't hold up `carrel status`.
+const MAX_ENTRIES: usize = 20_000;
+
+/// A folder that looks like active work, and why.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ToTrack {
+    /// The folder.
+    pub path: PathBuf,
+    /// Whether it's a Git repository.
+    pub git: bool,
+    /// When anything in it last changed, as a date.
+    pub changed: Option<String>,
+}
+
+/// A desk item that hasn't changed for [`IDLE_DAYS`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ToArchive {
+    /// Its desk entry.
+    pub entry: DeskEntry,
+    /// When it last changed, as a date.
+    pub changed: String,
+}
+
+/// What `carrel status` suggests about the desk. Nothing is tracked or moved without the owner.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize)]
+pub struct Suggestions {
+    /// Folders that look like active work, to put on the desk.
+    pub to_track: Vec<ToTrack>,
+    /// Desk items unchanged for [`IDLE_DAYS`], to archive.
+    pub to_archive: Vec<ToArchive>,
+}
+
+/// Suggestions for `desk`, as of `now`: the folders directly inside `places` (the Desktop and
+/// `~/Code`, say) that look like active work, changed in the last [`ACTIVE_DAYS`] or a Git
+/// repository, and the desk items unchanged for [`IDLE_DAYS`]. Folders already on the desk,
+/// checked out to, or inside the archive are left out, as are hidden ones.
+///
+/// # Errors
+///
+/// [`DeskError::Io`] if the archive's rules or items can't be read.
+pub fn suggest(
+    archive: &Archive,
+    desk: &Desk,
+    places: &[PathBuf],
+    now: std::time::SystemTime,
+) -> Result<Suggestions, DeskError> {
+    let failed = |e: &dyn std::fmt::Display| DeskError::Io {
+        path: archive.root().to_owned(),
+        message: e.to_string(),
+    };
+    let rules = archive.rules().map_err(|e| failed(&e))?;
+    let root = std::fs::canonicalize(archive.root()).map_err(io(archive.root()))?;
+    let mut taken: Vec<PathBuf> = desk.items.iter().map(|e| e.path.clone()).collect();
+    for item in archive.items().map_err(|e| failed(&e))? {
+        let card = std::fs::read_to_string(archive.root().join(&item.card))
+            .ok()
+            .and_then(|t| CardFile::parse(&t).ok());
+        if let Some(out) = card.and_then(|f| f.card().checked_out.clone()) {
+            let to = match out.to.strip_prefix("~/") {
+                Some(rest) => {
+                    crate::local::home_dir().map_or_else(|| out.to.clone().into(), |h| h.join(rest))
+                }
+                None => PathBuf::from(&out.to),
+            };
+            taken.push(std::fs::canonicalize(&to).unwrap_or(to));
+        }
+    }
+    let day = std::time::Duration::from_hours(24);
+    let mut suggestions = Suggestions::default();
+    for place in places {
+        let Ok(entries) = std::fs::read_dir(place) else {
+            continue;
+        };
+        let mut found: Vec<PathBuf> = entries
+            .filter_map(Result::ok)
+            .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
+            .filter(|e| !e.file_name().to_string_lossy().starts_with('.'))
+            .filter_map(|e| std::fs::canonicalize(e.path()).ok())
+            .filter(|p| !p.starts_with(&root) && !taken.contains(p))
+            .collect();
+        found.sort();
+        for path in found {
+            let git = path.join(".git").exists();
+            let changed = last_changed(&path, &rules);
+            let recent = changed
+                .is_some_and(|t| now.duration_since(t).unwrap_or_default() < day * ACTIVE_DAYS);
+            if git || recent {
+                suggestions.to_track.push(ToTrack {
+                    path,
+                    git,
+                    changed: changed.map(date),
+                });
+            }
+        }
+    }
+    for entry in &desk.items {
+        if let Some(changed) = last_changed(&entry.path, &rules)
+            && now.duration_since(changed).unwrap_or_default() >= day * IDLE_DAYS
+        {
+            suggestions.to_archive.push(ToArchive {
+                entry: entry.clone(),
+                changed: date(changed),
+            });
+        }
+    }
+    Ok(suggestions)
+}
+
+/// The day `time` falls on, in this device's time zone.
+fn date(time: std::time::SystemTime) -> String {
+    jiff::Timestamp::try_from(time)
+        .map(|t| t.to_zoned(jiff::tz::TimeZone::system()).date().to_string())
+        .unwrap_or_default()
+}
+
+/// When anything in `path` last changed: a file's modification time, or the newest of a
+/// folder's files, leaving out regenerable folders and Git's own. `None` if it's gone.
+#[must_use]
+pub fn last_changed(path: &Path, rules: &crate::detect::Rules) -> Option<std::time::SystemTime> {
+    let meta = std::fs::symlink_metadata(path).ok()?;
+    if !meta.is_dir() {
+        return meta.modified().ok();
+    }
+    let mut newest = None;
+    let mut waiting = vec![path.to_owned()];
+    let mut seen = 0;
+    while let Some(dir) = waiting.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.filter_map(Result::ok) {
+            seen += 1;
+            if seen > MAX_ENTRIES {
+                return newest;
+            }
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let Ok(kind) = entry.file_type() else {
+                continue;
+            };
+            if kind.is_dir() {
+                if name != ".git" && !rules.is_regenerable(&name) {
+                    waiting.push(entry.path());
+                }
+            } else if let Ok(modified) = entry.metadata().and_then(|m| m.modified()) {
+                newest = newest.max(Some(modified));
+            }
+        }
+    }
+    newest
+}

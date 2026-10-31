@@ -152,3 +152,57 @@ pub fn archive_desk_item(archive: Option<&Path>, path: &Path) -> Result<Report, 
         json!({ "item": entry, "queued": intake, "worker_started": started }),
     ))
 }
+
+/// The part of `carrel status` about the desk: folders on the Desktop or in `~/Code` that look
+/// like active work, to put on the desk, and desk items unchanged for 60 days, to archive. With
+/// it, what `--json` shows as `desk`.
+///
+/// # Errors
+///
+/// [`Failure`] if the desk or the archive's rules can't be read.
+pub fn suggestions_section(
+    archive: &carrel_core::archive::Archive,
+    device: Option<carrel_core::card::Id>,
+) -> Result<(String, serde_json::Value), Failure> {
+    let desk = match device {
+        Some(device) => Desk::load(archive, device)?,
+        None => Desk::default(),
+    };
+    let places: Vec<std::path::PathBuf> = carrel_core::local::home_dir()
+        .map(|home| vec![home.join("Desktop"), home.join("Code")])
+        .unwrap_or_default();
+    let found = carrel_core::desk::suggest(archive, &desk, &places, std::time::SystemTime::now())?;
+    let mut text = String::new();
+    if !found.to_track.is_empty() {
+        text.push_str(
+            "\nLooks like active work (put it on the desk with `carrel desk add PATH`):\n",
+        );
+        for t in &found.to_track {
+            let why = match (&t.changed, t.git) {
+                (Some(changed), true) => format!("a Git repository, changed {changed}"),
+                (None, true) => "a Git repository".to_owned(),
+                (Some(changed), false) => format!("changed {changed}"),
+                (None, false) => String::new(),
+            };
+            writeln!(text, "  {}  ({why})", t.path.display()).unwrap();
+        }
+    }
+    if !found.to_archive.is_empty() {
+        writeln!(
+            text,
+            "\nOn the desk but unchanged for {} days (archive it with `carrel desk archive PATH`):",
+            carrel_core::desk::IDLE_DAYS
+        )
+        .unwrap();
+        for a in &found.to_archive {
+            writeln!(
+                text,
+                "  {}  (last changed {})",
+                a.entry.path.display(),
+                a.changed
+            )
+            .unwrap();
+        }
+    }
+    Ok((text, json!(found)))
+}

@@ -975,6 +975,39 @@ fn a_desk_items_card_is_drafted_and_archiving_it_keeps_the_card() {
 }
 
 #[test]
+fn status_suggests_folders_to_put_on_the_desk() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    let home = sandbox.path("home");
+    std::fs::create_dir_all(home.join("Code/budget-app/.git")).unwrap();
+    std::fs::write(home.join("Code/budget-app/main.rs"), "fn main() {}\n").unwrap();
+    std::fs::create_dir_all(home.join("Desktop")).unwrap();
+    let status = |args: &[&str]| {
+        let out = std::process::Command::new(env!("CARGO_BIN_EXE_carrel"))
+            .args(args)
+            .current_dir(&root)
+            .env("HOME", &home)
+            .env("CARREL_CONFIG_DIR", sandbox.path("config"))
+            .env("CARREL_WORKER", "off")
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8(out.stdout).unwrap()
+    };
+    let text = status(&["status"]);
+    assert!(text.contains("Looks like active work"), "{text}");
+    assert!(text.contains("budget-app  (a Git repository"), "{text}");
+    let json: Value = serde_json::from_str(&status(&["status", "--json"])).unwrap();
+    assert_eq!(json["desk"]["to_track"][0]["git"], true, "{json}");
+    assert_eq!(json["desk"]["to_archive"], json!([]));
+}
+
+#[test]
 fn sessions_on_a_checked_out_item_become_pending_entries_to_approve() {
     let sandbox = Sandbox::new();
     let root = sandbox.sample();

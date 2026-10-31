@@ -249,3 +249,60 @@ fn archiving_a_desk_item_queues_it_and_filing_keeps_its_card_and_history() {
     assert!(card.contains("Changed 1 file(s): notes.txt"), "{card}");
     assert!(!entry.card.exists(), "the desk card moved into the archive");
 }
+
+/// Makes `path`'s modification time `days` ago.
+fn age(path: &Path, days: u64) {
+    std::fs::File::options()
+        .write(true)
+        .open(path)
+        .unwrap()
+        .set_modified(std::time::SystemTime::now() - std::time::Duration::from_hours(24 * days))
+        .unwrap();
+}
+
+#[test]
+fn status_suggests_active_folders_to_track_and_idle_desk_items_to_archive() {
+    let s = Setup::new();
+    let code = s.dir.path().join("Code");
+    let write = |path: &str, days: u64| {
+        let file = code.join(path);
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(&file, "x\n").unwrap();
+        age(&file, days);
+    };
+    write("active/notes.md", 1);
+    write("active/target/old.o", 1);
+    write("repo/main.rs", 300);
+    std::fs::create_dir_all(code.join("repo/.git")).unwrap();
+    write("dormant/plan.md", 30);
+    write("dormant/target/build.log", 1);
+    write(".hidden/today.md", 0);
+    write("on-desk/today.md", 0);
+    write("idle/old.md", 90);
+
+    let lease = s.lease();
+    add(&s.archive, &code.join("on-desk"), None, None, None, &lease).unwrap();
+    add(&s.archive, &code.join("idle"), None, None, None, &lease).unwrap();
+    lease.release().unwrap();
+    let desk = Desk::load(&s.archive, s.device()).unwrap();
+    let found = carrel_core::desk::suggest(
+        &s.archive,
+        &desk,
+        std::slice::from_ref(&code),
+        std::time::SystemTime::now(),
+    )
+    .unwrap();
+    let names: Vec<String> = found
+        .to_track
+        .iter()
+        .map(|t| t.path.file_name().unwrap().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(
+        names,
+        ["active", "repo"],
+        "regenerable folders don't count as changes, and what's tracked isn't suggested"
+    );
+    assert!(found.to_track[1].git);
+    assert_eq!(found.to_archive.len(), 1);
+    assert!(found.to_archive[0].entry.path.ends_with("idle"));
+}
