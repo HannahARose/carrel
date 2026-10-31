@@ -118,6 +118,9 @@ pub fn draw(frame: &mut Frame, app: &App, theme: Theme) {
     if let Some(input) = &app.input {
         draw_input(frame, input, theme, area);
     }
+    if let Some(correction) = &app.correction {
+        draw_correction(frame, correction, theme, area);
+    }
     if let Some(confirm) = &app.confirm {
         draw_confirm(frame, confirm, theme, area);
     }
@@ -307,6 +310,48 @@ fn draw_help(frame: &mut Frame, theme: Theme, area: Rect) {
     );
 }
 
+/// A correction worked out: each change before and after, waiting for `y` or `n`.
+fn draw_correction(
+    frame: &mut Frame,
+    correction: &crate::correct::Prepared,
+    theme: Theme,
+    area: Rect,
+) {
+    let mut lines: Vec<Line> = correction
+        .shown
+        .lines()
+        .map(|l| Line::from(l.to_owned()))
+        .collect();
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![
+        Span::styled("y", theme.key()),
+        Span::raw(" save   "),
+        Span::styled("n", theme.key()),
+        Span::raw(" discard"),
+    ]));
+    let width = area.width.saturating_sub(8).clamp(40, 110);
+    // Long lines wrap, so leave room for them.
+    let wrapped: usize = lines
+        .iter()
+        .map(|l| {
+            l.width()
+                .div_ceil(usize::from(width.saturating_sub(4)).max(1))
+                .max(1)
+        })
+        .sum();
+    let height = u16::try_from(wrapped + 2)
+        .unwrap_or(u16::MAX)
+        .min(area.height);
+    let popup = centered(area, width, height);
+    frame.render_widget(Clear, popup);
+    frame.render_widget(
+        Paragraph::new(lines)
+            .wrap(Wrap { trim: false })
+            .block(Block::bordered().title(format!(" Correct “{}” ", correction.title))),
+        popup,
+    );
+}
+
 fn draw_confirm(frame: &mut Frame, confirm: &Confirm, theme: Theme, area: Rect) {
     let (title, question, explanation, yes) = match confirm {
         Confirm::Undo { summary, .. } => (
@@ -321,6 +366,12 @@ fn draw_confirm(frame: &mut Frame, confirm: &Confirm, theme: Theme, area: Rect) 
             format!("Download {name}?"),
             about.as_str(),
             " download   ",
+        ),
+        Confirm::Learn { about, fact } => (
+            " Glossary ",
+            format!("Add “{about}” to the glossary?"),
+            fact.as_str(),
+            " add it   ",
         ),
         Confirm::Reject(ids) => (
             " Reject ",
@@ -672,6 +723,13 @@ fn draw_input(frame: &mut Frame, input: &Input, theme: Theme, area: Rect) {
                 (true, true) => "The same password again:".to_owned(),
                 (false, _) => "The repository's password:".to_owned(),
             },
+        ),
+        InputPurpose::Correct(_) => (
+            " Correct ",
+            "What's wrong with it? Say it in words (\"it's from 2019\", \"it's a picture of A, \
+             not B\"), or write field: value, such as created: 2019-03-31 or sensitivity: \
+             personal. Nothing is saved until you've seen the change."
+                .to_owned(),
         ),
         InputPurpose::RestoreItem { .. } => (
             " Restore ",
