@@ -94,7 +94,8 @@ enum Command {
         limit: usize,
     },
     /// The embedding index search finds items by meaning with: how many items are embedded
-    /// and how many are behind, or rebuild it. The worker keeps it current after changes.
+    /// and how many are behind, rebuild it, or switch models. The worker keeps it current
+    /// after changes.
     Index {
         #[command(subcommand)]
         action: Option<IndexAction>,
@@ -250,7 +251,7 @@ enum Command {
     },
 }
 
-#[derive(Debug, Clone, Copy, Subcommand)]
+#[derive(Debug, Clone, Subcommand)]
 enum IndexAction {
     /// Show the archive's embedding model, how many items are embedded and how many are
     /// behind.
@@ -258,6 +259,14 @@ enum IndexAction {
     /// Embed every item again with the archive's embedding model, showing progress. If it's
     /// interrupted, running it again carries on where it stopped.
     Rebuild,
+    /// Switch the archive, on every device, to another embedding model: its index is built
+    /// while search keeps using the current one, then the archive switches and the old index
+    /// is removed. If it's interrupted, running it again carries on. Without a name, show the
+    /// archive's model and the ones this device can embed with.
+    Model {
+        /// The model to switch to, such as qwen3-embedding-0.6b.
+        name: Option<String>,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -860,6 +869,8 @@ fn index_command(
 ) -> Result<Report, Failure> {
     match action {
         Some(IndexAction::Rebuild) => index::rebuild(archive, json),
+        Some(IndexAction::Model { name: None }) => index::models(archive),
+        Some(IndexAction::Model { name: Some(name) }) => index::switch_to(archive, &name, json),
         None | Some(IndexAction::Status) => index::status(archive),
     }
 }

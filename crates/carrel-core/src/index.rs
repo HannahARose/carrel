@@ -20,6 +20,7 @@
 
 pub mod chunk;
 pub mod half;
+pub mod switch;
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::{Path, PathBuf};
@@ -377,6 +378,13 @@ impl Index {
     pub fn start_rebuild(&mut self) {
         self.dirty.extend(self.shards.keys().copied());
         self.shards.clear();
+        self.rebuilding = true;
+    }
+
+    /// Marks the index as being built, keeping what's in it, until an [`Index::embed`] of
+    /// everything [`plan`] finds finishes: a new model's index while the archive
+    /// [switches](switch) to it.
+    pub fn start_building(&mut self) {
         self.rebuilding = true;
     }
 

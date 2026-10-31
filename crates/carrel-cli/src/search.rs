@@ -72,8 +72,10 @@ fn by_meaning(
         )));
     };
     let Some(registry) = registry.filter(|r| crate::index::offered(r, &model)) else {
+        let how = crate::index::how_to_get(&model)
+            .unwrap_or_else(|| "see `carrel index model` for the models this device has".into());
         return Ok(Err(format!(
-            "No provider on this device runs {model}, so this was searched by words only; download it with `carrel models download {model}`."
+            "No provider on this device runs {model}, the archive's embedding model, so this was searched by words only; {how}."
         )));
     };
     let vector = match embed_query(&registry, &model, query) {

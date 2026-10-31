@@ -397,3 +397,105 @@ fn a_card_is_one_text_of_what_it_says_the_item_is() {
         "Tenancy agreement\nA year's lease.\nCollection: Holding\nKind: file"
     );
 }
+
+#[test]
+fn switching_models_builds_the_new_index_beside_the_old_then_switches() {
+    use carrel_core::coordinator::{Coordinator as _, DEFAULT_LEASE, DiskLock, Holder};
+    use carrel_core::history::History;
+    use carrel_core::index::switch::{self, Switch, SwitchError};
+
+    const NEW: &str = "another/model:v2";
+    let s = setup();
+    let lease = DiskLock::for_archive(&s.archive)
+        .acquire(
+            Holder {
+                person: Id::new_v7(),
+                device: Id::new_v7(),
+            },
+            "test",
+            DEFAULT_LEASE,
+        )
+        .unwrap();
+    History::start(&s.archive, &lease).unwrap();
+    let old = build(&s.archive, &registry(MODEL).0);
+    let old_dir = Index::dir_of(&s.archive, MODEL);
+    assert!(switch::pending(&s.archive).is_none());
+
+    // The switch is recorded in the settings every device reads, and its index is built
+    // in a folder of its own; a failure part way keeps what was done.
+    let (mut index, begun) = switch::begin(&s.archive, NEW, &lease).unwrap();
+    assert!(!begun.resumed);
+    assert!(begun.commit.is_some());
+    let archive = Archive::open(s.archive.root()).unwrap();
+    assert_eq!(
+        switch::pending(&archive),
+        Some(Switch {
+            from: Some(MODEL.into()),
+            to: NEW.into(),
+        })
+    );
+    assert_eq!(archive.settings().embedding_model(), Some(MODEL));
+    let new_dir = Index::dir_of(&archive, NEW);
+    assert_eq!(new_dir, archive.root().join(INDEX).join("another_model_v2"));
+    let mut failing = ScriptedEmbed::new("words", NEW, priority::PORTABLE, 64);
+    failing.failure = Some(ProviderError::Failed("interrupted".into()));
+    let mut broken = Registry::with_built_ins();
+    broken.add(Box::new(failing));
+    let pending = plan(&archive, Some(&index)).unwrap();
+    assert!(
+        index
+            .embed(&archive, &broken, pending, &mut |_, _, _| {})
+            .is_err()
+    );
+    assert!(matches!(
+        switch::finish(&archive, NEW, &lease),
+        Err(SwitchError::Incomplete(_))
+    ));
+    // The old index is untouched meanwhile.
+    let serving = Index::open(&archive, MODEL).unwrap().unwrap();
+    assert_eq!(serving.len(), old.len());
+
+    // Started again, it carries on, then switches and removes the old index.
+    let (mut index, begun) = switch::begin(&archive, NEW, &lease).unwrap();
+    assert!(begun.resumed);
+    assert!(begun.commit.is_none());
+    let (new_registry, _) = registry(NEW);
+    let pending = plan(&archive, Some(&index)).unwrap();
+    index
+        .embed(&archive, &new_registry, pending, &mut |_, _, _| {})
+        .unwrap();
+    let finished = switch::finish(&archive, NEW, &lease).unwrap();
+    assert_eq!(finished.from.as_deref(), Some(MODEL));
+    assert!(finished.commit.is_some());
+    let archive = Archive::open(s.archive.root()).unwrap();
+    assert_eq!(archive.settings().embedding_model(), Some(NEW));
+    assert!(switch::pending(&archive).is_none());
+    assert!(!old_dir.exists());
+    let current = Index::open(&archive, NEW).unwrap().unwrap();
+    assert!(!current.rebuilding());
+    assert_eq!(plan(&archive, Some(&current)).unwrap().pending, Vec::new());
+
+    // Switching to a third model, then to a fourth, gives up the third's index; stopping
+    // removes the fourth's and keeps the archive's.
+    switch::begin(&archive, MODEL, &lease).unwrap();
+    assert!(Index::dir_of(&archive, MODEL).exists());
+    let archive = Archive::open(s.archive.root()).unwrap();
+    let (_, begun) = switch::begin(&archive, "fourth", &lease).unwrap();
+    assert_eq!(begun.replaced.as_deref(), Some(MODEL));
+    assert!(!Index::dir_of(&archive, MODEL).exists());
+    let archive = Archive::open(s.archive.root()).unwrap();
+    assert!(matches!(
+        switch::finish(&archive, MODEL, &lease),
+        Err(SwitchError::NotSwitching { now: Some(_), .. })
+    ));
+    assert_eq!(
+        switch::cancel(&archive, &lease).unwrap().as_deref(),
+        Some("fourth")
+    );
+    let archive = Archive::open(s.archive.root()).unwrap();
+    assert!(switch::pending(&archive).is_none());
+    assert!(!Index::dir_of(&archive, "fourth").exists());
+    assert!(new_dir.exists());
+    assert_eq!(archive.settings().embedding_model(), Some(NEW));
+    lease.release().unwrap();
+}
