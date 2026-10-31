@@ -2,6 +2,8 @@
 
 #![allow(dead_code)]
 
+pub mod archives;
+
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 

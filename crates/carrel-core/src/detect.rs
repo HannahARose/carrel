@@ -280,6 +280,258 @@ pub fn is_ignored(name: &str) -> bool {
     matches!(name, ".DS_Store" | "Icon\r" | ".obsidian" | ".trash") || name.starts_with("._")
 }
 
+/// A compressed file Carrel can expand (`docs/design/compressed.md`): an archive holding many
+/// files, or a compressor around one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Compressed {
+    /// `.zip`.
+    Zip,
+    /// `.tar`.
+    Tar,
+    /// `.tar.gz` or `.tgz`.
+    TarGz,
+    /// `.tar.bz2`, `.tbz2` or `.tbz`.
+    TarBz2,
+    /// `.tar.xz` or `.txz`.
+    TarXz,
+    /// `.tar.zst` or `.tzst`.
+    TarZst,
+    /// `.gz` around one file.
+    Gz,
+    /// `.bz2` around one file.
+    Bz2,
+    /// `.xz` around one file.
+    Xz,
+    /// `.zst` around one file.
+    Zst,
+    /// `.7z`, read with an installed `7z` or `unar`.
+    #[serde(rename = "7z")]
+    SevenZ,
+    /// `.rar`, read with an installed `7z` or `unar`.
+    Rar,
+}
+
+/// Name endings for each compressed format, longest first so `.tar.gz` wins over `.gz`.
+const COMPRESSED_ENDINGS: [(&str, Compressed); 17] = [
+    (".tar.bz2", Compressed::TarBz2),
+    (".tar.zst", Compressed::TarZst),
+    (".tar.gz", Compressed::TarGz),
+    (".tar.xz", Compressed::TarXz),
+    (".tzst", Compressed::TarZst),
+    (".tbz2", Compressed::TarBz2),
+    (".tgz", Compressed::TarGz),
+    (".tbz", Compressed::TarBz2),
+    (".txz", Compressed::TarXz),
+    (".zip", Compressed::Zip),
+    (".tar", Compressed::Tar),
+    (".bz2", Compressed::Bz2),
+    (".zst", Compressed::Zst),
+    (".rar", Compressed::Rar),
+    (".gz", Compressed::Gz),
+    (".xz", Compressed::Xz),
+    (".7z", Compressed::SevenZ),
+];
+
+/// Extensions of documents and packages that are zip files inside but are never treated as
+/// archives: their format is the zip.
+pub const ZIP_PACKAGES: [&str; 22] = [
+    "docx", "xlsx", "pptx", "docm", "xlsm", "pptm", "odt", "ods", "odp", "odg", "epub", "3mf",
+    "jar", "war", "apk", "aab", "ipa", "whl", "usdz", "pages", "numbers", "key",
+];
+
+impl Compressed {
+    /// The format a file name says, if any. Documents and packages built on the zip format,
+    /// such as `.docx` or `.epub`, are not compressed files.
+    ///
+    /// ```
+    /// use carrel_core::detect::Compressed;
+    ///
+    /// assert_eq!(Compressed::from_name("Export.TAR.GZ"), Some(Compressed::TarGz));
+    /// assert_eq!(Compressed::from_name("data.csv.gz"), Some(Compressed::Gz));
+    /// assert_eq!(Compressed::from_name("Thesis.docx"), None);
+    /// ```
+    #[must_use]
+    pub fn from_name(name: &str) -> Option<Self> {
+        let lower = name.to_lowercase();
+        COMPRESSED_ENDINGS
+            .iter()
+            .find(|(ending, _)| lower.len() > ending.len() && lower.ends_with(ending))
+            .map(|&(_, format)| format)
+    }
+
+    /// The format of the file at `path`: from its name, or for a file whose name says nothing,
+    /// from its first bytes. A zip-based document or package is never a compressed file, and
+    /// neither is a folder.
+    #[must_use]
+    pub fn of(path: &Path) -> Option<Self> {
+        if !std::fs::symlink_metadata(path).is_ok_and(|m| m.is_file()) {
+            return None;
+        }
+        let name = path.file_name()?.to_string_lossy();
+        if is_zip_package(&name) || split_part(&name).is_some() {
+            return None;
+        }
+        if let Some(format) = Self::from_name(&name) {
+            return Some(format);
+        }
+        if path.extension().is_some() {
+            return None;
+        }
+        let mut head = [0u8; 512];
+        let read = std::fs::File::open(path)
+            .and_then(|mut f| std::io::Read::read(&mut f, &mut head))
+            .unwrap_or(0);
+        Self::sniff(&head[..read])
+    }
+
+    /// The format a file's first bytes say, if they're distinctive. A tar inside a compressor
+    /// can't be told from its first bytes, so those read as the compressor alone.
+    #[must_use]
+    pub fn sniff(head: &[u8]) -> Option<Self> {
+        let starts = |magic: &[u8]| head.starts_with(magic);
+        if starts(b"PK\x03\x04") || starts(b"PK\x05\x06") {
+            Some(Self::Zip)
+        } else if starts(b"\x1f\x8b") {
+            Some(Self::Gz)
+        } else if starts(b"BZh") {
+            Some(Self::Bz2)
+        } else if starts(b"\xfd7zXZ\0") {
+            Some(Self::Xz)
+        } else if starts(b"\x28\xb5\x2f\xfd") {
+            Some(Self::Zst)
+        } else if starts(b"7z\xbc\xaf\x27\x1c") {
+            Some(Self::SevenZ)
+        } else if starts(b"Rar!\x1a\x07") {
+            Some(Self::Rar)
+        } else if head.len() >= 262 && &head[257..262] == b"ustar" {
+            Some(Self::Tar)
+        } else {
+            None
+        }
+    }
+
+    /// Whether it holds many files (an archive), rather than wrapping one.
+    #[must_use]
+    pub fn is_archive(self) -> bool {
+        !matches!(self, Self::Gz | Self::Bz2 | Self::Xz | Self::Zst)
+    }
+
+    /// Whether Carrel reads it itself; 7z and RAR need an installed tool.
+    #[must_use]
+    pub fn is_portable(self) -> bool {
+        !matches!(self, Self::SevenZ | Self::Rar)
+    }
+
+    /// The name of what it expands to: the file name without the format's ending, so
+    /// `Export.tar.gz` becomes `Export` and `data.csv.gz` becomes `data.csv`.
+    ///
+    /// ```
+    /// use carrel_core::detect::Compressed;
+    ///
+    /// assert_eq!(Compressed::TarGz.stem("Export.tar.gz"), "Export");
+    /// assert_eq!(Compressed::Gz.stem("data.csv.gz"), "data.csv");
+    /// assert_eq!(Compressed::Zip.stem("notes"), "notes");
+    /// ```
+    #[must_use]
+    pub fn stem(self, name: &str) -> String {
+        let lower = name.to_lowercase();
+        COMPRESSED_ENDINGS
+            .iter()
+            .filter(|(_, format)| *format == self)
+            .find(|(ending, _)| lower.len() > ending.len() && lower.ends_with(ending))
+            .map_or_else(
+                || name.to_owned(),
+                |(ending, _)| name[..name.len() - ending.len()].to_owned(),
+            )
+    }
+
+    /// Its name for people, such as `zip` or `tar.gz`.
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Zip => "zip",
+            Self::Tar => "tar",
+            Self::TarGz => "tar.gz",
+            Self::TarBz2 => "tar.bz2",
+            Self::TarXz => "tar.xz",
+            Self::TarZst => "tar.zst",
+            Self::Gz => "gzip",
+            Self::Bz2 => "bzip2",
+            Self::Xz => "xz",
+            Self::Zst => "zstd",
+            Self::SevenZ => "7z",
+            Self::Rar => "RAR",
+        }
+    }
+
+    /// Its media type.
+    #[must_use]
+    pub fn media_type(self) -> &'static str {
+        match self {
+            Self::Zip => "application/zip",
+            Self::Tar => "application/x-tar",
+            Self::TarGz | Self::Gz => "application/gzip",
+            Self::TarBz2 | Self::Bz2 => "application/x-bzip2",
+            Self::TarXz | Self::Xz => "application/x-xz",
+            Self::TarZst | Self::Zst => "application/zstd",
+            Self::SevenZ => "application/x-7z-compressed",
+            Self::Rar => "application/vnd.rar",
+        }
+    }
+}
+
+/// Whether `name` is a document or package whose format is the zip, such as `Thesis.docx` or
+/// `book.epub`: never treated as an archive.
+#[must_use]
+pub fn is_zip_package(name: &str) -> bool {
+    Path::new(name)
+        .extension()
+        .is_some_and(|e| ZIP_PACKAGES.contains(&e.to_string_lossy().to_lowercase().as_str()))
+}
+
+/// For one part of an archive split into several (`.z01`, `.zip.001`, `.7z.001`,
+/// `.part1.rar`, `.r00`), the part's number; `None` for anything else. A split archive is kept
+/// compressed.
+///
+/// ```
+/// use carrel_core::detect::split_part;
+///
+/// assert_eq!(split_part("backup.z01"), Some(1));
+/// assert_eq!(split_part("backup.7z.002"), Some(2));
+/// assert_eq!(split_part("film.part3.rar"), Some(3));
+/// assert_eq!(split_part("backup.zip"), None);
+/// ```
+#[must_use]
+pub fn split_part(name: &str) -> Option<u32> {
+    let lower = name.to_lowercase();
+    let (rest, last) = lower.rsplit_once('.')?;
+    let digits = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
+    if let Some(number) = last.strip_prefix('z').or_else(|| last.strip_prefix('r'))
+        && number.len() == 2
+        && digits(number)
+    {
+        return number.parse().ok();
+    }
+    if digits(last) && last.len() == 3 {
+        let inner = Path::new(rest)
+            .extension()?
+            .to_string_lossy()
+            .to_lowercase();
+        return matches!(inner.as_str(), "zip" | "7z" | "rar" | "tar" | "gz")
+            .then(|| last.parse().ok())
+            .flatten();
+    }
+    if last == "rar"
+        && let Some((_, part)) = rest.rsplit_once('.')
+        && let Some(number) = part.strip_prefix("part")
+        && digits(number)
+    {
+        return number.parse().ok();
+    }
+    None
+}
+
 /// Reads and parses a YAML file, or returns `None` if it doesn't exist.
 fn read_yaml<T: serde::de::DeserializeOwned>(path: &Path) -> Result<Option<T>, RulesError> {
     let text = match std::fs::read_to_string(path) {

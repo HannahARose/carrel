@@ -510,7 +510,7 @@ rules:
     auto_file: false
 ```
 
-`match` keys: `extension`, `name` (a regular expression on the item's name), `marker` (a file present in a folder's top level), `source` (the folder the item came from). All keys in one `match` must hold. `auto_file: true` files matches without review.
+`match` keys: `extension`, `name` (a regular expression on the item's name), `marker` (a file present in a folder's top level, or at the top level of what a compressed file would expand to), `source` (the folder the item came from). All keys in one `match` must hold. `auto_file: true` files matches without review.
 
 ### 7.5 `rules/markers.yaml` and `rules/regenerable.yaml`
 

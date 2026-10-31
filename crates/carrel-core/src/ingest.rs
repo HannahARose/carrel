@@ -216,6 +216,8 @@ pub struct Candidate {
     pub likely: Vec<likely::Likely>,
     /// An earlier candidate in the same batch with the same fingerprint, by position.
     pub same_as: Option<usize>,
+    /// For a compressed file, what's inside (`docs/design/compressed.md`).
+    pub inside: Option<crate::compressed::Inside>,
 }
 
 /// The archived item a candidate duplicates.
@@ -256,6 +258,11 @@ pub fn examine(archive: &Archive, path: &Path) -> Result<Candidate, IngestError>
         duplicate_of: None,
         likely: Vec::new(),
         same_as: None,
+        inside: if detected.kind == Kind::File {
+            crate::compressed::inspect(path)
+        } else {
+            None
+        },
     })
 }
 
