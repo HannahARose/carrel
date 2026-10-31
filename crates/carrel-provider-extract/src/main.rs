@@ -3,9 +3,11 @@
 //! It reads a PDF's text layer in Rust, on any platform, and recognizes text in images and
 //! scanned PDFs with the `tesseract` program when it's installed (scanned PDFs also need
 //! `pdftoppm`, from Poppler). On Apple devices the Apple provider's native tools come
-//! first; this fills in everywhere else.
+//! first; this fills in everywhere else. It also reads what 3MF, G-code, STEP and IGES files
+//! say about themselves, everywhere.
 
 mod extract;
+mod models;
 
 use carrel_core::providers::serve::{About, serve};
 
