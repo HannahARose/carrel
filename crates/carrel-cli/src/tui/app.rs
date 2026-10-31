@@ -106,6 +106,34 @@ pub enum Confirm {
         /// What it is, its size and license, and where it goes.
         about: String,
     },
+    /// Adding a fact a correction stated to the glossary.
+    Learn {
+        /// The word or name it's about.
+        about: String,
+        /// The fact.
+        fact: String,
+    },
+}
+
+/// A step of a correction, which the run loop does itself.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Step {
+    /// Work out what these words change in this card, in the background.
+    Work {
+        /// The proposal or filed item.
+        target: super::screens::Correcting,
+        /// What the owner typed.
+        words: String,
+    },
+    /// Save the correction shown in the pop-up.
+    Save,
+    /// Add this fact from a correction to the glossary.
+    Learn {
+        /// The word or name it's about.
+        about: String,
+        /// The fact.
+        fact: String,
+    },
 }
 
 /// Work the run loop does for the app: it needs the writer lease, which the app doesn't hold.
@@ -142,10 +170,8 @@ pub enum Effect {
     },
     /// Edit this proposal's card in the owner's editor.
     Edit(Id),
-    /// Correct this proposal in words, on the plain terminal.
-    Correct(Id),
-    /// Correct this filed item, by its card's path, in words on the plain terminal.
-    CorrectItem(String),
+    /// A step of correcting a card in words.
+    Correction(Step),
     /// Answer this question.
     Answer {
         /// The question.
@@ -255,6 +281,8 @@ pub struct App {
     pub message: Option<String>,
     /// A question waiting for yes or no.
     pub confirm: Option<Confirm>,
+    /// A correction worked out and shown in a pop-up, waiting for `y` or `n`.
+    pub correction: Option<crate::correct::Prepared>,
     /// This device, whose intake queue is shown.
     pub device: Option<Id>,
     /// This device's intake queue: waiting, then failed.
@@ -314,6 +342,7 @@ impl App {
             comparisons: Vec::new(),
             compared: 0,
             picker: None,
+            correction: None,
             busy: None,
             asked: Vec::new(),
             asked_chosen: 0,
@@ -399,12 +428,9 @@ impl App {
         }
     }
 
-    /// The keys the current screen answers to, for the help line.
-    pub fn keys(&self) -> Vec<(&'static str, &'static str)> {
-        if self.confirm.is_some() {
-            return vec![("y", "yes"), ("n", "no")];
-        }
-        if self.tab == Tab::Review && !self.comparisons.is_empty() {
+    /// Review's keys: a duplicate's choices when one is shown, otherwise the decisions.
+    fn review_keys(&self) -> Vec<(&'static str, &'static str)> {
+        if !self.comparisons.is_empty() {
             let mut keys = vec![("v", "file as version"), ("b", "keep both"), ("s", "skip")];
             if self.comparisons.len() > 1 {
                 keys.push(("[ ]", "other match"));
@@ -413,25 +439,35 @@ impl App {
                 ("a", "approve"),
                 ("h", "hold"),
                 ("e", "edit"),
+                ("c", "correct"),
                 ("?", "help"),
             ]);
             return keys;
         }
-        if self.tab == Tab::Review {
-            // The decisions need the room; the screen keys are in ? help.
-            return vec![
-                ("a", "approve"),
-                ("h", "hold"),
-                ("m", "move"),
-                ("e", "edit"),
-                ("x", "reject"),
-                ("Space", "mark"),
-                ("A", "all high"),
-                ("?", "help"),
-                ("q", "quit"),
-            ];
+        // The decisions need the room; the screen keys are in ? help.
+        vec![
+            ("a", "approve"),
+            ("h", "hold"),
+            ("m", "move"),
+            ("e", "edit"),
+            ("c", "correct"),
+            ("x", "reject"),
+            ("Space", "mark"),
+            ("A", "all high"),
+            ("?", "help"),
+            ("q", "quit"),
+        ]
+    }
+
+    /// The keys the current screen answers to, for the help line.
+    pub fn keys(&self) -> Vec<(&'static str, &'static str)> {
+        if self.correction.is_some() {
+            return vec![("y", "save"), ("n", "discard")];
         }
-        let mut keys = vec![("1-7", "screens")];
+        if self.confirm.is_some() {
+            return vec![("y", "yes"), ("n", "no")];
+        }
+        // Typing comes before any screen's keys: they don't apply while a line is open.
         if let Some(input) = &self.input {
             return vec![
                 ("type", input.prompt()),
@@ -439,6 +475,10 @@ impl App {
                 ("Esc", "cancel"),
             ];
         }
+        if self.tab == Tab::Review {
+            return self.review_keys();
+        }
+        let mut keys = vec![("1-8", "screens")];
         if self.picker.is_some() {
             return vec![
                 ("↑↓", "choose"),
@@ -493,11 +533,13 @@ impl App {
             Tab::Questions => {
                 keys.extend([("↑↓", "choose"), ("Enter", "answer"), ("d", "dismiss")]);
             }
-            Tab::Browse => keys.extend([
-                ("↑↓", "choose"),
-                ("←→", "collections/items"),
-                ("/", "search"),
-            ]),
+            Tab::Browse => {
+                keys.extend([("↑↓", "choose"), ("←→", "collections/items")]);
+                if self.browse_in_items {
+                    keys.push(("c", "correct"));
+                }
+                keys.push(("/", "search"));
+            }
             _ => keys.push(("↑↓", "scroll")),
         }
         keys.extend([("^R", "refresh"), ("?", "help"), ("q", "quit")]);
@@ -537,12 +579,23 @@ impl App {
             self.quit = true;
             return None;
         }
+        if self.correction.is_some() {
+            if matches!(key.code, KeyCode::Char('y' | 'Y')) {
+                return Some(Effect::Correction(Step::Save));
+            }
+            self.correction = None;
+            self.message = Some("Correction discarded; nothing changed".into());
+            return None;
+        }
         if let Some(confirm) = self.confirm.take() {
             if matches!(key.code, KeyCode::Char('y' | 'Y')) {
                 return Some(match confirm {
                     Confirm::Undo { id, .. } => Effect::Undo(id),
                     Confirm::Reject(ids) => Effect::Reject(ids),
                     Confirm::Download { name, .. } => Effect::Download(name),
+                    Confirm::Learn { about, fact } => {
+                        Effect::Correction(Step::Learn { about, fact })
+                    }
                 });
             }
             self.message = Some("Nothing changed".into());

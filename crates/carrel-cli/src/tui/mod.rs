@@ -25,8 +25,9 @@ use crate::commands::locate;
 use crate::{Failure, Report};
 
 pub use app::App;
-use app::Effect;
+use app::{Confirm, Effect, Step};
 use carrel_core::actions::Kept;
+use carrel_core::archive::Archive;
 use carrel_core::card::Id;
 
 /// Work run in the background, with what it reports.
@@ -52,13 +53,6 @@ fn enter() -> ratatui::DefaultTerminal {
     terminal
 }
 
-/// Clears the plain terminal, so a prompt there starts on a clean screen.
-fn clear() {
-    use std::io::Write as _;
-    print!("\x1b[2J\x1b[H");
-    let _ = std::io::stdout().flush();
-}
-
 /// Gives the terminal back as it was.
 fn leave() {
     let _ = execute!(std::io::stdout(), DisableMouseCapture);
@@ -75,6 +69,7 @@ fn event_loop(
 ) -> Result<(), Failure> {
     let starts = ui::tab_starts();
     let mut running: Option<Done> = None;
+    let mut preparing: Option<Preparing> = None;
     let mut checked = std::time::Instant::now();
     while !app.quit {
         // The worker runs in another process; see what it has done about once a second.
@@ -88,6 +83,12 @@ fn event_loop(
                     app.message = message;
                 }
             }
+        }
+        if let Some(done) = &preparing
+            && let Ok(result) = done.try_recv()
+        {
+            preparing = None;
+            prepared(app, result);
         }
         if let Some(done) = &running
             && let Ok(result) = done.try_recv()
@@ -122,27 +123,8 @@ fn event_loop(
                 *terminal = enter();
                 finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
             }
-            Some(Effect::Correct(id)) => {
-                // Words and the yes are asked on the plain terminal, as the editor uses it.
-                leave();
-                clear();
-                let result = crate::correct::review(
-                    Some(app.archive.root()),
-                    &id.to_string(),
-                    &[],
-                    false,
-                    false,
-                );
-                *terminal = enter();
-                finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
-            }
-            Some(Effect::CorrectItem(card)) => {
-                leave();
-                clear();
-                let result =
-                    crate::correct::filed(Some(app.archive.root()), &card, &[], false, false);
-                *terminal = enter();
-                finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
+            Some(Effect::Correction(step)) if preparing.is_none() => {
+                correction(app, step, &mut preparing);
             }
             Some(Effect::Pick(words)) => {
                 // The picker needs the terminal to itself, as the editor does.
@@ -180,6 +162,69 @@ fn finished(app: &mut App, result: Result<String, String>) {
     }
 }
 
+/// A correction being worked out in the background.
+type Preparing = Receiver<Result<crate::correct::Prepared, String>>;
+
+/// Handles a correction's steps: working it out in the background, saving it from the
+/// pop-up, and adding the fact it stated to the glossary.
+fn correction(app: &mut App, step: Step, preparing: &mut Option<Preparing>) {
+    match step {
+        Step::Work { target, words } => {
+            // A model takes seconds, so it works in the background; the pop-up follows.
+            let root = app.archive.root().to_owned();
+            let (send, receive) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                let result = Archive::open(&root)
+                    .map_err(|e| Failure::new(e.to_string()))
+                    .and_then(|archive| match &target {
+                        screens::Correcting::Proposal(id) => {
+                            crate::correct::prepare_review(&archive, &id.to_string(), &words)
+                        }
+                        screens::Correcting::Item(card) => {
+                            crate::correct::prepare_filed(&archive, card, &words)
+                        }
+                    });
+                let _ = send.send(result.map_err(|Failure(e)| e));
+            });
+            app.busy = Some("Working out the correction…".into());
+            *preparing = Some(receive);
+        }
+        Step::Save => {
+            if let Some(prepared) = app.correction.take() {
+                let fact = prepared.fact.clone();
+                let result = crate::correct::save(&app.archive, prepared);
+                let saved = result.is_ok();
+                finished(app, result.map(|s| s.message).map_err(|Failure(e)| e));
+                if let (true, Some(fact)) = (saved, fact) {
+                    app.confirm = Some(Confirm::Learn {
+                        about: fact.about,
+                        fact: fact.fact,
+                    });
+                }
+            }
+        }
+        Step::Learn { about, fact } => {
+            let fact = carrel_core::correct::Fact { about, fact };
+            finished(
+                app,
+                crate::correct::learn(&app.archive, &fact).map_err(|Failure(e)| e),
+            );
+        }
+    }
+}
+
+/// Shows a correction once it's worked out: the pop-up, or why there's none.
+fn prepared(app: &mut App, result: Result<crate::correct::Prepared, String>) {
+    app.busy = None;
+    match result {
+        Ok(prepared) if prepared.is_empty() => {
+            app.message = Some("That changes nothing".into());
+        }
+        Ok(prepared) => app.correction = Some(prepared),
+        Err(e) => app.message = Some(e),
+    }
+}
+
 /// Starts work that takes the writer lease, or does it at once when it's quick. The
 /// commands do the work, so the interactive mode reports exactly what they report.
 fn background(app: &mut App, effect: Effect) -> Option<Done> {
@@ -209,9 +254,8 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
             finished(app, Ok(text));
             return None;
         }
-        Effect::Edit(_) | Effect::Correct(_) | Effect::CorrectItem(_) | Effect::Pick(_) => {
-            return None;
-        }
+        // The run loop does these itself, on the terminal or in the pop-up.
+        Effect::Edit(_) | Effect::Pick(_) | Effect::Correction(_) => return None,
         Effect::Dismiss(id) => {
             let result = crate::questions::dismiss(Some(&root), &id.to_string());
             finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
@@ -876,28 +920,70 @@ mod tests {
     }
 
     #[test]
-    fn c_corrects_the_chosen_proposal_or_browsed_item() {
+    fn c_opens_a_line_for_the_correction_without_leaving_the_screen() {
         let (_dir, mut app) = review_sample();
         app.key(key(KeyCode::Char('2')));
         let first = app.queue[0].id;
-        assert_eq!(
-            app.key(key(KeyCode::Char('c'))),
-            Some(Effect::Correct(first))
+        assert_eq!(app.key(key(KeyCode::Char('c'))), None);
+        assert!(screen(&app, 120, 30).contains("What's wrong with it?"));
+        assert!(
+            app.keys().iter().any(|(k, _)| *k == "Enter"),
+            "typing keys, not Review's, while the line is open"
         );
+        for c in "created: 2019-03-31".chars() {
+            app.key(key(KeyCode::Char(c)));
+        }
+        assert_eq!(
+            app.key(key(KeyCode::Enter)),
+            Some(Effect::Correction(super::app::Step::Work {
+                target: super::screens::Correcting::Proposal(first),
+                words: "created: 2019-03-31".into(),
+            }))
+        );
+        assert!(app.keys().iter().any(|(k, v)| *k == "c" && *v == "correct"));
 
         let (_dir, mut app) = sample(false);
         app.key(key(KeyCode::Char('4')));
-        assert_eq!(
-            app.key(key(KeyCode::Char('c'))),
-            None,
-            "a collection isn't an item"
-        );
+        app.key(key(KeyCode::Char('c')));
+        assert!(app.input.is_none(), "a collection isn't an item");
         app.key(key(KeyCode::Right));
         let card = app.browse_items[app.browse_item].0.clone();
+        app.key(key(KeyCode::Char('c')));
+        app.key(key(KeyCode::Char('x')));
         assert_eq!(
-            app.key(key(KeyCode::Char('c'))),
-            Some(Effect::CorrectItem(card))
+            app.key(key(KeyCode::Enter)),
+            Some(Effect::Correction(super::app::Step::Work {
+                target: super::screens::Correcting::Item(card),
+                words: "x".into(),
+            }))
         );
+    }
+
+    #[test]
+    fn the_correction_pops_up_and_saves_only_on_y() {
+        let (dir, mut app) = review_sample();
+        app.key(key(KeyCode::Char('2')));
+        let id = app.queue[0].id.to_string();
+        let prepared =
+            crate::correct::prepare_review(&app.archive, &id, "created: 2019-03-31").unwrap();
+        app.correction = Some(prepared);
+        let shown = screen(&app, 120, 30);
+        assert!(shown.contains("2019-03-31"), "{shown}");
+        assert!(shown.contains("y save"), "{shown}");
+        assert_eq!(app.keys(), vec![("y", "save"), ("n", "discard")]);
+        assert_eq!(app.key(key(KeyCode::Char('n'))), None);
+        assert!(app.correction.is_none());
+        assert!(app.message.as_deref().unwrap().contains("discarded"));
+
+        app.correction =
+            Some(crate::correct::prepare_review(&app.archive, &id, "created: 2019-03-31").unwrap());
+        assert_eq!(
+            app.key(key(KeyCode::Char('y'))),
+            Some(Effect::Correction(super::app::Step::Save))
+        );
+        let saved = crate::correct::save(&app.archive, app.correction.take().unwrap()).unwrap();
+        assert!(saved.message.starts_with("Saved"));
+        drop(dir);
     }
 
     #[test]
