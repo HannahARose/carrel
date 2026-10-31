@@ -602,6 +602,64 @@ fn same_disk(a: &Path, b: &Path) -> bool {
     a.components().next() == b.components().next()
 }
 
+/// Why [`snapshot_now`] failed.
+#[derive(Debug)]
+pub enum SnapshotNowError {
+    /// The snapshot couldn't be taken.
+    Backup(BackupError),
+    /// The snapshot was taken, but history couldn't record it.
+    History(crate::history::HistoryError),
+}
+
+impl std::fmt::Display for SnapshotNowError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Backup(e) => write!(f, "{e}"),
+            Self::History(e) => write!(f, "{e}"),
+        }
+    }
+}
+
+impl std::error::Error for SnapshotNowError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Backup(e) => Some(e),
+            Self::History(e) => Some(e),
+        }
+    }
+}
+
+/// Snapshots the whole archive with `backups`, described as `description`, and records it in
+/// history with a change of its own, holding `lease`: `carrel backup now` and the Mac app's
+/// scheduled backups. History records a snapshot only with a change; with nothing changed,
+/// the snapshot still exists in the repository. Returns the snapshot and the history commit.
+///
+/// # Errors
+///
+/// [`SnapshotNowError`] if the snapshot can't be taken or history can't record it.
+pub fn snapshot_now(
+    archive: &Archive,
+    backups: &dyn Backups,
+    lease: &crate::coordinator::WriterLease,
+    description: &str,
+) -> Result<(Snapshot, Option<String>), SnapshotNowError> {
+    use crate::history::{Change, History, Operation};
+    let snapshot = backups
+        .snapshot(archive.root(), description)
+        .map_err(SnapshotNowError::Backup)?;
+    let mut change = Change::new(
+        Operation::Edit,
+        description,
+        lease.info().person,
+        lease.info().device,
+    );
+    change.snapshot = Some(snapshot.trailer());
+    let commit = History::open(archive)
+        .and_then(|history| history.commit(archive, &change, lease))
+        .map_err(SnapshotNowError::History)?;
+    Ok((snapshot, commit))
+}
+
 /// Records the repository in `settings.json`'s `backups` (FORMAT.md §7.2): its type, its
 /// identifier and a description. Never the path, which is per device, or the password.
 ///
@@ -634,6 +692,66 @@ pub fn record(archive: &Archive, repository: &str, description: &str) -> std::io
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Backups that take every snapshot they're asked for.
+    struct Taken;
+
+    impl Backups for Taken {
+        fn describe(&self) -> String {
+            "taken".into()
+        }
+        fn snapshot(&self, _: &Path, description: &str) -> Result<Snapshot, BackupError> {
+            Ok(Snapshot {
+                id: "k1".into(),
+                time: "2026-10-31T09:00:00Z".into(),
+                description: Some(description.to_owned()),
+                pinned: false,
+                size: None,
+                files: None,
+            })
+        }
+        fn list(&self, _: &Path) -> Result<Vec<Snapshot>, BackupError> {
+            Ok(Vec::new())
+        }
+        fn verify(&self, _: u8) -> Result<String, BackupError> {
+            Ok(String::new())
+        }
+        fn restore(&self, _: &str, _: &str, _: &Path) -> Result<(), BackupError> {
+            Ok(())
+        }
+        fn forget(&self, _: &str) -> Result<(), BackupError> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn a_snapshot_now_is_taken_even_with_nothing_for_history_to_record() {
+        use crate::coordinator::{Coordinator as _, DEFAULT_LEASE, DiskLock, Holder};
+        use crate::history::History;
+        let dir = tempfile::tempdir().unwrap();
+        let archive = Archive::init(
+            &dir.path().join("Archive"),
+            &crate::archive::InitOptions::new("Test"),
+        )
+        .unwrap();
+        let holder = Holder {
+            person: Id::new_v7(),
+            device: Id::new_v7(),
+        };
+        let lease = DiskLock::for_archive(&archive)
+            .acquire(holder, "backup", DEFAULT_LEASE)
+            .unwrap();
+        History::start(&archive, &lease).unwrap();
+        let (snapshot, commit) =
+            snapshot_now(&archive, &Taken, &lease, "Scheduled snapshot").unwrap();
+        lease.release().unwrap();
+        assert_eq!(snapshot.id, "k1");
+        assert_eq!(
+            commit, None,
+            "nothing changed, so history has nothing to record"
+        );
+        assert_eq!(History::open(&archive).unwrap().log().unwrap().len(), 1);
+    }
 
     #[test]
     fn kopia_snapshots_are_read_from_its_json() {

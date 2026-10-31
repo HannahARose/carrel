@@ -9,6 +9,7 @@ struct ArchiveWindow: View {
 
     @Environment(AppModel.self) private var app
     @Environment(\.dismissWindow) private var dismissWindow
+    @Environment(\.openWindow) private var openWindow
     @Environment(\.controlActiveState) private var activeState
     @State private var model: ArchiveWindowModel
 
@@ -44,13 +45,31 @@ struct ArchiveWindow: View {
                 .background(.background)
             }
         }
+        .sheet(item: $model.correction) { CorrectionSheet(correction: $0) }
+        .archiveErrorAlert(model.archive)
+        .focusedSceneValue(model)
         .task {
             dismissWindow(id: WelcomeView.windowID)
             await model.load()
+            choosePendingItem()
+        }
+        .onChange(of: app.pendingLink) { choosePendingItem() }
+        .handlesExternalEvents(preferring: [AgentLink.scheme], allowing: [AgentLink.scheme])
+        .onOpenURL { url in
+            app.open(link: url) { openWindow(id: Self.windowID, value: $0) }
         }
         .onChange(of: activeState, initial: true) {
             if activeState == .key { app.activeArchive = model.root }
         }
+    }
+}
+
+extension ArchiveWindow {
+    /// Chooses the item a link from the agent's menu asked for, on Active.
+    fileprivate func choosePendingItem() {
+        guard model.handle != nil, let item = app.takePendingItem(for: model.root) else { return }
+        model.screen = .active
+        model.selectedItemID = item
     }
 }
 
@@ -62,7 +81,9 @@ private struct Sidebar: View {
             Section {
                 Label("Status", systemImage: "gauge.with.dots.needle.33percent").tag(Screen.status)
                 Label("Review", systemImage: "tray.full").tag(Screen.review)
+                    .badge(model.archive?.reviewCount ?? 0)
                 Label("Questions", systemImage: "questionmark.bubble").tag(Screen.questions)
+                    .badge(model.archive?.questions.count ?? 0)
                 Label("Active", systemImage: "arrow.up.forward.square").tag(Screen.active)
             }
             Section("Collections") {
@@ -107,14 +128,11 @@ private struct ScreenContent: View {
                 }
             }
         case .review:
-            ComingScreen(
-                title: "Review", systemImage: "tray.full",
-                text: "Drafted proposals, grouped by destination, to approve, hold, move or reject."
-            )
+            if let review = model.review {
+                ReviewView(review: review, collections: model.collections.map(\.path))
+            }
         case .questions:
-            ComingScreen(
-                title: "Questions", systemImage: "questionmark.bubble",
-                text: "Questions about terms and collections, by rank, to answer or dismiss.")
+            if let questions = model.questions { QuestionsView(questions: questions) }
         case .active:
             ComingScreen(
                 title: "Active", systemImage: "arrow.up.forward.square",
@@ -148,9 +166,21 @@ private struct Inspector: View {
     let model: ArchiveWindowModel
 
     var body: some View {
-        if let item = model.selectedItem {
-            ItemCardView(item: item, card: model.card(for: item), root: model.root)
-                .id(item.id)
+        if model.screen == .review, let review = model.review, let proposal = review.inspected {
+            ProposalInspector(proposal: proposal, review: review, correct: model.correct)
+        } else if model.screen == .questions, let questions = model.questions,
+            let question = questions.selected
+        {
+            QuestionInspector(
+                question: question, questions: questions,
+                collections: model.collections.map(\.path))
+        } else if let item = model.selectedItem {
+            if let edit = model.editing, edit.target == .item(item.id) {
+                ItemEditor(item: item, edit: edit) { model.editing = nil }
+            } else {
+                ItemCardView(item: item, card: model.card(for: item), root: model.root)
+                    .id(item.id)
+            }
         } else if case .collection = model.screen {
             ContentUnavailableView(
                 "Nothing Selected", systemImage: "sidebar.right",

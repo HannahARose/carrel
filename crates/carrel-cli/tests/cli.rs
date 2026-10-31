@@ -2777,3 +2777,67 @@ fn stopped_switch(sandbox: &Sandbox, root: &Path, bin: &Path) -> Output {
         .output()
         .unwrap()
 }
+
+#[test]
+fn the_worker_steps_aside_while_the_agent_looks_after_the_archive() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    let note = sandbox.path("note.txt");
+    std::fs::write(&note, "a note\n").unwrap();
+    let id = sandbox.json(&root, &["status"])["archive"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    // What the Mac app's agent holds while it looks after the archive on this device.
+    let workers = sandbox.path("config/workers");
+    std::fs::create_dir_all(&workers).unwrap();
+    let agent = std::fs::File::create(workers.join(format!("{id}.agent"))).unwrap();
+    agent.try_lock().unwrap();
+
+    // With CARREL_WORKER on, ingest still starts no worker of its own.
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_carrel"))
+        .args(["ingest", note.to_str().unwrap(), "--json"])
+        .current_dir(&root)
+        .env("CARREL_CONFIG_DIR", sandbox.path("config"))
+        .env("CARREL_TRASH_DIR", sandbox.path("Trash"))
+        .env_remove("CARREL_WORKER")
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let queued: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(queued["worker_started"], false);
+    assert!(
+        !workers.join(format!("{id}.log")).exists(),
+        "no worker was started"
+    );
+    let status = sandbox.json(&root, &["ingest", "--status"]);
+    assert_eq!(status["agent"], true);
+    assert!(
+        sandbox
+            .ok(&root, &["ingest", "--status"])
+            .contains("the Carrel agent"),
+        "the status says who drafts"
+    );
+
+    // A worker started before the agent was, or by hand, leaves the queue to it.
+    let worked = sandbox.json(&root, &["worker"]);
+    assert_eq!(worked["agent"], true);
+    assert_eq!(worked["done"], 0);
+    assert_eq!(
+        sandbox.json(&root, &["ingest", "--status"])["waiting"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+
+    // Once the agent stops, the CLI's worker drafts again.
+    drop(agent);
+    let worked = sandbox.json(&root, &["worker"]);
+    assert_eq!(worked["done"], 1);
+    assert_eq!(sandbox.json(&root, &["ingest", "--status"])["agent"], false);
+}

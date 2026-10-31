@@ -13,6 +13,8 @@ struct CarrelApp: App {
                 .environment(app)
         }
         .windowResizability(.contentSize)
+        // Links from the agent's menu reach an open window, or this one when none is open.
+        .handlesExternalEvents(matching: [AgentLink.scheme])
 
         WindowGroup("Archive", id: ArchiveWindow.windowID, for: URL.self) { $url in
             if let url {
@@ -20,8 +22,10 @@ struct CarrelApp: App {
                     .environment(app)
             }
         }
+        .handlesExternalEvents(matching: [])
         .commands {
             ArchiveCommands(app: app)
+            ReviewCommands()
             ArchiveWindowCommands()
         }
 

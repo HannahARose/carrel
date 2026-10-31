@@ -57,7 +57,6 @@ struct ArchiveWindowActions: ViewModifier {
             .task(id: model.intake.map(ObjectIdentifier.init)) {
                 await model.intake?.watch()
             }
-            .focusedSceneValue(model)
     }
 }
 

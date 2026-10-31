@@ -221,7 +221,14 @@ impl Scanned {
     /// The file it's kept in for the archive `archive_id`, in Carrel's folder on this device.
     #[must_use]
     pub fn path(archive_id: &str) -> Option<PathBuf> {
-        crate::local::config_dir().map(|d| d.join("sessions").join(format!("{archive_id}.json")))
+        crate::local::config_dir().map(|d| Self::path_in(&d, archive_id))
+    }
+
+    /// The file it's kept in for the archive `archive_id`, in the configuration folder
+    /// `config`.
+    #[must_use]
+    pub fn path_in(config: &Path, archive_id: &str) -> PathBuf {
+        config.join("sessions").join(format!("{archive_id}.json"))
     }
 
     /// The saved state, or none yet.
@@ -398,12 +405,26 @@ fn tracked(archive: &Archive, device: Id, now: SystemTime) -> Result<Vec<Tracked
 ///
 /// [`SessionError`] if the archive can't be read or the cards and history written.
 pub fn record(archive: &Archive, lease: &WriterLease) -> Result<Recorded, SessionError> {
+    record_in(archive, lease, Scanned::path(&archive.doc().id.to_string()))
+}
+
+/// [`record`], keeping what's been looked at in `state_path` rather than in Carrel's folder
+/// on this device: for a caller with a configuration folder of its own, such as the Mac
+/// app's. With `None`, everything is looked at as if for the first time and nothing is kept.
+///
+/// # Errors
+///
+/// [`SessionError`] if the archive can't be read or the cards and history written.
+pub fn record_in(
+    archive: &Archive,
+    lease: &WriterLease,
+    state_path: Option<PathBuf>,
+) -> Result<Recorded, SessionError> {
     let fail = |e: &dyn std::fmt::Display| SessionError::Archive(e.to_string());
     let device = lease.info().device;
     let rules = archive.rules().map_err(|e| fail(&e))?;
     let idle = Duration::from_mins(u64::from(archive.settings().sessions.idle_minutes));
     let now = SystemTime::now();
-    let state_path = Scanned::path(&archive.doc().id.to_string());
     let mut scanned = state_path.as_deref().map(Scanned::load).unwrap_or_default();
     let mut recorded = Recorded::default();
     for item in tracked(archive, device, now)? {

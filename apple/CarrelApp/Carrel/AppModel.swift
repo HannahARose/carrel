@@ -47,6 +47,8 @@ final class AppModel {
     let recents: RecentArchives
     /// The root of the archive whose window was last in front, which Settings shows.
     var activeArchive: URL?
+    /// An item for its archive's window to choose, from a link the agent's menu opened.
+    var pendingLink: AgentLink?
 
     init(recents: RecentArchives = RecentArchives()) {
         self.recents = recents
@@ -81,6 +83,23 @@ final class AppModel {
             }
             Self.report(error, opening: url)
         }
+    }
+
+    /// Opens the archive a link from the agent names, then has its window choose the item.
+    func open(link url: URL, then show: (URL) -> Void) {
+        guard let link = AgentLink(url) else { return }
+        open(link.archive) { root in
+            pendingLink = link.item.map { AgentLink(archive: root, item: $0) }
+            show(root)
+        }
+    }
+
+    /// The item a link asked the window for the archive at `root` to choose, once.
+    func takePendingItem(for root: URL) -> String? {
+        guard let link = pendingLink, link.archive.standardizedFileURL == root.standardizedFileURL
+        else { return nil }
+        pendingLink = nil
+        return link.item
     }
 
     func chooseArchive(then show: (URL) -> Void) {
@@ -119,11 +138,5 @@ final class AppModel {
 
 /// What went wrong, in the core's own words for the core's errors.
 func message(for error: any Error) -> String {
-    switch error {
-    case CarrelError.NotAnArchive(let message), CarrelError.Failed(let message),
-        CarrelError.Callback(let message):
-        message
-    default:
-        error.localizedDescription
-    }
+    (error as? CarrelError)?.message ?? error.localizedDescription
 }

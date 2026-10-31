@@ -71,6 +71,8 @@ struct ArchiveSummary: Equatable {
 @Observable
 final class ArchiveWindowModel {
     let url: URL
+    /// How the archive is opened; `nil` for the device's own configuration.
+    let options: OpenOptions?
     private(set) var handle: ArchiveHandle?
     private(set) var name: String
     private(set) var isReadOnly = false
@@ -79,20 +81,33 @@ final class ArchiveWindowModel {
     private(set) var items: [ItemSummary] = []
     private(set) var isLoading = false
     private(set) var problem: String?
-    /// The archive, through CarrelKit's ArchiveModel, once it's open.
+    /// The archive's queues and operations, through the core, once it's open.
     private(set) var archive: ArchiveModel?
+
+    // Search and adding items (#236).
     /// Search in the toolbar.
     private(set) var search: SearchModel?
     /// Adding items, and the worker drafting them.
     private(set) var intake: IntakeModel?
 
+    // Review, Questions, corrections and editing (#234).
+    private(set) var review: ReviewModel?
+    private(set) var questions: QuestionsModel?
+    /// The correction sheet's, while it's open.
+    var correction: CorrectionModel?
+    /// The filed item whose card the inspector is editing (⌘E).
+    var editing: CardEditModel?
+
     var screen: Screen? = .status {
         didSet { if screen != oldValue { selectedItemID = nil } }
     }
-    var selectedItemID: ItemSummary.ID?
+    var selectedItemID: ItemSummary.ID? {
+        didSet { if selectedItemID != oldValue { editing = nil } }
+    }
 
-    init(url: URL) {
+    init(url: URL, options: OpenOptions? = nil) {
         self.url = url
+        self.options = options
         name = url.lastPathComponent
     }
 
@@ -103,9 +118,15 @@ final class ArchiveWindowModel {
         isLoading = true
         defer { isLoading = false }
         let url = url
+        let options = options
         do {
             let loaded = try await Task.detached {
-                let handle = try ArchiveHandle.open(url)
+                let handle =
+                    if let options {
+                        try ArchiveHandle.open(url, options: options)
+                    } else {
+                        try ArchiveHandle.open(url)
+                    }
                 return (handle, try handle.collections(), try handle.items())
             }.value
             handle = loaded.0
@@ -117,11 +138,28 @@ final class ArchiveWindowModel {
             problem = nil
             let archive = ArchiveModel(handle: loaded.0)
             self.archive = archive
+            review = ReviewModel(archive: archive)
+            review?.filed = { [weak self] in await self?.refreshItems() }
+            questions = QuestionsModel(archive: archive)
             search = SearchModel(archive: archive)
             intake = IntakeModel(archive: archive)
+            try? await archive.refreshAll()
         } catch {
             problem = message(for: error)
         }
+    }
+
+    /// Reads the collections and items again, after a change that files or refiles items.
+    func refreshItems() async {
+        guard let handle else { return }
+        guard
+            let loaded = try? await Task.detached(operation: {
+                (try handle.collections(), try handle.items())
+            }).value
+        else { return }
+        collections = loaded.0
+        tree = CollectionNode.tree(loaded.0)
+        items = loaded.1
     }
 
     /// The collection an item's card is filed in: the deepest collection folder holding it.

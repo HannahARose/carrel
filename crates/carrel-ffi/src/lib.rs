@@ -21,6 +21,7 @@
 //! | [`settings`] | The archive's settings and this device's model choices |
 //! | [`models`] | The model catalog, providers, and downloads |
 //! | [`intake`] | The intake queue |
+//! | [`agent`] | The Mac app's agent: its claim on an archive, work sessions and scheduled snapshots |
 //!
 //! [`TextModel`] and [`ModelProvider`](correct::ModelProvider) are implemented in Swift and called from Rust, as is
 //! [`ProgressListener`], which long operations report to.
@@ -44,6 +45,7 @@ use carrel_core::local::{Identity, Prefs};
 use carrel_core::providers::Registry;
 
 pub mod active;
+pub mod agent;
 pub mod correct;
 pub mod edit;
 pub mod history;

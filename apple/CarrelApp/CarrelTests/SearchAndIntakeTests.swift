@@ -125,8 +125,9 @@ final class SearchModelTests: SampleCopyTestCase {
     }
 
     func testChoosingAResultShowsItInTheInspector() async throws {
-        // The window only reads the copy here; the search runs on the isolated handle.
-        let window = ArchiveWindowModel(url: folder.appending(path: "archive"))
+        let window = ArchiveWindowModel(
+            url: folder.appending(path: "archive"),
+            options: .isolated(config: folder.appending(path: "config")))
         await window.load()
         let search = SearchModel(archive: archive, pause: .zero)
         search.text = "species"
