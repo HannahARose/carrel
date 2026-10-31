@@ -312,12 +312,12 @@ pub struct App {
     pub browse_items: Vec<(String, String)>,
     /// Browse's chosen item.
     pub browse_item: usize,
-    /// Whether Browse's keys move among items rather than collections.
-    pub browse_in_items: bool,
+    /// Where Browse's arrows move: collections, items, or the chosen item's view.
+    pub browse_pane: super::item::Pane,
     /// The search shown in Browse, if any.
     pub search: Option<String>,
-    /// The chosen item's card in full, as `carrel show` gives it.
-    pub card: Vec<String>,
+    /// The chosen item: its card, its changes and related items.
+    pub item: super::item::ItemView,
     /// A line being typed, while it's open.
     pub input: Option<Input>,
     /// A line for the owner about the last thing that happened.
@@ -396,9 +396,9 @@ impl App {
             browse_collection: 0,
             browse_items: Vec::new(),
             browse_item: 0,
-            browse_in_items: false,
+            browse_pane: super::item::Pane::Collections,
             search: None,
-            card: Vec::new(),
+            item: super::item::ItemView::default(),
             input: None,
             message: None,
             confirm: None,
@@ -584,13 +584,7 @@ impl App {
             Tab::Questions => {
                 keys.extend([("↑↓", "choose"), ("Enter", "answer"), ("d", "dismiss")]);
             }
-            Tab::Browse => {
-                keys.extend([("↑↓", "choose"), ("←→", "collections/items")]);
-                if self.browse_in_items {
-                    keys.extend([("e", "edit"), ("c", "correct")]);
-                }
-                keys.push(("/", "search"));
-            }
+            Tab::Browse => keys.extend(self.browse_keys()),
             _ => keys.push(("↑↓", "scroll")),
         }
         keys.extend([("^R", "refresh"), ("?", "help"), ("q", "quit")]);

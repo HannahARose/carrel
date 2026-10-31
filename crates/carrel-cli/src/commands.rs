@@ -450,12 +450,36 @@ pub(crate) fn find_item<'a>(
         .ok_or_else(|| Failure::new(format!("{query} has no card in this archive")))
 }
 
-/// `carrel show`.
-pub fn show(archive: Option<&Path>, query: &str) -> Result<Report, Failure> {
-    let archive = locate(archive)?;
+/// An item another links to, as the item's view shows it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Linked {
+    /// How it's linked: `version-of`, `related`, `part-of`, and so on.
+    pub link_type: String,
+    /// The linked item.
+    pub id: Id,
+    /// Its card's path, if it's in the archive.
+    pub card: Option<String>,
+    /// Its title, if its card could be read.
+    pub title: Option<String>,
+}
+
+/// A filed item as `carrel show` describes it, before its links and history.
+pub(crate) struct Shown {
+    /// The item's identifier.
+    pub id: Id,
+    /// The card's fields, summary and problems, for people.
+    pub text: String,
+    /// The same for programs.
+    pub json: Value,
+    /// The items it links to.
+    pub links: Vec<Linked>,
+}
+
+/// Describes the item `query` names: its card, and what it links to.
+pub(crate) fn describe(archive: &Archive, query: &str) -> Result<Shown, Failure> {
     let items = archive.items()?;
-    let item = find_item(&archive, &items, query)?;
-    let LoadedCard { item, card } = load_card(&archive, item)?;
+    let item = find_item(archive, &items, query)?;
+    let LoadedCard { item, card } = load_card(archive, item)?;
     let collections: Vec<String> = archive.collections()?.into_iter().map(|c| c.path).collect();
     let collection = collection_of(&collections, &item.card);
     let problems = card.problems();
@@ -501,26 +525,30 @@ pub fn show(archive: Option<&Path>, query: &str) -> Result<Report, Failure> {
     if let Some(summary) = &card.summary {
         writeln!(text, "\n{}", summary.trim_end()).unwrap();
     }
-    if !card.links.is_empty() {
-        writeln!(text, "\n{}:", plural(card.links.len(), "link")).unwrap();
-        for link in &card.links {
-            let target = items
-                .iter()
-                .find(|i| i.id == link.id)
-                .map_or_else(|| link.id.to_string(), |i| i.card.clone());
-            let link_type = serde_json::to_value(&link.link_type)
-                .ok()
-                .and_then(|v| v.as_str().map(str::to_owned))
-                .unwrap_or_default();
-            writeln!(text, "  {link_type} {target}").unwrap();
-        }
-    }
     if !problems.is_empty() {
         writeln!(text, "\nProblems:").unwrap();
         for problem in &problems {
             writeln!(text, "  {problem}").unwrap();
         }
     }
+    let links = card
+        .links
+        .iter()
+        .map(|link| {
+            let target = items.iter().find(|i| i.id == link.id);
+            Linked {
+                link_type: serde_json::to_value(&link.link_type)
+                    .ok()
+                    .and_then(|v| v.as_str().map(str::to_owned))
+                    .unwrap_or_default(),
+                id: link.id,
+                card: target.map(|i| i.card.clone()),
+                title: target
+                    .and_then(|i| load_card(archive, i).ok())
+                    .map(|loaded| loaded.card.title),
+            }
+        })
+        .collect();
 
     let json = json!({
         "card": item.card,
@@ -529,7 +557,71 @@ pub fn show(archive: Option<&Path>, query: &str) -> Result<Report, Failure> {
         "fields": card,
         "problems": problems.iter().map(|p| json!({ "field": p.field, "message": p.message })).collect::<Vec<_>>(),
     });
+    Ok(Shown {
+        id: card.id,
+        text,
+        json,
+        links,
+    })
+}
+
+/// `carrel show`.
+pub fn show(archive: Option<&Path>, query: &str) -> Result<Report, Failure> {
+    let archive = locate(archive)?;
+    let Shown {
+        id,
+        mut text,
+        mut json,
+        links,
+    } = describe(&archive, query)?;
+    if !links.is_empty() {
+        writeln!(text, "\n{}:", plural(links.len(), "link")).unwrap();
+        for link in &links {
+            let target = link.card.clone().unwrap_or_else(|| link.id.to_string());
+            writeln!(text, "  {} {target}", link.link_type).unwrap();
+        }
+    }
+    let history = match History::open(&archive) {
+        Ok(history) => Some(history.item_log(id)?),
+        Err(HistoryError::NotInitialized) => None,
+        Err(e) => return Err(e.into()),
+    };
+    if let Some(entries) = &history {
+        text.push_str(&item_history_section(entries));
+    }
+    json["history"] = history.map_or(Value::Null, |entries| {
+        Value::Array(entries.iter().map(entry_json).collect())
+    });
     Ok(Report::new(text, json))
+}
+
+/// The part of `carrel show` about every change that touched the item, newest first.
+fn item_history_section(entries: &[Entry]) -> String {
+    let mut text = String::new();
+    if entries.is_empty() {
+        return text;
+    }
+    writeln!(
+        text,
+        "\nHistory ({}; undo one with `carrel undo CHANGE`):",
+        plural(entries.len(), "change")
+    )
+    .unwrap();
+    for entry in entries {
+        writeln!(text, "  {}", log_line(entry)).unwrap();
+    }
+    text
+}
+
+/// A change on one line: its short identifier, when, the operation and the summary.
+pub(crate) fn log_line(entry: &Entry) -> String {
+    format!(
+        "{}  {}  {:<11} {}",
+        &entry.id[..entry.id.len().min(10)],
+        local_time(entry.time),
+        entry.operation.map_or("", |o| o.as_str()),
+        entry.summary
+    )
 }
 
 fn entry_json(entry: &Entry) -> Value {
@@ -565,16 +657,7 @@ pub fn log(archive: Option<&Path>, max_count: Option<usize>) -> Result<Report, F
     }
     let mut text = String::new();
     for entry in &entries {
-        let operation = entry.operation.map_or("", |o| o.as_str());
-        writeln!(
-            text,
-            "{}  {}  {:<11} {}",
-            &entry.id[..entry.id.len().min(10)],
-            local_time(entry.time),
-            operation,
-            entry.summary
-        )
-        .unwrap();
+        writeln!(text, "{}", log_line(entry)).unwrap();
     }
     Ok(Report::new(
         text,

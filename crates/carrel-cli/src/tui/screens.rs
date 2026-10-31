@@ -6,6 +6,7 @@ use carrel_core::questions::{QuestionEntry, QuestionKind};
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 
 use super::app::{App, Effect, step};
+use super::item::Pane;
 use super::review::{Handled, Picker, Purpose};
 
 /// A line being typed.
@@ -182,7 +183,11 @@ impl App {
                     }
                     InputPurpose::Search => {
                         self.search = (!text.is_empty()).then_some(text);
-                        self.browse_in_items = self.search.is_some();
+                        self.browse_pane = if self.search.is_some() {
+                            Pane::Items
+                        } else {
+                            Pane::Collections
+                        };
                         self.browse_item = 0;
                         self.load_items();
                     }
@@ -275,51 +280,54 @@ impl App {
         found
     }
 
-    /// Reads the chosen item's card in full.
-    pub(super) fn load_card(&mut self) {
-        self.card = match self.browse_items.get(self.browse_item) {
-            Some((path, _)) => match crate::commands::show(Some(self.archive.root()), path) {
-                Ok(report) => report.text.lines().map(str::to_owned).collect(),
-                Err(crate::Failure(e)) => vec![e],
-            },
-            None => Vec::new(),
-        };
-    }
-
-    /// Moves the choice among collections or items.
+    /// Moves the choice among collections, items, or the chosen item's rows.
     pub(super) fn browse_move(&mut self, delta: i32) {
-        if self.browse_in_items {
-            self.browse_item = step(self.browse_item, delta, self.browse_items.len());
-            self.load_card();
-        } else {
-            self.browse_collection = step(self.browse_collection, delta, self.collections.len());
-            self.browse_item = 0;
-            self.load_items();
+        match self.browse_pane {
+            Pane::Item => self.item_move(delta),
+            Pane::Items => {
+                self.browse_item = step(self.browse_item, delta, self.browse_items.len());
+                self.load_card();
+            }
+            Pane::Collections => {
+                self.browse_collection =
+                    step(self.browse_collection, delta, self.collections.len());
+                self.browse_item = 0;
+                self.load_items();
+            }
         }
     }
 
-    /// Handles a key on the Browse screen: ←→ move between collections and items, `c`
-    /// corrects the chosen item in words, `/` searches, and Esc clears a search.
+    /// Handles a key on the Browse screen: ←→ move between collections, items and the chosen
+    /// item's view, `e` and `c` edit or correct the chosen item, `/` searches, and Esc clears a
+    /// search.
     pub(super) fn browse_key(&mut self, key: KeyEvent) -> Handled {
+        if self.browse_pane == Pane::Item
+            && let Handled::Yes(effect) = self.item_key(key)
+        {
+            return Handled::Yes(effect);
+        }
+        let on_item = self.browse_pane != Pane::Collections;
         match key.code {
             // Here ←→ move between the panes; Tab still switches screens.
-            KeyCode::Right | KeyCode::Enter | KeyCode::Char('l') => {
-                if !self.browse_in_items && !self.browse_items.is_empty() {
-                    self.browse_in_items = true;
+            KeyCode::Right | KeyCode::Enter | KeyCode::Char('l') => match self.browse_pane {
+                Pane::Collections if !self.browse_items.is_empty() => {
+                    self.browse_pane = Pane::Items;
                     self.load_card();
                 }
-            }
+                Pane::Items if self.item.card.is_some() => self.browse_pane = Pane::Item,
+                _ => {}
+            },
             KeyCode::Left | KeyCode::Char('h') => {
                 if self.search.is_none() {
-                    self.browse_in_items = false;
+                    self.browse_pane = Pane::Collections;
                 }
             }
-            KeyCode::Char('e') if self.browse_in_items => {
+            KeyCode::Char('e') if on_item => {
                 if let Some((card, _)) = self.browse_items.get(self.browse_item) {
                     return Handled::Yes(Some(Effect::EditItem(card.clone())));
                 }
             }
-            KeyCode::Char('c') if self.browse_in_items => {
+            KeyCode::Char('c') if on_item => {
                 if let Some((card, _)) = self.browse_items.get(self.browse_item) {
                     self.input = Some(Input {
                         purpose: InputPurpose::Correct(Correcting::Item(card.clone())),
@@ -335,7 +343,7 @@ impl App {
             }
             KeyCode::Esc if self.search.is_some() => {
                 self.search = None;
-                self.browse_in_items = false;
+                self.browse_pane = Pane::Collections;
                 self.load_items();
             }
             _ => return Handled::No,
