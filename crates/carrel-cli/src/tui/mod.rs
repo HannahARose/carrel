@@ -1472,7 +1472,11 @@ mod tests {
         let related = &app.item.related;
         assert!(matches!(&related[0].relation, Relation::Link(how) if how == "part-of"));
         let near: Vec<_> = related[1..].iter().collect();
-        assert_eq!(near.len(), crate::related::NEAREST, "{related:?}");
+        assert_eq!(
+            near.len(),
+            carrel_core::index::related::NEAREST,
+            "{related:?}"
+        );
         assert!(near.iter().all(|r| matches!(r.relation, Relation::Near(_))));
         assert!(
             near.iter().all(|r| {

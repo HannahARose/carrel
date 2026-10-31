@@ -499,6 +499,9 @@ name = "carrel-ffi"
 version = "0.3.0"
 dependencies = [
  "carrel-core",
+ "jiff",
+ "serde_json",
+ "tempfile",
  "thiserror 2.0.21",
  "uniffi",
 ]

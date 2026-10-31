@@ -643,7 +643,7 @@ pub(crate) fn describe(archive: &Archive, query: &str) -> Result<Shown, Failure>
 pub fn show(archive: Option<&Path>, query: &str) -> Result<Report, Failure> {
     let archive = locate(archive)?;
     let mut shown = describe(&archive, query)?;
-    let near = crate::related::open(&archive)
+    let near = carrel_core::index::related::open(&archive)
         .and_then(|index| crate::related::nearest(&archive, &index, &shown));
     let mut text = std::mem::take(&mut shown.text);
     text.push_str(&related_section(&shown.links, &near));
@@ -661,7 +661,7 @@ pub fn show(archive: Option<&Path>, query: &str) -> Result<Report, Failure> {
     });
     json["near"] = Value::Array(
         near.as_ref()
-            .map(|n| n.iter().map(crate::related::Neighbour::json).collect())
+            .map(|n| n.iter().map(crate::related::json).collect())
             .unwrap_or_default(),
     );
     json["links_only"] = near.err().map_or(Value::Null, Value::String);
