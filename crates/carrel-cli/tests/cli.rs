@@ -1089,6 +1089,7 @@ fn types_nothing_reads_are_logged_without_names_and_listed() {
     assert!(text.contains(".f3d"), "{text}");
 }
 
+#[cfg(unix)]
 #[test]
 fn edit_opens_a_filed_card_keeps_its_body_and_undo_reverses_it() {
     use std::os::unix::fs::PermissionsExt as _;
