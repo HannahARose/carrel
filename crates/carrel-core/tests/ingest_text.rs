@@ -61,6 +61,18 @@ fn media_types_come_from_content_first() {
         media_type(&write("archive", b"PK\x03\x04....")),
         "application/zip"
     );
+    assert_eq!(
+        media_type(&write("book.epub", b"PK\x03\x04....")),
+        "application/epub+zip"
+    );
+    assert_eq!(
+        media_type(&write("export.tar.gz", b"\x1f\x8b\x08....")),
+        "application/gzip"
+    );
+    assert_eq!(
+        media_type(&write("photos.7z", b"7z\xbc\xaf\x27\x1c....")),
+        "application/x-7z-compressed"
+    );
 }
 
 #[test]

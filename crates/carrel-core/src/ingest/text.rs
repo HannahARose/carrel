@@ -7,7 +7,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::card::{DateOrTime, Kind};
-use crate::detect::{Rules, is_ignored};
+use crate::detect::{Compressed, Rules, is_ignored};
 use crate::providers::{ExtractionRequest, ProviderError, Registry};
 use crate::review::Attempt;
 
@@ -96,8 +96,9 @@ pub fn media_type(path: &Path) -> String {
         .map(str::to_ascii_lowercase)
         .and_then(|e| from_extension(&e));
     if let Some(sniffed) = sniff(head) {
-        // A ZIP is often a document format with its own type, which the extension says.
-        if sniffed == "application/zip" && by_extension.is_some() {
+        // A zip is often a document format with its own type, and a compressor often wraps a
+        // tar, which the extension says.
+        if Compressed::sniff(head).is_some() && by_extension.is_some() {
             return by_extension.unwrap_or_default().to_owned();
         }
         return sniffed.to_owned();
@@ -131,10 +132,8 @@ fn sniff(head: &[u8]) -> Option<&'static str> {
         }
     } else if starts(b"RIFF") && head.len() >= 12 && &head[8..12] == b"WEBP" {
         Some("image/webp")
-    } else if starts(b"PK\x03\x04") {
-        Some("application/zip")
     } else {
-        None
+        Compressed::sniff(head).map(Compressed::media_type)
     }
 }
 
@@ -159,7 +158,24 @@ fn from_extension(extension: &str) -> Option<&'static str> {
         "docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         "pptx" => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "odt" => "application/vnd.oasis.opendocument.text",
+        "ods" => "application/vnd.oasis.opendocument.spreadsheet",
+        "odp" => "application/vnd.oasis.opendocument.presentation",
+        "epub" => "application/epub+zip",
+        "3mf" => "model/3mf",
+        "usdz" => "model/vnd.usdz+zip",
+        "jar" => "application/java-archive",
+        "apk" => "application/vnd.android.package-archive",
+        "ipa" => "application/x-ios-app",
+        "whl" => "application/x-wheel+zip",
         "zip" => "application/zip",
+        "tar" => "application/x-tar",
+        "gz" | "tgz" => "application/gzip",
+        "bz2" | "tbz2" | "tbz" => "application/x-bzip2",
+        "xz" | "txz" => "application/x-xz",
+        "zst" | "tzst" => "application/zstd",
+        "7z" => "application/x-7z-compressed",
+        "rar" => "application/vnd.rar",
         _ => return None,
     })
 }
