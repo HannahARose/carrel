@@ -847,6 +847,47 @@ fn returns_and_cancels(sandbox: &Sandbox, root: &Path, desk: &Path, working: &Pa
     std::fs::write(&archived, "and again\n").unwrap();
 }
 
+#[cfg(target_os = "macos")]
+#[test]
+fn a_checked_out_working_copy_is_tagged_in_finder_until_it_comes_back() {
+    use carrel_core::finder::{CHECKED_OUT, add_tag, tags};
+
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    let item = "Projects/Hardware/parts-list.csv";
+    let archived = root.join(item);
+    add_tag(&archived, "Red\n6").unwrap();
+    let desk = sandbox.path("desk");
+    let out = sandbox.json(&root, &["checkout", item, "--to", desk.to_str().unwrap()]);
+    let working = PathBuf::from(out["working"].as_str().unwrap());
+    assert_eq!(tags(&working).unwrap(), ["Red\n6", CHECKED_OUT]);
+    assert_eq!(
+        tags(&archived).unwrap(),
+        ["Red\n6"],
+        "only the working copy"
+    );
+
+    std::fs::write(&working, "changed,on,the,desk\n").unwrap();
+    sandbox.ok(&root, &["return", item, "--yes"]);
+    assert_eq!(tags(&working).unwrap(), ["Red\n6"], "the owner's tag stays");
+    assert_eq!(
+        tags(&archived).unwrap(),
+        ["Red\n6"],
+        "the tag doesn't come back into the archive"
+    );
+
+    let out = sandbox.json(&root, &["checkout", item, "--to", desk.to_str().unwrap()]);
+    let working = PathBuf::from(out["working"].as_str().unwrap());
+    assert!(tags(&working).unwrap().contains(&CHECKED_OUT.to_owned()));
+    sandbox.ok(&root, &["return", item, "--discard", "--yes"]);
+    assert_eq!(
+        tags(&working).unwrap(),
+        ["Red\n6"],
+        "cancelling removes it too"
+    );
+}
+
 #[test]
 fn desk_items_get_a_card_beside_them_and_stay_where_they_are() {
     let sandbox = Sandbox::new();
