@@ -6,11 +6,13 @@
 - **`CarrelPoC`:** a minimal SwiftUI app over `CarrelKit`, the proof of concept for #20.
 - **Tests:** `Tests/CarrelKitTests`, run against the sample archive in `fixtures/`.
 
-The framework and the generated Swift aren't committed. Build them from the repository root first, and again after changing `carrel-ffi`:
+The framework isn't committed. Build it from the repository root first, and again after changing `carrel-ffi`:
 
 ```bash
 PROFILE=dev scripts/build-xcframework.sh
 ```
+
+The generated Swift, in `Sources/CarrelKit/Generated`, is committed: the build regenerates it, and so does `scripts/generate-bindings.sh` on its own. Commit it with the change to `carrel-ffi`; CI fails while it's out of date. Format the Swift with `scripts/swift-format.sh`.
 
 Then, from this folder:
 

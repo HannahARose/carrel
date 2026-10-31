@@ -42,7 +42,8 @@ final class GemmaEncoderAttention: Module {
         super.init()
     }
 
-    func callAsFunction(_ x: MLXArray, mask: MLXFast.ScaledDotProductAttentionMaskMode) -> MLXArray {
+    func callAsFunction(_ x: MLXArray, mask: MLXFast.ScaledDotProductAttentionMaskMode) -> MLXArray
+    {
         let (b, l) = (x.dim(0), x.dim(1))
         let queries = rope(queryNorm(queryProj(x).reshaped(b, l, heads, -1).transposed(0, 2, 1, 3)))
         let keys = rope(keyNorm(keyProj(x).reshaped(b, l, kvHeads, -1).transposed(0, 2, 1, 3)))
@@ -84,7 +85,8 @@ final class GemmaEncoderLayer: Module {
         // Every `slidingWindowPattern`th layer is global; the others slide.
         sliding = (index + 1) % config.slidingWindowPattern != 0
         _attention.wrappedValue = GemmaEncoderAttention(config, sliding: sliding)
-        mlp = GemmaEncoderMLP(dimensions: config.hiddenSize, hiddenDimensions: config.intermediateSize)
+        mlp = GemmaEncoderMLP(
+            dimensions: config.hiddenSize, hiddenDimensions: config.intermediateSize)
         let norm = { Gemma.RMSNorm(dimensions: config.hiddenSize, eps: config.rmsNormEps) }
         _inputNorm.wrappedValue = norm()
         _postAttentionNorm.wrappedValue = norm()
@@ -93,7 +95,8 @@ final class GemmaEncoderLayer: Module {
         super.init()
     }
 
-    func callAsFunction(_ x: MLXArray, mask: MLXFast.ScaledDotProductAttentionMaskMode) -> MLXArray {
+    func callAsFunction(_ x: MLXArray, mask: MLXFast.ScaledDotProductAttentionMaskMode) -> MLXArray
+    {
         let h = Gemma.clipResidual(x, postAttentionNorm(attention(inputNorm(x), mask: mask)))
         return Gemma.clipResidual(h, postFeedforwardNorm(mlp(preFeedforwardNorm(h))))
     }
@@ -164,10 +167,11 @@ final class GemmaEncoder: Module, TextEncoder {
     func sanitize(weights: [String: MLXArray]) -> [String: MLXArray] {
         if let first = weights["dense.0.weight"] {
             let hidden = first.dim(0)
-            update(modules: .unflattened([
-                ("dense.0", Linear(config.hiddenSize, hidden, bias: false)),
-                ("dense.1", Linear(hidden, config.hiddenSize, bias: false)),
-            ]))
+            update(
+                modules: .unflattened([
+                    ("dense.0", Linear(config.hiddenSize, hidden, bias: false)),
+                    ("dense.1", Linear(hidden, config.hiddenSize, bias: false)),
+                ]))
         }
         var weights = weights
         if let table = weights["model.embed_tokens.weight"], table.dim(0) > config.vocabularySize {

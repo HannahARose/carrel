@@ -2540,6 +2540,83 @@ fn echo_archive(sandbox: &Sandbox) -> (PathBuf, PathBuf) {
 }
 
 #[test]
+fn show_lists_the_items_nearest_by_meaning_under_related() {
+    let sandbox = Sandbox::new();
+
+    // No index: the links only, and why.
+    let plain = sandbox.sample();
+    let parts = sandbox.json(&plain, &["show", "Projects/Hardware/parts-list.csv"]);
+    assert_eq!(parts["near"], json!([]));
+    assert!(
+        parts["links_only"]
+            .as_str()
+            .unwrap()
+            .contains("carrel index rebuild"),
+        "{parts}"
+    );
+    let report = sandbox.ok(&plain, &["show", "Projects/Hardware/parts-list.csv"]);
+    assert!(
+        report.contains("\nRelated:\n  part-of Projects/Hardware/lamp-build.md\n  Only its links"),
+        "{report}"
+    );
+
+    // A restricted copy of the lease, whose card reads like the lease's, so it's nearest.
+    let (root, bin) = echo_archive(&sandbox);
+    file_with_card(
+        &root,
+        "Holding",
+        "lease copy.txt",
+        "Account 4111 1111 1111 1111.",
+        "title: \"Tenancy agreement\"\nsensitivity: restricted\n",
+    );
+    json_of(&run_with_providers(
+        &sandbox,
+        &root,
+        &bin,
+        &["index", "rebuild", "--json"],
+    ));
+
+    // Nothing is embedded to show it, so it needs no provider: none is on the path here.
+    let lease = sandbox.json(&root, &["show", "Holding/lease.txt"]);
+    assert_eq!(lease["links_only"], Value::Null, "{lease}");
+    let near = lease["near"].as_array().unwrap();
+    assert_eq!(near.len(), 5, "{lease}");
+    assert!(near.iter().all(|n| n["card"] != "Holding/lease.txt.md"));
+    assert_eq!(near[0]["card"], "Holding/lease copy.txt.md", "{lease}");
+    assert_eq!(near[0]["sensitivity"], "restricted");
+    assert!(near[0]["score"].as_f64().unwrap() > near[4]["score"].as_f64().unwrap());
+    let report = sandbox.ok(&root, &["show", "Holding/lease.txt"]);
+    assert!(
+        report.contains("  near Holding/lease copy.txt.md  Tenancy agreement  [restricted]"),
+        "{report}"
+    );
+
+    // What it links to is listed as a link, not again as near it.
+    let parts = sandbox.json(&root, &["show", "Projects/Hardware/parts-list.csv"]);
+    let near = parts["near"].as_array().unwrap();
+    assert_eq!(near.len(), 5, "{parts}");
+    assert!(
+        near.iter()
+            .all(|n| n["card"] != "Projects/Hardware/lamp-build.md"),
+        "{parts}"
+    );
+
+    // A card the index hasn't caught up with lists its links only, and says why.
+    let card = root.join("Holding/lease.txt.md");
+    let text = std::fs::read_to_string(&card).unwrap();
+    std::fs::write(&card, text.replace("Tenancy agreement", "Flat lease")).unwrap();
+    let lease = sandbox.json(&root, &["show", "Holding/lease.txt"]);
+    assert_eq!(lease["near"], json!([]));
+    assert!(
+        lease["links_only"]
+            .as_str()
+            .unwrap()
+            .contains("hasn't caught up"),
+        "{lease}"
+    );
+}
+
+#[test]
 fn index_model_lists_the_models_here_and_refuses_others() {
     let sandbox = Sandbox::new();
     let (root, bin) = echo_archive(&sandbox);

@@ -71,7 +71,8 @@ struct EmbeddingTests {
         }
         let offered = offerFolders(folders)
         #expect(offered.models.map(\.folder.name) == ["qwen3.5-4b"])
-        #expect(offered.embedders.map(\.offer.id) == ["embeddinggemma-300m", "qwen3-embedding-0.6b"])
+        #expect(
+            offered.embedders.map(\.offer.id) == ["embeddinggemma-300m", "qwen3-embedding-0.6b"])
         let gemma = offered.embedders[0].offer
         #expect(gemma.capability == .embed)
         #expect(gemma.dimensions == 768)
@@ -81,23 +82,27 @@ struct EmbeddingTests {
 
     @Test func promptsSayWhatTheTextIsFor() throws {
         let gemma = try #require(EmbeddingCatalog.find("embeddinggemma-300m"))
-        #expect(gemma.prompt("the lease", purpose: .query) == "task: search result | query: the lease")
+        #expect(
+            gemma.prompt("the lease", purpose: .query) == "task: search result | query: the lease")
         #expect(gemma.prompt("A lease.", purpose: .document) == "title: none | text: A lease.")
         let qwen = try #require(EmbeddingCatalog.find("qwen3-embedding-0.6b"))
         #expect(qwen.prompt("A lease.", purpose: .document) == "A lease.")
         #expect(qwen.pooling == .last)
     }
 
-    static let gemmaFolder: ModelFolder? = ProcessInfo.processInfo.environment["CARREL_TEST_MLX_MODELS"]
-        .flatMap {
-            offerFolders(ModelFolder.discover(in: URL(filePath: $0, directoryHint: .isDirectory)))
-                .embedders.first?.folder
-        }
+    static let gemmaFolder: ModelFolder? = ProcessInfo.processInfo.environment[
+        "CARREL_TEST_MLX_MODELS"
+    ]
+    .flatMap {
+        offerFolders(ModelFolder.discover(in: URL(filePath: $0, directoryHint: .isDirectory)))
+            .embedders.first?.folder
+    }
 
     @Test(.enabled(if: gemmaFolder != nil, "no MLX embedding model in CARREL_TEST_MLX_MODELS"))
     func anEmbeddingModelFindsTheNearerText() async throws {
         let folder = try #require(Self.gemmaFolder)
-        let embedder = MLXEmbedder(folder: folder, spec: try #require(EmbeddingCatalog.find(folder.name)))
+        let embedder = MLXEmbedder(
+            folder: folder, spec: try #require(EmbeddingCatalog.find(folder.name)))
         let documents = try await embedder.embed(
             ["Tenancy agreement for the flat on Cowley Road", "Receipt for a desk chair"],
             purpose: .document)

@@ -524,8 +524,16 @@ mod tests {
         dir
     }
 
+    /// The first text model in the folder: the folder may hold embedding models too, which
+    /// can't answer prompts.
     fn first_model(provider: &LlamaProvider) -> String {
-        provider.offers()[0].id.clone()
+        provider
+            .offers()
+            .iter()
+            .find(|o| o.capability != Capability::Embed)
+            .expect("a text model in the folder")
+            .id
+            .clone()
     }
 
     #[test]
@@ -640,7 +648,14 @@ mod tests {
         let Some(dir) = models() else { return };
         let provider = LlamaProvider::with_context(Some(&dir), 2048);
         let model = first_model(&provider);
-        assert!(provider.offers()[0].available);
+        assert!(
+            provider
+                .offers()
+                .iter()
+                .find(|o| o.id == model)
+                .unwrap()
+                .available
+        );
         let answer = provider
             .complete(
                 &model,

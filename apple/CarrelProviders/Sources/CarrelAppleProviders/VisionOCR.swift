@@ -55,11 +55,13 @@ public struct VisionOCR: TextExtractor {
             do {
                 pages.append(Self.text(of: try await Self.request.perform(on: image)))
             } catch {
-                throw .failed("page \(index + 1) of \(url.lastPathComponent): \(error.localizedDescription)")
+                throw .failed(
+                    "page \(index + 1) of \(url.lastPathComponent): \(error.localizedDescription)")
             }
         }
         // A form feed between pages, as plain-text PDF tools do.
-        return Extraction(text: pages.joined(separator: "\n\u{0C}"), method: "ocr", pages: pages.count)
+        return Extraction(
+            text: pages.joined(separator: "\n\u{0C}"), method: "ocr", pages: pages.count)
     }
 
     static var request: RecognizeTextRequest {
@@ -75,7 +77,8 @@ public struct VisionOCR: TextExtractor {
     static func text(of observations: [RecognizedTextObservation]) -> String {
         observations
             .sorted {
-                let a = $0.boundingBox.cgRect, b = $1.boundingBox.cgRect
+                let a = $0.boundingBox.cgRect
+                let b = $1.boundingBox.cgRect
                 if abs(a.midY - b.midY) > min(a.height, b.height) / 2 {
                     return a.midY > b.midY
                 }
@@ -88,7 +91,8 @@ public struct VisionOCR: TextExtractor {
     /// The page drawn on white at `pdfScale` times its size.
     static func render(_ page: PDFPage) -> CGImage? {
         let bounds = page.bounds(for: .mediaBox)
-        let width = Int(bounds.width * pdfScale), height = Int(bounds.height * pdfScale)
+        let width = Int(bounds.width * pdfScale)
+        let height = Int(bounds.height * pdfScale)
         guard width > 0, height > 0,
             let context = CGContext(
                 data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,

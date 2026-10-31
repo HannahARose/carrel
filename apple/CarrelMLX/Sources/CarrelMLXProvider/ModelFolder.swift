@@ -19,7 +19,9 @@ public struct ModelFolder: Sendable, Equatable {
 
     /// Carrel's models folder: `CARREL_MODELS_DIR` if set, otherwise `models` in Carrel's
     /// folder in Application Support, as `carrel_core::local::models_dir` has it.
-    public static func modelsRoot(environment: [String: String] = ProcessInfo.processInfo.environment)
+    public static func modelsRoot(
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    )
         -> URL?
     {
         if let dir = environment["CARREL_MODELS_DIR"], !dir.isEmpty {
@@ -34,21 +36,24 @@ public struct ModelFolder: Sendable, Equatable {
     public static func discover(in root: URL) -> [ModelFolder] {
         let dir = root.appending(path: "mlx", directoryHint: .isDirectory)
         let fm = FileManager.default
-        guard let names = try? fm.contentsOfDirectory(atPath: dir.path(percentEncoded: false)) else {
+        guard let names = try? fm.contentsOfDirectory(atPath: dir.path(percentEncoded: false))
+        else {
             return []
         }
         return names.sorted().compactMap { name in
             let url = dir.appending(path: name, directoryHint: .isDirectory)
             guard !name.hasPrefix("."),
-                fm.fileExists(atPath: url.appending(path: "config.json").path(percentEncoded: false))
+                fm.fileExists(
+                    atPath: url.appending(path: "config.json").path(percentEncoded: false))
             else { return nil }
             return ModelFolder(name: name, url: url, size: Self.size(of: url))
         }
     }
 
     static func size(of url: URL) -> UInt64 {
-        guard let files = FileManager.default.enumerator(
-            at: url, includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey])
+        guard
+            let files = FileManager.default.enumerator(
+                at: url, includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey])
         else { return 0 }
         var total: UInt64 = 0
         for case let file as URL in files {

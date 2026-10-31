@@ -12,7 +12,6 @@ fixtures/bench/archive/.obsidian/*
 
 # Built by scripts/build-xcframework.sh
 /apple/CarrelKit/CarrelFFI.xcframework/
-/apple/CarrelKit/Sources/CarrelKit/Generated/
 
 # Swift Package Manager and Xcode
 .build/

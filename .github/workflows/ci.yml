@@ -84,10 +84,21 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # Caches target/, including each Apple target's build under target/<triple>.
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - run: rustup target add aarch64-apple-ios aarch64-apple-ios-sim
       - name: Build the XCFramework and Swift bindings
         run: PROFILE=dev scripts/build-xcframework.sh
+      - name: Generated bindings are up to date
+        # The build regenerated the committed bindings; any difference means they're stale.
+        run: |
+          generated=apple/CarrelKit/Sources/CarrelKit/Generated
+          if [ -n "$(git status --porcelain -- "$generated")" ]; then
+            git status --short -- "$generated"
+            git diff -- "$generated"
+            echo "::error::The Swift bindings in $generated are out of date. Run scripts/generate-bindings.sh and commit the result."
+            exit 1
+          fi
       - name: Swift tests
         working-directory: apple/CarrelKit
         run: swift test
@@ -103,6 +114,21 @@ jobs:
           swift build --package-path apple/CarrelProviders --product carrel-provider-apple
           CARREL_TEST_APPLE_PROVIDER="$bin/carrel-provider-apple" cargo test --locked -p carrel-core --test apple_provider
           PATH="$bin:$PATH" cargo run --locked --bin carrel -- providers
+
+  swift-format:
+    # Swift style, as set in .swift-format. swift-format comes with Xcode.
+    name: Swift format
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check formatting
+        run: |
+          if ! scripts/swift-format.sh --check; then
+            echo "::error::Swift under apple/ isn't formatted. Run scripts/swift-format.sh and commit the result."
+            exit 1
+          fi
 
   mlx:
     # The MLX provider (apple/CarrelMLX). MLX's Metal shaders need xcodebuild, not swift build.
@@ -337,7 +363,7 @@ jobs:
     # The single required check for branch protection. It passes only if every job above passed.
     name: CI passed
     if: always()
-    needs: [fmt, clippy, test, docs, swift, mlx, llama, cad, extract, kopia, editors, deny, zizmor, hygiene]
+    needs: [fmt, clippy, test, docs, swift, swift-format, mlx, llama, cad, extract, kopia, editors, deny, zizmor, hygiene]
     runs-on: ubuntu-latest
     steps:
       - name: Check job results

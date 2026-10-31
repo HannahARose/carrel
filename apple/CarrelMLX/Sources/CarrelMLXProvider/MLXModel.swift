@@ -91,7 +91,8 @@ public actor Loaded {
         }
         let (whitespace, whitespaceTokenIDs) = WhitespaceTokenBias.compute(tokenizer: tokenizer)
         let made = Biases(
-            closing: ClosingTokenBias.compute(tokenizer: tokenizer, eosTokenId: tokenizer.eosTokenId),
+            closing: ClosingTokenBias.compute(
+                tokenizer: tokenizer, eosTokenId: tokenizer.eosTokenId),
             whitespace: whitespace, whitespaceTokenIDs: whitespaceTokenIDs)
         biases[name] = made
         return made
@@ -344,7 +345,8 @@ enum SchemaText {
     }
 
     static func appendProperties(
-        _ properties: [String: CarrelAppleProviders.JSONValue], order: [String], to out: inout String
+        _ properties: [String: CarrelAppleProviders.JSONValue], order: [String],
+        to out: inout String
     ) {
         let listed = order.filter { properties[$0] != nil }
         let rest = properties.keys.filter { !listed.contains($0) }.sorted()
@@ -360,10 +362,10 @@ enum SchemaText {
     }
 
     static func quoted(_ s: String) -> String {
-        let data = (try? JSONSerialization.data(withJSONObject: [s], options: [.fragmentsAllowed])) ?? Data()
+        let data =
+            (try? JSONSerialization.data(withJSONObject: [s], options: [.fragmentsAllowed]))
+            ?? Data()
         let array = String(data: data, encoding: .utf8) ?? "[\"\"]"
         return String(array.dropFirst().dropLast())
     }
 }
-
-

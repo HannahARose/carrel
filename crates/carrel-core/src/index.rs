@@ -12,8 +12,9 @@
 //! [`plan`] compares the index with the archive's cards to find what's behind; [`Index::embed`]
 //! catches it up through the `embed` provider capability, with the archive's model and never
 //! another; [`Index::nearest`] compares a query with every vector (brute force), behind the
-//! [`Neighbours`] interface an approximate index could provide instead; and [`ByMeaning`]
-//! is the ranking search merges with its word ranking.
+//! [`Neighbours`] interface an approximate index could provide instead; [`Index::near_item`]
+//! finds the items nearest one already in the index, by its card's vector, for browsing; and
+//! [`ByMeaning`] is the ranking search merges with its word ranking.
 //!
 //! Restricted items are embedded by their card only, so nothing in their text can be found,
 //! or reconstructed, from the index.
@@ -28,7 +29,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::archive::{Archive, ArchiveError};
-use crate::card::{Checksum, Id, Sensitivity};
+use crate::card::{Card, Checksum, Id, Sensitivity};
 use crate::card_file::CardFile;
 use crate::providers::{EmbeddingRequest, ProviderError, Purpose, Registry};
 use crate::search::passage::{self, Passage};
@@ -517,6 +518,49 @@ impl Neighbours for Index {
     }
 }
 
+impl Index {
+    /// The vector of `id`'s card, if the item is in the index.
+    #[must_use]
+    pub fn card_vector(&self, id: Id) -> Option<Vec<f32>> {
+        let stored = self
+            .shards
+            .get(&shard_of(id))?
+            .iter()
+            .find(|s| s.entry.id == id)?;
+        let at = stored.entry.parts.iter().position(|p| *p == Part::Card)?;
+        let table = half::table();
+        let bits = stored
+            .vectors
+            .get(at * self.dimensions..(at + 1) * self.dimensions)?;
+        Some(bits.iter().map(|b| table[usize::from(*b)]).collect())
+    }
+
+    /// Whether the index is up to date for `card`, filed in `collection` of `archive`: it's in
+    /// the index, embedded from what the card says now, as [`plan`] would find it.
+    #[must_use]
+    pub fn is_current(&self, archive: &Archive, card: &Card, collection: &str) -> bool {
+        let (_, checksum, contents) = embedded_from(card, collection);
+        self.get(card.id).is_some_and(|entry| {
+            !stale(entry, &checksum, contents.as_ref(), &TextCache::of(archive))
+        })
+    }
+
+    /// Up to `limit` items nearest the item `id`, nearest first, leaving out the item itself,
+    /// passages of its own text included, and those `allowed` rejects; `None` if it isn't in
+    /// the index. The item is compared by its card's vector, which is all a restricted item
+    /// has, so nothing is embedded: the item's vector is already there.
+    #[must_use]
+    pub fn near_item(
+        &self,
+        id: Id,
+        allowed: &dyn Fn(Id) -> bool,
+        limit: usize,
+    ) -> Option<Vec<Near>> {
+        let vector = self.card_vector(id)?;
+        Some(self.nearest(&vector, &|other| other != id && allowed(other), limit))
+    }
+}
+
 /// An item whose entry in the index is missing or out of date.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Pending {
@@ -562,6 +606,17 @@ fn stale(entry: &Entry, card: &Checksum, contents: Option<&Checksum>, cache: &Te
         }
 }
 
+/// What `card`, filed in `collection`, is embedded from: its card as one text, that text's
+/// checksum, and the contents whose text is cut into passages, if any are.
+fn embedded_from(card: &Card, collection: &str) -> (String, Checksum, Option<Checksum>) {
+    let card_text = chunk::card_text(card, collection);
+    let checksum = Checksum::of_bytes(card_text.as_bytes());
+    let contents = (card.sensitivity != Sensitivity::Restricted && !card.kind.is_card_only())
+        .then(|| fingerprint(card).cloned())
+        .flatten();
+    (card_text, checksum, contents)
+}
+
 /// Compares `index`, if there is one, with `archive`'s cards: which items are missing or out
 /// of date, and which are in the index but gone from the archive. Cards that don't parse are
 /// left out.
@@ -584,11 +639,7 @@ pub fn plan(archive: &Archive, index: Option<&Index>) -> Result<Plan, IndexError
         plan.items += 1;
         seen.insert(card.id);
         let collection = item.card.rsplit_once('/').map_or("", |(c, _)| c);
-        let card_text = chunk::card_text(card, collection);
-        let checksum = Checksum::of_bytes(card_text.as_bytes());
-        let contents = (card.sensitivity != Sensitivity::Restricted && !card.kind.is_card_only())
-            .then(|| fingerprint(card).cloned())
-            .flatten();
+        let (card_text, checksum, contents) = embedded_from(card, collection);
         let current = index
             .and_then(|i| i.get(card.id))
             .is_some_and(|e| !stale(e, &checksum, contents.as_ref(), &cache));
