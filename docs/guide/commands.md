@@ -19,6 +19,7 @@ Exit status is `0` on success, `1` when the command failed, and `2` for a usage 
 | `carrel open [PATH]` | Chooses the archive commands use outside one; with no path, shows the choice. |
 | `carrel status` | Summarizes the archive: items by kind, cards with problems, names that won't work everywhere, **Structure** signals, the last change and backup, and who is writing. |
 | `carrel show ITEM` | Shows an item's card. `ITEM` is its identifier, or the path of the item or its card. |
+| `carrel search QUERY... [-n COUNT]` | Finds items by the words in their cards and text, and collection documents and glossary facts, best first, with the passage that matched and why. Filters narrow it: `collection:NAME`, `tag:TAG`, `kind:KIND`, `after:DATE`, `before:DATE` (a year, month or day), `sensitivity:LEVEL` and `checked-out`. Restricted items are found by their card only. Reads the text of items not read yet first. `-n`/`--limit` shows at most `COUNT` results (20). See [Searching](user-guide.md#searching). |
 | `carrel log [-n COUNT]` | Lists recorded changes, newest first. |
 | `carrel undo CHANGE` | Undoes a change with a new change that reverses it. `CHANGE` is its identifier from `carrel log`, or its start. The change that created the history can't be undone. |
 | `carrel checkout ITEM [--to FOLDER] [--due DATE]` | Checks an item out to work on: copies it to `FOLDER` (the Desktop by default), checked against what it held, and makes the archive copy read-only until it's returned. Records it on the card, with the commit a Git repository was at, in one history change. |
@@ -34,6 +35,8 @@ Exit status is `0` on success, `1` when the command failed, and `2` for a usage 
 | `carrel correct ITEM [WORDS…] [--yes] [--learn]` | Corrects a filed item's card the same way, and refiles it when the collection changes. One change, which `carrel undo` reverses. |
 | `carrel rename ITEM [NEW_NAME]` | Renames an item and its card together, and updates links to it. Without a new name, uses the portable name `carrel status` suggests. Can be undone. |
 | `carrel collection new PATH [--description TEXT] [--tag NAME=MEANING]...` | Creates a collection with a design document to fill in. `PATH` is a name, or `Parent/Name` inside an existing collection. |
+
+With `--json`, `carrel search` prints `{"query", "total", "meaning", "results"}`. Each result has `found` (an `item` with its `id`, `title`, `card`, `item`, `collection`, `kind`, `sensitivity`, `date`, `tags` and `checked_out`; a `collection` with its `path` and `title`; or a `glossary` fact's `term`), `score`, `why` (the fields that matched, strongest first), and `passage` (`text`, and `highlights` as byte ranges `{start, end}` into it) with `passage_from`. `total` counts every match before the limit, and `meaning` says whether search by meaning was used (`off` until the embedding index exists).
 
 ## Ingest
 

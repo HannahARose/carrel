@@ -21,6 +21,7 @@ mod progress;
 mod providers;
 mod questions;
 mod review;
+mod search;
 mod sessions;
 mod settings;
 mod tui;
@@ -73,6 +74,18 @@ enum Command {
     Show {
         /// The item's identifier, or the path of the item or its card.
         item: String,
+    },
+    /// Find items by what's in their cards and text: words, exact names and numbers, and
+    /// filters such as collection:Finances, tag:receipts, kind:folder, after:2025-01,
+    /// before:2026, sensitivity:sensitive and checked-out. Collection documents and glossary
+    /// facts are found too. Restricted items are found by their card only.
+    Search {
+        /// The words and filters.
+        #[arg(required = true, value_name = "QUERY")]
+        query: Vec<String>,
+        /// Show at most this many results.
+        #[arg(short = 'n', long, value_name = "COUNT", default_value_t = search::DEFAULT_LIMIT)]
+        limit: usize,
     },
     /// List recorded changes, newest first.
     Log {
@@ -507,6 +520,20 @@ enum ReviewAction {
 }
 
 /// `carrel desk` and its subcommands.
+fn backup_command(archive: Option<&Path>, action: BackupAction) -> Result<Report, Failure> {
+    match action {
+        BackupAction::Setup { path, description } => {
+            backup::setup(archive, &path, description.as_deref(), None)
+        }
+        BackupAction::Now => backup::now(archive),
+        BackupAction::List => backup::list(archive),
+        BackupAction::Verify { percent } => backup::verify(archive, percent),
+        BackupAction::Restore { item, at, to } => {
+            backup::restore(archive, &item, at.as_deref(), to.as_deref())
+        }
+    }
+}
+
 fn desk_command(archive: Option<&Path>, action: Option<DeskAction>) -> Result<Report, Failure> {
     match action.unwrap_or(DeskAction::List) {
         DeskAction::List => desk::list(archive),
@@ -647,6 +674,9 @@ fn main() -> ExitCode {
         Command::Open { path } => commands::open(path.as_deref().or(cli.archive.as_deref())),
         Command::Status => commands::status(cli.archive.as_deref()),
         Command::Show { item } => commands::show(cli.archive.as_deref(), &item),
+        Command::Search { query, limit } => {
+            search::search(cli.archive.as_deref(), &query, limit, cli.json)
+        }
         Command::Log { max_count } => commands::log(cli.archive.as_deref(), max_count),
         Command::Providers => Ok(providers::list()),
         Command::Formats => Ok(formats::list()),
@@ -690,17 +720,7 @@ fn main() -> ExitCode {
                 tags,
             } => commands::collection_new(cli.archive.as_deref(), &path, description, &tags),
         },
-        Command::Backup { action } => match action {
-            BackupAction::Setup { path, description } => {
-                backup::setup(cli.archive.as_deref(), &path, description.as_deref(), None)
-            }
-            BackupAction::Now => backup::now(cli.archive.as_deref()),
-            BackupAction::List => backup::list(cli.archive.as_deref()),
-            BackupAction::Verify { percent } => backup::verify(cli.archive.as_deref(), percent),
-            BackupAction::Restore { item, at, to } => {
-                backup::restore(cli.archive.as_deref(), &item, at.as_deref(), to.as_deref())
-            }
-        },
+        Command::Backup { action } => backup_command(cli.archive.as_deref(), action),
         Command::Questions { action } => match action.unwrap_or(QuestionsAction::List) {
             QuestionsAction::List => questions::list(cli.archive.as_deref()),
             QuestionsAction::Answer { id, answer } => {
