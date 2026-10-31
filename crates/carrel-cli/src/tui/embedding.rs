@@ -349,3 +349,336 @@ pub(super) fn index_work(
     });
     (busy, run)
 }
+
+#[cfg(test)]
+mod tests {
+    use carrel_core::card::Id;
+    use carrel_core::coordinator::{Coordinator as _, DEFAULT_LEASE, DiskLock, Holder};
+    use carrel_core::index::Index;
+    use carrel_core::providers::{
+        Capability, EmbeddingRequest, Embeddings, Offer, Provider, ProviderError, Registry,
+    };
+    use ratatui::crossterm::event::KeyCode;
+
+    use super::super::app::{App, Confirm, Effect, Tab};
+    use super::super::review::Purpose;
+    use super::super::tests::{key, sample, screen, word_vector};
+    use super::{Choice, Embedding, Here, Progress, index_work};
+
+    /// The sample archive's embedding model, and another to switch to.
+    const SAMPLE: &str = "sample/embedding-model-v1";
+    const WIDE: &str = "word-embed-wide";
+
+    /// An embedder offering both models, with vectors counting each text's words as the fake
+    /// embedder in the core's index tests makes them: 32 numbers for the wide model, the
+    /// first 16 of them for the sample's.
+    struct WordEmbed {
+        offers: Vec<Offer>,
+    }
+
+    impl WordEmbed {
+        fn new() -> Self {
+            let offer = |id: &str, dimensions: u64| {
+                let mut extra = serde_json::Map::new();
+                extra.insert("dimensions".into(), dimensions.into());
+                Offer {
+                    capability: Capability::Embed,
+                    id: id.into(),
+                    label: None,
+                    priority: 10,
+                    available: true,
+                    reason: None,
+                    media_types: Vec::new(),
+                    extra,
+                }
+            };
+            Self {
+                offers: vec![offer(SAMPLE, 16), offer(WIDE, 32)],
+            }
+        }
+    }
+
+    impl Provider for WordEmbed {
+        fn name(&self) -> &'static str {
+            "words"
+        }
+        fn offers(&self) -> &[Offer] {
+            &self.offers
+        }
+        fn embed(
+            &self,
+            offer: &str,
+            request: &EmbeddingRequest,
+        ) -> Result<Embeddings, ProviderError> {
+            let dimensions = if offer == WIDE { 32 } else { 16 };
+            let vectors = request
+                .texts
+                .iter()
+                .map(|t| {
+                    let mut v = word_vector(t);
+                    v.truncate(dimensions);
+                    let length = v.iter().map(|n| n * n).sum::<f32>().sqrt().max(1e-6);
+                    v.iter().map(|n| n / length).collect()
+                })
+                .collect();
+            Ok(Embeddings {
+                vectors,
+                model: offer.to_owned(),
+                dimensions,
+            })
+        }
+    }
+
+    fn registry() -> Registry {
+        let mut registry = Registry::with_built_ins();
+        registry.add(Box::new(WordEmbed::new()));
+        registry
+    }
+
+    fn holder() -> Holder {
+        Holder {
+            person: Id::new_v7(),
+            device: Id::new_v7(),
+        }
+    }
+
+    /// The app with the fake embedder as this device's only one, on Settings' index row.
+    fn on_the_index_row(app: &mut App) {
+        app.here = Some(Here {
+            embedders: vec![
+                (SAMPLE.into(), "words".into(), Some(16)),
+                (WIDE.into(), "words".into(), Some(32)),
+            ],
+            ..Here::default()
+        });
+        app.key(key(KeyCode::Char('8')));
+        assert_eq!(app.tab, Tab::Settings);
+        app.load_settings();
+        app.settings_chosen = app
+            .settings
+            .iter()
+            .position(|s| s.label == "Search index")
+            .unwrap();
+    }
+
+    /// Runs `work` as the run loop would, with the fake embedder, and reads everything again.
+    fn run(app: &mut App, work: Embedding) -> String {
+        let (_, run) = index_work(
+            app.archive.root().to_owned(),
+            work,
+            app.progress.clone(),
+            Box::new(registry),
+            Box::new(|| Ok(holder())),
+        );
+        let report = run().map_err(|crate::Failure(e)| e).unwrap();
+        assert_eq!(
+            *app.progress.lock().unwrap(),
+            None,
+            "the bar goes when done"
+        );
+        app.reload().unwrap();
+        app.load_settings();
+        report.text
+    }
+
+    fn index_value(app: &App) -> String {
+        app.settings
+            .iter()
+            .find(|s| s.label == "Search index")
+            .unwrap()
+            .value
+            .clone()
+    }
+
+    #[test]
+    fn status_and_settings_show_the_index_and_rebuild_it() {
+        let (_dir, mut app) = sample(false);
+        let text = screen(&app, 120, 60);
+        assert!(text.contains("Search index:"), "{text}");
+        assert!(
+            text.contains(&format!("There's no meaning index for {SAMPLE} yet")),
+            "{text}"
+        );
+
+        on_the_index_row(&mut app);
+        assert_eq!(index_value(&app), format!("{SAMPLE}, not built"));
+        let text = screen(&app, 160, 50);
+        assert!(text.contains("This device can embed with:"), "{text}");
+        assert!(
+            text.contains(&format!("{WIDE}  through words, 32 numbers")),
+            "{text}"
+        );
+        assert!(
+            !app.settings.iter().any(|s| s.label == "embedding.model"),
+            "the index's row stands in for the setting"
+        );
+
+        // Enter lists what can be done, the rebuild first.
+        app.key(key(KeyCode::Enter));
+        let picker = app.picker.clone().unwrap();
+        let Purpose::Index(choices) = &picker.purpose else {
+            panic!("{picker:?}");
+        };
+        assert_eq!(
+            picker.collections[0],
+            format!("Rebuild the index with {SAMPLE}")
+        );
+        assert!(
+            picker
+                .collections
+                .contains(&format!("Switch to {WIDE} (through words, 32 numbers)")),
+            "{picker:?}"
+        );
+        assert!(choices.iter().all(|(_, c)| match c {
+            Choice::Download(name) =>
+                carrel_core::models::find(name).is_some_and(|m| m.embedding.is_some()),
+            Choice::Run(_) => true,
+        }));
+        assert_eq!(
+            app.key(key(KeyCode::Enter)),
+            Some(Effect::Index(Embedding::Rebuild))
+        );
+
+        // It runs in the background, and Status and Settings show the result.
+        let report = run(&mut app, Embedding::Rebuild);
+        let items = carrel_core::index::plan(&app.archive, None).unwrap().items;
+        assert!(
+            report.starts_with(&format!("Embedded {items} items with {SAMPLE}")),
+            "{report}"
+        );
+        assert_eq!(
+            index_value(&app),
+            format!("{SAMPLE}, {items} of {items} embedded")
+        );
+        app.tab = Tab::Status;
+        let text = screen(&app, 120, 60);
+        assert!(
+            text.contains(&format!(
+                "The meaning index uses {SAMPLE}: {items} of {items}"
+            )),
+            "{text}"
+        );
+        assert!(text.contains("; 0 behind."), "{text}");
+    }
+
+    #[test]
+    fn the_help_line_shows_a_bar_while_work_says_how_far_it_has_got() {
+        let (_dir, mut app) = sample(false);
+        app.busy = Some("Rebuilding the search index…".into());
+        assert_eq!(
+            app.busy_line().as_deref(),
+            Some("Rebuilding the search index…")
+        );
+        *app.progress.lock().unwrap() = Some(Progress {
+            what: format!("Embedding with {SAMPLE}"),
+            done: 6,
+            total: 24,
+            item: Some("Projects/Hardware/notes.md".into()),
+        });
+        let line = app.busy_line().unwrap();
+        assert!(
+            line.starts_with(&format!("Embedding with {SAMPLE}: ██████░")),
+            "{line}"
+        );
+        assert!(line.contains(" 6/24  Projects/Hardware/notes.md"), "{line}");
+        let text = screen(&app, 200, 30);
+        assert!(text.contains(" 6/24 "), "{text}");
+    }
+
+    #[test]
+    fn settings_switches_the_archives_model_and_shows_a_switch_in_progress() {
+        let (_dir, mut app) = sample(true);
+        on_the_index_row(&mut app);
+        let items = carrel_core::index::plan(&app.archive, None).unwrap().items;
+
+        // Part way through a switch, as when one stops: Settings says so, and offers to carry
+        // on or to stop.
+        let lease = DiskLock::for_archive(&app.archive)
+            .acquire(holder(), "test", DEFAULT_LEASE)
+            .unwrap();
+        carrel_core::index::switch::begin(&app.archive, WIDE, &lease).unwrap();
+        lease.release().unwrap();
+        app.reload().unwrap();
+        assert_eq!(
+            index_value(&app),
+            format!("{SAMPLE}, not built; switching to {WIDE}, 0 of {items}")
+        );
+        let text = screen(&app, 200, 50);
+        assert!(
+            text.contains(&format!("Switching to {WIDE}: 0 of")),
+            "{text}"
+        );
+        let choices: Vec<String> = app.index_choices().into_iter().map(|(w, _)| w).collect();
+        assert!(
+            choices.contains(&format!("Carry on switching to {WIDE}")),
+            "{choices:?}"
+        );
+        assert!(
+            choices.contains(&format!("Stop switching to {WIDE}, keeping {SAMPLE}")),
+            "{choices:?}"
+        );
+
+        // Carrying on finishes it: the archive is searched with the new model.
+        app.key(key(KeyCode::Enter));
+        app.picker.as_mut().unwrap().filter = "carry on".into();
+        assert_eq!(
+            app.key(key(KeyCode::Enter)),
+            Some(Effect::Index(Embedding::Switch(WIDE.into())))
+        );
+        let report = run(&mut app, Embedding::Switch(WIDE.into()));
+        assert!(
+            report.contains(&format!("This archive is now searched with {WIDE}")),
+            "{report}"
+        );
+        assert_eq!(app.archive.settings().embedding_model(), Some(WIDE));
+        assert_eq!(
+            index_value(&app),
+            format!("{WIDE}, {items} of {items} embedded")
+        );
+        assert!(Index::open(&app.archive, WIDE).unwrap().is_some());
+        assert!(
+            app.index_choices()
+                .iter()
+                .any(|(w, _)| *w == format!("Switch to {SAMPLE} (through words, 16 numbers)")),
+            "and back again"
+        );
+    }
+
+    #[test]
+    fn a_model_not_here_is_downloaded_after_asking() {
+        let (_dir, mut app) = sample(false);
+        on_the_index_row(&mut app);
+        let choices = app.index_choices();
+        let Some((words, Choice::Download(name))) = choices
+            .iter()
+            .find(|(_, c)| matches!(c, Choice::Download(_)))
+            .cloned()
+        else {
+            // Every catalog embedding model is downloaded on this device.
+            return;
+        };
+        let model = carrel_core::models::find(&name).unwrap();
+        assert_eq!(
+            words,
+            format!(
+                "Download {name} ({})…",
+                crate::ingest::human_size(model.size)
+            )
+        );
+        app.key(key(KeyCode::Enter));
+        app.picker.as_mut().unwrap().filter.clone_from(&words);
+        assert_eq!(app.key(key(KeyCode::Enter)), None);
+        let Some(Confirm::Download { name: asked, about }) = app.confirm.clone() else {
+            panic!("{:?}", app.confirm);
+        };
+        assert_eq!(asked, name);
+        assert!(
+            about.contains(&crate::ingest::human_size(model.size)),
+            "{about}"
+        );
+        assert_eq!(
+            app.key(key(KeyCode::Char('y'))),
+            Some(Effect::Download(name))
+        );
+    }
+}

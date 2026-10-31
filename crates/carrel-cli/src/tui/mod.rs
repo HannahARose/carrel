@@ -48,6 +48,12 @@ fn lines_of(text: &str) -> Vec<String> {
 /// quits. The terminal is restored however it ends.
 pub fn run(archive: Option<&Path>) -> Result<Report, Failure> {
     let archive = locate(archive)?;
+    // Noted among the recent archives, so the switcher can come back to it.
+    if let Ok(root) = std::fs::canonicalize(archive.root()) {
+        let mut prefs = crate::config::Prefs::load()?;
+        prefs.note_archive(&root);
+        prefs.save()?;
+    }
     let mut app = App::new(archive)?;
     let theme = ui::Theme::from_env();
     let mut terminal = enter();
@@ -673,7 +679,7 @@ mod tests {
     use super::item::Pane;
     use super::ui;
 
-    fn copy_dir(from: &Path, to: &Path) {
+    pub(super) fn copy_dir(from: &Path, to: &Path) {
         std::fs::create_dir_all(to).unwrap();
         for entry in std::fs::read_dir(from).unwrap() {
             let entry = entry.unwrap();
@@ -686,7 +692,7 @@ mod tests {
         }
     }
 
-    fn sample(with_history: bool) -> (tempfile::TempDir, App) {
+    pub(super) fn sample(with_history: bool) -> (tempfile::TempDir, App) {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().join("archive");
         copy_dir(
@@ -708,7 +714,7 @@ mod tests {
         (dir, App::new(archive).unwrap())
     }
 
-    fn screen(app: &App, width: u16, height: u16) -> String {
+    pub(super) fn screen(app: &App, width: u16, height: u16) -> String {
         let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
         terminal
             .draw(|frame| ui::draw(frame, app, ui::Theme::plain()))
@@ -726,7 +732,7 @@ mod tests {
             .join("\n")
     }
 
-    fn key(code: KeyCode) -> KeyEvent {
+    pub(super) fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
     }
 
@@ -1437,7 +1443,7 @@ mod tests {
 
     /// A unit vector of 32 numbers counting `text`'s words, as the fake embedder in the
     /// core's index tests makes them, so texts sharing words are near each other.
-    fn word_vector(text: &str) -> Vec<f32> {
+    pub(super) fn word_vector(text: &str) -> Vec<f32> {
         let mut v = [0.0f32; 32];
         for word in text
             .split(|c: char| !c.is_alphanumeric())

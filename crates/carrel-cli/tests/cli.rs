@@ -269,6 +269,18 @@ fn open_chooses_the_archive_used_elsewhere() {
         "Other",
         "--archive wins"
     );
+
+    // Archives opened or created here are listed, newest first, for the interactive mode's
+    // switcher too.
+    let opened = sandbox.json(&outside, &["open"]);
+    let canonical = |p: &Path| json!(std::fs::canonicalize(p).unwrap());
+    assert_eq!(opened["recent"], json!([canonical(&root), canonical(&new)]));
+    let text = sandbox.ok(&outside, &["open"]);
+    assert!(text.contains("Recent archives:"), "{text}");
+    assert!(
+        text.contains(new.file_name().unwrap().to_str().unwrap()),
+        "{text}"
+    );
 }
 
 #[test]
