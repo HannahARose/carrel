@@ -1,6 +1,6 @@
 # Carrel provider protocol
 
-**Version 1 (draft).** A provider is a separate program that gives Carrel a capability it can't provide portably by itself: a text model, or text extraction from PDFs and images. Carrel starts providers, asks what they offer, and sends them requests. Native tools are used through providers where they exist (Apple's Foundation Models, PDFKit and Vision through `carrel-provider-apple`, and open models through MLX with `carrel-provider-mlx`), and portable providers fill in elsewhere. Anyone can write a provider in any language by following this document.
+**Version 1 (draft).** A provider is a separate program that gives Carrel a capability it can't provide portably by itself: a text model, text extraction from PDFs and images, or an embedding model for search. Carrel starts providers, asks what they offer, and sends them requests. Native tools are used through providers where they exist (Apple's Foundation Models, PDFKit and Vision through `carrel-provider-apple`, and open models through MLX with `carrel-provider-mlx`), and portable providers fill in elsewhere. Anyone can write a provider in any language by following this document.
 
 ## Finding providers
 
@@ -53,7 +53,9 @@ Response:
      "available": false, "reason": "OCR languages aren't installed",
      "media_types": ["image/png", "image/jpeg", "image/heic", "application/pdf"]},
     {"capability": "extract-text", "id": "model3d", "label": "3D model reader", "priority": 100,
-     "available": true, "media_types": ["model/stl", "model/obj", "model/ply"]}
+     "available": true, "media_types": ["model/stl", "model/obj", "model/ply"]},
+    {"capability": "embed", "id": "embeddinggemma-300m", "label": "EmbeddingGemma 300M", "priority": 100,
+     "available": true, "dimensions": 768, "context_tokens": 2048}
   ]
 }}
 ```
@@ -64,14 +66,15 @@ Each **offer** is one thing the provider can do:
 
 | Field | Meaning |
 | --- | --- |
-| `capability` | `text-model` or `extract-text` |
-| `id` | Identifies the offer within the provider, for example a model name |
+| `capability` | `text-model`, `extract-text` or `embed` |
+| `id` | Identifies the offer within the provider, for example a model name. For `embed`, it's the model's identifier, the same on every provider that runs the model (see [Embedding models](#embedding-models-textembed)). |
 | `label` | Optional; a name for people |
 | `priority` | Which offer Carrel prefers when several can do the same thing; higher wins. Native tools use 100, portable providers 50, built-in fallbacks 10. A choice in settings overrides it. Offers of equal priority from one provider are tried in the order it lists them, so list the most exact first (a PDF's text layer before OCR). |
 | `available` | Whether it can be used now. An offer that's unavailable says why in `reason`, such as "Apple Intelligence is turned off", so Carrel can tell the owner. |
 | `media_types` | For `extract-text`: the media types it reads. Missing means any. |
 | `describes` | For `extract-text`: `true` when it describes what images show, in a `Shows:` line of its text. Carrel gives such offers pictures to describe (see "Pictures to describe"). Say it only when a description can be written now. |
 | `context_tokens`, `structured_output` | For `text-model`: the context size, and whether it can return JSON that follows a schema |
+| `dimensions`, `context_tokens` | For `embed`: how many numbers each vector has, and the longest text it reads, in tokens |
 
 Other fields are allowed and kept.
 
@@ -157,6 +160,30 @@ A provider that finds or draws pictures it can't describe itself, such as a 3MF'
 
 `context` is optional in any `text/extract` request; offers that don't describe images ignore it.
 
+## Embedding models: `text/embed`
+
+Search compares vectors, and vectors from different models can't be compared, so an archive has **one embedding model**, shared by every device and recorded in its settings (`embedding.model`, FORMAT.md §7.2). Carrel only ever embeds with offers whose `id` is that model's identifier, such as `embeddinggemma-300m` or `qwen3-embedding-0.6b` from Carrel's model catalog; it never falls back to another model. A provider that runs a catalog model must offer it under the catalog's name, and use it the way the catalog says (the prompts and pooling in `crates/carrel-core/src/models.rs`), so its vectors match every other provider's.
+
+```json
+{"jsonrpc": "2.0", "id": 5, "method": "text/embed", "params": {
+  "offer": "embeddinggemma-300m",
+  "texts": ["Tenancy agreement for the flat on Cowley Road", "Receipt for a desk chair"],
+  "purpose": "document"
+}}
+```
+
+`purpose` is `document` for text to be found (the default) or `query` for a search query, which some models embed differently: the provider adds the model's own prompt for each. Each text is embedded on its own; a text longer than the model's context is cut.
+
+```json
+{"jsonrpc": "2.0", "id": 5, "result": {
+  "vectors": [[0.0213, -0.0871, ...], [0.0442, 0.0105, ...]],
+  "model": "embeddinggemma-300m",
+  "dimensions": 768
+}}
+```
+
+`vectors` has one vector for each text, in order, each of unit length and `dimensions` numbers long. `model` is the model's identifier, as in the offer. Carrel checks all three, and treats an answer that doesn't match as failed (code 3).
+
 ## Errors
 
 Providers report failures as JSON-RPC errors. Besides the standard codes (such as `-32601` for an unknown method), these codes tell Carrel what to do next:
@@ -177,4 +204,4 @@ Providers are local programs and run with the owner's permissions. A provider th
 
 ## Writing a provider
 
-`crates/carrel-core/examples/echo_provider.rs` is a complete provider in about 100 lines of Rust, used by Carrel's own tests. It answers `text/complete` by echoing the prompt and `text/extract` by reading plain text.
+`crates/carrel-core/examples/echo_provider.rs` is a complete provider in about 100 lines of Rust, used by Carrel's own tests. It answers `text/complete` by echoing the prompt, `text/extract` by reading plain text, and `text/embed` with small vectors counting each text's letters.

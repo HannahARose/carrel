@@ -1717,6 +1717,178 @@ fn edit_opens_a_filed_card_keeps_its_body_and_undo_reverses_it() {
 }
 
 #[test]
+fn init_chooses_the_archives_embedding_model() {
+    let sandbox = Sandbox::new();
+    let settings = |root: &Path| -> Value {
+        serde_json::from_str(&std::fs::read_to_string(root.join("_System/settings.json")).unwrap())
+            .unwrap()
+    };
+    let text = sandbox.ok(sandbox.dir.path(), &["init", "Notes"]);
+    assert!(
+        text.contains("searches it with embeddinggemma-300m"),
+        "{text}"
+    );
+    assert_eq!(
+        settings(&sandbox.path("Notes"))["embedding"]["model"],
+        "embeddinggemma-300m"
+    );
+
+    let created = sandbox.json(
+        sandbox.dir.path(),
+        &[
+            "init",
+            "Papers",
+            "--embedding-model",
+            "qwen3-embedding-0.6b",
+        ],
+    );
+    assert_eq!(created["embedding_model"], "qwen3-embedding-0.6b");
+    assert_eq!(
+        settings(&sandbox.path("Papers"))["embedding"]["model"],
+        "qwen3-embedding-0.6b"
+    );
+
+    let out = sandbox.run_in(
+        sandbox.dir.path(),
+        &["init", "Other", "--embedding-model", "word2vec"],
+    );
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("no embedding model word2vec"));
+    assert!(!sandbox.path("Other").exists(), "nothing is created");
+}
+
+/// Sets the sample archive's embedding model in its settings, as another program might, or
+/// removes it.
+fn set_embedding_model(root: &Path, model: Option<&str>) {
+    let path = root.join("_System/settings.json");
+    let mut settings: Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    match model {
+        Some(model) => settings["embedding"] = json!({ "model": model }),
+        None => {
+            settings.as_object_mut().unwrap().remove("embedding");
+        }
+    }
+    std::fs::write(&path, serde_json::to_string_pretty(&settings).unwrap()).unwrap();
+}
+
+#[test]
+fn an_archive_without_an_embedding_model_asks_for_one_on_first_use() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.dir.path().join("archive");
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    set_embedding_model(&root, None);
+
+    // Not in a terminal, there's no one to ask, so it says how to choose.
+    let out = sandbox.run_in(&root, &["models", "embed", "a lease"]);
+    assert!(!out.status.success());
+    let error = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        error.contains("carrel settings set embedding.model NAME"),
+        "{error}"
+    );
+    assert!(error.contains("embeddinggemma-300m"), "{error}");
+
+    let listed = sandbox.json(&root, &["settings"]);
+    assert_eq!(listed["archive"]["embedding.model"], "none");
+    let set = sandbox.json(
+        &root,
+        &["settings", "set", "embedding.model", "qwen3-embedding-0.6b"],
+    );
+    assert_eq!(set["to"], "qwen3-embedding-0.6b");
+    assert!(set["commit"].is_string(), "recorded in history");
+
+    // Once chosen, it stays: switching models means re-embedding the archive.
+    let out = sandbox.run_in(
+        &root,
+        &["settings", "set", "embedding.model", "embeddinggemma-300m"],
+    );
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("re-embeds"));
+}
+
+#[test]
+fn texts_are_embedded_with_the_archives_model_and_no_other() {
+    let sandbox = Sandbox::new();
+    let bin = sandbox.path("bin");
+    std::fs::create_dir(&bin).unwrap();
+    let suffix = std::env::consts::EXE_SUFFIX;
+    std::fs::copy(
+        echo_provider(),
+        bin.join(format!("carrel-provider-echo{suffix}")),
+    )
+    .unwrap();
+    let root = sandbox.sample();
+    let embed = |args: &[&str]| {
+        std::process::Command::new(env!("CARGO_BIN_EXE_carrel"))
+            .args(["models", "embed"])
+            .args(args)
+            .current_dir(&root)
+            .env("PATH", &bin)
+            .env("CARREL_CONFIG_DIR", sandbox.path("config"))
+            .env("CARREL_WORKER", "off")
+            .output()
+            .unwrap()
+    };
+
+    set_embedding_model(&root, Some("echo-embed"));
+    let out = embed(&["a lease", "a receipt", "--query", "--json"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let report: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(report["model"], "echo-embed");
+    assert_eq!(report["provider"], "echo");
+    assert_eq!(report["purpose"], "query");
+    assert_eq!(report["dimensions"], 3);
+    let vectors = report["vectors"].as_array().unwrap();
+    assert_eq!(vectors.len(), 2);
+    assert_eq!(vectors[0].as_array().unwrap().len(), 3);
+
+    // The echo provider has an embedding model, but not the archive's.
+    set_embedding_model(&root, Some("embeddinggemma-300m"));
+    let out = embed(&["a lease"]);
+    assert!(!out.status.success());
+    let error = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        error.contains("embeddinggemma-300m") && error.contains("carrel models download"),
+        "{error}"
+    );
+}
+
+#[test]
+fn embedding_models_are_listed_apart_and_unpinned_ones_are_never_downloaded() {
+    let sandbox = Sandbox::new();
+    let here = sandbox.path("");
+    let listed = sandbox.json(&here, &["models"]);
+    let catalog = listed["catalog"].as_array().unwrap();
+    let gemma = catalog
+        .iter()
+        .find(|m| m["name"] == "embeddinggemma-300m")
+        .unwrap();
+    assert_eq!(gemma["embedding"]["dimensions"], 768);
+    assert!(
+        catalog
+            .iter()
+            .any(|m| m["name"] == "qwen3-embedding-0.6b" && m["embedding"]["pooling"] == "last")
+    );
+    let text = sandbox.ok(&here, &["models"]);
+    assert!(text.contains("For search by meaning"), "{text}");
+
+    if gemma["pinned"] == false {
+        let out = sandbox.run_in(
+            &here,
+            &["models", "download", "embeddinggemma-300m", "--yes"],
+        );
+        assert!(!out.status.success());
+        assert!(String::from_utf8_lossy(&out.stderr).contains("isn't pinned"));
+        assert!(!sandbox.path("config/logs/network.log").exists());
+    }
+}
+
+#[test]
 fn approved_zips_are_expanded_unless_kept_compressed() {
     let sandbox = Sandbox::new();
     let root = sandbox.sample();

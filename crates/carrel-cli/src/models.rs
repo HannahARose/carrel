@@ -5,10 +5,14 @@ use std::fmt::Write as _;
 use std::io::{BufRead as _, IsTerminal as _, Write as _};
 use std::path::{Path, PathBuf};
 
+use carrel_core::archive::Archive;
 use carrel_core::models::{
-    CATALOG, Fetcher, Helper, Installed, Model, download as fetch_model, download_mlx, find,
-    installed, installed_mlx, mlx_dir, network_log, part_path, remove as remove_model, remove_mlx,
+    CATALOG, Fetcher, Helper, Installed, Model, download as fetch_model, download_mlx,
+    embedding_models, find, installed, installed_mlx, mlx_dir, network_log, part_path,
+    remove as remove_model, remove_mlx, text_models,
 };
+use carrel_core::providers::{EmbeddingRequest, ProviderError, Purpose};
+use carrel_core::settings::Key;
 use serde_json::{Value, json};
 
 use crate::ingest::human_size;
@@ -37,6 +41,18 @@ fn known(name: &str) -> Result<&'static Model, Failure> {
     })
 }
 
+/// A catalog model that can be downloaded: one whose file is pinned to a checksum.
+fn downloadable(name: &str) -> Result<&'static Model, Failure> {
+    let model = known(name)?;
+    if model.is_pinned() {
+        Ok(model)
+    } else {
+        Err(Failure::new(
+            carrel_core::models::ModelError::Unpinned(model.name.to_owned()).to_string(),
+        ))
+    }
+}
+
 /// A catalog model's state in the models folder.
 fn state(model: &Model, dir: &Path, found: &[Installed]) -> (&'static str, Option<u64>) {
     if found.iter().any(|f| f.name == model.name) {
@@ -57,6 +73,7 @@ fn state_note(model: &Model, state: &str, part: Option<u64>) -> String {
             human_size(model.size)
         ),
         None if state == "downloaded" => "downloaded".to_owned(),
+        None if !model.is_pinned() => "not yet pinned to a checksum".to_owned(),
         None => String::new(),
     };
     if !model.recommended {
@@ -68,6 +85,61 @@ fn state_note(model: &Model, state: &str, part: Option<u64>) -> String {
     } else {
         format!("{note}, {shown}")
     }
+}
+
+/// One catalog model's line in `carrel models`, with its MLX build's, and its JSON entry.
+fn row(
+    text: &mut String,
+    model: &Model,
+    dir: &Path,
+    found: (&[Installed], &[Installed]),
+    width: usize,
+) -> Value {
+    let (state, part) = state(model, dir, found.0);
+    let shown = state_note(model, state, part);
+    let size = if model.is_pinned() {
+        human_size(model.size)
+    } else {
+        "?".to_owned()
+    };
+    writeln!(
+        text,
+        "  {:width$}  {size:>6}  needs {:>2} GB memory  {}  {}{}",
+        model.name,
+        model.memory_gb,
+        model.license,
+        model.title,
+        if shown.is_empty() {
+            String::new()
+        } else {
+            format!("  ({shown})")
+        },
+    )
+    .unwrap();
+    let mlx_state = model.mlx.map(|build| {
+        if found.1.iter().any(|f| f.name == model.name) {
+            writeln!(text, "  {:width$}  MLX build downloaded", "").unwrap();
+            "downloaded"
+        } else if mlx_dir(dir).join(format!("{}.part", model.name)).is_dir() {
+            writeln!(text, "  {:width$}  MLX build partly downloaded", "").unwrap();
+            "partial"
+        } else {
+            writeln!(
+                text,
+                "  {:width$}  also as MLX, {}: --format mlx",
+                "",
+                human_size(build.size())
+            )
+            .unwrap();
+            "available"
+        }
+    });
+    let mut entry = serde_json::to_value(model).unwrap_or(Value::Null);
+    entry["state"] = json!(state);
+    entry["downloaded_bytes"] = json!(part);
+    entry["mlx_state"] = json!(mlx_state);
+    entry["pinned"] = json!(model.is_pinned());
+    entry
 }
 
 /// `carrel models`: the catalog, what's downloaded, and other models in the folder.
@@ -85,47 +157,12 @@ pub fn list() -> Result<Report, Failure> {
     );
     let width = CATALOG.iter().map(|m| m.name.len()).max().unwrap_or(0);
     let mut catalog = Vec::new();
-    for model in CATALOG {
-        let (state, part) = state(model, &dir, &found);
-        let shown = state_note(model, state, part);
-        writeln!(
-            text,
-            "  {:width$}  {:>6}  needs {:>2} GB memory  {}  {}{}",
-            model.name,
-            human_size(model.size),
-            model.memory_gb,
-            model.license,
-            model.title,
-            if shown.is_empty() {
-                String::new()
-            } else {
-                format!("  ({shown})")
-            },
-        )
-        .unwrap();
-        let mlx_state = model.mlx.map(|build| {
-            if found_mlx.iter().any(|f| f.name == model.name) {
-                writeln!(text, "  {:width$}  MLX build downloaded", "").unwrap();
-                "downloaded"
-            } else if mlx_dir(&dir).join(format!("{}.part", model.name)).is_dir() {
-                writeln!(text, "  {:width$}  MLX build partly downloaded", "").unwrap();
-                "partial"
-            } else {
-                writeln!(
-                    text,
-                    "  {:width$}  also as MLX, {}: --format mlx",
-                    "",
-                    human_size(build.size())
-                )
-                .unwrap();
-                "available"
-            }
-        });
-        let mut entry = serde_json::to_value(model).unwrap_or(Value::Null);
-        entry["state"] = json!(state);
-        entry["downloaded_bytes"] = json!(part);
-        entry["mlx_state"] = json!(mlx_state);
-        catalog.push(entry);
+    for model in text_models() {
+        catalog.push(row(&mut text, model, &dir, (&found, &found_mlx), width));
+    }
+    text.push_str("\nFor search by meaning, one per archive, chosen when it's created:\n");
+    for model in embedding_models() {
+        catalog.push(row(&mut text, model, &dir, (&found, &found_mlx), width));
     }
     let others: Vec<&Installed> = found
         .iter()
@@ -190,7 +227,7 @@ pub(crate) fn confirm(question: &str, yes: bool) -> Result<bool, Failure> {
 /// [`Failure`] if the model isn't known or has no build in that format, the helper is
 /// missing, or the download fails.
 pub fn download(name: &str, format: Format, yes: bool, json: bool) -> Result<Report, Failure> {
-    let model = known(name)?;
+    let model = downloadable(name)?;
     let dir = folder()?;
     let (destination, size, provider) = match format {
         Format::Gguf => (dir.join(model.file_name()), model.size, "llama.cpp"),
@@ -297,7 +334,7 @@ fn run(
 ///
 /// As [`download`].
 pub fn download_quietly(name: &str) -> Result<Report, Failure> {
-    let model = known(name)?;
+    let model = downloadable(name)?;
     let dir = folder()?;
     let helper = Helper::find()?;
     let log = network_log();
@@ -329,5 +366,102 @@ pub fn remove(name: &str, format: Format, yes: bool) -> Result<Report, Failure> 
     Ok(Report::new(
         format!("Deleted {}.\n", path.display()),
         json!({ "name": name, "path": path }),
+    ))
+}
+
+/// The archive's embedding model, asking which to use on first use in an archive that has
+/// none and recording the answer in its settings, which every device follows.
+///
+/// # Errors
+///
+/// [`Failure`] if there's none and no terminal to ask in, or recording it fails.
+pub fn archive_model(archive: &Archive) -> Result<String, Failure> {
+    if let Some(model) = archive.settings().embedding_model() {
+        return Ok(model.to_owned());
+    }
+    let choices = Key::EmbeddingModel.choices().unwrap_or_default();
+    if !std::io::stdin().is_terminal() {
+        return Err(Failure::new(format!(
+            "this archive has no embedding model yet; choose one with `carrel settings set embedding.model NAME`: {}",
+            choices.join(", ")
+        )));
+    }
+    eprintln!(
+        "This archive has no embedding model yet. Every device that searches it will use the one chosen here:"
+    );
+    for (n, name) in choices.iter().enumerate() {
+        let title = find(name).map_or("", |m| m.title);
+        let default = if n == 0 { " (the default)" } else { "" };
+        eprintln!("  {}. {name}  {title}{default}", n + 1);
+    }
+    eprint!("Which? [1] ");
+    let _ = std::io::stderr().flush();
+    let mut answer = String::new();
+    std::io::stdin().lock().read_line(&mut answer)?;
+    let answer = answer.trim();
+    let chosen = if answer.is_empty() {
+        choices[0]
+    } else {
+        answer
+            .parse::<usize>()
+            .ok()
+            .and_then(|n| choices.get(n.wrapping_sub(1)).copied())
+            .or_else(|| choices.iter().copied().find(|c| *c == answer))
+            .ok_or_else(|| Failure::new(format!("{answer} isn't one of the choices")))?
+    };
+    let report = crate::settings::set(Some(archive.root()), Key::EmbeddingModel.as_str(), chosen)?;
+    eprint!("{}", report.text);
+    Ok(chosen.to_owned())
+}
+
+/// `carrel models embed TEXT... [--query]`: embeds texts with the archive's embedding model,
+/// as search will, and shows the vectors. The model is asked for if the archive has none.
+///
+/// # Errors
+///
+/// [`Failure`] if the archive can't be found, it has no model and none can be asked for, or
+/// no provider on this device runs its model.
+pub fn embed(archive: Option<&Path>, texts: &[String], query: bool) -> Result<Report, Failure> {
+    let archive = crate::commands::locate(archive)?;
+    let model = archive_model(&archive)?;
+    let (registry, _) = crate::providers::registry();
+    let request = EmbeddingRequest {
+        texts: texts.to_vec(),
+        purpose: if query {
+            Purpose::Query
+        } else {
+            Purpose::Document
+        },
+    };
+    let (embeddings, source, _) = registry.embed(&model, &request).map_err(|e| match e {
+        ProviderError::Unavailable(_) if find(&model).is_some() => Failure::new(format!(
+            "{e}; download it with `carrel models download {model}`"
+        )),
+        _ => Failure::new(e.to_string()),
+    })?;
+    let mut text = format!(
+        "{} with {model} through {}, {} numbers each:\n",
+        if texts.len() == 1 {
+            "1 text embedded".to_owned()
+        } else {
+            format!("{} texts embedded", texts.len())
+        },
+        source.provider,
+        embeddings.dimensions
+    );
+    for (t, vector) in texts.iter().zip(&embeddings.vectors) {
+        let start: Vec<String> = vector.iter().take(4).map(|n| format!("{n:.4}")).collect();
+        writeln!(text, "  [{}, …]  {t}", start.join(", ")).unwrap();
+    }
+    Ok(Report::new(
+        text,
+        json!({
+            "model": embeddings.model,
+            "dimensions": embeddings.dimensions,
+            "provider": source.provider,
+            "offer": source.offer,
+            "purpose": request.purpose,
+            "vectors": embeddings.vectors,
+        }),
     ))
 }

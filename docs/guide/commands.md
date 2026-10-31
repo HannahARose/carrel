@@ -15,7 +15,7 @@ Exit status is `0` on success, `1` when the command failed, and `2` for a usage 
 
 | Command | What it does |
 | --- | --- |
-| `carrel init [PATH] [--name NAME] [--allow-existing-files]` | Creates an archive in `PATH` (or the current folder) and starts its history. With `--allow-existing-files`, files already there become uncataloged items to ingest. Inside an archive that has no history yet, it starts the history. |
+| `carrel init [PATH] [--name NAME] [--allow-existing-files] [--embedding-model NAME]` | Creates an archive in `PATH` (or the current folder) and starts its history. With `--allow-existing-files`, files already there become uncataloged items to ingest. `--embedding-model` chooses the model every device uses to search the archive by meaning: `embeddinggemma-300m` (the default) or `qwen3-embedding-0.6b`. Inside an archive that has no history yet, it starts the history. |
 | `carrel open [PATH]` | Chooses the archive commands use outside one; with no path, shows the choice. |
 | `carrel status` | Summarizes the archive: items by kind, cards with problems, names that won't work everywhere, **Structure** signals, the last change and backup, who is writing, and **Recent**: the latest changes and work sessions, archive-wide. |
 | `carrel show ITEM` | Shows an item's card, its links, and every change that touched it, newest first (undo one with `carrel undo CHANGE`). `ITEM` is its identifier, or the path of the item or its card. |
@@ -88,18 +88,19 @@ Backups need [Kopia](https://kopia.io), beside `carrel` or on `PATH`.
 
 | Command | What it does |
 | --- | --- |
-| `carrel providers` | Lists the providers on this device (text models, text extraction) and which Carrel uses for each. |
+| `carrel providers` | Lists the providers on this device (text models, text extraction, embedding models) and which Carrel uses for each. |
 | `carrel formats` | Lists the file types this device reads and which provider reads each, then the types it couldn't read so far, most frequent first, with what would read them when Carrel knows. |
-| `carrel models` | Lists the models Carrel can download, with size, memory needed and license, and the models already downloaded. |
+| `carrel models` | Lists the models Carrel can download, with size, memory needed and license, and the models already downloaded. Text models come first, then the embedding models for search. |
 | `carrel models download NAME [--format mlx] [--yes]` | Downloads a model after showing its size and license and asking; `--yes` skips the question. Every file is checked against the checksum Carrel ships with. `--format mlx` downloads the MLX build, a folder, for the MLX provider. |
 | `carrel models remove NAME [--format mlx] [--yes]` | Deletes a downloaded model, or its MLX build, after asking. |
+| `carrel models embed TEXT... [--query] [--json]` | Embeds texts with the archive's embedding model, as search will, and shows the start of each vector (all of it with `--json`); `--query` embeds them as search queries. Only the archive's model is used, never another. An archive with no model yet asks which to use first. |
 
 ## Settings
 
 | Command | What it does |
 | --- | --- |
 | `carrel settings` | Lists this device's preferences and the archive's shared settings. |
-| `carrel settings set KEY VALUE` | Changes one. `picker`, `editor`, `model` and `second_model` are this device's (an empty value, or `default`, clears them); `model` takes `provider/offer`, the offer alone, or a provider such as `apple`, and must be one that's available; `second_model` also takes `off`. `ingest.originals`, `signals.crowded_items` and `outside_edits` are shared by every device, and each change can be undone from History. |
+| `carrel settings set KEY VALUE` | Changes one. `picker`, `editor`, `model` and `second_model` are this device's (an empty value, or `default`, clears them); `model` takes `provider/offer`, the offer alone, or a provider such as `apple`, and must be one that's available; `second_model` also takes `off`. `ingest.originals`, `signals.crowded_items`, `outside_edits` and `embedding.model` are shared by every device, and each change can be undone from History. `embedding.model` can only be chosen once, as switching models re-embeds the archive. |
 
 ## The interactive mode
 

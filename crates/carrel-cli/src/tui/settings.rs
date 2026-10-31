@@ -181,8 +181,9 @@ impl App {
                 let available: Vec<String> = carrel_core::models::CATALOG
                     .iter()
                     .filter(|m| {
-                        carrel_core::local::models_dir()
-                            .is_none_or(|d| !d.join(m.file_name()).is_file())
+                        m.is_pinned()
+                            && carrel_core::local::models_dir()
+                                .is_none_or(|d| !d.join(m.file_name()).is_file())
                     })
                     .map(|m| m.name.to_owned())
                     .collect();

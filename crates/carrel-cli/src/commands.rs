@@ -61,13 +61,23 @@ fn archive_json(archive: &Archive) -> Value {
     })
 }
 
-/// `carrel init`: creates an archive, or starts history for an existing archive that has
-/// none (one made by hand or by another program).
+/// `carrel init`: creates an archive searched with `embedding_model`, or starts history for an
+/// existing archive that has none (one made by hand or by another program).
 pub fn init(
     path: Option<&Path>,
     name: Option<String>,
     allow_existing_files: bool,
+    embedding_model: &str,
 ) -> Result<Report, Failure> {
+    let embedding_choices = carrel_core::settings::Key::EmbeddingModel
+        .choices()
+        .unwrap_or_default();
+    if !embedding_choices.contains(&embedding_model) {
+        return Err(Failure::new(format!(
+            "no embedding model {embedding_model}; choose one of {}",
+            embedding_choices.join(", ")
+        )));
+    }
     let root = match path {
         Some(path) => path.to_owned(),
         None => std::env::current_dir().map_err(|e| Failure::io(Path::new("."), &e))?,
@@ -103,6 +113,7 @@ pub fn init(
         };
         let mut options = InitOptions::new(name);
         options.allow_existing_files = allow_existing_files;
+        options.embedding_model = Some(embedding_model.to_owned());
         Archive::init(&root, &options)?
     };
     let lease =
@@ -131,6 +142,14 @@ pub fn init(
             archive.root().display()
         )
     };
+    let model = archive.settings().embedding_model();
+    if let Some(model) = model.filter(|_| !existing) {
+        writeln!(
+            text,
+            "Every device searches it with {model}; `carrel models download {model}` gets it"
+        )
+        .unwrap();
+    }
     for warning in &warnings {
         writeln!(text, "warning: {warning}").unwrap();
     }
@@ -139,6 +158,7 @@ pub fn init(
         json!({
             "archive": archive_json(&archive),
             "history": if existing { "started" } else { "created" },
+            "embedding_model": model,
             "warnings": warnings,
         }),
     ))
