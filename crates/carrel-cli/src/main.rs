@@ -23,6 +23,7 @@ mod picker;
 mod progress;
 mod providers;
 mod questions;
+mod related;
 mod review;
 mod search;
 mod sessions;
