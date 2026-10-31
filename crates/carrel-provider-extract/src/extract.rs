@@ -138,6 +138,7 @@ impl Extractor {
             pages: Some(count),
             created: None,
             located: false,
+            pictures: Vec::new(),
         })
     }
 
@@ -153,6 +154,7 @@ impl Extractor {
                 pages: None,
                 created: None,
                 located: false,
+                pictures: Vec::new(),
             });
         }
         let pdftoppm = self.pdftoppm.as_deref().ok_or_else(|| {
@@ -189,6 +191,7 @@ impl Extractor {
             pages: Some(u32::try_from(pages.len()).unwrap_or(u32::MAX)),
             created: None,
             located: false,
+            pictures: Vec::new(),
         })
     }
 
@@ -256,6 +259,7 @@ mod tests {
         ExtractionRequest {
             path: path.to_owned(),
             media_type: media_type.into(),
+            context: None,
         }
     }
 

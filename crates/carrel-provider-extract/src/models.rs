@@ -10,7 +10,7 @@ mod threemf;
 use std::fmt::Write as _;
 use std::path::Path;
 
-use carrel_core::providers::{Extraction, ProviderError};
+use carrel_core::providers::{Extraction, Picture, ProviderError};
 
 /// The offer for 3D printing and CAD files.
 pub const MODEL_DETAILS: &str = "model-details";
@@ -47,6 +47,7 @@ pub fn read(path: &Path, media_type: &str) -> Result<Extraction, ProviderError> 
         pages: None,
         created: details.created,
         located: false,
+        pictures: details.pictures,
     })
 }
 
@@ -57,6 +58,8 @@ struct Details {
     lines: Vec<(&'static str, String)>,
     /// When it was exported, as the card's `created`: a date.
     created: Option<String>,
+    /// Pictures in the file, such as a 3MF's thumbnail, for an image reader to describe.
+    pictures: Vec<Picture>,
 }
 
 impl Details {

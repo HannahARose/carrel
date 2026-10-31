@@ -1,12 +1,16 @@
 //! Ingest's text stage: media types, reading, back matter and fitting to a budget.
 
 use std::fmt::Write as _;
+use std::path::PathBuf;
 
 use carrel_core::card::{Checksum, Kind};
 use carrel_core::detect::Rules;
 use carrel_core::ingest::Candidate;
 use carrel_core::ingest::text::{CUT, drop_back_matter, fit, media_type, read};
-use carrel_core::providers::{Registry, estimate_tokens};
+use carrel_core::providers::{
+    Capability, Extraction, ExtractionRequest, Offer, Picture, Provider, ProviderError, Registry,
+    estimate_tokens,
+};
 
 fn candidate(path: &std::path::Path, kind: Kind) -> Candidate {
     Candidate {
@@ -206,4 +210,158 @@ fn fit_keeps_the_start_and_end_within_the_budget() {
     let cjk = "猫が好きです。".repeat(300);
     let (fitted, _) = fit(&cjk, 100, &count);
     assert!(count(&fitted) <= 100);
+}
+
+/// A provider with one offer that answers every request with `answer`.
+struct Fake {
+    name: &'static str,
+    offers: Vec<Offer>,
+    answer: fn(&ExtractionRequest) -> Extraction,
+}
+
+impl Provider for Fake {
+    fn name(&self) -> &'static str {
+        self.name
+    }
+
+    fn offers(&self) -> &[Offer] {
+        &self.offers
+    }
+
+    fn extract(&self, _: &str, request: &ExtractionRequest) -> Result<Extraction, ProviderError> {
+        Ok((self.answer)(request))
+    }
+}
+
+fn offer(id: &str, media_type: &str, priority: i32, describes: bool) -> Offer {
+    let mut extra = serde_json::Map::new();
+    if describes {
+        extra.insert("describes".into(), true.into());
+    }
+    Offer {
+        capability: Capability::ExtractText,
+        id: id.into(),
+        label: None,
+        priority,
+        available: true,
+        reason: None,
+        media_types: vec![media_type.into()],
+        extra,
+    }
+}
+
+fn extraction(text: &str, pictures: Vec<Picture>) -> Extraction {
+    Extraction {
+        text: text.into(),
+        method: "embedded".into(),
+        pages: None,
+        created: None,
+        located: false,
+        pictures,
+    }
+}
+
+/// A 3MF reader that returns its thumbnail as a picture, written where the test says.
+fn thumbnail_reader(request: &ExtractionRequest) -> Extraction {
+    let name = request.path.with_extension("where");
+    let picture = PathBuf::from(std::fs::read_to_string(name).unwrap());
+    std::fs::write(&picture, b"\x89PNG\r\n\x1a\n....").unwrap();
+    extraction(
+        "3D print project (3MF)\nTitle: Keychain",
+        vec![Picture {
+            path: picture,
+            context: "a 3D print project's thumbnail, as its slicer drew it".into(),
+        }],
+    )
+}
+
+/// An image reader that describes, checking it's given the context and not the file's name.
+fn describer(request: &ExtractionRequest) -> Extraction {
+    assert_eq!(
+        request.context.as_deref(),
+        Some("a 3D print project's thumbnail, as its slicer drew it")
+    );
+    assert!(!request.path.to_string_lossy().contains("keychain"));
+    extraction(
+        "Image: image\nShows: A flat keychain tag.\nLabels: (none)",
+        Vec::new(),
+    )
+}
+
+fn picture_registry() -> Registry {
+    let mut registry = Registry::new();
+    registry.add(Box::new(Fake {
+        name: "maker",
+        offers: vec![offer("details", "model/3mf", 50, false)],
+        answer: thumbnail_reader,
+    }));
+    // OCR reads images too, and comes first, but doesn't describe them.
+    registry.add(Box::new(Fake {
+        name: "ocr",
+        offers: vec![offer("ocr", "image/png", 200, false)],
+        answer: |_| panic!("OCR isn't asked to describe pictures"),
+    }));
+    registry.add(Box::new(Fake {
+        name: "eyes",
+        offers: vec![offer("image", "image/png", 100, true)],
+        answer: describer,
+    }));
+    registry
+}
+
+#[test]
+fn pictures_are_described_by_an_image_reader_then_deleted() {
+    let dir = tempfile::tempdir().unwrap();
+    let model = dir.path().join("keychain.3mf");
+    std::fs::write(&model, b"PK\x03\x04....").unwrap();
+    let picture = tempfile::Builder::new().suffix(".png").tempfile().unwrap();
+    let picture = picture.into_temp_path().keep().unwrap();
+    std::fs::write(model.with_extension("where"), picture.to_str().unwrap()).unwrap();
+
+    let text = read(
+        &picture_registry(),
+        &Rules::default(),
+        &candidate(&model, Kind::File),
+    );
+    assert_eq!(
+        text.text,
+        "3D print project (3MF)\nTitle: Keychain\nShows: A flat keychain tag."
+    );
+    assert!(!picture.exists(), "the picture is deleted");
+}
+
+#[test]
+fn pictures_outside_the_temporary_folder_are_neither_read_nor_deleted() {
+    let dir = tempfile::tempdir_in(env!("CARGO_TARGET_TMPDIR")).unwrap();
+    let model = dir.path().join("keychain.3mf");
+    std::fs::write(&model, b"PK\x03\x04....").unwrap();
+    let picture = dir.path().join("archive photo.png");
+    std::fs::write(model.with_extension("where"), picture.to_str().unwrap()).unwrap();
+
+    let text = read(
+        &picture_registry(),
+        &Rules::default(),
+        &candidate(&model, Kind::File),
+    );
+    assert_eq!(text.text, "3D print project (3MF)\nTitle: Keychain");
+    assert!(picture.exists());
+}
+
+#[test]
+fn without_an_image_reader_pictures_are_dropped() {
+    let picture = tempfile::Builder::new().suffix(".png").tempfile().unwrap();
+    let picture = picture.into_temp_path().keep().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let model = dir.path().join("keychain.3mf");
+    std::fs::write(&model, b"PK\x03\x04....").unwrap();
+    std::fs::write(model.with_extension("where"), picture.to_str().unwrap()).unwrap();
+    let mut registry = Registry::new();
+    registry.add(Box::new(Fake {
+        name: "maker",
+        offers: vec![offer("details", "model/3mf", 50, false)],
+        answer: thumbnail_reader,
+    }));
+    let text = read(&registry, &Rules::default(), &candidate(&model, Kind::File));
+    assert_eq!(text.text, "3D print project (3MF)\nTitle: Keychain");
+    assert!(!picture.exists());
 }

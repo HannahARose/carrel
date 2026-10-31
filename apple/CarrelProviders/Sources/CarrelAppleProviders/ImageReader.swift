@@ -37,10 +37,18 @@ public struct ImageReader: TextExtractor {
     init(describes: Bool) { self.describes = describes }
 
     public var offer: Offer {
-        Offer(capability: .extractText, id: "image", label: "Image reader", mediaTypes: Self.imageTypes)
+        Offer(
+            capability: .extractText, id: "image", label: "Image reader", mediaTypes: Self.imageTypes,
+            describes: Self.canSee ? true : nil)
     }
 
     public func extract(_ url: URL, mediaType: String) async throws(ProviderError) -> Extraction {
+        try await extract(url, mediaType: mediaType, context: nil)
+    }
+
+    public func extract(_ url: URL, mediaType: String, context: String?) async throws(ProviderError)
+        -> Extraction
+    {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
             CGImageSourceGetCount(source) > 0
         else {
@@ -54,7 +62,7 @@ public struct ImageReader: TextExtractor {
         } catch {
             throw .failed("\(url.lastPathComponent): \(error.localizedDescription)")
         }
-        let description = describes ? await Self.describe(source, labels: labels) : nil
+        let description = describes ? await Self.describe(source, labels: labels, context: context) : nil
 
         var lines = ["Image: " + metadata.summary]
         if let description {
@@ -92,10 +100,14 @@ public struct ImageReader: TextExtractor {
     }
 
     /// One or two sentences from Apple's model on what the image shows, or nil when the model
-    /// can't see images (before macOS 27, or Apple Intelligence off) or declines.
-    static func describe(_ source: CGImageSource, labels: [String]) async -> String? {
+    /// can't see images (before macOS 27, or Apple Intelligence off) or declines. `context`
+    /// says what a picture Carrel was given is, such as a 3D print project's thumbnail.
+    static func describe(_ source: CGImageSource, labels: [String], context: String? = nil) async -> String? {
         guard canSee, let image = scaled(source) else { return nil }
-        let hint = labels.isEmpty ? "" : " Vision's labels for it: \(labels.joined(separator: ", "))."
+        var hint = labels.isEmpty ? "" : " Vision's labels for it: \(labels.joined(separator: ", "))."
+        if let context, !context.isEmpty {
+            hint = " It's \(context)." + hint
+        }
         return await describe(
             image,
             instructions: """
