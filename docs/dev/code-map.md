@@ -94,5 +94,7 @@ The code documentation is built from `dev` on every merge, private items include
 | To work on | Read | Where |
 | --- | --- | --- |
 | What Swift can call | [`carrel_ffi`](https://hrose.me/carrel/carrel_ffi/) | `crates/carrel-ffi/src/lib.rs` |
-| Building the XCFramework and bindings | `scripts/build-xcframework.sh` | |
+| Building the XCFramework | `scripts/build-xcframework.sh` | |
+| Generating the Swift bindings | `scripts/generate-bindings.sh` | `apple/CarrelKit/Sources/CarrelKit/Generated` (committed) |
+| Formatting the Swift | `scripts/swift-format.sh` | `.swift-format` |
 | The Swift package the apps use | `apple/CarrelKit` | |
