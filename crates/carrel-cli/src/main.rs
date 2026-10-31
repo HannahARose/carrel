@@ -10,6 +10,7 @@ mod checkout;
 mod commands;
 mod config;
 mod desk;
+mod formats;
 mod ingest;
 mod models;
 mod paths;
@@ -79,6 +80,8 @@ enum Command {
     },
     /// List the providers on this device (text models, text extraction) and which are used.
     Providers,
+    /// List the file types this device reads, and those it couldn't read so far.
+    Formats,
     /// Add files and folders to the intake queue. A worker drafts each one's card and
     /// destination in the background, saving proposals for `carrel review` as they're ready.
     /// Nothing is moved until a proposal is approved.
@@ -602,6 +605,7 @@ fn main() -> ExitCode {
         Command::Show { item } => commands::show(cli.archive.as_deref(), &item),
         Command::Log { max_count } => commands::log(cli.archive.as_deref(), max_count),
         Command::Providers => Ok(providers::list()),
+        Command::Formats => Ok(formats::list()),
         Command::Ingest(args) => {
             ingest::command(cli.archive.as_deref(), &args.into_request(), cli.json)
         }

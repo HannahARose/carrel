@@ -964,3 +964,38 @@ fn sessions_on_a_checked_out_item_become_pending_entries_to_approve() {
     assert!(!card.contains("[!pending]"));
     assert_eq!(sandbox.json(&root, &["log"])[0]["operation"], "session");
 }
+
+#[test]
+fn types_nothing_reads_are_logged_without_names_and_listed() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    let downloads = sandbox.path("Downloads");
+    std::fs::create_dir(&downloads).unwrap();
+    std::fs::write(
+        downloads.join("Secret Plans.F3D"),
+        [0u8, 159, 146, 150, 255, 1, 2],
+    )
+    .unwrap();
+    let downloads_arg = downloads.to_str().unwrap();
+
+    let report = sandbox.ok(&root, &["ingest", "--wait", "--each", downloads_arg]);
+    assert!(
+        report
+            .contains("1 item of a type nothing on this device reads (.f3d); see `carrel formats`"),
+        "{report}"
+    );
+    let log = std::fs::read_to_string(sandbox.path("config/unreadable.json")).unwrap();
+    assert!(log.contains("\"extension\": \"f3d\""), "{log}");
+    assert!(log.contains("\"why\": \"no-reader\""), "{log}");
+    assert!(!log.contains("Secret"), "no file names: {log}");
+
+    let formats = sandbox.json(&root, &["formats"]);
+    assert_eq!(formats["unreadable"][0]["count"], 1);
+    assert!(formats["reads"]["text/plain"].is_array(), "{formats}");
+    let text = sandbox.ok(&root, &["formats"]);
+    assert!(
+        text.contains("Couldn't read, most frequent first:"),
+        "{text}"
+    );
+    assert!(text.contains(".f3d"), "{text}");
+}

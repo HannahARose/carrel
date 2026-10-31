@@ -44,6 +44,7 @@ fn text(body: &str) -> ItemText {
         located: false,
         attempts: Vec::new(),
         note: None,
+        unread: None,
     }
 }
 

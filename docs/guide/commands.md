@@ -85,6 +85,7 @@ Backups need [Kopia](https://kopia.io), beside `carrel` or on `PATH`.
 | Command | What it does |
 | --- | --- |
 | `carrel providers` | Lists the providers on this device (text models, text extraction) and which Carrel uses for each. |
+| `carrel formats` | Lists the file types this device reads and which provider reads each, then the types it couldn't read so far, most frequent first, with what would read them when Carrel knows. |
 | `carrel models` | Lists the models Carrel can download, with size, memory needed and license, and the models already downloaded. |
 | `carrel models download NAME [--format mlx] [--yes]` | Downloads a model after showing its size and license and asking; `--yes` skips the question. Every file is checked against the checksum Carrel ships with. `--format mlx` downloads the MLX build, a folder, for the MLX provider. |
 | `carrel models remove NAME [--format mlx] [--yes]` | Deletes a downloaded model, or its MLX build, after asking. |
