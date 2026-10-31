@@ -1141,13 +1141,13 @@ fn commands_that_change_the_archive_record_desk_sessions_every_few_minutes() {
 
     // Put on the desk three hours ago, worked on two hours ago.
     let three_hours_ago = jiff::Timestamp::now() - jiff::SignedDuration::from_hours(3);
-    let devices = root.join("_System/devices");
-    let device = std::fs::read_dir(&devices)
+    // This device's desk: the sample archive has another device's, and folders come in no
+    // particular order.
+    let desk = std::fs::read_dir(root.join("_System/devices"))
         .unwrap()
-        .next()
-        .unwrap()
+        .map(|d| d.unwrap().path().join("desk.json"))
+        .find(|d| std::fs::read_to_string(d).is_ok_and(|t| t.contains("budget-app")))
         .unwrap();
-    let desk = device.path().join("desk.json");
     rewrite_line(
         &desk,
         "\"added\"",
