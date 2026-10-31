@@ -19,6 +19,7 @@ Exit status is `0` on success, `1` when the command failed, and `2` for a usage 
 | `carrel open [PATH]` | Chooses the archive commands use outside one; with no path, shows the choice. |
 | `carrel status` | Summarizes the archive: items by kind, cards with problems, names that won't work everywhere, **Structure** signals, the last change and backup, who is writing, and **Recent**: the latest changes and work sessions, archive-wide. Also suggests folders on the Desktop or in `~/Code` that look like active work (changed in the last two weeks, or a Git repository) to put on the desk, and desk items unchanged for 60 days to archive; nothing is tracked or moved unless you ask. |
 | `carrel show ITEM` | Shows an item's card, its links, and every change that touched it, newest first (undo one with `carrel undo CHANGE`). `ITEM` is its identifier, or the path of the item or its card. |
+| `carrel search QUERY... [-n COUNT]` | Finds items by the words in their cards and text, and collection documents and glossary facts, best first, with the passage that matched and why. Filters narrow it: `collection:NAME`, `tag:TAG`, `kind:KIND`, `after:DATE`, `before:DATE` (a year, month or day), `sensitivity:LEVEL` and `checked-out`. Restricted items are found by their card only. Reads the text of items not read yet first. `-n`/`--limit` shows at most `COUNT` results (20). See [Searching](user-guide.md#searching). |
 | `carrel log [-n COUNT]` | Lists recorded changes, newest first. |
 | `carrel undo CHANGE` | Undoes a change with a new change that reverses it. `CHANGE` is its identifier from `carrel log`, or its start. The change that created the history can't be undone. |
 | `carrel checkout ITEM [--to FOLDER] [--due DATE]` | Checks an item out to work on: copies it to `FOLDER` (the Desktop by default), checked against what it held, and makes the archive copy read-only until it's returned. On macOS the working copy gets a “Checked Out” Finder tag, removed again on return or cancel. Records it on the card, with the commit a Git repository was at, in one history change. |
@@ -37,6 +38,8 @@ Exit status is `0` on success, `1` when the command failed, and `2` for a usage 
 | `carrel expand ITEM [--anyway]` | Unpacks a filed zip or other compressed file in place: what it held becomes the item, unwrapped as at filing, its card follows (with `expanded_from`), and the compressed file goes to the Trash. Software and very large archives need `--anyway`; encrypted, split and unsafe ones are refused. One change, which `carrel undo` reverses; then put the compressed file back from the Trash. |
 | `carrel rename ITEM [NEW_NAME]` | Renames an item and its card together, and updates links to it. Without a new name, uses the portable name `carrel status` suggests. Can be undone. |
 | `carrel collection new PATH [--description TEXT] [--tag NAME=MEANING]...` | Creates a collection with a design document to fill in. `PATH` is a name, or `Parent/Name` inside an existing collection. |
+
+With `--json`, `carrel search` prints `{"query", "total", "meaning", "results"}`. Each result has `found` (an `item` with its `id`, `title`, `card`, `item`, `collection`, `kind`, `sensitivity`, `date`, `tags` and `checked_out`; a `collection` with its `path` and `title`; or a `glossary` fact's `term`), `score`, `why` (the fields that matched, strongest first), and `passage` (`text`, and `highlights` as byte ranges `{start, end}` into it) with `passage_from`. `total` counts every match before the limit, and `meaning` says whether search by meaning was used (`off` until the embedding index exists).
 
 ## Ingest
 
@@ -116,7 +119,7 @@ Backups need [Kopia](https://kopia.io), beside `carrel` or on `PATH`.
 | `2` | **Review**: `a` approve, `h` hold, `m` move, `e` edit, `x` reject, `z` unpack a zip or keep it compressed, `Space` mark, `A` approve all high-confidence |
 | `3` | **Active**: what's checked out and on this device's desk, with their pending history entries; `r` return the chosen checkout, `x` cancel it, `o` open the working copy, `a` approve, `c` combine, `d` drop pending entries (all, or those marked with `Space`) |
 | `4` | **Questions**: `Enter` to answer, `d` to dismiss |
-| `5` | **Browse**: collections and items; `/` to search; `Enter` on an item for its changes and links, then `u` to undo the chosen change, `Enter` to go to a linked item |
+| `5` | **Browse**: collections and items; `/` to search, as `carrel search` does; `Enter` on an item for its changes and links, then `u` to undo the chosen change, `Enter` to go to a linked item |
 | `6` | **History**: `u` to undo the chosen change |
 | `7` | **Ingest**: the queue; `x` remove, `t` to the front, `r` retry |
 | `8` | **Settings**: `Enter` to change the chosen setting |

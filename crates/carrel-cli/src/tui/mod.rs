@@ -9,6 +9,7 @@ mod intake;
 mod item;
 mod review;
 mod screens;
+mod search;
 mod settings;
 mod ui;
 
@@ -1227,19 +1228,45 @@ mod tests {
         app.key(key(KeyCode::Left));
         assert_eq!(app.browse_pane, Pane::Collections);
 
-        app.key(key(KeyCode::Char('/')));
-        for c in "oscillat".chars() {
-            app.key(key(KeyCode::Char(c)));
-        }
-        assert!(screen(&app, 120, 30).contains("> oscillat"));
-        app.key(key(KeyCode::Enter));
+        let search = |app: &mut App, typed: &str| {
+            app.key(key(KeyCode::Char('/')));
+            while app.input.as_ref().is_some_and(|i| !i.text.is_empty()) {
+                app.key(key(KeyCode::Backspace));
+            }
+            for c in typed.chars() {
+                app.key(key(KeyCode::Char(c)));
+            }
+            app.key(key(KeyCode::Enter));
+        };
+        search(&mut app, "oscillators");
         let titles: Vec<&str> = app.browse_items.iter().map(|(_, t)| t.as_str()).collect();
         assert!(
             titles.contains(&"A note on coupled oscillators"),
             "{titles:?}"
         );
         assert!(titles.len() >= 2, "across collections: {titles:?}");
-        assert!(screen(&app, 120, 30).contains("Found for “oscillat”"));
+        let text = screen(&app, 140, 30);
+        assert!(
+            text.contains(&format!("{} found for “oscillators”", titles.len())),
+            "{text}"
+        );
+        assert!(text.contains("Matched: title"), "why it came back: {text}");
+
+        search(&mut app, "oscillators kind:bundle");
+        let titles: Vec<&str> = app.browse_items.iter().map(|(_, t)| t.as_str()).collect();
+        assert_eq!(
+            titles,
+            ["oscillator-sim"],
+            "the same filters as carrel search"
+        );
+
+        search(&mut app, "kind:nonsense");
+        assert_eq!(app.browse_items, Vec::new());
+        assert!(
+            app.message.as_deref().is_some_and(|m| m.contains("kind")),
+            "{:?}",
+            app.message
+        );
         app.key(key(KeyCode::Esc));
         assert!(app.search.is_none());
         assert!(!app.quit, "Esc clears the search first");

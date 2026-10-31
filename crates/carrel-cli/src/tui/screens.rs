@@ -28,7 +28,7 @@ pub enum InputPurpose {
         /// The question in words, shown above the line.
         question: String,
     },
-    /// Words to find in titles, tags and summaries.
+    /// What to search for: words, and filters such as `tag:receipts`.
     Search,
     /// Files and folders to ingest.
     Ingest,
@@ -68,7 +68,7 @@ impl Input {
     pub fn prompt(&self) -> &'static str {
         match &self.purpose {
             InputPurpose::Answer { .. } => "what it is",
-            InputPurpose::Search => "words to find",
+            InputPurpose::Search => "words and filters",
             InputPurpose::Ingest => "paths to ingest (or drop files here)",
             InputPurpose::Setting(_) => "the new value",
             InputPurpose::BackupRepository => "the backup folder (drop it here)",
@@ -231,20 +231,11 @@ impl App {
 
     /// The items Browse lists: the chosen collection's, or those the search finds anywhere.
     pub(super) fn load_items(&mut self) {
-        self.browse_items = match &self.search {
-            Some(words) => self.find(words),
-            None => self
-                .collections
-                .get(self.browse_collection)
-                .and_then(|c| {
-                    self.archive.cards_in(c).ok().map(|cards| {
-                        cards
-                            .into_iter()
-                            .map(|(name, card)| (format!("{}/{name}", c.path), card.title))
-                            .collect()
-                    })
-                })
-                .unwrap_or_default(),
+        self.browse_items = if let Some(typed) = self.search.clone() {
+            self.find(&typed)
+        } else {
+            self.searched = super::search::Searched::default();
+            self.collection_items()
         };
         self.browse_item = self
             .browse_item
@@ -252,32 +243,19 @@ impl App {
         self.load_card();
     }
 
-    /// The cards whose title, tags or summary contain every word, ignoring case.
-    fn find(&self, words: &str) -> Vec<(String, String)> {
-        let words: Vec<String> = words.split_whitespace().map(str::to_lowercase).collect();
-        let mut found = Vec::new();
-        for collection in &self.collections {
-            let Ok(cards) = self.archive.cards_in(collection) else {
-                continue;
-            };
-            for (name, card) in cards {
-                let text = format!(
-                    "{} {} {}",
-                    card.title,
-                    card.summary.as_deref().unwrap_or(""),
-                    card.tags
-                        .iter()
-                        .map(|t| t.0.as_str())
-                        .collect::<Vec<_>>()
-                        .join(" ")
-                )
-                .to_lowercase();
-                if words.iter().all(|w| text.contains(w)) {
-                    found.push((format!("{}/{name}", collection.path), card.title));
-                }
-            }
-        }
-        found
+    /// The chosen collection's cards, as card paths and titles.
+    fn collection_items(&self) -> Vec<(String, String)> {
+        self.collections
+            .get(self.browse_collection)
+            .and_then(|c| {
+                self.archive.cards_in(c).ok().map(|cards| {
+                    cards
+                        .into_iter()
+                        .map(|(name, card)| (format!("{}/{name}", c.path), card.title))
+                        .collect()
+                })
+            })
+            .unwrap_or_default()
     }
 
     /// Moves the choice among collections, items, or the chosen item's rows.

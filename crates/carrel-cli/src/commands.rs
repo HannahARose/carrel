@@ -513,7 +513,7 @@ fn kind_name(item: &ItemRef) -> String {
         .unwrap_or_default()
 }
 
-fn plural(n: usize, word: &str) -> String {
+pub(crate) fn plural(n: usize, word: &str) -> String {
     if n == 1 {
         format!("1 {word}")
     } else {

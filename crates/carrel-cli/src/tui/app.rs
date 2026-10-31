@@ -331,6 +331,8 @@ pub struct App {
     pub browse_pane: super::item::Pane,
     /// The search shown in Browse, if any.
     pub search: Option<String>,
+    /// What it found, and why.
+    pub searched: super::search::Searched,
     /// The chosen item: its card, its changes and related items.
     pub item: super::item::ItemView,
     /// A line being typed, while it's open.
@@ -413,6 +415,7 @@ impl App {
             browse_item: 0,
             browse_pane: super::item::Pane::Collections,
             search: None,
+            searched: super::search::Searched::default(),
             item: super::item::ItemView::default(),
             input: None,
             message: None,
