@@ -167,7 +167,7 @@ Editing opens the card's fields in your editor. When you save, Carrel checks the
 
 ## Questions and the glossary
 
-When several items share something Carrel doesn't know, such as a project's code name in their file names, it asks one question instead of guessing on each. Questions wait on the Questions screen (`3`), the most useful first.
+When several items share something Carrel doesn't know, such as a project's code name in their file names, it asks one question instead of guessing on each. Questions wait on the Questions screen (`4`), the most useful first.
 
 - **A term** ("What is “scope-ds”?"): answer in a sentence. Carrel saves it to `_System/glossary.md`, which every model reads from then on, and puts the waiting items back at the front of the queue, so the worker drafts them again with what you said.
 - **A collection** ("Which collection do items about … belong in?"): choose one, and the waiting items move there.
@@ -176,15 +176,32 @@ Items waiting on a question aren't approved in bulk until it's answered or dismi
 
 ## Finding things
 
-- **Browse** (`4`) lists collections and their items, with each card in full. `/` searches titles, tags and summaries across the archive.
+- **Browse** (`5`) lists collections and their items, with each card in full. `/` searches titles, tags and summaries across the archive.
 - `carrel show ITEM` prints a card.
 - `ARCHIVE.md` and each collection's design document end with a generated list of its contents, so the archive is browsable in Finder or Obsidian too.
+
+## Working on items
+
+Most items are filed and left alone, but some are still being worked on: a project, a thesis, a manuscript. Carrel keeps track of the work without getting in its way.
+
+- **Checking out** copies an item out of the archive to work on, to the Desktop unless you say where: `carrel checkout ITEM [--to FOLDER] [--due DATE]`. The archive copy is read-only until it comes back, and the card records where it went and when.
+- **Returning** brings the working copy back: `carrel return ITEM` shows what changed and the history entry it adds, and asks first. A backup snapshot is taken, and the change can be undone from History. `--discard` cancels the checkout instead, leaving the archive copy as it was.
+- **The desk** is for things you work on where they are, without archiving them yet: `carrel desk add PATH` writes a card beside the file or folder, and nothing inside it is changed or moved.
+- **Work sessions:** `carrel sessions` looks at what's checked out on this device for changes (and Git commits), adds a pending history entry to the card for each finished stretch of work, and lists every pending entry. Approve, combine or drop them there, or on the Active screen.
+
+The **Active** screen (`3`) lists what's checked out and what's on this device's desk, each with its pending entries under it. The chosen item's details are on the right: where the working copy is, when it was checked out and is due, what has changed, and its pending entries, numbered.
+
+- `r` returns the chosen checkout, after showing what changed; `x` cancels it, after asking.
+- `o` opens the working copy (or the desk item) in Finder, or in the app its type opens with, and leaves the interactive mode as it is.
+- `a`, `c` and `d` approve, combine or drop the chosen item's pending entries: all of them, or the ones marked with `Space`.
+
+Active/ in the archive, and the Journal, show the same in Obsidian, and are kept current with every checkout and return.
 
 ## History and undo
 
 Every change Carrel makes to the archive is recorded: filing a batch, renaming, creating a collection, changing a shared setting, answering a term question. History is a Git repository in `_System/history.git` holding the cards and documents, not the files themselves (backups have those).
 
-- **History** (`5`) or `carrel log` lists changes, newest first.
+- **History** (`6`) or `carrel log` lists changes, newest first.
 - `u` on a change, or `carrel undo CHANGE`, reverses it with a new change: files it moved go back, and cards and documents return to how they were. The change that created the history can't be undone.
 - Rejecting a proposal isn't a change to the archive, so it isn't undone this way; ingest the file again instead.
 
@@ -204,7 +221,7 @@ History keeps the cards; [Kopia](https://kopia.io) keeps the files. After `carre
 - `carrel backup verify` checks the repository, reading back a sample of the files.
 - `carrel backup restore ITEM [--at CHANGE]` restores an item as it was, into a new folder beside the archive. It never overwrites anything.
 - The password is asked for once and kept in your keychain. Losing it means losing the backups, so keep it in a password manager too.
-- The interactive mode's Backups screen (`8`) does the same: it lists the snapshots with their changes (from history, so it works with the drive unplugged), and `n` takes a snapshot, `v` verifies, `r` restores an item as of the chosen snapshot, and `s` sets up or connects a repository: choose its folder with your file picker or the built-in browser (`/` to type a path), then type the password, shown as dots.
+- The interactive mode's Backups screen (`9`) does the same: it lists the snapshots with their changes (from history, so it works with the drive unplugged), and `n` takes a snapshot, `v` verifies, `r` restores an item as of the chosen snapshot, and `s` sets up or connects a repository: choose its folder with your file picker or the built-in browser (`/` to type a path), then type the password, shown as dots.
 
 If the backup drive isn't connected, filing still works; the next snapshot covers what was missed.
 
@@ -223,7 +240,7 @@ Carrel never sends your files anywhere. Everything it does with them runs on you
 
 ## Settings
 
-The Settings screen (`7`), or `carrel settings`, shows two kinds:
+The Settings screen (`8`), or `carrel settings`, shows two kinds:
 
 **This device**, kept in `cli.json`:
 
