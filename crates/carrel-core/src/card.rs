@@ -73,6 +73,10 @@ pub struct Card {
     /// Present while the item is checked out (FORMAT.md §9.1).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub checked_out: Option<Checkout>,
+    /// When the item's working copy is snapshotted while it's being worked on (FORMAT.md
+    /// §5.2); every session unless set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snapshots: Option<Snapshots>,
     /// How program-written fields were produced (FORMAT.md §5.6).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub generated: Option<Provenance>,
@@ -156,6 +160,14 @@ impl Kind {
             Self::Physical | Self::Url | Self::External | Self::Tombstone
         )
     }
+}
+
+/// When a checked-out or desk item's working copy is snapshotted (FORMAT.md §5.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum Snapshots {
+    /// Only at checkout and return, not after each work session: for large data.
+    ReturnOnly,
 }
 
 /// How strictly a bundle is protected (FORMAT.md §4.2).

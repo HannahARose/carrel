@@ -1163,6 +1163,186 @@ fn types_nothing_reads_are_logged_without_names_and_listed() {
     assert!(text.contains(".f3d"), "{text}");
 }
 
+/// Sets `path`'s modification time to `hours` ago.
+fn backdate(path: &Path, hours: u64) {
+    std::fs::File::options()
+        .write(true)
+        .open(path)
+        .unwrap()
+        .set_modified(std::time::SystemTime::now() - std::time::Duration::from_hours(hours))
+        .unwrap();
+}
+
+/// Makes the next command that changes the archive look for sessions, as if the last look
+/// were long ago.
+fn forget_last_look(sandbox: &Sandbox) {
+    for entry in std::fs::read_dir(sandbox.path("config/sessions")).unwrap() {
+        let path = entry.unwrap().path();
+        let mut state: Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        state.as_object_mut().unwrap().remove("looked");
+        std::fs::write(&path, state.to_string()).unwrap();
+    }
+}
+
+/// Rewrites a YAML or JSON line that starts with `key` (after spaces) to `replacement`.
+fn rewrite_line(path: &Path, key: &str, replacement: &str) {
+    let text = std::fs::read_to_string(path).unwrap();
+    let text = text
+        .lines()
+        .map(|l| {
+            if l.trim_start().starts_with(key) {
+                replacement.to_owned()
+            } else {
+                l.to_owned()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n";
+    std::fs::write(path, text).unwrap();
+}
+
+#[test]
+fn commands_that_change_the_archive_record_desk_sessions_every_few_minutes() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    let project = sandbox.path("Code/budget-app");
+    std::fs::create_dir_all(&project).unwrap();
+    std::fs::write(project.join("notes.md"), "plans\n").unwrap();
+    sandbox.ok(&root, &["desk", "add", project.to_str().unwrap()]);
+
+    // Put on the desk three hours ago, worked on two hours ago.
+    let three_hours_ago = jiff::Timestamp::now() - jiff::SignedDuration::from_hours(3);
+    // This device's desk: the sample archive has another device's, and folders come in no
+    // particular order.
+    let desk = std::fs::read_dir(root.join("_System/devices"))
+        .unwrap()
+        .map(|d| d.unwrap().path().join("desk.json"))
+        .find(|d| std::fs::read_to_string(d).is_ok_and(|t| t.contains("budget-app")))
+        .unwrap();
+    rewrite_line(
+        &desk,
+        "\"added\"",
+        &format!("      \"added\": \"{three_hours_ago}\""),
+    );
+    backdate(&project.join("notes.md"), 2);
+
+    // `desk add` just looked, so the next command doesn't look again yet.
+    let quiet = sandbox.run_in(&root, &["collection", "new", "Projects/Garden"]);
+    assert!(quiet.status.success());
+    let card = sandbox.path("Code/budget-app.md");
+    assert!(
+        !std::fs::read_to_string(&card)
+            .unwrap()
+            .contains("[!pending]")
+    );
+
+    forget_last_look(&sandbox);
+    let found = sandbox.run_in(&root, &["collection", "new", "Projects/Orchard"]);
+    assert!(found.status.success());
+    assert!(
+        String::from_utf8_lossy(&found.stderr).contains("Found 1 new session(s) on “budget-app”"),
+        "{}",
+        String::from_utf8_lossy(&found.stderr)
+    );
+    let text = std::fs::read_to_string(&card).unwrap();
+    assert!(text.contains("[!pending]"), "{text}");
+    assert!(text.contains("Changed 1 file(s): notes.md"), "{text}");
+    assert!(
+        !String::from_utf8_lossy(&sandbox.run_in(&root, &["status"]).stderr).contains("Found"),
+        "commands that only read don't look"
+    );
+
+    let listed = sandbox.json(&root, &["sessions"]);
+    let ours = listed["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["title"] == "budget-app")
+        .expect("the desk item has pending entries");
+    assert_eq!(ours["desk"], true, "{listed}");
+    assert_eq!(ours["pending"].as_array().unwrap().len(), 1);
+    sandbox.ok(&root, &["sessions", "approve", project.to_str().unwrap()]);
+    assert!(
+        !std::fs::read_to_string(&card)
+            .unwrap()
+            .contains("[!pending]")
+    );
+}
+
+#[test]
+fn session_snapshots_are_taken_and_can_be_forgotten_on_return() {
+    if std::process::Command::new("kopia")
+        .arg("--version")
+        .output()
+        .is_err()
+    {
+        assert!(
+            std::env::var_os("CARREL_REQUIRE_KOPIA").is_none(),
+            "Kopia is required here but isn't installed"
+        );
+        eprintln!("skipped: kopia isn't installed");
+        return;
+    }
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    let password = format!("test-{}", std::process::id());
+    let run = |args: &[&str]| {
+        std::process::Command::new(env!("CARGO_BIN_EXE_carrel"))
+            .args(args)
+            .current_dir(&root)
+            .env("CARREL_CONFIG_DIR", sandbox.path("config"))
+            .env("CARREL_WORKER", "off")
+            .env("KOPIA_PASSWORD", &password)
+            .env("KOPIA_CHECK_FOR_UPDATES", "false")
+            .output()
+            .unwrap()
+    };
+    let repository = sandbox.path("backups");
+    let setup = run(&["backup", "setup", repository.to_str().unwrap()]);
+    assert!(
+        setup.status.success(),
+        "{}",
+        String::from_utf8_lossy(&setup.stderr)
+    );
+    let desk = sandbox.path("desk");
+    let item = "Projects/Hardware/parts-list.csv";
+    assert!(
+        run(&["checkout", item, "--to", desk.to_str().unwrap()])
+            .status
+            .success()
+    );
+    let three_hours_ago = jiff::Timestamp::now() - jiff::SignedDuration::from_hours(3);
+    rewrite_line(
+        &root.join(format!("{item}.md")),
+        "since:",
+        &format!("  since: \"{three_hours_ago}\""),
+    );
+    let working = desk.join("parts-list.csv");
+    std::fs::write(&working, "edited,at,the,desk\n").unwrap();
+    backdate(&working, 2);
+
+    let listed = run(&["sessions", "--json"]);
+    let listed: Value = serde_json::from_slice(&listed.stdout).unwrap();
+    assert_eq!(listed["sessions"], 1, "{listed}");
+    assert!(listed["snapshots"][0]["snapshot"].is_string(), "{listed}");
+
+    let returned = run(&["return", item, "--yes", "--trim-snapshots", "--json"]);
+    assert!(
+        String::from_utf8_lossy(&returned.stderr).contains("1 session snapshot(s)"),
+        "the proposal says so: {}",
+        String::from_utf8_lossy(&returned.stderr)
+    );
+    let returned: Value = serde_json::from_slice(&returned.stdout).unwrap();
+    let trimmed = &returned["session_snapshots"];
+    assert!(trimmed["returned"].is_string(), "{returned}");
+    assert_eq!(trimmed["forgotten"], 1, "{returned}");
+    assert_eq!(trimmed["kept"], 0);
+}
+
 /// Writes a zip of `(name, contents)` files at `path`.
 fn write_zip(path: &Path, files: &[(&str, &[u8])]) {
     use std::io::Write as _;

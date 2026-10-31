@@ -381,6 +381,9 @@ impl carrel_core::backup::Backups for FakeBackups {
     ) -> Result<(), carrel_core::backup::BackupError> {
         Ok(())
     }
+    fn forget(&self, _snapshot: &str) -> Result<(), carrel_core::backup::BackupError> {
+        Ok(())
+    }
 }
 
 #[test]

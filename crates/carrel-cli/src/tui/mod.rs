@@ -64,6 +64,55 @@ fn leave() {
 /// Background work's outcome, as a line for the owner.
 type Done = Receiver<Result<String, String>>;
 
+/// Shows what looking for work sessions found, and reloads when it wrote something.
+fn recorded_sessions(app: &mut App, result: Option<Result<String, Failure>>) {
+    match result {
+        Some(Ok(text)) if !text.is_empty() => {
+            let message = text.lines().collect::<Vec<_>>().join("; ");
+            if let Err(Failure(e)) = app.reload() {
+                app.message = Some(e);
+            } else {
+                app.message = Some(format!("{message}; approve them with `carrel sessions`"));
+            }
+        }
+        Some(Err(Failure(e))) => app.message = Some(format!("Work sessions weren't recorded: {e}")),
+        _ => {}
+    }
+}
+
+/// Work sessions, looked for in a background thread about once a minute; `record_if_due`
+/// keeps the looking itself to every few minutes.
+#[derive(Default)]
+struct SessionLook {
+    looking: Option<Receiver<Option<Result<String, Failure>>>>,
+    last: Option<std::time::Instant>,
+}
+
+impl SessionLook {
+    /// Starts a look when one is due, and shows what a finished one found.
+    fn tick(&mut self, app: &mut App) {
+        if self.looking.is_none()
+            && self
+                .last
+                .is_none_or(|t| t.elapsed() >= Duration::from_mins(1))
+        {
+            self.last = Some(std::time::Instant::now());
+            let (send, receive) = std::sync::mpsc::channel();
+            let root = app.archive.root().to_owned();
+            std::thread::spawn(move || {
+                let _ = send.send(crate::sessions::record_if_due(Some(&root)));
+            });
+            self.looking = Some(receive);
+        }
+        if let Some(done) = &self.looking
+            && let Ok(result) = done.try_recv()
+        {
+            self.looking = None;
+            recorded_sessions(app, result);
+        }
+    }
+}
+
 fn event_loop(
     terminal: &mut ratatui::DefaultTerminal,
     app: &mut App,
@@ -73,7 +122,9 @@ fn event_loop(
     let mut running: Option<Done> = None;
     let mut preparing: Option<Preparing> = None;
     let mut checked = std::time::Instant::now();
+    let mut sessions = SessionLook::default();
     while !app.quit {
+        sessions.tick(app);
         // The worker runs in another process; see what it has done about once a second.
         if checked.elapsed() >= Duration::from_secs(1) {
             checked = std::time::Instant::now();

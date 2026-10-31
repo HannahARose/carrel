@@ -172,6 +172,10 @@ enum Command {
         /// working copy's changes.
         #[arg(long, conflicts_with = "from")]
         discard: bool,
+        /// With backups: forget the checkout's session snapshots without asking, once the
+        /// returned version is snapshotted. Otherwise they're kept unless you say so.
+        #[arg(long, conflicts_with = "discard")]
+        trim_snapshots: bool,
     },
     /// Desk items: files and folders being worked on where they are, tracked without being
     /// archived.
@@ -533,6 +537,21 @@ fn desk_command(archive: Option<&Path>, action: Option<DeskAction>) -> Result<Re
     }
 }
 
+/// `carrel backup` and its subcommands.
+fn backup_command(archive: Option<&Path>, action: BackupAction) -> Result<Report, Failure> {
+    match action {
+        BackupAction::Setup { path, description } => {
+            backup::setup(archive, &path, description.as_deref(), None)
+        }
+        BackupAction::Now => backup::now(archive),
+        BackupAction::List => backup::list(archive),
+        BackupAction::Verify { percent } => backup::verify(archive, percent),
+        BackupAction::Restore { item, at, to } => {
+            backup::restore(archive, &item, at.as_deref(), to.as_deref())
+        }
+    }
+}
+
 /// `carrel sessions` and its subcommands.
 fn sessions_command(
     archive: Option<&Path>,
@@ -650,6 +669,9 @@ fn main() -> ExitCode {
             )
             .exit();
     };
+    if changes_archive(&command) {
+        sessions::record_before_command(cli.archive.as_deref(), cli.json);
+    }
     let result = match command {
         Command::Tui => tui::run(cli.archive.as_deref()),
         Command::Undo { change } => commands::undo(cli.archive.as_deref(), &change),
@@ -700,7 +722,15 @@ fn main() -> ExitCode {
             from,
             yes,
             discard,
-        } => checkout::return_item(cli.archive.as_deref(), &item, from.as_deref(), yes, discard),
+            trim_snapshots,
+        } => checkout::return_item(
+            cli.archive.as_deref(),
+            &item,
+            from.as_deref(),
+            yes,
+            discard,
+            trim_snapshots,
+        ),
         Command::Collection { action } => match action {
             CollectionAction::New {
                 path,
@@ -708,17 +738,7 @@ fn main() -> ExitCode {
                 tags,
             } => commands::collection_new(cli.archive.as_deref(), &path, description, &tags),
         },
-        Command::Backup { action } => match action {
-            BackupAction::Setup { path, description } => {
-                backup::setup(cli.archive.as_deref(), &path, description.as_deref(), None)
-            }
-            BackupAction::Now => backup::now(cli.archive.as_deref()),
-            BackupAction::List => backup::list(cli.archive.as_deref()),
-            BackupAction::Verify { percent } => backup::verify(cli.archive.as_deref(), percent),
-            BackupAction::Restore { item, at, to } => {
-                backup::restore(cli.archive.as_deref(), &item, at.as_deref(), to.as_deref())
-            }
-        },
+        Command::Backup { action } => backup_command(cli.archive.as_deref(), action),
         Command::Questions { action } => match action.unwrap_or(QuestionsAction::List) {
             QuestionsAction::List => questions::list(cli.archive.as_deref()),
             QuestionsAction::Answer { id, answer } => {
@@ -736,6 +756,31 @@ fn main() -> ExitCode {
         },
     };
     finish(result, cli.json)
+}
+
+/// Whether `command` takes the writer lease to change the archive, so finished work sessions
+/// are recorded first (`carrel sessions` records them itself).
+fn changes_archive(command: &Command) -> bool {
+    match command {
+        Command::Undo { .. }
+        | Command::Correct { .. }
+        | Command::Edit { .. }
+        | Command::Rename { .. }
+        | Command::Checkout { .. }
+        | Command::Return { .. }
+        | Command::Collection { .. } => true,
+        Command::Settings { action } => matches!(action, Some(SettingsAction::Set { .. })),
+        Command::Review { action, .. } => !matches!(
+            action,
+            None | Some(ReviewAction::List { .. } | ReviewAction::Show { .. })
+        ),
+        Command::Desk { action } => !matches!(action, None | Some(DeskAction::List)),
+        Command::Backup { action } => {
+            matches!(action, BackupAction::Setup { .. } | BackupAction::Now)
+        }
+        Command::Questions { action } => !matches!(action, None | Some(QuestionsAction::List)),
+        _ => false,
+    }
 }
 
 /// Prints a command's result and gives its exit status.
