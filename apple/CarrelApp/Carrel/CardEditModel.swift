@@ -78,7 +78,7 @@ final class CardEditModel {
 
     /// The problems that name none of the fields, to show above them.
     var otherProblems: [String] {
-        let fields = ["title", "summary", "tag", "date", "sensitiv"]
+        let fields = ["title", "summary", "tag", "date", "sensitivity"]
         return problems.filter { problem in
             !fields.contains { problem.localizedCaseInsensitiveContains($0) }
         }

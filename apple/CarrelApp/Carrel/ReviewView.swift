@@ -62,7 +62,11 @@ extension ReviewModel {
 
     /// Whether the collection picker is open, for a sheet.
     var isMoving: Binding<Bool> {
-        Binding { self.moving != nil } set: { if !$0 { self.moving = nil } }
+        Binding {
+            self.moving != nil
+        } set: {
+            if !$0 { self.moving = nil }
+        }
     }
 
     /// Acts on a single letter typed in the list; returns whether it meant something.
@@ -92,8 +96,12 @@ private struct ProposalRow: View {
                     .font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
         } icon: {
-            Image(systemName: proposal.state == .needsOwner ? "exclamationmark.circle" : proposal.kind.symbol)
-                .foregroundStyle(proposal.state == .needsOwner ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary))
+            Image(
+                systemName: proposal.state == .needsOwner
+                    ? "exclamationmark.circle" : proposal.kind.symbol
+            )
+            .foregroundStyle(
+                proposal.state == .needsOwner ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary))
         }
         .help(proposal.source)
     }
@@ -105,9 +113,12 @@ extension Proposal {
     var flags: [String] {
         var flags = [confidence.name]
         if state == .needsOwner { flags.append("needs you") }
-        if [.sensitive, .restricted].contains(fields.sensitivity) { flags.append(fields.sensitivity.name) }
+        if [.sensitive, .restricted].contains(fields.sensitivity) {
+            flags.append(fields.sensitivity.name)
+        }
         if let compressed {
-            flags.append(compressed.asking ? "expand?" : compressed.expand ? "expands" : "kept compressed")
+            flags.append(
+                compressed.asking ? "expand?" : compressed.expand ? "expands" : "kept compressed")
         }
         if let first = duplicates.first {
             flags.append(first.why == ["same checksum"] ? "duplicate" : "likely duplicate")
@@ -163,7 +174,8 @@ struct CollectionPicker: View {
     @State private var chosen: String?
 
     private var shown: [String] {
-        filter.isEmpty ? collections : collections.filter { $0.localizedCaseInsensitiveContains(filter) }
+        filter.isEmpty
+            ? collections : collections.filter { $0.localizedCaseInsensitiveContains(filter) }
     }
 
     var body: some View {

@@ -72,13 +72,18 @@ struct QuestionInspector: View {
             Section("Answer") {
                 switch question.topic {
                 case .term:
-                    TextField("Meaning", text: answer, prompt: Text("What “\(question.subject)” means"), axis: .vertical)
-                        .lineLimit(1...4)
-                        .onSubmit(submit)
+                    TextField(
+                        "Meaning", text: answer, prompt: Text("What “\(question.subject)” means"),
+                        axis: .vertical
+                    )
+                    .lineLimit(1...4)
+                    .onSubmit(submit)
                 case .collection:
                     Picker("Collection", selection: answer) {
                         Text("Choose…").tag("")
-                        ForEach(question.choices.isEmpty ? collections : question.choices, id: \.self) {
+                        ForEach(
+                            question.choices.isEmpty ? collections : question.choices, id: \.self
+                        ) {
                             Text($0).tag($0)
                         }
                     }
@@ -102,7 +107,11 @@ struct QuestionInspector: View {
 
     private var answer: Binding<String> {
         let id = question.id
-        return Binding { questions.answers[id] ?? "" } set: { questions.answers[id] = $0 }
+        return Binding {
+            questions.answers[id] ?? ""
+        } set: {
+            questions.answers[id] = $0
+        }
     }
 
     private func submit() {

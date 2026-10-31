@@ -101,8 +101,10 @@ private struct ChangesView: View {
             }
             .textSelection(.enabled)
             if !changes.dropped.isEmpty {
-                Text("Leaves off \(changes.dropped.joined(separator: ", ")), which don’t apply there.")
-                    .font(.callout)
+                Text(
+                    "Leaves off \(changes.dropped.joined(separator: ", ")), which don’t apply there."
+                )
+                .font(.callout)
             }
             if changes.keptSensitive {
                 Text("Kept at sensitive: a rule finds a restricted value in the item.")

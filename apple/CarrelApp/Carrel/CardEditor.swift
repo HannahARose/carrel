@@ -26,7 +26,7 @@ struct CardEditor: View {
                 Picker("Sensitivity", selection: field(\.sensitivity)) {
                     ForEach(edit.sensitivities, id: \.self) { Text($0.name.capitalized).tag($0) }
                 }
-                Problems(edit.problems(about: "sensitiv"))
+                Problems(edit.problems(about: "sensitivity"))
             }
             Section("Tags") {
                 ForEach(edit.fields?.tags ?? [], id: \.self) { tag in
