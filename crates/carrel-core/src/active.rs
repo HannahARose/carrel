@@ -9,10 +9,10 @@
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::archive::{Archive, ArchiveError};
-use crate::card::{Card, Checkout};
+use crate::card::{Card, Checkout, Id};
 use crate::card_file::CardFile;
 use crate::entries::HistoryEntry;
 use crate::listing::{link_destination, relative};
@@ -442,4 +442,128 @@ mod tests {
             "nothing changes twice"
         );
     }
+}
+
+/// Whether an active item is checked out of the archive or on the desk.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Kind {
+    /// Checked out: the working copy is a copy, returned to the archive.
+    CheckedOut,
+    /// On this device's desk: worked on where it is, not archived.
+    Desk,
+}
+
+/// An item being worked on, as the Active screens show it.
+#[derive(Debug, Clone)]
+pub struct ActiveItem {
+    /// Checked out or on the desk.
+    pub kind: Kind,
+    /// Its card's identifier.
+    pub id: Id,
+    /// Its title.
+    pub title: String,
+    /// Its card: in the archive for a checkout, beside the item for a desk item.
+    pub card: PathBuf,
+    /// The working copy, or the desk item itself.
+    pub working: PathBuf,
+    /// When it was checked out or put on the desk.
+    pub since: String,
+    /// When a checkout is due back.
+    pub due: Option<String>,
+    /// How it compares with how it went out: `unchanged`, `changed`, `missing`, and so on.
+    pub state: &'static str,
+    /// What changed in a checkout's working copy, when it could tell.
+    pub diff: Option<crate::manifest::Diff>,
+    /// Its pending history entries, in order: `1` is the first.
+    pub pending: Vec<HistoryEntry>,
+}
+
+impl ActiveItem {
+    /// How `carrel sessions` names it: a checkout by its identifier, a desk item by its card.
+    #[must_use]
+    pub fn query(&self) -> String {
+        match self.kind {
+            Kind::CheckedOut => self.id.to_string(),
+            Kind::Desk => self.card.display().to_string(),
+        }
+    }
+}
+
+/// The pending entries of the card at `path`.
+fn pending(path: &Path) -> Vec<HistoryEntry> {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    let Ok(log) = CardFile::parse(&text).and_then(|f| f.history()) else {
+        return Vec::new();
+    };
+    log.pending()
+        .into_iter()
+        .map(|i| log.entries[i].clone())
+        .collect()
+}
+
+/// What's checked out of `archive`, then what's on `device`'s desk, each with its pending
+/// history entries. Cards that can't be read are left out.
+#[must_use]
+pub fn items(archive: &Archive, device: Option<Id>) -> Vec<ActiveItem> {
+    let mut active = Vec::new();
+    let rules = archive.rules().ok();
+    for item in archive.items().unwrap_or_default() {
+        let card = archive.root().join(&item.card);
+        let Ok(text) = std::fs::read_to_string(&card) else {
+            continue;
+        };
+        let Ok(file) = CardFile::parse(&text) else {
+            continue;
+        };
+        let Some(out) = file.card().checked_out.clone() else {
+            continue;
+        };
+        let working = PathBuf::from(&out.to);
+        let (state, diff) = rules.as_ref().map_or(("not compared", None), |rules| {
+            crate::checkout::compared(archive, rules, item.id, &working)
+        });
+        active.push(ActiveItem {
+            kind: Kind::CheckedOut,
+            id: item.id,
+            title: file.card().title.clone(),
+            pending: pending(&card),
+            card,
+            working,
+            since: out.since.0,
+            due: out.due.map(|d| d.0),
+            state,
+            diff,
+        });
+    }
+    let desk = device
+        .and_then(|device| crate::desk::Desk::load(archive, device).ok())
+        .unwrap_or_default();
+    for entry in desk.items {
+        let title = std::fs::read_to_string(&entry.card)
+            .ok()
+            .and_then(|t| CardFile::parse(&t).ok())
+            .map_or_else(
+                || entry.path.display().to_string(),
+                |f| f.card().title.clone(),
+            );
+        active.push(ActiveItem {
+            kind: Kind::Desk,
+            id: entry.id,
+            title,
+            pending: pending(&entry.card),
+            state: if entry.path.exists() {
+                "on the desk"
+            } else {
+                "missing"
+            },
+            card: entry.card,
+            working: entry.path,
+            since: entry.added.0,
+            due: None,
+            diff: None,
+        });
+    }
+    active
 }

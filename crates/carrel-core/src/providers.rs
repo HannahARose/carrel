@@ -16,6 +16,7 @@
     target_os = "watchos",
     target_os = "visionos"
 )))]
+pub mod device;
 pub mod process;
 pub mod serve;
 

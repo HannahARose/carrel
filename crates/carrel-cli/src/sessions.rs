@@ -11,7 +11,6 @@ use carrel_core::card::Id;
 use carrel_core::card_file::CardFile;
 use carrel_core::coordinator::{Coordinator as _, DEFAULT_LEASE, DiskLock, WriterLease};
 use carrel_core::desk::Desk;
-use carrel_core::history::{Change, History, Operation};
 use carrel_core::sessions::Scanned;
 use serde_json::{Value, json};
 
@@ -19,16 +18,7 @@ use crate::commands::{find_item, holder, locate};
 use crate::config::Identity;
 use crate::{Failure, Report};
 
-/// What to do with an item's pending entries.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Decision {
-    /// Approve them.
-    Approve,
-    /// Drop them.
-    Drop,
-    /// Combine them into one, still pending.
-    Combine,
-}
+pub use carrel_core::sessions::{Decision, entries};
 
 /// How often running Carrel looks for finished sessions, at most.
 pub const EVERY: Duration = Duration::from_mins(5);
@@ -294,48 +284,18 @@ pub fn decide(
 ) -> Result<Report, Failure> {
     let archive = locate(archive)?;
     let card = find_card(&archive, query)?;
-    let path = card.path;
-    let mut file = CardFile::parse(&std::fs::read_to_string(&path)?)?;
-    let mut log = file.history()?;
-    let pending = log.pending();
-    let chosen: Vec<usize> = if numbers.is_empty() {
-        pending.clone()
-    } else {
-        numbers
-            .iter()
-            .map(|&n| position(&pending, n))
-            .collect::<Result<_, _>>()?
-    };
-    if chosen.is_empty() {
-        return Err(Failure::new("no pending entries to decide"));
-    }
-    let title = file.card().title.clone();
-    let summary = match decision {
-        Decision::Approve => {
-            for &i in &chosen {
-                log.approve(i)?;
-            }
-            format!("Approve {} of “{title}”", entries(chosen.len()))
-        }
-        Decision::Drop => {
-            // From the last, so earlier positions stay right.
-            let mut sorted = chosen.clone();
-            sorted.sort_unstable();
-            for &i in sorted.iter().rev() {
-                log.drop_entry(i)?;
-            }
-            format!("Drop {} of “{title}”", entries(chosen.len()))
-        }
-        Decision::Combine => {
-            log.combine(&chosen)?;
-            format!("Combine {} of “{title}”", entries(chosen.len()))
-        }
-    };
-    file.set_history(&log)?;
-    let commit = write_and_commit(&archive, &path, &file, card.id, &summary)?;
+    let identity = Identity::load_or_create()?;
+    let decided = carrel_core::sessions::decide(
+        &archive,
+        &card.path,
+        card.id,
+        numbers,
+        decision,
+        holder(&identity),
+    )?;
     Ok(Report::new(
-        format!("{summary}\n"),
-        json!({ "item": card.id, "entries": chosen.len(), "commit": commit }),
+        format!("{}\n", decided.summary),
+        json!({ "item": card.id, "entries": decided.entries, "commit": decided.commit }),
     ))
 }
 
@@ -369,75 +329,39 @@ pub fn edit(archive: Option<&Path>, query: &str, n: usize) -> Result<Report, Fai
     crate::review::run_editor(&temp)?;
     let edited = std::fs::read_to_string(&temp).map_err(|e| Failure::io(&temp, &e))?;
 
-    let mut file = CardFile::parse(&std::fs::read_to_string(&card.path)?)?;
-    let mut log = file.history()?;
-    let Some(i) = log.pending().into_iter().find(|&i| log.entries[i] == entry) else {
-        return Err(Failure::new(format!(
-            "the entry changed while it was being edited, so nothing was saved; your text is \
-             in {}",
-            temp.display()
-        )));
-    };
-    match log.edit(i, &edited) {
-        Ok(false) => {
+    let identity = Identity::load_or_create()?;
+    match carrel_core::sessions::edit_entry(
+        &archive,
+        &card.path,
+        card.id,
+        &entry,
+        &edited,
+        holder(&identity),
+    ) {
+        Ok(None) => {
             let _ = std::fs::remove_file(&temp);
-            return Ok(Report::new(
+            Ok(Report::new(
                 "Nothing changed\n",
                 json!({ "item": card.id, "commit": null }),
-            ));
+            ))
         }
-        Ok(true) => {}
-        Err(e) => {
-            return Err(Failure::new(format!(
-                "{e}; nothing was saved, and your text is in {}",
-                temp.display()
-            )));
+        Ok(Some(decided)) => {
+            let _ = std::fs::remove_file(&temp);
+            Ok(Report::new(
+                format!("{}\n", decided.summary),
+                json!({ "item": card.id, "entries": 1, "commit": decided.commit }),
+            ))
         }
+        Err(carrel_core::sessions::SessionError::Invalid(why)) => {
+            Err(Failure::new(if why.contains("nothing was saved") {
+                format!("{why}; your text is in {}", temp.display())
+            } else {
+                format!(
+                    "{why}; nothing was saved, and your text is in {}",
+                    temp.display()
+                )
+            }))
+        }
+        Err(e) => Err(e.into()),
     }
-    let _ = std::fs::remove_file(&temp);
-    file.set_history(&log)?;
-    let summary = format!("Edit a history entry of “{}”", file.card().title);
-    let commit = write_and_commit(&archive, &card.path, &file, card.id, &summary)?;
-    Ok(Report::new(
-        format!("{summary}\n"),
-        json!({ "item": card.id, "entries": 1, "commit": commit }),
-    ))
-}
-
-/// `1 history entry`, `2 history entries`.
-fn entries(n: usize) -> String {
-    if n == 1 {
-        "1 history entry".to_owned()
-    } else {
-        format!("{n} history entries")
-    }
-}
-
-fn write_and_commit(
-    archive: &Archive,
-    path: &Path,
-    file: &CardFile,
-    item: Id,
-    summary: &str,
-) -> Result<Option<String>, Failure> {
-    let identity = Identity::load_or_create()?;
-    let lease =
-        DiskLock::for_archive(archive).acquire(holder(&identity), "sessions", DEFAULT_LEASE)?;
-    let result = (|| -> Result<Option<String>, Failure> {
-        let temp = path.with_extension("md.tmp-sessions");
-        std::fs::write(&temp, file.to_text()?)?;
-        std::fs::rename(&temp, path)?;
-        let mut change = Change::new(
-            Operation::Session,
-            summary,
-            lease.info().person,
-            lease.info().device,
-        );
-        change.items = vec![item];
-        // The Journal lists approved entries, so it follows the cards.
-        carrel_core::active::regenerate(archive)?;
-        Ok(History::open(archive)?.commit(archive, &change, &lease)?)
-    })();
-    lease.release()?;
-    result
 }
