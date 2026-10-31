@@ -824,3 +824,60 @@ fn checkout_copies_an_item_out_and_locks_the_archive_copy() {
     );
     std::fs::write(&archived, "and again\n").unwrap();
 }
+
+#[test]
+fn desk_items_get_a_card_beside_them_and_stay_where_they_are() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    let project = sandbox.path("Code/budget-app");
+    std::fs::create_dir_all(project.join("src")).unwrap();
+    std::fs::write(project.join("Cargo.toml"), "[package]\nname = \"budget\"\n").unwrap();
+    std::fs::write(project.join("src/main.rs"), "fn main() {}\n").unwrap();
+
+    let added = sandbox.json(
+        &root,
+        &[
+            "desk",
+            "add",
+            project.to_str().unwrap(),
+            "--title",
+            "Budget app",
+        ],
+    );
+    let card = sandbox.path("Code/budget-app.md");
+    assert_eq!(
+        PathBuf::from(added["card"].as_str().unwrap()),
+        card.canonicalize().unwrap()
+    );
+    let text = std::fs::read_to_string(&card).unwrap();
+    assert!(text.contains("title: Budget app"), "{text}");
+    assert!(
+        text.contains("kind: bundle"),
+        "a Cargo project is a bundle: {text}"
+    );
+    assert!(
+        !project.join("Budget app.md").exists(),
+        "nothing is written inside it"
+    );
+    assert_eq!(
+        sandbox.json(&root, &["desk"])["items"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+
+    let again = sandbox.run_in(&root, &["desk", "add", project.to_str().unwrap()]);
+    assert!(String::from_utf8_lossy(&again.stderr).contains("already on the desk"));
+    let inside = sandbox.run_in(
+        &root,
+        &["desk", "add", root.join("Projects").to_str().unwrap()],
+    );
+    assert!(String::from_utf8_lossy(&inside.stderr).contains("inside the archive"));
+
+    sandbox.ok(&root, &["desk", "remove", project.to_str().unwrap()]);
+    assert!(card.exists(), "the card stays unless asked");
+    assert_eq!(sandbox.json(&root, &["desk"])["items"], json!([]));
+    assert!(project.join("src/main.rs").exists());
+}
