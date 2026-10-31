@@ -52,6 +52,13 @@ fn enter() -> ratatui::DefaultTerminal {
     terminal
 }
 
+/// Clears the plain terminal, so a prompt there starts on a clean screen.
+fn clear() {
+    use std::io::Write as _;
+    print!("\x1b[2J\x1b[H");
+    let _ = std::io::stdout().flush();
+}
+
 /// Gives the terminal back as it was.
 fn leave() {
     let _ = execute!(std::io::stdout(), DisableMouseCapture);
@@ -118,6 +125,7 @@ fn event_loop(
             Some(Effect::Correct(id)) => {
                 // Words and the yes are asked on the plain terminal, as the editor uses it.
                 leave();
+                clear();
                 let result = crate::correct::review(
                     Some(app.archive.root()),
                     &id.to_string(),
@@ -130,6 +138,7 @@ fn event_loop(
             }
             Some(Effect::CorrectItem(card)) => {
                 leave();
+                clear();
                 let result =
                     crate::correct::filed(Some(app.archive.root()), &card, &[], false, false);
                 *terminal = enter();
