@@ -10,13 +10,14 @@ use std::path::PathBuf;
 
 use carrel_core::archive::Archive;
 use carrel_core::bench::findability::{
-    self, Descriptions, Drafted, by_meaning, by_search, look_up, names, score,
+    self, Descriptions, Drafted, Lookup, by_meaning, by_search, keep_places, look_up,
+    meaning_places, names, replay, score, word_places,
 };
 use carrel_core::bench::{Answers, check};
 use carrel_core::index::{ByMeaning, Index, embed_query, plan};
 use carrel_core::providers::{Registry, priority};
-use carrel_core::search::Search;
 use carrel_core::search::texts::{fill, tidy};
+use carrel_core::search::{Merge, Search};
 use common::ScriptedEmbed;
 
 fn bench() -> PathBuf {
@@ -152,6 +153,30 @@ fn findability_compares_words_meaning_and_both() {
     let by_both = look_up(&descriptions, &mut |d| by_search(&both, d));
     let both_score = score(&by_both);
     assert!(both_score.top_five > 0.0, "{both_score:?}");
+
+    // With the whole rankings saved, a replay merges them exactly as search did.
+    let mut by_words = by_words;
+    keep_places(&mut by_words, &mut |d| word_places(&words, d));
+    let mut by_meaning = by_meaning;
+    keep_places(&mut by_meaning, &mut |d| {
+        meaning_places(&*ranking, &names, d)
+    });
+    assert!(replay::saved(&by_meaning));
+    let ledger = by_words
+        .iter()
+        .find(|l| l.description == "booking reference K7Q2PX")
+        .unwrap();
+    assert_eq!(ledger.places[0].exact, 1, "{:?}", ledger.places[0]);
+    let saved: serde_json::Value = serde_json::to_value(&by_meaning).unwrap();
+    let by_meaning: Vec<Lookup> = serde_json::from_value(saved).unwrap();
+    let replayed = replay::replay(&by_words, &by_meaning, names.len(), Merge::for_model(model));
+    let ranks = |lookups: &[Lookup]| {
+        lookups
+            .iter()
+            .map(|l| (l.rank, l.top.clone()))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(ranks(&replayed), ranks(&by_both));
 
     // Built again, the cards keep their identifiers, so the index is still current.
     let again = filed(&work, &drafts);

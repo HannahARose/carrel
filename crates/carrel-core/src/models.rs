@@ -59,6 +59,21 @@ pub struct Embedding {
     pub query_prefix: &'static str,
     /// What goes before a text to be found.
     pub document_prefix: &'static str,
+    /// How far search trusts its ranking when merging it with the words
+    /// ([`crate::search::Merge`]), from the findability benchmark (`docs/bench/`).
+    pub strength: Strength,
+}
+
+/// How well an embedding model finds things by meaning, by the findability benchmark.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Strength {
+    /// It finds most descriptions by meaning alone, better than words do: search ranks by
+    /// meaning and uses the words to put exact names and numbers first.
+    Strong,
+    /// It finds fewer than words alone do: search ranks by words and uses meaning to break
+    /// near-ties and find what shares no words with the query.
+    Weak,
 }
 
 /// How an embedding model pools its tokens' vectors into one.
@@ -456,6 +471,7 @@ pub const CATALOG: &[Model] = &[
             pooling: Pooling::Mean,
             query_prefix: "task: search result | query: ",
             document_prefix: "title: none | text: ",
+            strength: Strength::Strong,
         }),
         comes_with: None,
     },
@@ -502,6 +518,7 @@ pub const CATALOG: &[Model] = &[
             pooling: Pooling::Last,
             query_prefix: "Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery:",
             document_prefix: "",
+            strength: Strength::Strong,
         }),
         comes_with: None,
     },
@@ -523,6 +540,7 @@ pub const CATALOG: &[Model] = &[
             pooling: Pooling::Own,
             query_prefix: "",
             document_prefix: "",
+            strength: Strength::Weak,
         }),
         comes_with: Some("carrel-provider-apple"),
     },

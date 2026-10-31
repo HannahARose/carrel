@@ -8,7 +8,7 @@ use carrel_core::card::{Checksum, Id, Kind, Sensitivity};
 use carrel_core::providers::Registry;
 use carrel_core::search::query::Query;
 use carrel_core::search::texts::{TEXTS, TextCache, fill, tidy};
-use carrel_core::search::{Found, Meaning, Ranked, Ranking, Search, Why};
+use carrel_core::search::{Found, Meaning, Merge, Ranked, Ranking, Search, Why};
 
 fn sample_archive() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/sample-archive")
@@ -236,7 +236,11 @@ impl Ranking for Near {
         [self.0]
             .into_iter()
             .filter(|id| allowed(*id))
-            .map(|id| Ranked { id, passage: None })
+            .map(|id| Ranked {
+                id,
+                passage: None,
+                score: 0.5,
+            })
             .collect()
     }
 
@@ -275,4 +279,107 @@ fn a_meaning_ranking_is_merged_with_the_words() {
             .iter()
             .any(|h| item_id(&h.found) == Some(s.invoice))
     );
+}
+
+/// A meaning ranking that has every item, in a fixed order, as a strong model's would.
+struct Order(Vec<Id>);
+
+impl Ranking for Order {
+    fn rank(&self, _query: &str, allowed: &dyn Fn(Id) -> bool, limit: usize) -> Vec<Ranked> {
+        self.0
+            .iter()
+            .copied()
+            .filter(|id| allowed(*id))
+            .take(limit)
+            .enumerate()
+            .map(|(place, id)| Ranked {
+                id,
+                passage: None,
+                score: 1.0 / f64::from(u32::try_from(place).unwrap() + 1),
+            })
+            .collect()
+    }
+
+    fn behind(&self) -> usize {
+        0
+    }
+}
+
+/// The setup's archive with a datasheet filed too, and a meaning ranking that puts `last`
+/// below every other item.
+fn with_meaning_against(s: &Setup, last: &[Id], weights: Merge) -> Search {
+    let mut ids: Vec<Id> = s
+        .archive
+        .items()
+        .unwrap()
+        .into_iter()
+        .map(|i| i.id)
+        .filter(|id| !last.contains(id))
+        .collect();
+    ids.extend(last);
+    Search::build(&s.archive)
+        .unwrap()
+        .with_meaning(Box::new(Order(ids)))
+        .with_merge(weights)
+}
+
+#[test]
+fn exact_names_and_numbers_come_first_whatever_meaning_says() {
+    let s = setup();
+    let datasheet = file(
+        s.archive.root(),
+        "Holding",
+        "datasheet.pdf",
+        "%PDF",
+        "title: \"LED driver AS1115 datasheet\"\nsensitivity: personal\n",
+    );
+    let archive = Archive::open(s.archive.root()).unwrap();
+    let s = Setup { archive, ..s };
+    for weights in [Merge::STRONG, Merge::WEAK, Merge::EQUAL] {
+        let index = with_meaning_against(&s, &[s.invoice, datasheet], weights);
+        let first = |q: &str| item_id(&search(&index, q)[0]);
+        assert_eq!(first("invoice 2057-4038"), Some(s.invoice), "{weights:?}");
+        assert_eq!(first("2057-4038"), Some(s.invoice), "{weights:?}");
+        assert_eq!(first("AS1115"), Some(datasheet), "{weights:?}");
+        assert_eq!(first("the as1115 led chip"), Some(datasheet), "{weights:?}");
+    }
+    // Without exact terms a strong model's ranking leads: the invoice is its last choice, so
+    // something it put first beats it even though the words name the invoice.
+    let index = with_meaning_against(&s, &[s.invoice, datasheet], Merge::STRONG);
+    assert_ne!(
+        item_id(&search(&index, "furniture shop bill")[0]),
+        Some(s.invoice)
+    );
+    // A weak one doesn't.
+    let index = with_meaning_against(&s, &[s.invoice, datasheet], Merge::WEAK);
+    assert_eq!(
+        item_id(&search(&index, "furniture shop bill")[0]),
+        Some(s.invoice)
+    );
+}
+
+#[test]
+fn without_meaning_or_while_it_is_behind_the_words_still_find_things() {
+    let s = setup();
+    let words = Search::build(&s.archive).unwrap();
+    let results = words.search(&Query::parse("desk chair").unwrap(), 20);
+    assert_eq!(results.meaning, Meaning::Off);
+    assert_eq!(item_id(&results.hits[0].found), Some(s.invoice));
+
+    // A meaning ranking that knows only another item, with two not embedded: the invoice it
+    // doesn't know is judged by its words, so it isn't buried below the one it knows.
+    let other = s
+        .archive
+        .items()
+        .unwrap()
+        .into_iter()
+        .map(|i| i.id)
+        .find(|id| *id != s.invoice && *id != s.statement)
+        .unwrap();
+    let index = Search::build(&s.archive)
+        .unwrap()
+        .with_meaning(Box::new(Near(other)));
+    let results = index.search(&Query::parse("desk chair").unwrap(), 20);
+    assert_eq!(results.meaning, Meaning::Behind { items: 2 });
+    assert_eq!(item_id(&results.hits[0].found), Some(s.invoice));
 }
