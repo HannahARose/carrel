@@ -21,7 +21,7 @@ use carrel_core::bench::{Answers, check, percent};
 use carrel_core::card::Id;
 use carrel_core::index::{ByMeaning, Embedder, Index, embed_query, plan};
 use carrel_core::providers::{Capability, Registry};
-use carrel_core::search::Search;
+use carrel_core::search::{Merge, Search};
 use serde_json::{Value, json};
 
 use crate::bench::BenchArgs;
@@ -266,7 +266,9 @@ fn measure(
     };
     let alone = meaning(archive)?;
     let by_meaning_alone = look_up(descriptions, &mut |d| by_meaning(&*alone, names, d));
-    let both = Search::build(archive)?.with_meaning(meaning(archive)?);
+    let both = Search::build(archive)?
+        .with_meaning(meaning(archive)?)
+        .with_merge(Merge::for_model(model));
     let by_both = look_up(descriptions, &mut |d| by_search(&both, d));
     Ok((
         note,

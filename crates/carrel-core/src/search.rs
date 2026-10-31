@@ -6,7 +6,8 @@
 //! text from the [`texts`] cache, into a [`words::WordIndex`]; build it once and run as many
 //! queries as needed, as the interactive mode does while a query is typed. A second ranking,
 //! by meaning from the embedding index, is added with [`Search::with_meaning`]: the two are
-//! merged by reciprocal rank fusion ([`fuse`]), so either can bring an item back.
+//! merged ([`merge`]): items with the query's exact names and numbers first, then by weighted
+//! reciprocal rank fusion, so either ranking can bring an item back.
 //!
 //! Restricted items are found by their card only: their text is never cached, indexed or
 //! shown.
@@ -207,27 +208,147 @@ pub trait Ranking {
 /// The constant in reciprocal rank fusion: how much the first places count over later ones.
 pub const RRF_K: f64 = 60.0;
 
-/// Reciprocal rank fusion: each key's score is the sum over the rankings it's in of
-/// `1 / (RRF_K + place)`, places counted from 1. Best first; ties keep the first ranking's
-/// order.
+/// How many documents an exact name or number may be in and still put them first: one in
+/// more, such as a year in many cards' dates, doesn't single anything out.
+pub const RARE: usize = 3;
+
+/// Whether `term`, a word as the word index keeps it, is an exact name or number: a code
+/// with letters and digits ("as1115", "k7q2px", "ql-700"), or a number of three digits or
+/// more ("2057-4038", "1040", "07:10"). These are what an embedding blurs.
 #[must_use]
-pub fn fuse<K: Eq + Hash + Clone>(rankings: &[Vec<K>]) -> Vec<(K, f64)> {
-    let mut scores: HashMap<K, (f64, usize)> = HashMap::new();
-    let mut order = 0;
-    for ranking in rankings {
-        for (place, key) in ranking.iter().enumerate() {
-            #[allow(clippy::cast_precision_loss)]
-            let part = 1.0 / (RRF_K + place as f64 + 1.0);
-            let entry = scores.entry(key.clone()).or_insert_with(|| {
-                order += 1;
-                (0.0, order)
-            });
-            entry.0 += part;
+pub fn is_exact(term: &str) -> bool {
+    let digits = term.chars().filter(char::is_ascii_digit).count();
+    let letters = term.chars().filter(|c| c.is_alphabetic()).count();
+    digits > 0 && (letters > 0 || digits >= 3)
+}
+
+/// The exact names and numbers in `query`, as the word index keeps them: those [`is_exact`]
+/// accepts, and words in capitals such as "HMRC" or "CSV".
+#[must_use]
+pub fn exact_terms(query: &str) -> Vec<String> {
+    let mut found: Vec<String> = Vec::new();
+    for token in tokens(query) {
+        let original = &query[token.span.clone()];
+        let capitals = original.chars().filter(|c| c.is_alphabetic()).count() >= 2
+            && original
+                .chars()
+                .filter(|c| c.is_alphabetic())
+                .all(char::is_uppercase);
+        if (is_exact(&token.term) || capitals) && !found.contains(&token.term) {
+            found.push(token.term);
         }
     }
-    let mut fused: Vec<(K, f64, usize)> = scores.into_iter().map(|(k, (s, o))| (k, s, o)).collect();
-    fused.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.2.cmp(&b.2)));
-    fused.into_iter().map(|(k, s, _)| (k, s)).collect()
+    found
+}
+
+/// How the word ranking and the meaning ranking are merged: weighted reciprocal rank fusion,
+/// after the items with the query's exact names and numbers.
+///
+/// Each document's score is the number of the query's rare exact terms it has ([`RARE`],
+/// [`exact_terms`]), so those come first, plus `words / (RRF_K + place)` for its place among
+/// the words and `meaning / (RRF_K + place)` for its place by meaning. A document the meaning
+/// ranking can't have, such as a collection, or an item it hasn't embedded yet, is judged by
+/// its words in place of its meaning.
+///
+/// The weights come from the findability benchmark (`docs/bench/`, 2026-10-31): plain fusion
+/// gave a weak word match as much weight as a strong meaning match and ranked below meaning
+/// alone, so with a [strong](crate::models::Strength::Strong) model the words only break ties
+/// and bring back what meaning misses, and with a weak one meaning does that for the words.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Merge {
+    /// How much a place among the words counts.
+    pub words: f64,
+    /// How much a place by meaning counts.
+    pub meaning: f64,
+}
+
+impl Merge {
+    /// For a strong model: meaning ranks, words promote exact names and numbers.
+    pub const STRONG: Self = Self {
+        words: 0.02,
+        meaning: 1.0,
+    };
+
+    /// For a weak model: words rank, meaning breaks near-ties.
+    pub const WEAK: Self = Self {
+        words: 1.0,
+        meaning: 0.05,
+    };
+
+    /// Plain reciprocal rank fusion, both counting the same: how search merged before the
+    /// benchmark, kept to compare against.
+    pub const EQUAL: Self = Self {
+        words: 1.0,
+        meaning: 1.0,
+    };
+
+    /// The merge for an embedding model, by its [strength](crate::models::Strength) in the
+    /// catalog; a model the catalog doesn't know is taken to be strong.
+    #[must_use]
+    pub fn for_model(model: &str) -> Self {
+        let strength = crate::models::find(model)
+            .and_then(|m| m.embedding)
+            .map_or(crate::models::Strength::Strong, |e| e.strength);
+        match strength {
+            crate::models::Strength::Strong => Self::STRONG,
+            crate::models::Strength::Weak => Self::WEAK,
+        }
+    }
+}
+
+impl Default for Merge {
+    fn default() -> Self {
+        Self::STRONG
+    }
+}
+
+/// A document the word ranking found, as [`merge`] takes it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Worded<K> {
+    /// The document.
+    pub key: K,
+    /// How many of the query's rare exact names and numbers it has.
+    pub exact: usize,
+}
+
+/// Merges `words`, best first, with `meaning`, best first, by `weights` ([`Merge`]). Without
+/// a meaning ranking it's the words alone, after the exact matches. `by_words` says which
+/// documents missing from `meaning` are judged by their words in its place. Best first; ties
+/// keep the words' order, then the meaning ranking's.
+#[must_use]
+pub fn merge<K: Eq + Hash + Clone>(
+    words: &[Worded<K>],
+    meaning: Option<&[K]>,
+    by_words: &dyn Fn(&K) -> bool,
+    weights: Merge,
+) -> Vec<(K, f64)> {
+    #[allow(clippy::cast_precision_loss)] // places and counts far below 2^52
+    let part = |weight: f64, place: usize| weight / (RRF_K + place as f64 + 1.0);
+    let mut scores: HashMap<K, (f64, usize)> = HashMap::new();
+    let mut order = 0;
+    let mut add = |key: &K, score: f64| {
+        let entry = scores.entry(key.clone()).or_insert_with(|| {
+            order += 1;
+            (0.0, order)
+        });
+        entry.0 += score;
+    };
+    let ranked: HashSet<&K> = meaning.unwrap_or_default().iter().collect();
+    for (place, worded) in words.iter().enumerate() {
+        #[allow(clippy::cast_precision_loss)]
+        let mut score = worded.exact as f64 + part(weights.words, place);
+        if meaning.is_some() && !ranked.contains(&worded.key) && by_words(&worded.key) {
+            score += part(weights.meaning, place);
+        }
+        add(&worded.key, score);
+    }
+    for (place, key) in meaning.unwrap_or_default().iter().enumerate() {
+        add(key, part(weights.meaning, place));
+    }
+    let mut merged: Vec<(K, f64, usize)> =
+        scores.into_iter().map(|(k, (s, o))| (k, s, o)).collect();
+    merged.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.2.cmp(&b.2)));
+    merged.into_iter().map(|(k, s, _)| (k, s)).collect()
 }
 
 /// A document in the index, and what's needed to filter it and show its passage.
@@ -247,6 +368,7 @@ pub struct Search {
     by_id: HashMap<Id, usize>,
     texts: TextCache,
     meaning: Option<Box<dyn Ranking>>,
+    merge: Merge,
 }
 
 impl std::fmt::Debug for Search {
@@ -254,6 +376,7 @@ impl std::fmt::Debug for Search {
         f.debug_struct("Search")
             .field("docs", &self.docs.len())
             .field("meaning", &self.meaning.is_some())
+            .field("merge", &self.merge)
             .finish_non_exhaustive()
     }
 }
@@ -441,6 +564,7 @@ impl Search {
             by_id,
             texts,
             meaning: None,
+            merge: Merge::default(),
         })
     }
 
@@ -448,6 +572,14 @@ impl Search {
     #[must_use]
     pub fn with_meaning(mut self, ranking: Box<dyn Ranking>) -> Self {
         self.meaning = Some(ranking);
+        self
+    }
+
+    /// Merges the rankings with `weights` from now on, such as [`Merge::for_model`] for the
+    /// meaning ranking's model; [`Merge::STRONG`] until then.
+    #[must_use]
+    pub fn with_merge(mut self, weights: Merge) -> Self {
+        self.merge = weights;
         self
     }
 
@@ -498,14 +630,29 @@ impl Search {
                 )
             })
             .collect();
-        let word_order: Vec<usize> = scored.iter().map(|s| s.doc).collect();
+        let exact: HashSet<String> = exact_terms(&query.text)
+            .into_iter()
+            .filter(|t| self.words.documents_with(t) <= RARE)
+            .collect();
+        let worded: Vec<Worded<usize>> = scored
+            .iter()
+            .map(|s| Worded {
+                key: s.doc,
+                exact: s.terms.iter().filter(|t| exact.contains(*t)).count(),
+            })
+            .collect();
+        let is_item = |doc: &usize| matches!(self.docs[*doc].found, Found::Item(_));
         let fused: Vec<(usize, f64)> = match &self.meaning {
-            None => scored.iter().map(|s| (s.doc, s.score)).collect(),
+            None => merge(&worded, None, &|_| true, self.merge),
             Some(ranking) => {
                 let allowed_id = |id: Id| self.by_id.get(&id).is_some_and(|&d| allowed(d));
                 let wanted = limit.max(50);
                 let mut meaning_order = Vec::new();
-                for ranked in ranking.rank(&query.text, &allowed_id, wanted) {
+                let ranked = ranking.rank(&query.text, &allowed_id, wanted);
+                // Fewer than asked for, or some not embedded yet: an item missing may be one
+                // the index doesn't have, so it's judged by its words.
+                let partial = ranked.len() < wanted || ranking.behind() > 0;
+                for ranked in ranked {
                     let Some(&doc) = self.by_id.get(&ranked.id) else {
                         continue;
                     };
@@ -514,7 +661,8 @@ impl Search {
                     entry.1 = ranked.passage;
                     meaning_order.push(doc);
                 }
-                fuse(&[word_order, meaning_order])
+                let by_words = |doc: &usize| partial || !is_item(doc);
+                merge(&worded, Some(&meaning_order), &by_words, self.merge)
             }
         };
         let total = fused.len();
@@ -621,14 +769,94 @@ impl Search {
 mod tests {
     use super::*;
 
+    fn worded(keys: &[&'static str]) -> Vec<Worded<&'static str>> {
+        keys.iter().map(|&key| Worded { key, exact: 0 }).collect()
+    }
+
+    fn keys<K: Clone>(merged: &[(K, f64)]) -> Vec<K> {
+        merged.iter().map(|(k, _)| k.clone()).collect()
+    }
+
     #[test]
-    fn fusion_rewards_agreement_and_keeps_first_order_on_ties() {
-        let fused = fuse(&[vec!["a", "b", "c"], vec!["c", "b", "d"]]);
-        let keys: Vec<&str> = fused.iter().map(|(k, _)| *k).collect();
-        assert_eq!(keys, ["c", "b", "a", "d"]);
-        let single = fuse(&[vec!["x", "y"]]);
-        assert_eq!(single[0].0, "x");
-        assert!(single[0].1 > single[1].1);
+    fn equal_fusion_rewards_agreement_and_keeps_the_words_order_on_ties() {
+        let words = worded(&["a", "b", "c"]);
+        let meaning = ["c", "b", "d"];
+        let merged = merge(&words, Some(&meaning), &|_| false, Merge::EQUAL);
+        assert_eq!(keys(&merged), ["c", "b", "a", "d"]);
+        let alone = merge(&worded(&["x", "y"]), None, &|_| false, Merge::STRONG);
+        assert_eq!(keys(&alone), ["x", "y"]);
+        assert!(alone[0].1 > alone[1].1);
+    }
+
+    #[test]
+    fn a_strong_model_ranks_and_the_words_break_ties() {
+        // Every item is ranked by meaning; a word match moves an item about one place.
+        let words = worded(&["c", "z"]);
+        let meaning = ["a", "b", "c", "d", "z", "y"];
+        let merged = merge(&words, Some(&meaning), &|_| false, Merge::STRONG);
+        assert_eq!(keys(&merged), ["a", "c", "b", "z", "d", "y"]);
+        // A weak model is the other way round.
+        let merged = merge(&words, Some(&meaning), &|_| false, Merge::WEAK);
+        assert_eq!(keys(&merged), ["c", "z", "a", "b", "d", "y"]);
+    }
+
+    #[test]
+    fn exact_matches_come_first_most_exact_terms_first() {
+        let words = vec![
+            Worded {
+                key: "lease",
+                exact: 0,
+            },
+            Worded {
+                key: "other invoice",
+                exact: 1,
+            },
+            Worded {
+                key: "invoice",
+                exact: 3,
+            },
+        ];
+        let meaning = ["lease", "chair", "other invoice", "invoice"];
+        for weights in [Merge::STRONG, Merge::WEAK, Merge::EQUAL] {
+            let merged = merge(&words, Some(&meaning), &|_| false, weights);
+            assert_eq!(
+                keys(&merged)[..3],
+                ["invoice", "other invoice", "lease"],
+                "{weights:?}"
+            );
+        }
+        let alone = merge(&words, None, &|_| false, Merge::STRONG);
+        assert_eq!(keys(&alone), ["invoice", "other invoice", "lease"]);
+    }
+
+    #[test]
+    fn what_meaning_cant_rank_is_judged_by_its_words() {
+        // "new" isn't embedded yet and "Receipts" is a collection: neither is buried below
+        // everything the meaning ranking has.
+        let words = worded(&["new", "Receipts", "b"]);
+        let meaning = ["a", "b", "c"];
+        let by_words = |k: &&str| ["new", "Receipts"].contains(k);
+        let merged = merge(&words, Some(&meaning), &by_words, Merge::STRONG);
+        assert_eq!(keys(&merged), ["new", "Receipts", "b", "a", "c"]);
+        let merged = merge(&words, Some(&meaning), &|_| false, Merge::STRONG);
+        assert_eq!(keys(&merged), ["b", "a", "c", "new", "Receipts"]);
+    }
+
+    #[test]
+    fn exact_terms_are_codes_numbers_and_capitals() {
+        assert_eq!(
+            exact_terms("invoice 2057-4038"),
+            ["2057-4038", "2057", "4038"]
+        );
+        assert_eq!(exact_terms("the AS1115 datasheet"), ["as1115"]);
+        assert_eq!(exact_terms("HMRC letter about my code"), ["hmrc"]);
+        assert_eq!(
+            exact_terms("the QL-700 driver, 62 mm tape"),
+            ["ql-700", "ql", "700"]
+        );
+        assert_eq!(exact_terms("Gatwick at 07:10, seat 61"), ["07:10"]);
+        assert_eq!(exact_terms("my résumé from 4 Elm Court"), Vec::<String>::new());
+        assert!(is_exact("k7q2px") && is_exact("1040") && !is_exact("15") && !is_exact("lease"));
     }
 
     #[test]

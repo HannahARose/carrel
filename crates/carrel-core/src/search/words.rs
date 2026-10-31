@@ -157,6 +157,8 @@ pub struct Scored {
     pub score: f64,
     /// The fields that matched, each with the number of the query's terms it has.
     pub fields: Vec<(Field, usize)>,
+    /// The query's terms it has, each once.
+    pub terms: Vec<String>,
 }
 
 /// An inverted index of documents' fields, ranked by BM25.
@@ -216,6 +218,16 @@ impl WordIndex {
         self.lengths.is_empty()
     }
 
+    /// How many documents have `term`, in any field.
+    #[must_use]
+    pub fn documents_with(&self, term: &str) -> usize {
+        self.postings.get(term).map_or(0, |postings| {
+            let mut docs: Vec<u32> = postings.iter().map(|p| p.doc).collect();
+            docs.dedup();
+            docs.len()
+        })
+    }
+
     /// Every document with any of `terms`, best first, leaving out those `allowed` rejects. A
     /// document's score is scaled by the share of the terms it has, so one with all of them
     /// comes before one that repeats a single term.
@@ -268,6 +280,7 @@ impl WordIndex {
                         .zip(fields)
                         .filter(|(_, n)| *n > 0)
                         .collect(),
+                    terms: matched.iter().map(|&i| terms[i].clone()).collect(),
                 }
             })
             .collect();
@@ -343,6 +356,11 @@ mod tests {
         assert_eq!(found[1].doc, other);
         assert_eq!(found.len(), 2);
         assert_eq!(found[0].fields, [(Field::Title, 1), (Field::Text, 4)]);
+        assert_eq!(found[0].terms, ["2057", "2057-4038", "4038", "invoice"]);
+        assert_eq!(found[1].terms, ["2057", "invoice"]);
+        assert_eq!(index.documents_with("2057-4038"), 1);
+        assert_eq!(index.documents_with("invoice"), 2);
+        assert_eq!(index.documents_with("nothing"), 0);
 
         let found = index.search(&terms("flat lease"), &all);
         assert_eq!(found[0].doc, lease);
