@@ -175,7 +175,7 @@ Most items are filed and left alone, but some are still being worked on: a proje
 - **Checking out** copies an item out of the archive to work on, to the Desktop unless you say where: `carrel checkout ITEM [--to FOLDER] [--due DATE]`. The archive copy is read-only until it comes back, and the card records where it went and when.
 - **Returning** brings the working copy back: `carrel return ITEM` shows what changed and the history entry it adds, and asks first. A backup snapshot is taken, and the change can be undone from History. `--discard` cancels the checkout instead, leaving the archive copy as it was.
 - **The desk** is for things you work on where they are, without archiving them yet: `carrel desk add PATH` writes a card beside the file or folder, and nothing inside it is changed or moved.
-- **Work sessions:** `carrel sessions` looks at what's checked out on this device for changes (and Git commits), adds a pending history entry to the card for each finished stretch of work, and lists every pending entry. Approve, combine or drop them there, or on the Active screen.
+- **Work sessions:** Carrel notices work on checked-out and desk items and adds a pending history entry for each finished stretch of it; see [Work sessions](#work-sessions). Approve, combine or drop them with `carrel sessions`, or on the Active screen.
 
 The **Active** screen (`3`) lists what's checked out and what's on this device's desk, each with its pending entries under it. The chosen item's details are on the right: where the working copy is, when it was checked out and is due, what has changed, and its pending entries, numbered.
 
@@ -184,6 +184,16 @@ The **Active** screen (`3`) lists what's checked out and what's on this device's
 - `a`, `c` and `d` approve, combine or drop the chosen item's pending entries: all of them, or the ones marked with `Space`.
 
 Active/ in the archive, and the Journal, show the same in Obsidian, and are kept current with every checkout and return.
+
+### Work sessions
+
+Carrel notices work on checked-out and desk items from what's on disk: each file's modification time, and a Git repository's commits. Changes closer together than `sessions.idle_minutes` (45 by default) are one **session**, and each finished session becomes a pending entry in the card's history, with the files changed, the commits and the time spent. A session still going isn't written until it's over.
+
+Carrel looks for sessions whenever it runs, at most every five minutes: before each command that changes the archive, and in the background while the interactive mode is open. It never waits for another program that's writing to the archive; it looks the next time. `carrel sessions` looks right away and lists the pending entries; `carrel sessions approve ITEM`, `combine` or `drop` decide them. Until the Mac app watches items live, a file changed and then changed back isn't seen.
+
+When backups are set up, each time Carrel finds finished sessions on an item it also takes a snapshot of the working copy, so work in progress is backed up before it's returned. That's the state when Carrel noticed, which for most work is the state when the session ended. For large data, such as a 60 GB dataset, add `snapshots: return-only` to the card to skip these and keep only the checkout and return snapshots.
+
+Returning an item lists its session snapshots. Once the item is back, Carrel snapshots the returned version and asks whether to forget the session snapshots, keeping the return's; `--trim-snapshots` forgets them without asking. Without an answer, as with only `--yes`, they're kept: deleting backups is your call.
 
 ## History and undo
 
@@ -200,23 +210,6 @@ Only one program changes an archive at a time: it holds the **writer lock** (`_S
 ### Names that work everywhere
 
 `carrel status` lists names that won't work on every system: characters Windows forbids (`: ? * |`), reserved names like `CON`, trailing dots or spaces, or two names that differ only in case. `carrel rename ITEM` renames an item and its card to the suggested portable name, and updates links to it. Ingest files new items under portable names automatically.
-
-## Working on items
-
-An item you're still working on can leave the archive for a while, or never enter it:
-
-- `carrel checkout ITEM` copies an item to the Desktop (or `--to FOLDER`) and makes the archive copy read-only. `carrel return ITEM` shows what changed and brings the working copy back, as one change in history.
-- `carrel desk add PATH` tracks a file or folder where it is, with a card beside it, without archiving it.
-
-### Work sessions
-
-Carrel notices work on checked-out and desk items from what's on disk: each file's modification time, and a Git repository's commits. Changes closer together than `sessions.idle_minutes` (45 by default) are one **session**, and each finished session becomes a pending entry in the card's history, with the files changed, the commits and the time spent. A session still going isn't written until it's over.
-
-Carrel looks for sessions whenever it runs, at most every five minutes: before each command that changes the archive, and in the background while the interactive mode is open. It never waits for another program that's writing to the archive; it looks the next time. `carrel sessions` looks right away and lists the pending entries; `carrel sessions approve ITEM`, `combine` or `drop` decide them. Until the Mac app watches items live, a file changed and then changed back isn't seen.
-
-When backups are set up, each time Carrel finds finished sessions on an item it also takes a snapshot of the working copy, so work in progress is backed up before it's returned. That's the state when Carrel noticed, which for most work is the state when the session ended. For large data, such as a 60 GB dataset, add `snapshots: return-only` to the card to skip these and keep only the checkout and return snapshots.
-
-Returning an item lists its session snapshots. Once the item is back, Carrel snapshots the returned version and asks whether to forget the session snapshots, keeping the return's; `--trim-snapshots` forgets them without asking. Without an answer, as with only `--yes`, they're kept: deleting backups is your call.
 
 ## Backups
 
