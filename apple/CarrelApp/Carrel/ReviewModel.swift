@@ -106,6 +106,36 @@ final class ReviewModel {
             : "Moved to \(collection), leaving off \(dropped.joined(separator: ", "))"
     }
 
+    /// Files the duplicate `id` linked to the archived item `target` it duplicates (the
+    /// exact duplicate when `nil`): as a new version of it, or beside it.
+    func keepDuplicate(_ id: Proposal.ID, asVersion: Bool, of target: String? = nil) async {
+        await filing { try await $0.approveDuplicate(id, asVersion: asVersion, of: target) }
+    }
+
+    /// Says whether the compressed files `ids` are expanded when they're filed, or kept
+    /// compressed; stops at the first that can't be.
+    func chooseCompressed(_ ids: [Proposal.ID], expand: Bool) async {
+        report = nil
+        for id in ids {
+            guard (try? await archive.chooseCompressed(id, expand: expand)) != nil else { return }
+        }
+        report = expand ? "Expands when filed" : "Kept compressed when filed"
+    }
+
+    /// Flips the compressed files `ids` between expanding and staying compressed, by the first
+    /// one's choice, as `z` does in the interactive mode.
+    func toggleCompressed(_ ids: [Proposal.ID]) async {
+        guard let first = proposals.first(where: { $0.id == ids.first }),
+            let compressed = first.compressed
+        else { return }
+        await chooseCompressed(ids, expand: !compressed.expand || compressed.asking)
+    }
+
+    /// The archived items the proposal `id` duplicates, side by side with it.
+    func comparisons(of id: Proposal.ID) async -> [Comparison] {
+        (try? await archive.call { try $0.compare(id: id) }) ?? []
+    }
+
     /// Runs a decision that files items, and says what it did.
     private func filing(_ decide: (ArchiveModel) async throws -> FilingOutcome) async {
         report = nil

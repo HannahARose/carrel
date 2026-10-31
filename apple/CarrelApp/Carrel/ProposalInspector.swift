@@ -45,13 +45,7 @@ struct ProposalInspector: View {
                 CompressedSection(proposal: proposal, compressed: compressed, review: review)
             }
             if !proposal.duplicates.isEmpty {
-                Section("Duplicates") {
-                    ForEach(proposal.duplicates, id: \.id) { duplicate in
-                        LabeledContent(
-                            duplicate.card.isEmpty ? duplicate.id : duplicate.card,
-                            value: duplicate.why.joined(separator: ", "))
-                    }
-                }
+                DuplicatesSection(proposal: proposal, review: review)
             }
             if !proposal.sensitivityReasons.isEmpty {
                 Section("Why It’s \(proposal.fields.sensitivity.name.capitalized)") {
@@ -75,6 +69,53 @@ struct ProposalInspector: View {
             self.edit = edit
             await edit.load()
         }
+    }
+}
+
+/// The archived items a proposal duplicates, each side by side with it, to file it as a
+/// version of one or beside it.
+private struct DuplicatesSection: View {
+    let proposal: Proposal
+    let review: ReviewModel
+    @State private var comparisons: [Comparison] = []
+
+    var body: some View {
+        ForEach(comparisons, id: \.duplicate.id) { comparison in
+            Section(
+                "Duplicates \(comparison.duplicate.card.isEmpty ? comparison.duplicate.id : comparison.duplicate.card)"
+            ) {
+                Text(comparison.duplicate.why.joined(separator: ", ")).foregroundStyle(.secondary)
+                Grid(
+                    alignment: .leadingFirstTextBaseline, horizontalSpacing: 10, verticalSpacing: 4
+                ) {
+                    GridRow {
+                        Text("")
+                        Text("Proposed").font(.caption).foregroundStyle(.secondary)
+                        Text("Archived").font(.caption).foregroundStyle(.secondary)
+                    }
+                    ForEach(comparison.rows, id: \.label) { row in
+                        GridRow {
+                            Text(row.label.capitalized).foregroundStyle(.secondary)
+                            Text(row.proposed).fontWeight(row.differs ? .semibold : .regular)
+                            Text(row.archived).fontWeight(row.differs ? .semibold : .regular)
+                        }
+                    }
+                }
+                .textSelection(.enabled)
+                HStack {
+                    Spacer()
+                    Button("File as Version") { keep(comparison, asVersion: true) }
+                    Button("Keep Both") { keep(comparison, asVersion: false) }
+                }
+            }
+        }
+        .task(id: proposal) { comparisons = await review.comparisons(of: proposal.id) }
+    }
+
+    private func keep(_ comparison: Comparison, asVersion: Bool) {
+        let id = proposal.id
+        let target = comparison.duplicate.id
+        Task { await review.keepDuplicate(id, asVersion: asVersion, of: target) }
     }
 }
 
@@ -107,6 +148,6 @@ private struct CompressedSection: View {
 
     private func choose(expand: Bool) {
         let id = proposal.id
-        Task { try? await review.archive.chooseCompressed(id, expand: expand) }
+        Task { await review.chooseCompressed([id], expand: expand) }
     }
 }

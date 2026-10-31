@@ -21,6 +21,8 @@ struct ReviewView: View {
         }
         .contextMenu(forSelectionType: Proposal.ID.self) { ids in
             ReviewActions(review: review, ids: review.ordered(ids))
+            Divider()
+            ReviewChoices(review: review, ids: review.ordered(ids))
         }
         .onKeyPress(characters: Self.keys, phases: .down) { press in
             guard press.modifiers.isEmpty else { return .ignored }
@@ -50,8 +52,9 @@ struct ReviewView: View {
         }
     }
 
-    /// The single letters the list answers to: approve, hold, move and reject.
-    static let keys = CharacterSet(charactersIn: "ahmr")
+    /// The single letters the list answers to: approve, hold, move, reject, expand or keep
+    /// compressed, and a duplicate filed as a version or beside the original.
+    static let keys = CharacterSet(charactersIn: "ahmrzvb")
 }
 
 extension ReviewModel {
@@ -78,6 +81,12 @@ extension ReviewModel {
         case "h": Task { await hold(ids) }
         case "m": moving = ids
         case "r": Task { await reject(ids) }
+        case "z":
+            guard selected.first?.compressed != nil else { return false }
+            Task { await toggleCompressed(ids) }
+        case "v", "b":
+            guard ids.count == 1, selected.first?.duplicates.isEmpty == false else { return false }
+            Task { await keepDuplicate(ids[0], asVersion: characters == "v") }
         default: return false
         }
         return true
@@ -145,6 +154,31 @@ struct ReviewActions: View {
             .disabled(ids.isEmpty)
         Button("Reject") { Task { await review.reject(ids) } }
             .disabled(ids.isEmpty)
+    }
+}
+
+/// The choices for compressed files and duplicates, for the Review menu and the context menu.
+struct ReviewChoices: View {
+    let review: ReviewModel
+    let ids: [Proposal.ID]
+
+    private var chosen: [Proposal] { review.proposals.filter { ids.contains($0.id) } }
+
+    var body: some View {
+        let compressed = !chosen.isEmpty && chosen.allSatisfy { $0.compressed != nil }
+        Button("Expand When Filed") { Task { await review.chooseCompressed(ids, expand: true) } }
+            .disabled(!compressed)
+        Button("Keep Compressed") { Task { await review.chooseCompressed(ids, expand: false) } }
+            .disabled(!compressed)
+        let duplicate = chosen.count == 1 && chosen[0].duplicates.isEmpty == false
+        Button("File as Version") {
+            if let id = ids.first { Task { await review.keepDuplicate(id, asVersion: true) } }
+        }
+        .disabled(!duplicate)
+        Button("Keep Both") {
+            if let id = ids.first { Task { await review.keepDuplicate(id, asVersion: false) } }
+        }
+        .disabled(!duplicate)
     }
 }
 

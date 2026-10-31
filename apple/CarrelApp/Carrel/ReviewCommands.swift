@@ -21,6 +21,8 @@ struct ReviewCommands: Commands {
             if let review = window?.screen == .review ? window?.review : nil {
                 ReviewActions(review: review, ids: review.selected.map(\.id))
                 Divider()
+                ReviewChoices(review: review, ids: review.selected.map(\.id))
+                Divider()
                 Button("Approve All High Confidence") { Task { await review.approveAllHigh() } }
                     .disabled(!review.proposals.contains(where: \.high))
             } else {

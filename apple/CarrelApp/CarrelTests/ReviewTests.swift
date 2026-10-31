@@ -20,7 +20,10 @@ struct SampleWindow {
 
     /// Opens the copy, first adding the questions `questions` to its queue. When `fileable`,
     /// the sample's proposal is for a real file on this device, so it can be filed.
-    init(questions: [String: Any] = [:], fileable: Bool = false) async throws {
+    /// When `duplicating`, the proposal duplicates the archived item with that identifier.
+    init(
+        questions: [String: Any] = [:], fileable: Bool = false, duplicating: String? = nil
+    ) async throws {
         folder = FileManager.default.temporaryDirectory
             .appending(path: "carrel-app-\(UUID().uuidString)")
         let root = folder.appending(path: "archive")
@@ -33,6 +36,13 @@ struct SampleWindow {
             try data.write(to: queue.appending(path: "\(id).json"))
         }
         if fileable { try Self.makeFileable(root: root, folder: folder) }
+        if let duplicating {
+            let entry = root.appending(path: "_System/queue/review/\(sampleProposal).json")
+            var proposal = try XCTUnwrap(
+                JSONSerialization.jsonObject(with: Data(contentsOf: entry)) as? [String: Any])
+            proposal["duplicate_of"] = duplicating
+            try JSONSerialization.data(withJSONObject: proposal).write(to: entry)
+        }
         model = ArchiveWindowModel(
             url: root, options: .isolated(config: folder.appending(path: "config")))
         await model.load()
@@ -159,6 +169,36 @@ final class ReviewModelTests: XCTestCase {
         let holding = sample.model.items(in: "Holding").count
         await sample.review.hold([sampleProposal])
         XCTAssertEqual(sample.model.items(in: "Holding").count, holding + 1)
+    }
+
+    func testADuplicateIsComparedAndKeptBesideTheOriginal() async throws {
+        let original = "01a18701-0500-776a-9867-080d24773181"
+        let sample = try await SampleWindow(fileable: true, duplicating: original)
+        defer { sample.remove() }
+        let review = sample.review
+        XCTAssertEqual(review.proposals.first?.flags.last, "duplicate")
+        let comparisons = await review.comparisons(of: sampleProposal)
+        XCTAssertEqual(comparisons.first?.duplicate.id, original)
+        XCTAssertTrue(
+            comparisons.first?.rows.contains { $0.label == "title" && $0.differs } ?? false)
+
+        review.selection = [sampleProposal]
+        await review.keepDuplicate(sampleProposal, asVersion: false, of: original)
+        XCTAssertNil(sample.archive.lastError)
+        XCTAssertEqual(review.report, "Filed 1 item")
+        XCTAssertTrue(review.groups.isEmpty)
+    }
+
+    func testCompressedChoicesNeedACompressedFile() async throws {
+        let sample = try await SampleWindow()
+        defer { sample.remove() }
+        let review = sample.review
+        review.selection = [sampleProposal]
+        XCTAssertFalse(review.key("z"), "not a compressed file")
+        XCTAssertFalse(review.key("v"), "not a duplicate")
+        await review.chooseCompressed([sampleProposal], expand: true)
+        XCTAssertNotNil(sample.archive.lastError, "the core says why")
+        XCTAssertNil(review.report)
     }
 
     func testDescribesWhatFilingDid() {
