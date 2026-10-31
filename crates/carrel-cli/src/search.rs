@@ -1,14 +1,18 @@
-//! `carrel search QUERY`: finds items by the words in their cards and text, narrowed by
-//! filters, with the passage that matched (`docs/design/search.md`).
+//! `carrel search QUERY`: finds items by the words in their cards and text and, with the
+//! embedding index, by meaning, narrowed by filters, with the passage that matched
+//! (`docs/design/search.md`).
 
 use std::fmt::Write as _;
 use std::io::IsTerminal as _;
 use std::path::Path;
 
+use carrel_core::archive::Archive;
 use carrel_core::card::Sensitivity;
+use carrel_core::index::{ByMeaning, Index, embed_query, plan};
+use carrel_core::providers::Registry;
 use carrel_core::search::query::Query;
-use carrel_core::search::texts::{fill, tidy};
-use carrel_core::search::{Found, Hit, Meaning, Search};
+use carrel_core::search::texts::{Unindexed, fill, tidy};
+use carrel_core::search::{Found, Hit, Meaning, Ranking, Search};
 use serde_json::json;
 
 use crate::commands::{locate, plural};
@@ -17,20 +21,87 @@ use crate::{Failure, Report};
 /// How many results are shown unless `--limit` says otherwise.
 pub const DEFAULT_LIMIT: usize = 20;
 
-/// Reads the text of items not in the text cache yet, showing progress on standard error.
-/// Providers are only started when there's something to read.
-fn catch_up(archive: &carrel_core::archive::Archive, json: bool) -> Result<(), Failure> {
-    let (wanted, _) = tidy(archive)?;
+/// Reads the text of the items `tidy` found missing from the text cache, showing progress on
+/// standard error.
+fn read_wanted(
+    archive: &Archive,
+    registry: &Registry,
+    wanted: Vec<Unindexed>,
+    json: bool,
+) -> Result<(), Failure> {
     if wanted.is_empty() {
         return Ok(());
     }
-    let (registry, _) = crate::providers::registry();
     let mut display = crate::progress::Display::new("Reading text", json);
-    fill(archive, &registry, wanted, &mut |done, total, item| {
+    fill(archive, registry, wanted, &mut |done, total, item| {
         display.count("items", done, total, item);
     })?;
     display.finish();
     Ok(())
+}
+
+/// Reads the text of items not in the text cache yet with `registry`'s providers, showing
+/// progress on standard error.
+///
+/// # Errors
+///
+/// [`Failure`] if the archive can't be read.
+pub fn read_texts(archive: &Archive, registry: &Registry, json: bool) -> Result<(), Failure> {
+    let (wanted, _) = tidy(archive)?;
+    read_wanted(archive, registry, wanted, json)
+}
+
+/// The ranking by meaning for `query` from the archive's embedding `index` for `model`, or why
+/// there's none and the search is by words only. Takes `registry`, to embed queries with.
+fn by_meaning(
+    archive: &Archive,
+    model: Option<String>,
+    index: Option<Index>,
+    registry: Option<Registry>,
+    query: &str,
+) -> Result<Result<Box<dyn Ranking>, String>, Failure> {
+    let Some(model) = model else {
+        return Ok(Err(
+            "This archive has no embedding model yet, so it was searched by words only; see `carrel index status`."
+                .into(),
+        ));
+    };
+    let Some(index) = index else {
+        return Ok(Err(format!(
+            "There's no meaning index for {model} yet, so this was searched by words only; build it with `carrel index rebuild`."
+        )));
+    };
+    let Some(registry) = registry.filter(|r| crate::index::offered(r, &model)) else {
+        return Ok(Err(format!(
+            "No provider on this device runs {model}, so this was searched by words only; download it with `carrel models download {model}`."
+        )));
+    };
+    let vector = match embed_query(&registry, &model, query) {
+        Ok(vector) => vector,
+        Err(e) => {
+            return Ok(Err(format!(
+                "{model} couldn't embed the query ({e}), so this was searched by words only."
+            )));
+        }
+    };
+    let behind = plan(archive, Some(&index))
+        .map_err(|e| crate::index::failure(e, &model))?
+        .pending
+        .len();
+    let asked = query.to_owned();
+    let embed = Box::new(move |text: &str| {
+        if text == asked {
+            Some(vector.clone())
+        } else {
+            embed_query(&registry, &model, text).ok()
+        }
+    });
+    Ok(Ok(Box::new(ByMeaning::new(
+        archive,
+        Box::new(index),
+        behind,
+        embed,
+    ))))
 }
 
 /// `carrel search WORDS... [--limit N]`.
@@ -53,8 +124,29 @@ pub fn search(
         ));
     }
     let archive = locate(archive)?;
-    catch_up(&archive, json)?;
-    let results = Search::build(&archive)?.search(&query, limit);
+    let (wanted, _) = tidy(&archive)?;
+    let model = archive.settings().embedding_model().map(str::to_owned);
+    let words = query.text.trim().is_empty();
+    let index = match &model {
+        Some(model) if !words => Index::open(&archive, model)
+            .map_err(|e| crate::index::failure(e, model))?
+            .filter(|index| !index.is_empty()),
+        _ => None,
+    };
+    // Providers are only started when there's text to read or a query to embed.
+    let registry = (!wanted.is_empty() || index.is_some()).then(|| crate::providers::registry().0);
+    if let Some(registry) = &registry {
+        read_wanted(&archive, registry, wanted, json)?;
+    }
+    let mut search = Search::build(&archive)?;
+    let mut words_only = None;
+    if !words {
+        match by_meaning(&archive, model, index, registry, &query.text)? {
+            Ok(ranking) => search = search.with_meaning(ranking),
+            Err(why) => words_only = Some(why),
+        }
+    }
+    let results = search.search(&query, limit);
     let marks = if std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none() {
         ("\x1b[1m", "\x1b[0m")
     } else {
@@ -86,12 +178,16 @@ pub fn search(
         )
         .unwrap();
     }
+    if let Some(why) = &words_only {
+        writeln!(text, "\n{why}").unwrap();
+    }
     Ok(Report::new(
         text,
         json!({
             "query": typed,
             "total": results.total,
             "meaning": results.meaning,
+            "words_only": words_only,
             "results": results.hits,
         }),
     ))

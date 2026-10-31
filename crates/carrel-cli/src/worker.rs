@@ -1,5 +1,10 @@
 //! `carrel worker`: drafts the items waiting in an archive's intake queue on this device, one
-//! at a time, until none are left (`docs/design/tui-ingest.md`).
+//! at a time, until none are left (`docs/design/tui-ingest.md`), then brings the embedding
+//! index up to date (`docs/design/search.md`).
+//!
+//! Adding to the queue starts a worker, and so does every change to filed items (filing,
+//! corrections, edits, refiles and returns), so the index catches up in the background and
+//! the change itself never waits for the embedding model.
 //!
 //! Adding to the queue starts a worker in the background, detached so it outlives the
 //! terminal, unless one is already running. An operating-system lock on a file in Carrel's
@@ -7,6 +12,7 @@
 //! so a crashed worker never leaves a stale one. The worker writes its progress to a status
 //! file, which `carrel ingest --status` and the interactive mode read, and a log beside it.
 
+use std::fmt::Write as _;
 use std::fs::File;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
@@ -262,23 +268,114 @@ pub fn work(
     }
 }
 
-/// `carrel worker`: drafts the queue for this device until it's empty. It's what adding to
-/// the queue starts in the background; run by hand, it says if another is already running.
+/// Starts a worker for the archive at `archive` (or the current one) after a change to filed
+/// items, so it embeds them for search, if the archive has an embedding model. Never fails:
+/// the change is made, and the next change or `carrel index rebuild` catches up.
+pub fn after_change(archive: Option<&Path>) {
+    let Ok(archive) = locate(archive) else {
+        return;
+    };
+    if archive.settings().embedding_model().is_some() {
+        let _ = start(&archive);
+    }
+}
+
+/// Embeds what's behind in `archive`'s index with its embedding model, if a provider here runs
+/// it, writing progress to the status file. Returns how many items were embedded.
+fn embed(archive: &Archive, done: usize) -> Result<usize, Failure> {
+    let Some(model) = archive.settings().embedding_model().map(str::to_owned) else {
+        return Ok(0);
+    };
+    let (registry, _) = crate::providers::registry();
+    if !crate::index::offered(&registry, &model) {
+        return Ok(0);
+    }
+    let mut index = carrel_core::index::Index::open_or_new(archive, &model)
+        .map_err(|e| crate::index::failure(e, &model))?;
+    let mut status = Status {
+        pid: std::process::id(),
+        item: None,
+        stage: Some("Embedding for search".into()),
+        done,
+        waiting: 0,
+        updated: now(),
+    };
+    crate::index::catch_up(archive, &registry, &mut index, &mut |n, total, item| {
+        status.item = item.map(str::to_owned);
+        status.waiting = total - n;
+        status.updated = now();
+        write_status(archive, &status);
+    })
+}
+
+/// `carrel worker`: drafts the queue for this device until it's empty, then embeds what's
+/// behind in the index. It's what adding to the queue and changing filed items start in the
+/// background; run by hand, it says if another is already running.
 ///
 /// # Errors
 ///
 /// [`Failure`] if the archive or its queues can't be read or written.
 pub fn run(archive: Option<&Path>) -> Result<Report, Failure> {
     let archive = locate(archive)?;
-    let Some(lock) = try_lock(&archive)? else {
+    let Some(mut lock) = try_lock(&archive)? else {
         return Ok(Report::new(
             "A worker is already drafting this archive's queue on this device.\n",
             json!({ "running": true, "done": 0 }),
         ));
     };
+    let device = Identity::load_or_create()?.device;
+    let (mut done, mut embedded) = (0, 0);
+    loop {
+        done += draft(&archive, lock)?;
+        // Embedding holds the lock again, so two workers never embed at once.
+        let Some(again) = try_lock(&archive)? else {
+            break;
+        };
+        match embed(&archive, done) {
+            Ok(n) => {
+                embedded += n;
+                if n > 0 {
+                    let _ = writeln!(
+                        std::io::stderr(),
+                        "{} embedded {} for search",
+                        now(),
+                        crate::commands::plural(n, "item")
+                    );
+                }
+            }
+            Err(e) => {
+                let _ = writeln!(std::io::stderr(), "{} embedding failed: {}", now(), e.0);
+            }
+        }
+        // Items queued while it embedded saw a worker running and started none.
+        if waiting(&archive, device, false)?.is_empty() {
+            break;
+        }
+        lock = again;
+    }
+    if let Ok(path) = file_for(&archive, "json") {
+        let _ = std::fs::remove_file(path);
+    }
+    let mut text = format!("Drafted {done} queued items.\n");
+    if embedded > 0 {
+        writeln!(
+            text,
+            "Embedded {} for search.",
+            crate::commands::plural(embedded, "item")
+        )
+        .unwrap();
+    }
+    Ok(Report::new(
+        text,
+        json!({ "running": false, "done": done, "embedded": embedded }),
+    ))
+}
+
+/// Drafts the queue holding `lock`, logging each item, until it's empty.
+fn draft(archive: &Archive, lock: Lock) -> Result<usize, Failure> {
     let mut log = std::io::stderr();
-    let done = work(
-        &archive,
+    work(
+        archive,
         lock,
         |_, waiting, name| {
             let _ = writeln!(log, "{} drafting {name} ({waiting} waiting)", now());
@@ -297,14 +394,7 @@ pub fn run(archive: Option<&Path>) -> Result<Report, Failure> {
             };
             let _ = writeln!(std::io::stderr(), "{} {line}", now());
         },
-    )?;
-    if let Ok(path) = file_for(&archive, "json") {
-        let _ = std::fs::remove_file(path);
-    }
-    Ok(Report::new(
-        format!("Drafted {done} queued items.\n"),
-        json!({ "running": false, "done": done }),
-    ))
+    )
 }
 
 fn now() -> String {

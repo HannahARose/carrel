@@ -1856,6 +1856,10 @@ fn file_with_card(root: &Path, collection: &str, name: &str, contents: &str, fie
     std::fs::write(root.join(collection).join(format!("{name}.md")), card).unwrap();
 }
 
+/// What search says when the sample archive, which has no meaning index, is searched.
+const WORDS_ONLY: &str = "There's no meaning index for sample/embedding-model-v1 yet, so this \
+                          was searched by words only; build it with `carrel index rebuild`.\n";
+
 #[test]
 fn search_finds_items_by_their_words_with_filters_and_reasons() {
     let sandbox = Sandbox::new();
@@ -1905,9 +1909,11 @@ fn search_finds_items_by_their_words_with_filters_and_reasons() {
     let report = sandbox.ok(&root, &["search", "invoice 2057-4038"]);
     assert_eq!(
         report,
-        "1 result for “invoice 2057-4038”:\n\nFurniture shop bill  [sensitive]\n  \
+        format!(
+            "1 result for “invoice 2057-4038”:\n\nFurniture shop bill  [sensitive]\n  \
          Holding · 2025-03-02 · file\n  Please pay **invoice** **2057-4038** by Friday.\n  \
-         matched: text\n"
+         matched: text\n\n{WORDS_ONLY}"
+        )
     );
     let report = sandbox.ok(&root, &["search", "bank", "statement"]);
     assert!(report.contains("Bank statement  [restricted]"), "{report}");
@@ -1927,7 +1933,7 @@ fn search_finds_items_by_their_words_with_filters_and_reasons() {
     assert_eq!(glossary["results"][0]["found"]["type"], "glossary");
     assert_eq!(
         sandbox.ok(&root, &["search", "zebra"]),
-        "Nothing found for “zebra”.\n"
+        format!("Nothing found for “zebra”.\n\n{WORDS_ONLY}")
     );
 
     let bad = sandbox.run_in(&root, &["search", "kind:box"]);
@@ -2265,4 +2271,134 @@ fn expand_opens_a_filed_zip_in_one_change_that_undo_reverses() {
     );
     let restored = std::fs::read_to_string(root.join(format!("{zip_path}.md"))).unwrap();
     assert!(restored.contains("kind: file"), "{restored}");
+}
+
+/// Runs carrel in `root` with only `bin`'s providers on the path, and the worker off.
+fn run_with_providers(sandbox: &Sandbox, root: &Path, bin: &Path, args: &[&str]) -> Output {
+    std::process::Command::new(env!("CARGO_BIN_EXE_carrel"))
+        .args(args)
+        .current_dir(root)
+        .env("PATH", bin)
+        .env("CARREL_CONFIG_DIR", sandbox.path("config"))
+        .env("CARREL_TRASH_DIR", sandbox.path("Trash"))
+        .env("CARREL_WORKER", "off")
+        .output()
+        .unwrap()
+}
+
+/// Its standard output as JSON, after checking it succeeded.
+fn json_of(out: &Output) -> Value {
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    serde_json::from_slice(&out.stdout).unwrap()
+}
+
+#[test]
+fn the_index_is_rebuilt_reported_and_caught_up_by_the_worker() {
+    let sandbox = Sandbox::new();
+    let bin = sandbox.path("bin");
+    std::fs::create_dir(&bin).unwrap();
+    let suffix = std::env::consts::EXE_SUFFIX;
+    std::fs::copy(
+        echo_provider(),
+        bin.join(format!("carrel-provider-echo{suffix}")),
+    )
+    .unwrap();
+    let root = sandbox.sample();
+    file_with_card(
+        &root,
+        "Holding",
+        "lease.txt",
+        "The landlord repairs the boiler. The tenant keeps the garden tidy.",
+        "title: \"Tenancy agreement\"\nsensitivity: personal\n",
+    );
+    let run = |args: &[&str]| run_with_providers(&sandbox, &root, &bin, args);
+
+    // No index yet: search says it used words only.
+    let status = sandbox.json(&root, &["index", "status"]);
+    assert_eq!(status["model"], "sample/embedding-model-v1");
+    assert_eq!(status["exists"], false);
+    let text = sandbox.ok(&root, &["index"]);
+    assert!(text.contains("no meaning index"), "{text}");
+    let found = sandbox.json(&root, &["search", "boiler"]);
+    assert_eq!(found["meaning"]["state"], "off");
+    assert!(
+        found["words_only"]
+            .as_str()
+            .unwrap()
+            .contains("carrel index rebuild"),
+        "{found}"
+    );
+
+    // Only the archive's model is used: the echo provider doesn't run the sample's.
+    let out = run(&["index", "rebuild"]);
+    assert!(!out.status.success());
+    let error = String::from_utf8_lossy(&out.stderr);
+    assert!(error.contains("sample/embedding-model-v1"), "{error}");
+    assert!(!root.join("_System/index").exists(), "nothing written");
+
+    set_embedding_model(&root, Some("echo-embed"));
+    let rebuilt = json_of(&run(&["index", "rebuild", "--json"]));
+    let items = rebuilt["items"].as_u64().unwrap();
+    assert!(items > 5, "{rebuilt}");
+    assert_eq!(rebuilt["embedded"], items);
+    assert_eq!(rebuilt["dimensions"], 3);
+    assert_eq!(rebuilt["resumed"], false);
+    assert!(root.join("_System/index/echo-embed/index.json").is_file());
+    let status = json_of(&run(&["index", "status", "--json"]));
+    assert_eq!(status["embedded"], items);
+    assert_eq!(status["behind"], 0);
+
+    // Search merges meaning with words.
+    let found = json_of(&run(&["search", "boiler", "--json"]));
+    assert_eq!(found["meaning"]["state"], "current", "{found}");
+    assert_eq!(found["words_only"], Value::Null);
+    let lease = found["results"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["found"]["title"] == "Tenancy agreement")
+        .unwrap();
+    assert!(
+        lease["why"].as_array().unwrap().contains(&json!("text")),
+        "{lease}"
+    );
+    assert!(
+        found["results"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r["why"].as_array().unwrap().contains(&json!("meaning"))),
+        "{found}"
+    );
+
+    // A changed card puts it behind until the worker embeds it again.
+    let card = root.join("Holding/lease.txt.md");
+    let text = std::fs::read_to_string(&card).unwrap();
+    std::fs::write(&card, text.replace("Tenancy agreement", "Flat lease")).unwrap();
+    let status = json_of(&run(&["index", "status", "--json"]));
+    assert_eq!(status["behind"], 1);
+    let report = String::from_utf8_lossy(&run(&["index", "status"]).stdout).into_owned();
+    assert!(report.contains("1 behind"), "{report}");
+    let found = json_of(&run(&["search", "lease", "--json"]));
+    assert_eq!(found["meaning"], json!({ "state": "behind", "items": 1 }));
+    let worked = json_of(&run(&["worker", "--json"]));
+    assert_eq!(worked["embedded"], 1);
+    let status = json_of(&run(&["index", "status", "--json"]));
+    assert_eq!(status["behind"], 0);
+
+    // Without the model, search falls back to words and says so.
+    let found = sandbox.json(&root, &["search", "boiler"]);
+    assert_eq!(found["meaning"]["state"], "off");
+    assert!(
+        found["words_only"]
+            .as_str()
+            .unwrap()
+            .contains("No provider on this device runs echo-embed"),
+        "{found}"
+    );
+    assert_eq!(found["results"][0]["found"]["title"], "Flat lease");
 }

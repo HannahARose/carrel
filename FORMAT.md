@@ -706,6 +706,13 @@ Once a question is answered or dismissed, programs remove it and clear the probl
 
 `_System/index/` holds the search index. Its files are tagged with the embedding model identifier and version from `settings.json`. The index can always be rebuilt from cards and items, so readers may ignore it.
 
+Each model's index is a folder named for its identifier, with characters other than ASCII letters, digits, `-`, `_` and `.` replaced by `_` (`_System/index/embeddinggemma-300m/`). It holds:
+
+- `index.json`: `format` (`1`), `model` (the identifier), `dimensions` (the numbers in each vector), and `rebuilding: true` while a rebuild hasn't finished.
+- Up to 256 shards, `00.shard` to `ff.shard`, each holding the items whose identifier's last byte is its name. A shard is one line of JSON, `{"items": [...]}`, then a newline, then the vectors. Each item is `id`; `card`, the SHA-256 checksum of the card text that was embedded; `text`, the content checksum (§4.3) of the contents whose text was cut into passages, if any; and `parts`, what each of its vectors is of, in order: `{"of": "card"}` first, then `{"of": "passage", "start", "end"}` for each passage, in bytes of the item's text as drafting read it. The vectors follow in the same order, each `dimensions` little-endian IEEE 754 16-bit floats, of unit length.
+
+The card text is the card's title, summary, tags (`Tags: a, b`), collection (`Collection: Parent / Child`), document, created and added dates (`Dates: document 2025-03-02, added 2026-10-29`) and kind (`Kind: file`), one line each, leaving out lines with nothing in them. An item is behind when it has no entry, its card text's checksum differs, or its passages are from other contents. Restricted items have only their card embedded. A shard whose vectors don't match its entries is ignored, and its items embedded again.
+
 ### 7.12 `cache.nosync/`
 
 Rebuildable, device-specific data. The `.nosync` suffix keeps iCloud Drive from syncing it. Readers **must** ignore it and programs **must** tolerate it being missing.
