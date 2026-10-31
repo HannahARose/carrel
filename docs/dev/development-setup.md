@@ -63,7 +63,7 @@ Add this line to `~/.zshrc`, then open a new terminal window:
 export PATH="/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH"
 ```
 
-Install the stable toolchain (includes `rustfmt` and `clippy`) and the Apple targets used for the universal CLI and the XCFramework (Intel Macs, iOS and the iOS Simulator):
+Install the stable toolchain (includes `rustfmt` and `clippy`) and the Apple targets used for the universal CLI and the iOS framework:
 
 ```bash
 rustup toolchain install stable --profile default
@@ -113,7 +113,7 @@ cargo run --bin carrel -- --version
 PROFILE=dev scripts/build-xcframework.sh
 ```
 
-It builds `carrel-ffi` for Apple-silicon and Intel Macs (joined into one universal library), iOS and the iOS Simulator, and stops with the `rustup target add` command if a target is missing. Leave out `PROFILE=dev` for a smaller, optimized release build. Then, from `apple/CarrelKit`:
+It builds `carrel-ffi` for macOS, iOS and the iOS Simulator, Apple silicon only, and stops with the `rustup target add` command if a target is missing. Leave out `PROFILE=dev` for a smaller, optimized release build. Then, from `apple/CarrelKit`:
 
 ```bash
 swift test

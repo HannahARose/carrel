@@ -86,7 +86,7 @@ jobs:
           persist-credentials: false
       # Caches target/, including each Apple target's build under target/<triple>.
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-      - run: rustup target add x86_64-apple-darwin aarch64-apple-ios aarch64-apple-ios-sim
+      - run: rustup target add aarch64-apple-ios aarch64-apple-ios-sim
       - name: Build the XCFramework and Swift bindings
         run: PROFILE=dev scripts/build-xcframework.sh
       - name: Generated bindings are up to date

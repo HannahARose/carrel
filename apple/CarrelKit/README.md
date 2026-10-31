@@ -24,6 +24,6 @@ swift test
 swift run CarrelPoC ../../fixtures/sample-archive
 ```
 
-Setup, including the Rust targets for Intel Macs and iOS, is on the wiki's [Development Setup](https://github.com/HannahARose/carrel/wiki/Development-Setup) page.
+Setup, including the Rust targets for iOS, is on the wiki's [Development Setup](https://github.com/HannahARose/carrel/wiki/Development-Setup) page.
 
-The framework has a universal macOS library (Apple silicon and Intel) and Apple-silicon libraries for iOS and the iOS Simulator.
+The framework has Apple-silicon slices only: macOS, iOS and the iOS Simulator.
