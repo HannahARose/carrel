@@ -85,3 +85,27 @@ fn a_scanned_pdf_falls_back_from_its_missing_text_layer_to_ocr() {
     assert_eq!(attempts, ["pdf-text"]);
     assert!(text.contains("Scanned receipt 2026"), "{text}");
 }
+
+#[test]
+fn a_step_files_header_and_parts_are_read_with_its_date() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("sample holder.step");
+    std::fs::write(
+        &path,
+        "ISO-10303-21;\nHEADER;\nFILE_NAME('sample holder','2026-10-11T14:22:05',(''),(''),'Onshape','Onshape','');\nENDSEC;\nDATA;\n#10=PRODUCT('Rear Body','Rear Body','',(#5));\nENDSEC;\n",
+    )
+    .unwrap();
+    let request = ExtractionRequest {
+        path: path.canonicalize().unwrap(),
+        media_type: carrel_core::ingest::text::media_type(&path),
+    };
+    let (extraction, source, _) = registry().extract(&request).unwrap();
+    assert_eq!(source.offer, "model-details");
+    assert_eq!(extraction.method, "embedded");
+    assert_eq!(extraction.created.as_deref(), Some("2026-10-11"));
+    assert!(
+        extraction.text.ends_with("Parts: Rear Body"),
+        "{}",
+        extraction.text
+    );
+}

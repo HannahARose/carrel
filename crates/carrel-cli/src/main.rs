@@ -29,6 +29,7 @@ mod worker;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use carrel_core::compressed::plan::Choice;
 use clap::{Parser, Subcommand};
 
 /// A private, on-device archivist for your files.
@@ -509,6 +510,19 @@ enum ReviewAction {
         /// The collection's path, such as `Projects/Hardware`.
         collection: String,
     },
+    /// Expand compressed files (zip, tar, gzip and the like) when they're approved, so what
+    /// they hold can be browsed. This is the default unless something says otherwise.
+    Expand {
+        /// The proposals' identifiers, or their starts or ends.
+        #[arg(required = true)]
+        ids: Vec<String>,
+    },
+    /// Keep compressed files as they are when they're approved, rather than expanding them.
+    KeepCompressed {
+        /// The proposals' identifiers, or their starts or ends.
+        #[arg(required = true)]
+        ids: Vec<String>,
+    },
     /// Reject proposals; their items stay where they are.
     Reject {
         /// The proposals' identifiers, or their starts or ends.
@@ -597,6 +611,10 @@ fn review_command(
             learn,
         } => correct::review(archive, &id, &words, yes, learn),
         ReviewAction::MoveTo { id, collection } => review::move_to(archive, &id, &collection),
+        ReviewAction::Expand { ids } => review::choose_compressed(archive, &ids, Choice::Expand),
+        ReviewAction::KeepCompressed { ids } => {
+            review::choose_compressed(archive, &ids, Choice::Keep)
+        }
     }
 }
 

@@ -86,6 +86,9 @@ pub struct Card {
     /// Why and when the item was removed; required for tombstones (FORMAT.md §10).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub removed: Option<Removal>,
+    /// The compressed file the item was expanded from (FORMAT.md §5.2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expanded_from: Option<ExpandedFrom>,
     /// Fields this version doesn't know, preserved unchanged.
     #[serde(flatten)]
     #[schemars(skip)]
@@ -395,6 +398,22 @@ pub struct ManifestRef {
     pub checksum: Checksum,
     /// The manifest's path under `_System/manifests/`.
     pub path: String,
+    /// Keys this version doesn't know.
+    #[serde(flatten)]
+    #[schemars(skip)]
+    pub extra: Extra,
+}
+
+/// The compressed file an item was expanded from (FORMAT.md §5.2), so it's clear the item
+/// was, say, a zip, and which one.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ExpandedFrom {
+    /// The compressed file's name.
+    pub name: String,
+    /// Its size in bytes.
+    pub size: u64,
+    /// Its checksum.
+    pub checksum: Checksum,
     /// Keys this version doesn't know.
     #[serde(flatten)]
     #[schemars(skip)]

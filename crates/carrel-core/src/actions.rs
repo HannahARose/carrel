@@ -506,6 +506,54 @@ pub fn move_to(archive: &Archive, id: &str, path: &str) -> Result<Moved, ActionE
     })
 }
 
+/// Says whether the compressed file proposal `id` is expanded on approval or kept compressed,
+/// as the owner chose in Review (`docs/design/compressed.md`). The choice settles a proposal
+/// that was asking, and lifts the size limits when it's to expand. Nothing changes on disk
+/// until it's approved.
+///
+/// # Errors
+///
+/// [`ActionError::Queue`], or [`ActionError::Invalid`] for a decided proposal, one that isn't a
+/// compressed file, or expanding one that can't be: split, encrypted or unreadable.
+pub fn choose_compressed(
+    archive: &Archive,
+    id: &str,
+    choice: crate::compressed::plan::Choice,
+) -> Result<ReviewEntry, ActionError> {
+    use crate::compressed::plan::Choice;
+    if choice == Choice::Ask {
+        return Err(ActionError::Invalid(
+            "choose whether to expand it or keep it compressed".into(),
+        ));
+    }
+    let queue = ReviewQueue::of(archive);
+    let mut entry = queue.find(id)?;
+    decidable(&entry)?;
+    let short = short_id(entry.id);
+    let Some(plan) = entry.compressed.as_mut() else {
+        return Err(ActionError::Invalid(format!(
+            "{short} isn't a compressed file"
+        )));
+    };
+    // Only what was listed can be expanded: not a split, unreadable or encrypted archive.
+    let encrypted = plan.reason.as_deref() == Some("it's encrypted");
+    if choice == Choice::Expand && (plan.files.is_none() || encrypted) {
+        return Err(ActionError::Invalid(format!(
+            "{short} can't be expanded: {}",
+            plan.reason.as_deref().unwrap_or("it couldn't be read")
+        )));
+    }
+    plan.action = choice;
+    plan.by_owner = true;
+    plan.reason = (choice == Choice::Keep).then(|| "the owner chose to keep it".to_owned());
+    entry.problems.retain(|p| p.stage != "compressed");
+    if entry.state == State::NeedsOwner && entry.problems.is_empty() {
+        entry.state = State::Proposed;
+    }
+    queue.save(&entry)?;
+    Ok(entry)
+}
+
 /// The proposals still waiting on `question`.
 ///
 /// # Errors

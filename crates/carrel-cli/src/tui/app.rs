@@ -181,6 +181,13 @@ pub enum Effect {
     },
     /// Reject these proposals.
     Reject(Vec<Id>),
+    /// Expand these compressed files when they're approved, or keep them compressed.
+    Compressed {
+        /// The proposals.
+        ids: Vec<Id>,
+        /// Expand or keep.
+        choice: carrel_core::compressed::plan::Choice,
+    },
     /// Propose another collection for these proposals.
     Move {
         /// The proposals.
@@ -500,7 +507,7 @@ impl App {
             return keys;
         }
         // The decisions need the room; the screen keys are in ? help.
-        vec![
+        let mut keys = vec![
             ("a", "approve"),
             ("h", "hold"),
             ("m", "move"),
@@ -511,7 +518,20 @@ impl App {
             ("A", "all high"),
             ("?", "help"),
             ("q", "quit"),
-        ]
+        ];
+        if let Some(plan) = self
+            .queue
+            .get(self.chosen)
+            .and_then(|e| e.compressed.as_ref())
+        {
+            let label = if plan.action == carrel_core::compressed::plan::Choice::Expand {
+                "keep compressed"
+            } else {
+                "expand"
+            };
+            keys.insert(3, ("z", label));
+        }
+        keys
     }
 
     /// The keys the current screen answers to, for the help line.

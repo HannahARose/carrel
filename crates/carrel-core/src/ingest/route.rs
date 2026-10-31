@@ -59,6 +59,10 @@ pub struct Rule {
     /// Whether matching items skip review. Sensitive items wait regardless.
     #[serde(default)]
     pub auto_file: bool,
+    /// Whether matching compressed files stay compressed rather than being expanded
+    /// (`docs/design/compressed.md`).
+    #[serde(default)]
+    pub keep_compressed: bool,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -202,6 +206,8 @@ pub struct Route {
     pub rule: Option<String>,
     /// Whether the rule lets the item skip review.
     pub auto_file: bool,
+    /// Whether the rule keeps compressed files compressed.
+    pub keep_compressed: bool,
     /// Every model call made.
     pub attempts: Vec<Attempt>,
 }
@@ -380,6 +386,7 @@ impl<'a> Router<'a> {
             reasons,
             rule: None,
             auto_file: false,
+            keep_compressed: false,
             attempts,
         }
     }
@@ -540,6 +547,7 @@ impl<'a> Router<'a> {
                 reasons: vec![format!("routing rule \u{201c}{}\u{201d}", rule.name)],
                 rule: Some(rule.name.clone()),
                 auto_file: rule.auto_file,
+                keep_compressed: rule.keep_compressed,
                 attempts: Vec::new(),
             });
         }
@@ -560,6 +568,7 @@ impl<'a> Router<'a> {
             reasons,
             rule: None,
             auto_file: false,
+            keep_compressed: false,
             attempts,
         }
     }

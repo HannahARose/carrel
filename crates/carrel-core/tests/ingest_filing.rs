@@ -1,5 +1,7 @@
 //! Ingest's last stage: filing approved and held proposals into the archive.
 
+mod common;
+
 use std::path::{Path, PathBuf};
 
 use carrel_core::archive::Archive;
@@ -315,6 +317,7 @@ fn only_owner_rules_file_without_review_and_never_sensitive_items() {
         reasons: Vec::new(),
         rule: Some("prints".into()),
         auto_file: true,
+        keep_compressed: false,
         attempts: Vec::new(),
     };
     assert!(files_itself(&entry, &route));
@@ -463,4 +466,134 @@ fn uncertain_placements_are_kept_on_the_card_and_certain_ones_are_not() {
     assert_eq!(certain.card().placement, None);
     let waiting = card_at(&setup.root().join("Holding/held.txt.md"));
     assert_eq!(waiting.card().placement, None, "being in Holding says it");
+}
+
+/// Where this test run's Trash is: one folder for every test, since the redirect is shared.
+fn trash() -> &'static Path {
+    static TRASH: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
+    let dir = TRASH.get_or_init(|| tempfile::tempdir().unwrap()).path();
+    carrel_core::trash::redirect(Some(dir.to_owned()));
+    dir
+}
+
+impl Setup {
+    /// A proposal for the compressed file at `path`, with the plan the owner's defaults give.
+    fn compressed_proposal(&self, path: &Path) -> ReviewEntry {
+        let mut entry = self.proposal(path);
+        let inside = carrel_core::compressed::inspect(path).unwrap();
+        entry.compressed = Some(carrel_core::compressed::plan::plan(
+            path,
+            &inside,
+            &carrel_core::detect::Rules::default(),
+            carrel_core::compressed::plan::Owner::default(),
+        ));
+        ReviewQueue::of(&self.archive).save(&entry).unwrap();
+        entry
+    }
+}
+
+#[test]
+fn approved_zips_are_expanded_unwrapped_and_the_zip_goes_to_the_trash() {
+    use common::archives::{Item, zip};
+    let trash = trash();
+    let mut setup = Setup::new();
+    let path = setup.dir.path().join("in/lamp-firmware-main.zip");
+    zip(
+        &path,
+        &[
+            Item::File("lamp-firmware-main/README.md", b"Dimmer firmware\n"),
+            Item::File("lamp-firmware-main/Cargo.toml", b"[package]\n"),
+            Item::File("lamp-firmware-main/src/main.rs", b"fn main() {}\n"),
+            Item::File("__MACOSX/lamp-firmware-main/._README.md", b"junk"),
+        ],
+    );
+    let entry = setup.compressed_proposal(&path);
+    let plan = entry.compressed.clone().unwrap();
+    assert_eq!(plan.kind, Some(Kind::Bundle));
+    let outcome = setup.file(vec![(entry.clone(), Placement::Destination)]);
+    assert!(outcome.failed.is_empty(), "{:?}", outcome.failed);
+    let filed = &outcome.filed[0];
+    assert_eq!(filed.path, "Projects/Hardware/lamp-firmware-main");
+    assert_eq!(filed.expanded_from.as_deref(), Some(path.as_path()));
+    assert_eq!(filed.trash_problem, None);
+    assert_eq!(filed.kept_original, None);
+    let item = setup.root().join(&filed.path);
+    assert!(item.join("src/main.rs").is_file());
+    assert!(!item.join("__MACOSX").exists());
+    assert!(!path.exists(), "the zip left its folder");
+    assert!(
+        trash.join("lamp-firmware-main.zip").is_file(),
+        "for the Trash"
+    );
+    let card = card_at(&setup.root().join(&filed.card)).card().clone();
+    assert_eq!(card.kind, Kind::Bundle);
+    assert!(card.manifest.is_some());
+    let from = card.expanded_from.unwrap();
+    assert_eq!(from.name, "lamp-firmware-main.zip");
+    assert_eq!(
+        (from.size, from.checksum),
+        (entry.source.size, entry.source.checksum)
+    );
+    assert!(
+        std::fs::read_dir(setup.root().join("_System/cache.nosync/expanding"))
+            .unwrap()
+            .next()
+            .is_none(),
+        "the temporary folder is gone"
+    );
+}
+
+#[test]
+fn compressed_files_kept_asked_or_unsafe_are_not_expanded() {
+    use carrel_core::compressed::plan::Choice;
+    use common::archives::{Item, gz, zip};
+    trash();
+    let mut setup = Setup::new();
+    let kept_path = setup.dir.path().join("in/parts.csv.gz");
+    std::fs::write(&kept_path, gz(b"part,qty\n")).unwrap();
+    let mut kept = setup.compressed_proposal(&kept_path);
+    kept.compressed.as_mut().unwrap().action = Choice::Keep;
+
+    let asked_path = setup.dir.path().join("in/notes.zip");
+    zip(
+        &asked_path,
+        &[Item::File("a.txt", b"a"), Item::File("b.txt", b"b")],
+    );
+    let mut asked = setup.compressed_proposal(&asked_path);
+    asked.compressed.as_mut().unwrap().action = Choice::Ask;
+
+    let slip_path = setup.dir.path().join("in/slip.zip");
+    zip(&slip_path, &[Item::File("../../escaped.txt", b"x")]);
+    let mut slip = setup.compressed_proposal(&slip_path);
+    assert_eq!(slip.compressed.as_ref().unwrap().action, Choice::Ask);
+    let plan = slip.compressed.as_mut().unwrap();
+    plan.action = Choice::Expand;
+    plan.by_owner = true;
+
+    let outcome = setup.file(vec![
+        (kept, Placement::Destination),
+        (asked, Placement::Destination),
+        (slip, Placement::Destination),
+    ]);
+    assert_eq!(outcome.filed.len(), 1);
+    let card = card_at(&setup.root().join(&outcome.filed[0].card))
+        .card()
+        .clone();
+    assert_eq!(
+        (card.kind, card.item.as_deref()),
+        (Kind::File, Some("parts.csv.gz"))
+    );
+    assert_eq!(card.expanded_from, None);
+    let failed: Vec<_> = outcome
+        .failed
+        .iter()
+        .map(|(e, error)| (e.state, error.to_string()))
+        .collect();
+    assert_eq!(failed[0].0, State::NeedsOwner);
+    assert!(failed[0].1.contains("say whether to expand"), "{failed:?}");
+    assert!(matches!(outcome.failed[1].1, FilingError::Expand(_)));
+    assert!(failed[1].1.contains("left where it was"), "{failed:?}");
+    assert!(asked_path.exists() && slip_path.exists());
+    assert!(!setup.dir.path().join("escaped.txt").exists());
+    assert!(!setup.root().join("Projects/Hardware/slip").exists());
 }
