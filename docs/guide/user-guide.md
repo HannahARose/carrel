@@ -207,9 +207,9 @@ Items waiting on a question aren't approved in bulk until it's answered or dismi
 
 - `carrel search WORDS` finds items by what's in their cards and their contents, and by what they mean (below).
 - **Browse** (`5`) lists collections and their items, with each card in full. `/` searches the whole archive the way `carrel search` does, filters and all (below).
-- **An item's view:** below its card, Browse lists every change that touched the item, newest first, from its filing to its latest correction or return, and the items its card links to (`version-of`, `related`, `part-of`). `Enter` on an item moves into its view: `u` undoes the chosen change (after asking, as History does), `Enter` on a linked item goes to it, and `←` or `Esc` go back.
+- **An item's view:** below its card, Browse lists every change that touched the item, newest first, from its filing to its latest correction or return, then under **Related** the items its card links to (`version-of`, `related`, `part-of`) and the five items nearest it by meaning (`near`; see [Related items](#related-items)). `Enter` on an item moves into its view: `u` undoes the chosen change (after asking, as History does), `Enter` on a related item goes to it, and `←` or `Esc` go back.
 - **Recent**, on the Status screen (`1`) and in `carrel status`, lists the last ten things filed, changed or worked on across the archive: each recorded change, and each approved work session on the day it happened.
-- `carrel show ITEM` prints a card, its links, and the changes that touched it, each with the identifier `carrel undo` takes.
+- `carrel show ITEM` prints a card, the items related to it (its links, and those nearest it by meaning), and the changes that touched it, each with the identifier `carrel undo` takes.
 - `ARCHIVE.md` and each collection's design document end with a generated list of its contents, so the archive is browsable in Finder or Obsidian too.
 
 ### Searching
@@ -257,6 +257,14 @@ The meaning index has three commands:
 To switch the archive to another model, run `carrel index model NAME` (`carrel index model` alone lists the models this device can embed with). A provider on this device must offer the model. The new model's index is built beside the old one, with a progress bar, and search keeps using the old one until the new one is complete. Then the archive switches, on every device: `embedding.model` changes and the old index is removed. The switch is recorded in the archive's settings as soon as it starts, so every device's `carrel index status` shows how far it's got. If it's interrupted, running the same command again carries on. To give up a switch part way, run `carrel index model` with the archive's current model. A device without a provider for the new model searches by words once the switch is done, and says why.
 
 Switching re-embeds the whole archive, on every device that searches it, so it's worth doing only for a reason: a model that finds your things better, or one that every device you search from can run. The benchmark's findability test ([docs/bench](../bench/README.md)) compares the models on offer.
+
+### Related items
+
+An item's view in Browse and `carrel show` list, under **Related**, the items its card links to and the five items nearest it in the meaning index, so a paper leads to its notes and an invoice to its receipt, whatever each is called. The item is compared by what its card says (its title, summary, tags, collection, dates and kind) against every card and passage in the index, so an item whose text is about the same thing comes up too. The item itself and the items it already links to aren't listed again.
+
+Nothing is embedded to show them: the item's card is already in the index, so they're there as soon as the item is opened, without the model, and on a device that doesn't have it. **Restricted items are compared by their card only**, as search compares them, and a restricted or sensitive neighbour is listed like any other, marked **[restricted]** or **[sensitive]**.
+
+When the archive has no meaning index yet, or the index hasn't caught up with the item (it was just filed or changed and the worker hasn't embedded it again), only the links are listed, with a line saying why. `carrel show --json` gives the near items as `near` (each with its card, title, sensitivity and score) and the reason as `links_only`.
 
 ### What sensitive and restricted items show
 

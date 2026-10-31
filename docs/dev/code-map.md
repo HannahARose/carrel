@@ -67,6 +67,7 @@ The code documentation is built from `dev` on every merge, private items include
 | Backups | [`Backups`](https://hrose.me/carrel/carrel_core/backup/trait.Backups.html), [`Kopia`](https://hrose.me/carrel/carrel_core/backup/struct.Kopia.html) | `backup.rs` |
 | The model benchmark | [`bench::score`](https://hrose.me/carrel/carrel_core/bench/fn.score.html), [`bench::check`](https://hrose.me/carrel/carrel_core/bench/fn.check.html), and `fixtures/bench` | `bench.rs` |
 | The findability test | [`bench::findability`](https://hrose.me/carrel/carrel_core/bench/findability/index.html) and `fixtures/bench/descriptions.yaml` | `bench/findability.rs` |
+| The meaning index, and the items nearest an item in it | [`Index`](https://hrose.me/carrel/carrel_core/index/struct.Index.html): `embed`, `nearest`, `near_item`; [`index::plan`](https://hrose.me/carrel/carrel_core/index/fn.plan.html) | `index.rs` |
 
 ## The command-line tool
 
@@ -78,6 +79,7 @@ The code documentation is built from `dev` on every merge, private items include
 | Starting the worker detached, its lock and its log | [`worker::start`](https://hrose.me/carrel/carrel/worker/fn.start.html), [`worker::try_lock`](https://hrose.me/carrel/carrel/worker/fn.try_lock.html), [`worker::work`](https://hrose.me/carrel/carrel/worker/fn.work.html); the loop itself is the core's | `worker.rs` |
 | Review, questions, backups, models, settings | [`review`](https://hrose.me/carrel/carrel/review/), [`questions`](https://hrose.me/carrel/carrel/questions/), [`backup`](https://hrose.me/carrel/carrel/backup/), [`models`](https://hrose.me/carrel/carrel/models/), [`settings`](https://hrose.me/carrel/carrel/settings/) | one file each |
 | File pickers | [`picker::KNOWN`](https://hrose.me/carrel/carrel/picker/constant.KNOWN.html), [`picker::run`](https://hrose.me/carrel/carrel/picker/fn.run.html) | `picker.rs` |
+| Search, and the items listed as related to an item | [`search`](https://hrose.me/carrel/carrel/search/), [`related`](https://hrose.me/carrel/carrel/related/) | `search.rs`, `related.rs` |
 | Progress bars | [`progress::Display`](https://hrose.me/carrel/carrel/progress/struct.Display.html) | `progress.rs` |
 | What's kept on this device | [`config`](https://hrose.me/carrel/carrel/config/), and [`carrel_core::local`](https://hrose.me/carrel/carrel_core/local/) | `config.rs` |
 
@@ -88,7 +90,7 @@ The code documentation is built from `dev` on every merge, private items include
 | State, keys and effects | [`App`](https://hrose.me/carrel/carrel/tui/app/struct.App.html), [`Tab`](https://hrose.me/carrel/carrel/tui/app/enum.Tab.html), [`Effect`](https://hrose.me/carrel/carrel/tui/app/enum.Effect.html) | `tui/app.rs` |
 | The event loop, background work, suspending for the editor or picker | [`tui`](https://hrose.me/carrel/carrel/tui/) | `tui/mod.rs` |
 | Drawing | [`tui::ui`](https://hrose.me/carrel/carrel/tui/ui/) | `tui/ui.rs` |
-| Each screen | `review.rs`, `screens.rs` (Questions and Browse), `intake.rs` (Ingest), `settings.rs`, `browser.rs` (the built-in file browser) | `tui/` |
+| Each screen | `review.rs`, `screens.rs` (Questions and Browse), `intake.rs` (Ingest), `settings.rs`, `browser.rs` (the built-in file browser), `item.rs` (an item's view in Browse) | `tui/` |
 
 `App` never touches the terminal, so screens are tested by sending it keys and drawing it to ratatui's `TestBackend`; see the tests in `tui/mod.rs`.
 
