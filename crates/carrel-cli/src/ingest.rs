@@ -12,7 +12,7 @@ use carrel_core::ingest::filing::Outcome;
 use carrel_core::ingest::route::Route;
 use carrel_core::ingest::run::{Run, name};
 use carrel_core::ingest::sensitivity::Assessment;
-use carrel_core::ingest::text::ItemText;
+use carrel_core::ingest::text::{ItemText, Unread};
 use carrel_core::ingest::{Candidate, IntakeOptions};
 use carrel_core::intake::{self, Queued};
 use carrel_core::questions::QuestionEntry;
@@ -406,6 +406,7 @@ pub fn report(run: &Run, filed: Option<&Outcome>, dry_run: bool) -> Report {
     for problem in &run.routing_problems {
         writeln!(out, "warning: {problem}").unwrap();
     }
+    unreadable_line(&mut out, run);
     let saved = run.entries.iter().flatten().count();
     closing(&mut out, filed, &run.questions, saved, dry_run, run.batch);
 
@@ -421,6 +422,35 @@ pub fn report(run: &Run, filed: Option<&Outcome>, dry_run: bool) -> Report {
             "filed": filed.map(|o| o.filed.iter().map(|f| json!({"proposal": f.entry, "item": f.item, "path": f.path, "card": f.card})).collect::<Vec<_>>()).unwrap_or_default(),
         }),
     )
+}
+
+/// How many items are of a type nothing on this device reads, and which extensions.
+fn unreadable_line(out: &mut String, run: &Run) {
+    let mut extensions: Vec<String> = Vec::new();
+    let mut count = 0;
+    for (candidate, text) in run.candidates.iter().zip(&run.texts) {
+        if text.as_ref().and_then(|t| t.unread) == Some(Unread::NoReader) {
+            count += 1;
+            let extension = carrel_core::formats::extension(&candidate.path);
+            let shown = if extension.is_empty() {
+                "no extension".to_owned()
+            } else {
+                format!(".{extension}")
+            };
+            if !extensions.contains(&shown) {
+                extensions.push(shown);
+            }
+        }
+    }
+    if count > 0 {
+        writeln!(
+            out,
+            "\n{} of a type nothing on this device reads ({}); see `carrel formats`.",
+            plural(count, "item"),
+            extensions.join(", ")
+        )
+        .unwrap();
+    }
 }
 
 /// What was filed by rule, what was asked, and what was saved for review.

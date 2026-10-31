@@ -254,6 +254,9 @@ pub fn work(
             write_status(archive, &status);
         })
         .map_err(Failure::from)?;
+        if let Ok(run) = &processed.run {
+            crate::formats::record(run);
+        }
         on_done(processed);
         done += 1;
     }
