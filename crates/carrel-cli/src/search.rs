@@ -143,7 +143,9 @@ pub fn search(
     let mut search = Search::build(&archive)?;
     let mut words_only = None;
     if !words {
-        let merge = model.as_deref().map_or_else(Merge::default, Merge::for_model);
+        let merge = model
+            .as_deref()
+            .map_or_else(Merge::default, Merge::for_model);
         match by_meaning(&archive, model, index, registry, &query.text)? {
             Ok(ranking) => search = search.with_meaning(ranking).with_merge(merge),
             Err(why) => words_only = Some(why),

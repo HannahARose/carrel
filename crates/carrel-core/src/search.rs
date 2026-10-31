@@ -223,13 +223,13 @@ pub fn is_exact(term: &str) -> bool {
 }
 
 /// The exact names and numbers in `query`, as the word index keeps them: those [`is_exact`]
-/// accepts, and words in capitals such as "HMRC" or "CSV".
+/// accepts, and words of three or more capitals such as "HMRC" or "CSV".
 #[must_use]
 pub fn exact_terms(query: &str) -> Vec<String> {
     let mut found: Vec<String> = Vec::new();
     for token in tokens(query) {
         let original = &query[token.span.clone()];
-        let capitals = original.chars().filter(|c| c.is_alphabetic()).count() >= 2
+        let capitals = original.chars().filter(|c| c.is_alphabetic()).count() >= 3
             && original
                 .chars()
                 .filter(|c| c.is_alphabetic())
@@ -265,7 +265,7 @@ pub struct Merge {
 impl Merge {
     /// For a strong model: meaning ranks, words promote exact names and numbers.
     pub const STRONG: Self = Self {
-        words: 0.02,
+        words: 0.05,
         meaning: 1.0,
     };
 
@@ -630,17 +630,7 @@ impl Search {
                 )
             })
             .collect();
-        let exact: HashSet<String> = exact_terms(&query.text)
-            .into_iter()
-            .filter(|t| self.words.documents_with(t) <= RARE)
-            .collect();
-        let worded: Vec<Worded<usize>> = scored
-            .iter()
-            .map(|s| Worded {
-                key: s.doc,
-                exact: s.terms.iter().filter(|t| exact.contains(*t)).count(),
-            })
-            .collect();
+        let worded = self.worded(&query.text, &scored);
         let is_item = |doc: &usize| matches!(self.docs[*doc].found, Found::Item(_));
         let fused: Vec<(usize, f64)> = match &self.meaning {
             None => merge(&worded, None, &|_| true, self.merge),
@@ -693,6 +683,38 @@ impl Search {
             total,
             meaning,
         }
+    }
+
+    /// The word ranking `scored` for `text`, with how many of its rare exact names and numbers
+    /// each document has.
+    fn worded(&self, text: &str, scored: &[words::Scored]) -> Vec<Worded<usize>> {
+        let exact: HashSet<String> = exact_terms(text)
+            .into_iter()
+            .filter(|t| self.words.documents_with(t) <= RARE)
+            .collect();
+        scored
+            .iter()
+            .map(|s| Worded {
+                key: s.doc,
+                exact: s.terms.iter().filter(|t| exact.contains(*t)).count(),
+            })
+            .collect()
+    }
+
+    /// The word ranking alone for `query`, best first, before it's merged with anything: each
+    /// document found, its BM25 score, and how many of the query's rare exact names and
+    /// numbers it has. The findability benchmark saves it to replay merges with.
+    #[must_use]
+    pub fn by_words(&self, query: &Query) -> Vec<(Found, f64, usize)> {
+        let terms: Vec<String> = tokens(&query.text).into_iter().map(|t| t.term).collect();
+        let scored = self
+            .words
+            .search(&terms, &|doc| self.allowed(&query.filters, doc));
+        self.worded(&query.text, &scored)
+            .into_iter()
+            .zip(&scored)
+            .map(|(w, s)| (self.docs[w.key].found.clone(), s.score, w.exact))
+            .collect()
     }
 
     /// Every item `filters` allow, newest first.
@@ -790,14 +812,18 @@ mod tests {
 
     #[test]
     fn a_strong_model_ranks_and_the_words_break_ties() {
-        // Every item is ranked by meaning; a word match moves an item about one place.
-        let words = worded(&["c", "z"]);
-        let meaning = ["a", "b", "c", "d", "z", "y"];
+        // Every item is ranked by meaning; a word match moves an item up a few places, not to
+        // the top.
+        let words = worded(&["j"]);
+        let meaning = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"];
         let merged = merge(&words, Some(&meaning), &|_| false, Merge::STRONG);
-        assert_eq!(keys(&merged), ["a", "c", "b", "z", "d", "y"]);
+        assert_eq!(
+            keys(&merged),
+            ["a", "b", "c", "d", "e", "f", "j", "g", "h", "i"]
+        );
         // A weak model is the other way round.
         let merged = merge(&words, Some(&meaning), &|_| false, Merge::WEAK);
-        assert_eq!(keys(&merged), ["c", "z", "a", "b", "d", "y"]);
+        assert_eq!(keys(&merged)[..2], ["j", "a"]);
     }
 
     #[test]
@@ -852,10 +878,14 @@ mod tests {
         assert_eq!(exact_terms("HMRC letter about my code"), ["hmrc"]);
         assert_eq!(
             exact_terms("the QL-700 driver, 62 mm tape"),
-            ["ql-700", "ql", "700"]
+            ["ql-700", "700"]
         );
         assert_eq!(exact_terms("Gatwick at 07:10, seat 61"), ["07:10"]);
-        assert_eq!(exact_terms("my résumé from 4 Elm Court"), Vec::<String>::new());
+        assert_eq!(exact_terms("the GP's letter"), Vec::<String>::new());
+        assert_eq!(
+            exact_terms("my résumé from 4 Elm Court"),
+            Vec::<String>::new()
+        );
         assert!(is_exact("k7q2px") && is_exact("1040") && !is_exact("15") && !is_exact("lease"));
     }
 
