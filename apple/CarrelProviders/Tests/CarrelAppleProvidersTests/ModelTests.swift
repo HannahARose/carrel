@@ -1,7 +1,8 @@
-@testable import CarrelAppleProviders
 import Foundation
 import ModelIO
 import Testing
+
+@testable import CarrelAppleProviders
 
 /// The corners and triangles of a box `x` by `y` by `z`, moved by `offset`.
 func box(_ x: Float, _ y: Float, _ z: Float, offset: SIMD3<Float> = .zero)
@@ -71,23 +72,28 @@ func ply(_ shape: (corners: [SIMD3<Float>], triangles: [(Int, Int, Int)])) -> St
 }
 
 func writeModel(_ text: String, _ ext: String) throws -> URL {
-    let url = FileManager.default.temporaryDirectory.appending(path: "carrel-model-\(UUID().uuidString).\(ext)")
+    let url = FileManager.default.temporaryDirectory.appending(
+        path: "carrel-model-\(UUID().uuidString).\(ext)")
     try text.write(to: url, atomically: true, encoding: .utf8)
     return url
 }
 
-@Test(arguments: [("stl", "model/stl", "STL"), ("obj", "model/obj", "OBJ"), ("ply", "model/ply", "PLY")])
+@Test(arguments: [
+    ("stl", "model/stl", "STL"), ("obj", "model/obj", "OBJ"), ("ply", "model/ply", "PLY"),
+])
 func geometryIsReadFromEachFormat(ext: String, mediaType: String, format: String) async throws {
     let shape = box(86, 86, 19)
-    let text = switch ext {
-    case "stl": stl(shape)
-    case "obj": obj(shape)
-    default: ply(shape)
-    }
+    let text =
+        switch ext {
+        case "stl": stl(shape)
+        case "obj": obj(shape)
+        default: ply(shape)
+        }
     let url = try writeModel(text, ext)
     defer { try? FileManager.default.removeItem(at: url) }
     let result = try await ModelReader(describes: false).extract(url, mediaType: mediaType)
-    #expect(result.text == "3D model: \(format), 86 × 86 × 19 (mm, as stored), 12 triangles, 1 part")
+    #expect(
+        result.text == "3D model: \(format), 86 × 86 × 19 (mm, as stored), 12 triangles, 1 part")
     #expect(result.method == "geometry")
 }
 
@@ -104,8 +110,9 @@ func geometryIsReadFromEachFormat(ext: String, mediaType: String, format: String
     #expect(Geometry.number(16.93) == "16.9")
     #expect(Geometry.number(0.0912) == "0.0912")
     #expect(Geometry.number(1234.4) == "1234")
-    #expect(Geometry(extent: [1, 2, 3], triangles: 10220, parts: 1).summary
-        == "1 × 2 × 3 (mm, as stored), 10,220 triangles, 1 part")
+    #expect(
+        Geometry(extent: [1, 2, 3], triangles: 10220, parts: 1).summary
+            == "1 × 2 × 3 (mm, as stored), 10,220 triangles, 1 part")
 }
 
 @Test func filesWithoutTrianglesFail() async throws {
@@ -131,7 +138,10 @@ func geometryIsReadFromEachFormat(ext: String, mediaType: String, format: String
     func grey(_ x: Int, _ y: Int) -> UInt8 { pixels[y * row + x * views.bitsPerPixel / 8] }
     #expect(grey(2, 2) == 255)
     let tile = ModelReader.tile
-    for (x, y) in [(tile / 2, tile / 2), (tile * 3 / 2, tile / 2), (tile / 2, tile * 3 / 2), (tile * 3 / 2, tile * 3 / 2)] {
+    for (x, y) in [
+        (tile / 2, tile / 2), (tile * 3 / 2, tile / 2), (tile / 2, tile * 3 / 2),
+        (tile * 3 / 2, tile * 3 / 2),
+    ] {
         #expect(grey(x, y) < 250, "view at \(x), \(y)")
     }
 }

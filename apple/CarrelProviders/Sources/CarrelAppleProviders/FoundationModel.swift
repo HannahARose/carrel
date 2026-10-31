@@ -183,7 +183,8 @@ struct JSONSchemaConverter {
         "minItems", "maxItems", "additionalProperties", "$schema",
     ]
 
-    func convert(_ schema: JSONValue, name: String) throws(ProviderError) -> DynamicGenerationSchema {
+    func convert(_ schema: JSONValue, name: String) throws(ProviderError) -> DynamicGenerationSchema
+    {
         guard case .object(let fields) = schema else {
             throw .unsupported("a schema must be a JSON object")
         }
@@ -193,7 +194,9 @@ struct JSONSchemaConverter {
         if let extra = fields["additionalProperties"], extra != .bool(false) {
             throw .unsupported("guided generation needs `additionalProperties: false`")
         }
-        let description = fields["description"].flatMap { if case .string(let s) = $0 { s } else { nil } }
+        let description = fields["description"].flatMap {
+            if case .string(let s) = $0 { s } else { nil }
+        }
 
         if case .array(let choices) = fields["enum"] {
             let strings = choices.compactMap { if case .string(let s) = $0 { s } else { nil } }
@@ -238,7 +241,8 @@ struct JSONSchemaConverter {
                         schema: try convert(property, name: name + key.capitalized),
                         isOptional: !required.contains(key)))
             }
-            return DynamicGenerationSchema(name: name, description: description, properties: converted)
+            return DynamicGenerationSchema(
+                name: name, description: description, properties: converted)
         default:
             throw .unsupported("guided generation doesn't support type `\(type)`")
         }

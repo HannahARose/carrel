@@ -28,6 +28,7 @@ PAGES = {
     "docs/guide/commands.md": "Command-Line Tool",
     "docs/dev/architecture.md": "Architecture",
     "docs/dev/code-map.md": "Code-Map",
+    "docs/dev/development-setup.md": "Development-Setup",
     "docs/dev/overhead.md": "Overhead",
     "docs/dev/on-device-runner.md": "On-Device-Runner",
 }

@@ -1,4 +1,3 @@
-@testable import CarrelAppleProviders
 import CoreGraphics
 import CoreText
 import Foundation
@@ -6,18 +5,25 @@ import ImageIO
 import Testing
 import UniformTypeIdentifiers
 
+@testable import CarrelAppleProviders
+
 /// A picture of `lines` of text, black on white.
 func picture(of lines: [String]) throws -> CGImage {
-    let width = 1200, height = 200 * lines.count
-    let context = try #require(CGContext(
-        data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
-        space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue))
+    let width = 1200
+    let height = 200 * lines.count
+    let context = try #require(
+        CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+        ))
     context.setFillColor(CGColor(gray: 1, alpha: 1))
     context.fill(CGRect(x: 0, y: 0, width: width, height: height))
     let font = CTFontCreateWithName("Helvetica" as CFString, 64, nil)
     for (index, text) in lines.enumerated() {
-        let line = CTLineCreateWithAttributedString(NSAttributedString(
-            string: text, attributes: [.font: font, .foregroundColor: CGColor(gray: 0, alpha: 1)]))
+        let line = CTLineCreateWithAttributedString(
+            NSAttributedString(
+                string: text,
+                attributes: [.font: font, .foregroundColor: CGColor(gray: 0, alpha: 1)]))
         context.textPosition = CGPoint(x: 60, y: height - 130 - index * 200)
         CTLineDraw(line, context)
     }
@@ -44,7 +50,11 @@ func scannedPDF(_ pages: [CGImage]) throws -> URL {
     let context = try #require(CGContext(url as CFURL, mediaBox: &box, nil))
     for image in pages {
         context.beginPDFPage(nil)
-        context.draw(image, in: CGRect(x: 36, y: 500, width: 540, height: 540 * CGFloat(image.height) / CGFloat(image.width)))
+        context.draw(
+            image,
+            in: CGRect(
+                x: 36, y: 500, width: 540,
+                height: 540 * CGFloat(image.height) / CGFloat(image.width)))
         context.endPDFPage()
     }
     context.closePDF()

@@ -17,7 +17,8 @@ protocol TextEncoder: BaseLanguageModel {
 /// Qwen3-Embedding, as MLXEmbedders has it: reading one way, pooled at the last token.
 extension Qwen3Model: TextEncoder {
     func encode(_ tokens: MLXArray) -> MLXArray {
-        let hidden = self(tokens, positionIds: nil, tokenTypeIds: nil, attentionMask: nil).hiddenStates!
+        let hidden = self(tokens, positionIds: nil, tokenTypeIds: nil, attentionMask: nil)
+            .hiddenStates!
         return hidden[0, hidden.dim(1) - 1, 0...]
     }
 }
@@ -44,10 +45,12 @@ final class LoadedEncoder {
         case "qwen3":
             model = Qwen3Model(try JSONDecoder().decode(Qwen3Configuration.self, from: data))
         default:
-            throw ProviderError.unsupported("\(folder.name) is a \(base.modelType) model, not one Carrel embeds with")
+            throw ProviderError.unsupported(
+                "\(folder.name) is a \(base.modelType) model, not one Carrel embeds with")
         }
         try await loadWeights(
-            modelDirectory: folder.url, model: model, perLayerQuantization: base.perLayerQuantization)
+            modelDirectory: folder.url, model: model,
+            perLayerQuantization: base.perLayerQuantization)
         let tokenizer = try await LocalTokenizerLoader().load(from: folder.url)
         return LoadedEncoder(model: model, tokenizer: tokenizer)
     }
@@ -114,7 +117,8 @@ public struct MLXEmbedder: Embedder {
 
 /// The MLX folders as the provider offers them: catalog embedding models as embedders, and
 /// every other model as a text model.
-public func offerFolders(_ folders: [ModelFolder]) -> (models: [MLXModel], embedders: [MLXEmbedder]) {
+public func offerFolders(_ folders: [ModelFolder]) -> (models: [MLXModel], embedders: [MLXEmbedder])
+{
     var models: [MLXModel] = []
     var embedders: [MLXEmbedder] = []
     for folder in folders {

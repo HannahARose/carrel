@@ -1,15 +1,17 @@
-@testable import CarrelAppleProviders
 import Foundation
 import FoundationModels
 import Testing
+
+@testable import CarrelAppleProviders
 
 /// A model that answers with what it was asked, for testing the server.
 struct FakeModel: TextModel {
     var available = true
 
     var offer: Offer {
-        Offer(capability: .textModel, id: "fake", available: available,
-              reason: available ? nil : "switched off", structuredOutput: true)
+        Offer(
+            capability: .textModel, id: "fake", available: available,
+            reason: available ? nil : "switched off", structuredOutput: true)
     }
 
     func complete(_ request: CompletionRequest) async throws(ProviderError) -> Completion {
@@ -23,17 +25,27 @@ func json(_ text: String) -> JSONValue { JSONValue(parsing: text)! }
 
 @Test func completionRequestsReachTheModel() async throws {
     let server = Server(name: "Test", version: "1", models: [FakeModel()])
-    let plain = try await send(server, ["jsonrpc": "2.0", "id": 1, "method": "text/complete", "params": [
-        "offer": "fake", "system": "Be brief.", "prompt": "Hello", "max_tokens": 20,
-    ]])
+    let plain = try await send(
+        server,
+        [
+            "jsonrpc": "2.0", "id": 1, "method": "text/complete",
+            "params": [
+                "offer": "fake", "system": "Be brief.", "prompt": "Hello", "max_tokens": 20,
+            ],
+        ])
     let result = try #require(plain["result"] as? [String: Any])
     #expect(result["text"] as? String == "Be brief.|Hello|20")
     #expect(result["model"] as? String == "fake/1")
     #expect(result["json"] == nil)
 
-    let structured = try await send(server, ["jsonrpc": "2.0", "id": 2, "method": "text/complete", "params": [
-        "offer": "fake", "prompt": "Hi", "schema": ["type": "object"],
-    ]])
+    let structured = try await send(
+        server,
+        [
+            "jsonrpc": "2.0", "id": 2, "method": "text/complete",
+            "params": [
+                "offer": "fake", "prompt": "Hi", "schema": ["type": "object"],
+            ],
+        ])
     let answer = try #require(structured["result"] as? [String: Any])
     #expect((answer["json"] as? [String: Any])?["ok"] as? Bool == true)
 }
@@ -41,7 +53,8 @@ func json(_ text: String) -> JSONValue { JSONValue(parsing: text)! }
 @Test func completionErrorsUseTheProtocolsCodes() async throws {
     let server = Server(name: "Test", version: "1", models: [FakeModel(available: false)])
     func code(_ params: [String: Any]) async throws -> Int? {
-        let reply = try await send(server, ["jsonrpc": "2.0", "id": 1, "method": "text/complete", "params": params])
+        let reply = try await send(
+            server, ["jsonrpc": "2.0", "id": 1, "method": "text/complete", "params": params])
         return (reply["error"] as? [String: Any])?["code"] as? Int
     }
     #expect(try await code(["offer": "fake", "prompt": "x"]) == 1, "unavailable")
@@ -69,14 +82,15 @@ func json(_ text: String) -> JSONValue { JSONValue(parsing: text)! }
 @available(macOS 26.0, *)
 @Test func schemasGuidedGenerationCanExpressConvert() throws {
     let converter = JSONSchemaConverter()
-    let card = json("""
-    {"type": "object", "additionalProperties": false, "required": ["title", "tags"],
-     "properties": {
-       "title": {"type": "string", "description": "A short title"},
-       "tags": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 5},
-       "sensitivity": {"enum": ["public", "personal", "sensitive"]},
-       "pages": {"type": "integer"}, "score": {"type": "number"}, "draft": {"type": "boolean"}}}
-    """)
+    let card = json(
+        """
+        {"type": "object", "additionalProperties": false, "required": ["title", "tags"],
+         "properties": {
+           "title": {"type": "string", "description": "A short title"},
+           "tags": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 5},
+           "sensitivity": {"enum": ["public", "personal", "sensitive"]},
+           "pages": {"type": "integer"}, "score": {"type": "number"}, "draft": {"type": "boolean"}}}
+        """)
     let root = try converter.convert(card, name: "Card")
     _ = try GenerationSchema(root: root, dependencies: [])
 }
@@ -107,18 +121,23 @@ let appleModelAvailable: Bool = {
 @Test(.enabled(if: appleModelAvailable, "Apple's on-device model isn't available here"))
 func appleModelAnswersPrompts() async throws {
     let model = FoundationModel()
-    let plain = try await model.complete(CompletionRequest(
-        system: "Answer with one word.", prompt: "What color is a clear daytime sky?", maxTokens: 20))
+    let plain = try await model.complete(
+        CompletionRequest(
+            system: "Answer with one word.", prompt: "What color is a clear daytime sky?",
+            maxTokens: 20))
     #expect(!plain.text.isEmpty)
     #expect(plain.model.hasPrefix("apple/"))
 
-    let structured = try await model.complete(CompletionRequest(
-        prompt: "Describe this file for an archive card: 'parts-list.csv', a bill of materials for a desk lamp.",
-        schema: json("""
-        {"type": "object", "required": ["title", "tags"], "properties": {
-          "title": {"type": "string", "description": "A short title"},
-          "tags": {"type": "array", "items": {"type": "string"}, "maxItems": 3}}}
-        """)))
+    let structured = try await model.complete(
+        CompletionRequest(
+            prompt:
+                "Describe this file for an archive card: 'parts-list.csv', a bill of materials for a desk lamp.",
+            schema: json(
+                """
+                {"type": "object", "required": ["title", "tags"], "properties": {
+                  "title": {"type": "string", "description": "A short title"},
+                  "tags": {"type": "array", "items": {"type": "string"}, "maxItems": 3}}}
+                """)))
     guard case .object(let card) = structured.json, case .string(let title) = card["title"],
         case .array(let tags) = card["tags"]
     else {
@@ -147,8 +166,12 @@ func promptsTooLongForTheModelAreUnsupported() async {
 
 @Test func tokenCountingIsOptional() async throws {
     let server = Server(name: "Test", version: "1", models: [FakeModel()])
-    let reply = try await send(server, ["jsonrpc": "2.0", "id": 1, "method": "text/count-tokens",
-                                        "params": ["offer": "fake", "text": "hello"]])
+    let reply = try await send(
+        server,
+        [
+            "jsonrpc": "2.0", "id": 1, "method": "text/count-tokens",
+            "params": ["offer": "fake", "text": "hello"],
+        ])
     #expect((reply["error"] as? [String: Any])?["code"] as? Int == 2, "the fake model can't count")
 }
 
@@ -156,8 +179,12 @@ func promptsTooLongForTheModelAreUnsupported() async {
 func appleModelCountsTokens() async throws {
     let reply = try await send(
         Server(name: "Apple", version: "1", models: [FoundationModel()]),
-        ["jsonrpc": "2.0", "id": 1, "method": "text/count-tokens",
-         "params": ["offer": "afm", "text": String(repeating: "The oscillators drift. ", count: 50)]])
+        [
+            "jsonrpc": "2.0", "id": 1, "method": "text/count-tokens",
+            "params": [
+                "offer": "afm", "text": String(repeating: "The oscillators drift. ", count: 50),
+            ],
+        ])
     let tokens = try #require((reply["result"] as? [String: Any])?["tokens"] as? Int, "\(reply)")
     #expect(tokens > 50 && tokens < 1000, "\(tokens)")
 }

@@ -1,9 +1,10 @@
-@testable import CarrelAppleProviders
 import CoreGraphics
 import Foundation
 import ImageIO
 import Testing
 import UniformTypeIdentifiers
+
+@testable import CarrelAppleProviders
 
 /// `image` written as `type` with `properties`, as a camera or the screenshot tool would.
 func write(_ image: CGImage, as type: UTType, properties: [CFString: Any]) throws -> URL {
@@ -16,27 +17,32 @@ func write(_ image: CGImage, as type: UTType, properties: [CFString: Any]) throw
 }
 
 /// A photo as a phone writes one: when, on what, and where.
-var phonePhoto: [CFString: Any] { [
-    kCGImagePropertyExifDictionary: [
-        kCGImagePropertyExifDateTimeOriginal: "2026:06:24 16:28:05",
-        "OffsetTimeOriginal" as CFString: "+02:00",
-        kCGImagePropertyExifExposureTime: 0.01,
-    ] as [CFString: Any],
-    kCGImagePropertyTIFFDictionary: [
-        kCGImagePropertyTIFFMake: "Apple", kCGImagePropertyTIFFModel: "iPhone 15 Pro",
-    ] as [CFString: Any],
-    kCGImagePropertyGPSDictionary: [
-        kCGImagePropertyGPSLatitude: 46.2, kCGImagePropertyGPSLatitudeRef: "N",
-        kCGImagePropertyGPSLongitude: 6.1, kCGImagePropertyGPSLongitudeRef: "E",
-    ] as [CFString: Any],
-] }
+var phonePhoto: [CFString: Any] {
+    [
+        kCGImagePropertyExifDictionary: [
+            kCGImagePropertyExifDateTimeOriginal: "2026:06:24 16:28:05",
+            "OffsetTimeOriginal" as CFString: "+02:00",
+            kCGImagePropertyExifExposureTime: 0.01,
+        ] as [CFString: Any],
+        kCGImagePropertyTIFFDictionary: [
+            kCGImagePropertyTIFFMake: "Apple", kCGImagePropertyTIFFModel: "iPhone 15 Pro",
+        ] as [CFString: Any],
+        kCGImagePropertyGPSDictionary: [
+            kCGImagePropertyGPSLatitude: 46.2, kCGImagePropertyGPSLatitudeRef: "N",
+            kCGImagePropertyGPSLongitude: 6.1, kCGImagePropertyGPSLongitudeRef: "E",
+        ] as [CFString: Any],
+    ]
+}
 
 @Test func photosSayWhenAndOnWhatButNotWhere() async throws {
     let url = try write(picture(of: ["Hello"]), as: .jpeg, properties: phonePhoto)
     defer { try? FileManager.default.removeItem(at: url) }
     let result = try await ImageReader(describes: false).extract(url, mediaType: "image/jpeg")
     let first = try #require(result.text.split(separator: "\n").first)
-    #expect(first == "Image: photo, 1200 × 200, taken 2026-06-24 16:28 on an iPhone 15 Pro, with a location")
+    #expect(
+        first
+            == "Image: photo, 1200 × 200, taken 2026-06-24 16:28 on an iPhone 15 Pro, with a location"
+    )
     #expect(result.created == "2026-06-24T16:28:05+02:00")
     #expect(result.located == true)
     #expect(result.method == "ocr")
@@ -81,8 +87,9 @@ var phonePhoto: [CFString: Any] { [
 @Test func exifDatesAreCheckedBeforeUse() {
     #expect(Metadata.date("0000:00:00 00:00:00", offset: nil) == (nil, nil))
     #expect(Metadata.date("not a date", offset: "+01:00") == (nil, nil))
-    #expect(Metadata.date("2025:12:31 23:59:58", offset: "-05:00")
-        == ("2025-12-31 23:59", "2025-12-31T23:59:58-05:00"))
+    #expect(
+        Metadata.date("2025:12:31 23:59:58", offset: "-05:00")
+            == ("2025-12-31 23:59", "2025-12-31T23:59:58-05:00"))
 }
 
 @Test func unreadableImagesFail() async {
@@ -106,7 +113,8 @@ var phonePhoto: [CFString: Any] { [
     defer { try? FileManager.default.removeItem(at: url) }
     let result = try await ImageReader().extract(url, mediaType: "image/png")
     if result.method == "described" {
-        let shows = try #require(result.text.split(separator: "\n").first { $0.hasPrefix("Shows: ") })
+        let shows = try #require(
+            result.text.split(separator: "\n").first { $0.hasPrefix("Shows: ") })
         #expect(shows.count > "Shows: ".count + 10)
     } else {
         #expect(!result.text.contains("Shows:"))
