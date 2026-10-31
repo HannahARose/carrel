@@ -24,7 +24,7 @@ public struct OperationProgress: Sendable, Equatable {
 
 /// A Swift closure as the core's progress callback. The core calls it from the thread doing
 /// the work.
-public final class ProgressRelay: ProgressReporter {
+public final class ProgressRelay: ProgressListener {
     private let report: @Sendable (UInt64, UInt64, String?) -> Void
 
     /// Calls `report` with how many are done, of how many, and which, as the work goes.
@@ -120,10 +120,10 @@ public final class ArchiveModel {
         }
     }
 
-    /// Runs `work` as [`call`] does, publishing its progress as `progress` under `title`.
+    /// Runs `work` as `call(_:)` does, publishing its progress as `progress` under `title`.
     public func call<T: Sendable>(
         reporting title: String,
-        _ work: @escaping @Sendable (ArchiveHandle, ProgressReporter) throws -> T
+        _ work: @escaping @Sendable (ArchiveHandle, ProgressListener) throws -> T
     ) async throws -> T {
         progressToken += 1
         let token = progressToken
@@ -134,7 +134,8 @@ public final class ArchiveModel {
         let relay = ProgressRelay { [weak self] done, total, item in
             Task { @MainActor in
                 guard let self, self.progressToken == token, self.progress != nil else { return }
-                self.progress = OperationProgress(title: title, done: done, total: total, item: item)
+                self.progress = OperationProgress(
+                    title: title, done: done, total: total, item: item)
             }
         }
         return try await call { try work($0, relay) }
@@ -205,7 +206,9 @@ public final class ArchiveModel {
     /// Files the proposals `ids` where they're proposed, as one batch.
     @discardableResult
     public func approve(_ ids: [String]) async throws -> FilingOutcome {
-        let outcome = try await call(reporting: "Filing") { handle, _ in try handle.approve(ids: ids) }
+        let outcome = try await call(reporting: "Filing") { handle, _ in
+            try handle.approve(ids: ids)
+        }
         try await changed { try await $0.refreshReview() }
         return outcome
     }
@@ -213,7 +216,8 @@ public final class ArchiveModel {
     /// Files every proposal approving with high confidence takes.
     @discardableResult
     public func approveAllHigh() async throws -> FilingOutcome {
-        let outcome = try await call(reporting: "Filing") { handle, _ in try handle.approveAllHigh() }
+        let outcome = try await call(reporting: "Filing") { handle, _ in try handle.approveAllHigh()
+        }
         try await changed { try await $0.refreshReview() }
         return outcome
     }
@@ -234,7 +238,8 @@ public final class ArchiveModel {
     /// Files the proposals `ids` in Holding.
     @discardableResult
     public func hold(_ ids: [String]) async throws -> FilingOutcome {
-        let outcome = try await call(reporting: "Holding") { handle, _ in try handle.hold(ids: ids) }
+        let outcome = try await call(reporting: "Holding") { handle, _ in try handle.hold(ids: ids)
+        }
         try await changed { try await $0.refreshReview() }
         return outcome
     }

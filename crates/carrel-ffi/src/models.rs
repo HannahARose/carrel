@@ -8,7 +8,7 @@ use std::sync::Arc;
 use carrel_core::models::{CATALOG, Model, installed, installed_mlx, part_path};
 use carrel_core::providers::Capability;
 
-use crate::{ArchiveHandle, CarrelError, ProgressReporter, text};
+use crate::{ArchiveHandle, CarrelError, ProgressListener, text};
 
 /// A model in Carrel's catalog.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -216,7 +216,7 @@ impl ArchiveHandle {
     pub fn download_model(
         &self,
         name: String,
-        progress: Option<Arc<dyn ProgressReporter>>,
+        progress: Option<Arc<dyn ProgressListener>>,
     ) -> Result<String, CarrelError> {
         download(&name, progress)
     }
@@ -230,7 +230,7 @@ impl ArchiveHandle {
 )))]
 fn download(
     name: &str,
-    progress: Option<Arc<dyn ProgressReporter>>,
+    progress: Option<Arc<dyn ProgressListener>>,
 ) -> Result<String, CarrelError> {
     use carrel_core::models::{Helper, ModelError, download, find, network_log};
     let model = find(name)
@@ -266,7 +266,7 @@ fn download(
 ))]
 fn download(
     _name: &str,
-    _progress: Option<Arc<dyn ProgressReporter>>,
+    _progress: Option<Arc<dyn ProgressListener>>,
 ) -> Result<String, CarrelError> {
     Err(CarrelError::failed("models are downloaded on a Mac"))
 }

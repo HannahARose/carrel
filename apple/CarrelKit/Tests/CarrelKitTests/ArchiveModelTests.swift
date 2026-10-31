@@ -41,7 +41,7 @@ final class Retitling: ModelProvider {
 }
 
 /// Collects what a long operation reports.
-final class Reports: ProgressReporter, @unchecked Sendable {
+final class Reports: ProgressListener, @unchecked Sendable {
     private let lock = NSLock()
     private var seen: [(UInt64, UInt64)] = []
 
@@ -71,7 +71,7 @@ final class Reports: ProgressReporter, @unchecked Sendable {
         try await model.reject([proposal.id])
         #expect(model.reviewCount == 0)
         await #expect(throws: CarrelError.self) { try await model.reject([proposal.id]) }
-        #expect(model.lastError?.localizedDescription.contains("already rejected") == true)
+        #expect(model.lastError?.message.contains("already rejected") == true)
         #expect(model.questions.isEmpty)
     }
 
@@ -104,7 +104,8 @@ final class Reports: ProgressReporter, @unchecked Sendable {
 
         let saved = try await model.save(correction)
         #expect(!saved.filed)
-        #expect(model.review.batches.first?.proposals.first?.fields.title == "Lamp diffuser, frosted")
+        #expect(
+            model.review.batches.first?.proposals.first?.fields.title == "Lamp diffuser, frosted")
         await #expect(throws: CarrelError.self) { try await model.save(correction) }
     }
 
@@ -141,7 +142,8 @@ final class Reports: ProgressReporter, @unchecked Sendable {
 
         fields = editable.fields
         fields.summary = "Every part, with where it came from."
-        guard case .saved(let changed, let commit) = try await model.edit(item: item, fields: fields)
+        guard
+            case .saved(let changed, let commit) = try await model.edit(item: item, fields: fields)
         else {
             Issue.record("not saved")
             return
@@ -267,7 +269,9 @@ final class Reports: ProgressReporter, @unchecked Sendable {
         #expect(originals.choices == ["move", "keep"])
         let changed = try await model.set("ingest.originals", to: "keep")
         #expect(changed.from == "move" && changed.to == "keep")
-        await #expect(throws: CarrelError.self) { try await model.set("ingest.originals", to: "shred") }
+        await #expect(throws: CarrelError.self) {
+            try await model.set("ingest.originals", to: "shred")
+        }
     }
 
     @Test func modelsAreChosenFromThoseAvailable() async throws {
@@ -301,7 +305,9 @@ final class Reports: ProgressReporter, @unchecked Sendable {
         #expect(drafted.drafted == 1)
         #expect(model.intake.waiting.isEmpty)
         let proposal = try #require(
-            model.review.batches.flatMap(\.proposals).first { $0.source.hasSuffix("shopping list.txt") })
+            model.review.batches.flatMap(\.proposals).first {
+                $0.source.hasSuffix("shopping list.txt")
+            })
 
         let outcome = try await model.hold([proposal.id])
         #expect(outcome.filed.count == 1)

@@ -113,3 +113,4 @@ They only run `carrel --json`, so a change to the JSON that `carrel search`, `ca
 | Generating the Swift bindings | `scripts/generate-bindings.sh` | `apple/CarrelKit/Sources/CarrelKit/Generated` (committed) |
 | Formatting the Swift | `scripts/swift-format.sh` | `.swift-format` |
 | The Swift package the apps use | `apple/CarrelKit` | |
+| The Mac app: its window, screens, Settings and view models | `apple/CarrelApp/README.md` | `apple/CarrelApp/Carrel`, tests in `apple/CarrelApp/CarrelTests` |

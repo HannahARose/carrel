@@ -10,7 +10,7 @@ use carrel_core::ingest::IntakeOptions;
 use carrel_core::intake::{IntakeEntry, Processed};
 use carrel_core::worker::{FileLock, Worker, file_in, read_status};
 
-use crate::{ArchiveHandle, CarrelError, ProgressReporter, text};
+use crate::{ArchiveHandle, CarrelError, ProgressListener, text};
 
 /// An item waiting in the intake queue.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -96,7 +96,7 @@ pub struct Drafted {
 
 /// Tells Swift how the worker is getting on, and collects its failures.
 struct Reporting {
-    progress: Option<Arc<dyn ProgressReporter>>,
+    progress: Option<Arc<dyn ProgressListener>>,
     failures: Vec<LeftOut>,
 }
 
@@ -236,7 +236,7 @@ impl ArchiveHandle {
     /// [`CarrelError::Failed`] if the queues can't be read or written.
     pub fn draft_queued(
         &self,
-        progress: Option<Arc<dyn ProgressReporter>>,
+        progress: Option<Arc<dyn ProgressListener>>,
     ) -> Result<Drafted, CarrelError> {
         let archive = self.fresh()?;
         let folder = self.workers()?;

@@ -27,7 +27,7 @@ pub struct Failed {
 }
 
 /// The registry for this device: the built-in providers and every provider program found in
-/// `folders` then the [`default_folders`], with those that couldn't start.
+/// `folders` then the default ones (`process::default_folders`), with those that couldn't start.
 ///
 /// The text model chosen in the preferences (`model`) is tried first. If it isn't available,
 /// as when its file was removed, the others are used as if none were chosen.

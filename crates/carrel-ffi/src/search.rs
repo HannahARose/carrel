@@ -12,7 +12,7 @@ use carrel_core::search::{Found, Hit, Meaning};
 
 use crate::history::Change;
 use crate::records::{CardFields, CardHistoryEntry, Sensitivity};
-use crate::{ArchiveHandle, CarrelError, ItemKind, ProgressReporter};
+use crate::{ArchiveHandle, CarrelError, ItemKind, ProgressListener};
 
 /// What a result is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
@@ -241,7 +241,7 @@ impl ArchiveHandle {
         &self,
         query: String,
         limit: u32,
-        progress: Option<Arc<dyn ProgressReporter>>,
+        progress: Option<Arc<dyn ProgressListener>>,
     ) -> Result<SearchResults, CarrelError> {
         let query = Query::parse(&query).map_err(CarrelError::invalid)?;
         if query.text.trim().is_empty() && query.filters.is_empty() {

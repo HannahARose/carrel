@@ -942,7 +942,7 @@ public protocol ArchiveHandleProtocol: AnyObject, Sendable {
      *
      * [`CarrelError::Failed`] if the queues can't be read or written.
      */
-    func draftQueued(progress: ProgressReporter?) throws  -> Drafted
+    func draftQueued(progress: ProgressListener?) throws  -> Drafted
     
     /**
      * The intake queue on this device.
@@ -1007,7 +1007,7 @@ public protocol ArchiveHandleProtocol: AnyObject, Sendable {
      * [`CarrelError::Invalid`] for a model that isn't in the catalog or can't be downloaded,
      * or [`CarrelError::Failed`] if the helper is missing or the download fails.
      */
-    func downloadModel(name: String, progress: ProgressReporter?) throws  -> String
+    func downloadModel(name: String, progress: ProgressListener?) throws  -> String
     
     /**
      * Whether a provider on this device offers `capability` (`text-model`,
@@ -1196,7 +1196,7 @@ public protocol ArchiveHandleProtocol: AnyObject, Sendable {
      * [`CarrelError::Invalid`] for a filter that can't be used or a query with nothing in
      * it, or [`CarrelError::Failed`] if the archive or its index can't be read.
      */
-    func search(query: String, limit: UInt32, progress: ProgressReporter?) throws  -> SearchResults
+    func search(query: String, limit: UInt32, progress: ProgressListener?) throws  -> SearchResults
     
     /**
      * Chooses the text model that drafts cards on this device (`None` lets Carrel choose)
@@ -1294,6 +1294,25 @@ open class ArchiveHandle: ArchiveHandleProtocol, @unchecked Sendable {
         try! rustCall { uniffi_carrel_ffi_fn_free_archivehandle(handle, $0) }
     }
 
+    
+    /**
+     * Creates an archive named `name` in the empty folder `path` (creating it if needed),
+     * with its history started, as `carrel init` does, and opens it.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if `path` is already an archive or has files in it, or if
+     * anything can't be written.
+     */
+public static func create(path: String, name: String)throws  -> ArchiveHandle  {
+    return try  FfiConverterTypeArchiveHandle_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_constructor_archivehandle_create(
+        FfiConverterString.lower(path),
+        FfiConverterString.lower(name),uniffiCallStatus
+    )
+})
+}
     
     /**
      * Opens the archive containing `path`.
@@ -1868,12 +1887,12 @@ open func undo(id: String)throws  -> String  {
      *
      * [`CarrelError::Failed`] if the queues can't be read or written.
      */
-open func draftQueued(progress: ProgressReporter?)throws  -> Drafted  {
+open func draftQueued(progress: ProgressListener?)throws  -> Drafted  {
     return try  FfiConverterTypeDrafted_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
         uniffiCallStatus in
     uniffi_carrel_ffi_fn_method_archivehandle_draft_queued(
             self.uniffiCloneHandle(),
-        FfiConverterOptionTypeProgressReporter.lower(progress),uniffiCallStatus
+        FfiConverterOptionTypeProgressListener.lower(progress),uniffiCallStatus
     )
 })
 }
@@ -1986,13 +2005,13 @@ open func workerStatus() -> WorkerStatus?  {
      * [`CarrelError::Invalid`] for a model that isn't in the catalog or can't be downloaded,
      * or [`CarrelError::Failed`] if the helper is missing or the download fails.
      */
-open func downloadModel(name: String, progress: ProgressReporter?)throws  -> String  {
+open func downloadModel(name: String, progress: ProgressListener?)throws  -> String  {
     return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
         uniffiCallStatus in
     uniffi_carrel_ffi_fn_method_archivehandle_download_model(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(name),
-        FfiConverterOptionTypeProgressReporter.lower(progress),uniffiCallStatus
+        FfiConverterOptionTypeProgressListener.lower(progress),uniffiCallStatus
     )
 })
 }
@@ -2335,14 +2354,14 @@ open func related(id: String)throws  -> Related  {
      * [`CarrelError::Invalid`] for a filter that can't be used or a query with nothing in
      * it, or [`CarrelError::Failed`] if the archive or its index can't be read.
      */
-open func search(query: String, limit: UInt32, progress: ProgressReporter?)throws  -> SearchResults  {
+open func search(query: String, limit: UInt32, progress: ProgressListener?)throws  -> SearchResults  {
     return try  FfiConverterTypeSearchResults_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
         uniffiCallStatus in
     uniffi_carrel_ffi_fn_method_archivehandle_search(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(query),
         FfiConverterUInt32.lower(limit),
-        FfiConverterOptionTypeProgressReporter.lower(progress),uniffiCallStatus
+        FfiConverterOptionTypeProgressListener.lower(progress),uniffiCallStatus
     )
 })
 }
@@ -2828,7 +2847,7 @@ public func FfiConverterTypeModelProvider_lower(_ value: ModelProvider) -> UInt6
  * Told how far a long operation has got, implemented in Swift. Called from the thread doing
  * the work, so the app hops to the main actor itself.
  */
-public protocol ProgressReporter: AnyObject, Sendable {
+public protocol ProgressListener: AnyObject, Sendable {
     
     /**
      * `done` of `total` are done; `item` names the one being worked on, when there is one.
@@ -2840,7 +2859,7 @@ public protocol ProgressReporter: AnyObject, Sendable {
  * Told how far a long operation has got, implemented in Swift. Called from the thread doing
  * the work, so the app hops to the main actor itself.
  */
-open class ProgressReporterImpl: ProgressReporter, @unchecked Sendable {
+open class ProgressListenerImpl: ProgressListener, @unchecked Sendable {
     fileprivate let handle: UInt64
 
     /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
@@ -2877,7 +2896,7 @@ open class ProgressReporterImpl: ProgressReporter, @unchecked Sendable {
     @_documentation(visibility: private)
 #endif
     public func uniffiCloneHandle() -> UInt64 {
-        return try! rustCall { uniffi_carrel_ffi_fn_clone_progressreporter(self.handle, $0) }
+        return try! rustCall { uniffi_carrel_ffi_fn_clone_progresslistener(self.handle, $0) }
     }
     // No primary constructor declared for this class.
 
@@ -2887,7 +2906,7 @@ open class ProgressReporterImpl: ProgressReporter, @unchecked Sendable {
             return
         }
 
-        try! rustCall { uniffi_carrel_ffi_fn_free_progressreporter(handle, $0) }
+        try! rustCall { uniffi_carrel_ffi_fn_free_progresslistener(handle, $0) }
     }
 
     
@@ -2898,7 +2917,7 @@ open class ProgressReporterImpl: ProgressReporter, @unchecked Sendable {
      */
 open func update(done: UInt64, total: UInt64, item: String?)  {try! rustCall() {
         uniffiCallStatus in
-    uniffi_carrel_ffi_fn_method_progressreporter_update(
+    uniffi_carrel_ffi_fn_method_progresslistener_update(
             self.uniffiCloneHandle(),
         FfiConverterUInt64.lower(done),
         FfiConverterUInt64.lower(total),
@@ -2914,25 +2933,25 @@ open func update(done: UInt64, total: UInt64, item: String?)  {try! rustCall() {
 
 
 // Put the implementation in a struct so we don't pollute the top-level namespace
-fileprivate struct UniffiCallbackInterfaceProgressReporter {
+fileprivate struct UniffiCallbackInterfaceProgressListener {
 
     // Create the VTable using a series of closures.
     // Swift automatically converts these into C callback functions.
     //
     // Store the vtable directly.
-    static let vtable: UniffiVTableCallbackInterfaceProgressReporter = UniffiVTableCallbackInterfaceProgressReporter(
+    static let vtable: UniffiVTableCallbackInterfaceProgressListener = UniffiVTableCallbackInterfaceProgressListener(
         uniffiFree: { (uniffiHandle: UInt64) -> () in
             do {
-                try FfiConverterTypeProgressReporter.handleMap.remove(handle: uniffiHandle)
+                try FfiConverterTypeProgressListener.handleMap.remove(handle: uniffiHandle)
             } catch {
-                print("Uniffi callback interface ProgressReporter: handle missing in uniffiFree")
+                print("Uniffi callback interface ProgressListener: handle missing in uniffiFree")
             }
         },
         uniffiClone: { (uniffiHandle: UInt64) -> UInt64 in
             do {
-                return try FfiConverterTypeProgressReporter.handleMap.clone(handle: uniffiHandle)
+                return try FfiConverterTypeProgressListener.handleMap.clone(handle: uniffiHandle)
             } catch {
-                fatalError("Uniffi callback interface ProgressReporter: handle missing in uniffiClone")
+                fatalError("Uniffi callback interface ProgressListener: handle missing in uniffiClone")
             }
         },
         update: { (
@@ -2945,7 +2964,7 @@ fileprivate struct UniffiCallbackInterfaceProgressReporter {
         ) in
             let makeCall = {
                 () throws -> () in
-                guard let uniffiObj = try? FfiConverterTypeProgressReporter.handleMap.get(handle: uniffiHandle) else {
+                guard let uniffiObj = try? FfiConverterTypeProgressListener.handleMap.get(handle: uniffiHandle) else {
                     throw UniffiInternalError.unexpectedStaleHandle
                 }
                 return uniffiObj.update(
@@ -2971,39 +2990,39 @@ fileprivate struct UniffiCallbackInterfaceProgressReporter {
     // `nonisolated(unsafe)` is needed under Swift 6 strict concurrency.
     // This is safe because the pointee is initialized once during static init
     // and never mutated by either side of the FFI.  Its fields are C function pointers.
-    nonisolated(unsafe) static let vtablePtr: UnsafePointer<UniffiVTableCallbackInterfaceProgressReporter> = {
-        let ptr = UnsafeMutablePointer<UniffiVTableCallbackInterfaceProgressReporter>.allocate(capacity: 1)
+    nonisolated(unsafe) static let vtablePtr: UnsafePointer<UniffiVTableCallbackInterfaceProgressListener> = {
+        let ptr = UnsafeMutablePointer<UniffiVTableCallbackInterfaceProgressListener>.allocate(capacity: 1)
         ptr.initialize(to: vtable)
         return UnsafePointer(ptr)
     }()
 }
 
-private func uniffiCallbackInitProgressReporter() {
-    uniffi_carrel_ffi_fn_init_callback_vtable_progressreporter(UniffiCallbackInterfaceProgressReporter.vtablePtr)
+private func uniffiCallbackInitProgressListener() {
+    uniffi_carrel_ffi_fn_init_callback_vtable_progresslistener(UniffiCallbackInterfaceProgressListener.vtablePtr)
 }
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public struct FfiConverterTypeProgressReporter: FfiConverter {
-    fileprivate static let handleMap = UniffiHandleMap<ProgressReporter>()
+public struct FfiConverterTypeProgressListener: FfiConverter {
+    fileprivate static let handleMap = UniffiHandleMap<ProgressListener>()
 
     typealias FfiType = UInt64
-    typealias SwiftType = ProgressReporter
+    typealias SwiftType = ProgressListener
 
-    public static func lift(_ handle: UInt64) throws -> ProgressReporter {
+    public static func lift(_ handle: UInt64) throws -> ProgressListener {
         if ((handle & 1) == 0) {
             // Rust-generated handle, construct a new class that uses the handle to implement the
             // interface
-            return ProgressReporterImpl(unsafeFromHandle: handle)
+            return ProgressListenerImpl(unsafeFromHandle: handle)
         } else {
             // Swift-generated handle, get the object from the handle map
             return try handleMap.remove(handle: handle)
         }
     }
 
-    public static func lower(_ value: ProgressReporter) -> UInt64 {
-         if let rustImpl = value as? ProgressReporterImpl {
+    public static func lower(_ value: ProgressListener) -> UInt64 {
+         if let rustImpl = value as? ProgressListenerImpl {
              // Rust-implemented object.  Clone the handle and return it
             return rustImpl.uniffiCloneHandle()
          } else {
@@ -3012,12 +3031,12 @@ public struct FfiConverterTypeProgressReporter: FfiConverter {
          }
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ProgressReporter {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ProgressListener {
         let handle: UInt64 = try readInt(&buf)
         return try lift(handle)
     }
 
-    public static func write(_ value: ProgressReporter, into buf: inout [UInt8]) {
+    public static func write(_ value: ProgressListener, into buf: inout [UInt8]) {
         writeInt(&buf, lower(value))
     }
 }
@@ -3026,15 +3045,15 @@ public struct FfiConverterTypeProgressReporter: FfiConverter {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeProgressReporter_lift(_ handle: UInt64) throws -> ProgressReporter {
-    return try FfiConverterTypeProgressReporter.lift(handle)
+public func FfiConverterTypeProgressListener_lift(_ handle: UInt64) throws -> ProgressListener {
+    return try FfiConverterTypeProgressListener.lift(handle)
 }
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-public func FfiConverterTypeProgressReporter_lower(_ value: ProgressReporter) -> UInt64 {
-    return FfiConverterTypeProgressReporter.lower(value)
+public func FfiConverterTypeProgressListener_lower(_ value: ProgressListener) -> UInt64 {
+    return FfiConverterTypeProgressListener.lower(value)
 }
 
 
@@ -6660,7 +6679,7 @@ public struct OpenOptions: Equatable, Hashable {
     public var providerFolders: [String]
     /**
      * Whether to start provider programs; without them only the built-in providers read
-     * text, and corrections need a [`ModelProvider`].
+     * text, and corrections need a [`ModelProvider`](correct::ModelProvider).
      */
     public var startProviders: Bool
 
@@ -6678,7 +6697,7 @@ public struct OpenOptions: Equatable, Hashable {
          */providerFolders: [String], 
         /**
          * Whether to start provider programs; without them only the built-in providers read
-         * text, and corrections need a [`ModelProvider`].
+         * text, and corrections need a [`ModelProvider`](correct::ModelProvider).
          */startProviders: Bool) {
         self.configDir = configDir
         self.providerFolders = providerFolders
@@ -8147,7 +8166,7 @@ public struct SearchHit: Equatable, Hashable {
     /**
      * For an item, its identifier.
      */
-    public var id: String?
+    public var itemId: String?
     /**
      * Its title; for a glossary fact, the term.
      */
@@ -8206,7 +8225,7 @@ public struct SearchHit: Equatable, Hashable {
          */found: FoundKind, 
         /**
          * For an item, its identifier.
-         */id: String?, 
+         */itemId: String?, 
         /**
          * Its title; for a glossary fact, the term.
          */title: String, 
@@ -8245,7 +8264,7 @@ public struct SearchHit: Equatable, Hashable {
          * Where the passage is from.
          */passageFrom: String?) {
         self.found = found
-        self.id = id
+        self.itemId = itemId
         self.title = title
         self.path = path
         self.item = item
@@ -8277,7 +8296,7 @@ public struct FfiConverterTypeSearchHit: FfiConverterRustBuffer {
         return
             try SearchHit(
                 found: FfiConverterTypeFoundKind.read(from: &buf), 
-                id: FfiConverterOptionString.read(from: &buf), 
+                itemId: FfiConverterOptionString.read(from: &buf), 
                 title: FfiConverterString.read(from: &buf), 
                 path: FfiConverterString.read(from: &buf), 
                 item: FfiConverterOptionString.read(from: &buf), 
@@ -8295,7 +8314,7 @@ public struct FfiConverterTypeSearchHit: FfiConverterRustBuffer {
 
     public static func write(_ value: SearchHit, into buf: inout [UInt8]) {
         FfiConverterTypeFoundKind.write(value.found, into: &buf)
-        FfiConverterOptionString.write(value.id, into: &buf)
+        FfiConverterOptionString.write(value.itemId, into: &buf)
         FfiConverterString.write(value.title, into: &buf)
         FfiConverterString.write(value.path, into: &buf)
         FfiConverterOptionString.write(value.item, into: &buf)
@@ -10338,8 +10357,8 @@ fileprivate struct FfiConverterOptionTypeModelProvider: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
-fileprivate struct FfiConverterOptionTypeProgressReporter: FfiConverterRustBuffer {
-    typealias SwiftType = ProgressReporter?
+fileprivate struct FfiConverterOptionTypeProgressListener: FfiConverterRustBuffer {
+    typealias SwiftType = ProgressListener?
 
     public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
         guard let value = value else {
@@ -10347,13 +10366,13 @@ fileprivate struct FfiConverterOptionTypeProgressReporter: FfiConverterRustBuffe
             return
         }
         writeInt(&buf, Int8(1))
-        FfiConverterTypeProgressReporter.write(value, into: &buf)
+        FfiConverterTypeProgressListener.write(value, into: &buf)
     }
 
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
-        case 1: return try FfiConverterTypeProgressReporter.read(from: &buf)
+        case 1: return try FfiConverterTypeProgressListener.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -11490,7 +11509,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_carrel_ffi_checksum_method_archivehandle_undo() != 57614) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_carrel_ffi_checksum_method_archivehandle_draft_queued() != 22210) {
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_draft_queued() != 58840) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_intake() != 22448) {
@@ -11511,7 +11530,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_carrel_ffi_checksum_method_archivehandle_worker_status() != 53926) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_carrel_ffi_checksum_method_archivehandle_download_model() != 32312) {
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_download_model() != 29926) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_has_capability() != 26988) {
@@ -11571,7 +11590,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_carrel_ffi_checksum_method_archivehandle_related() != 8364) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_carrel_ffi_checksum_method_archivehandle_search() != 42287) {
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_search() != 11699) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_choose_models() != 39343) {
@@ -11586,7 +11605,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_carrel_ffi_checksum_method_archivehandle_settings() != 47688) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_carrel_ffi_checksum_method_progressreporter_update() != 30055) {
+    if (uniffi_carrel_ffi_checksum_method_progresslistener_update() != 58359) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_textmodel_complete() != 62907) {
@@ -11598,6 +11617,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_carrel_ffi_checksum_method_modelprovider_complete() != 7807) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_carrel_ffi_checksum_constructor_archivehandle_create() != 24558) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_carrel_ffi_checksum_constructor_archivehandle_open() != 50097) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -11606,7 +11628,7 @@ private let initializationResult: InitializationResult = {
     }
 
     uniffiCallbackInitModelProvider()
-    uniffiCallbackInitProgressReporter()
+    uniffiCallbackInitProgressListener()
     uniffiCallbackInitTextModel()
     return InitializationResult.ok
 }()

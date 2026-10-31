@@ -36,9 +36,9 @@ extension OpenOptions {
     }
 }
 
-extension CarrelError: LocalizedError {
-    /// The core's message.
-    public var errorDescription: String? {
+extension CarrelError {
+    /// The core's message, for people.
+    public var message: String {
         switch self {
         case .NotAnArchive(let message), .Failed(let message), .Callback(let message),
             .Busy(let message), .Invalid(let message):

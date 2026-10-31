@@ -22,8 +22,8 @@
 //! | [`models`] | The model catalog, providers, and downloads |
 //! | [`intake`] | The intake queue |
 //!
-//! [`TextModel`] and [`ModelProvider`] are implemented in Swift and called from Rust, as is
-//! [`ProgressReporter`], which long operations report to.
+//! [`TextModel`] and [`ModelProvider`](correct::ModelProvider) are implemented in Swift and called from Rust, as is
+//! [`ProgressListener`], which long operations report to.
 
 // UniFFI passes arguments from Swift as owned values.
 #![allow(clippy::needless_pass_by_value)]
@@ -33,10 +33,13 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use carrel_core::Access;
-use carrel_core::archive::{Archive, ItemRef};
+use carrel_core::archive::{Archive, InitOptions, ItemRef};
 use carrel_core::card::Kind;
 use carrel_core::card_file::CardFile;
-use carrel_core::coordinator::{CoordinatorError, Holder};
+use carrel_core::coordinator::{
+    Coordinator as _, CoordinatorError, DEFAULT_LEASE, DiskLock, Holder,
+};
+use carrel_core::history::History;
 use carrel_core::local::{Identity, Prefs};
 use carrel_core::providers::Registry;
 
@@ -261,7 +264,7 @@ pub trait TextModel: Send + Sync {
 /// Told how far a long operation has got, implemented in Swift. Called from the thread doing
 /// the work, so the app hops to the main actor itself.
 #[uniffi::export(with_foreign)]
-pub trait ProgressReporter: Send + Sync {
+pub trait ProgressListener: Send + Sync {
     /// `done` of `total` are done; `item` names the one being worked on, when there is one.
     fn update(&self, done: u64, total: u64, item: Option<String>);
 }
@@ -278,7 +281,7 @@ pub struct OpenOptions {
     /// bundle's `Contents/Helpers`.
     pub provider_folders: Vec<String>,
     /// Whether to start provider programs; without them only the built-in providers read
-    /// text, and corrections need a [`ModelProvider`].
+    /// text, and corrections need a [`ModelProvider`](correct::ModelProvider).
     pub start_providers: bool,
 }
 
@@ -417,6 +420,22 @@ impl ArchiveHandle {
         }
     }
 
+    /// Creates an archive named `name` in the empty folder `path` (creating it if needed),
+    /// with its history started, as `carrel init` does, and opens it.
+    ///
+    /// # Errors
+    ///
+    /// [`CarrelError::Failed`] if `path` is already an archive or has files in it, or if
+    /// anything can't be written.
+    #[uniffi::constructor]
+    pub fn create(path: String, name: String) -> Result<Arc<Self>, CarrelError> {
+        create_archive(
+            Path::new(&path),
+            &name,
+            &carrel_core::local::config_folder()?,
+        )
+    }
+
     /// The archive's name.
     #[must_use]
     pub fn name(&self) -> String {
@@ -512,6 +531,27 @@ impl ArchiveHandle {
         }
         Ok(model.complete(prompt)?.trim().to_owned())
     }
+}
+
+fn create_archive(
+    root: &Path,
+    name: &str,
+    config: &Path,
+) -> Result<Arc<ArchiveHandle>, CarrelError> {
+    let holder = Identity::load_or_create_in(config)?.holder();
+    let archive = Archive::init(root, &InitOptions::new(name))?;
+    let lease = DiskLock::for_archive(&archive).acquire(holder, "create", DEFAULT_LEASE)?;
+    let started = History::init(&archive, &lease);
+    lease.release()?;
+    started?;
+    Ok(Arc::new(ArchiveHandle {
+        archive,
+        options: OpenOptions {
+            config_dir: Some(text(config)),
+            provider_folders: Vec::new(),
+            start_providers: true,
+        },
+    }))
 }
 
 #[cfg(test)]
@@ -616,6 +656,31 @@ mod tests {
             ArchiveHandle::open(dir.to_string_lossy().into_owned()),
             Err(CarrelError::NotAnArchive { .. })
         ));
+    }
+
+    #[test]
+    fn creates_an_archive_with_its_history() {
+        let dir =
+            std::env::temp_dir().join(format!("carrel-ffi-{}", carrel_core::card::Id::new_v7()));
+        let config = dir.join("config");
+        let root = dir.join("New archive");
+        let archive = create_archive(&root, "Letters", &config).unwrap();
+        assert_eq!(archive.name(), "Letters");
+        assert!(
+            archive
+                .collections()
+                .unwrap()
+                .iter()
+                .any(|c| c.path == "Holding")
+        );
+        assert!(History::open(&archive.archive).is_ok());
+        let first = std::fs::read_to_string(config.join("identity.json")).unwrap();
+        assert!(create_archive(&root, "Again", &config).is_err());
+        let other = dir.join("Second");
+        create_archive(&other, "Second", &config).unwrap();
+        let second = std::fs::read_to_string(config.join("identity.json")).unwrap();
+        assert_eq!(first, second, "the identity is kept, not replaced");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     struct Echo;
