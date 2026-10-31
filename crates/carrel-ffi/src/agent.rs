@@ -233,7 +233,7 @@ mod tests {
         let handle = &sample.handle;
         let recorded = handle.record_sessions().unwrap();
         assert_eq!(recorded.sessions, 0);
-        assert!(recorded.snapshot_failures.is_empty());
+        assert_eq!(recorded.snapshot_failures, Vec::<String>::new());
         assert!(
             sample.dir.path().join("config/sessions").is_dir(),
             "what's been looked at is kept in the handle's own folder"
