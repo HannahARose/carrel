@@ -986,6 +986,64 @@ public protocol ArchiveHandleProtocol: AnyObject, Sendable {
     func recordSessions() throws  -> SessionsRecorded
     
     /**
+     * Creates the collection `path` (such as `Finances/Tax`, inside an existing collection),
+     * saying what belongs there and with its tag vocabulary, as `carrel collection new` does.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] for a path or tag that can't be used, or one that's taken,
+     * [`CarrelError::Busy`] if another writer holds the archive, or
+     * [`CarrelError::Failed`] if it can't be written.
+     */
+    func createCollection(path: String, description: String?, tags: [CollectionTag]) throws  -> CreatedCollection
+    
+    /**
+     * Expands the filed compressed file `item` in place, as `carrel expand` does: what it
+     * held becomes the item, its card follows, and the compressed file goes to the Trash.
+     * `anyway` expands one kept compressed for a reason it overrides ([`Expandable`]).
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] for an unknown item or one that won't expand,
+     * [`CarrelError::Busy`] if another writer holds the archive, or
+     * [`CarrelError::Failed`] if expanding fails; nothing has changed then.
+     */
+    func expandItem(item: String, anyway: Bool) throws  -> ExpandedItem
+    
+    /**
+     * Whether the filed item `item` would expand, changing nothing, so the app can ask first.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] for an unknown item, or [`CarrelError::Failed`] if the
+     * archive can't be read.
+     */
+    func expandable(item: String) throws  -> Expandable
+    
+    /**
+     * The item `item`'s name, and the name `carrel rename` suggests for it: one that works
+     * on every system.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] for an unknown item, or [`CarrelError::Failed`] if the
+     * archive can't be read.
+     */
+    func nameSuggestion(item: String) throws  -> NameSuggestion
+    
+    /**
+     * Renames the item `item` and its card together to `new_name`, updating links to it, as
+     * `carrel rename` does.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] for an unknown item, a name that isn't portable or is taken,
+     * or an item that's checked out, [`CarrelError::Busy`] if another writer holds the
+     * archive, or [`CarrelError::Failed`] if it can't be renamed.
+     */
+    func renameItem(item: String, newName: String) throws  -> RenamedItem
+    
+    /**
      * Adds `fact` to the glossary, as one history change, when the owner agrees to the fact
      * a correction offered. Returns the commit.
      *
@@ -2000,6 +2058,108 @@ open func recordSessions()throws  -> SessionsRecorded  {
         uniffiCallStatus in
     uniffi_carrel_ffi_fn_method_archivehandle_record_sessions(
             self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Creates the collection `path` (such as `Finances/Tax`, inside an existing collection),
+     * saying what belongs there and with its tag vocabulary, as `carrel collection new` does.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] for a path or tag that can't be used, or one that's taken,
+     * [`CarrelError::Busy`] if another writer holds the archive, or
+     * [`CarrelError::Failed`] if it can't be written.
+     */
+open func createCollection(path: String, description: String?, tags: [CollectionTag])throws  -> CreatedCollection  {
+    return try  FfiConverterTypeCreatedCollection_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_create_collection(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(path),
+        FfiConverterOptionString.lower(description),
+        FfiConverterSequenceTypeCollectionTag.lower(tags),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Expands the filed compressed file `item` in place, as `carrel expand` does: what it
+     * held becomes the item, its card follows, and the compressed file goes to the Trash.
+     * `anyway` expands one kept compressed for a reason it overrides ([`Expandable`]).
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] for an unknown item or one that won't expand,
+     * [`CarrelError::Busy`] if another writer holds the archive, or
+     * [`CarrelError::Failed`] if expanding fails; nothing has changed then.
+     */
+open func expandItem(item: String, anyway: Bool)throws  -> ExpandedItem  {
+    return try  FfiConverterTypeExpandedItem_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_expand_item(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(item),
+        FfiConverterBool.lower(anyway),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Whether the filed item `item` would expand, changing nothing, so the app can ask first.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] for an unknown item, or [`CarrelError::Failed`] if the
+     * archive can't be read.
+     */
+open func expandable(item: String)throws  -> Expandable  {
+    return try  FfiConverterTypeExpandable_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_expandable(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(item),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * The item `item`'s name, and the name `carrel rename` suggests for it: one that works
+     * on every system.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] for an unknown item, or [`CarrelError::Failed`] if the
+     * archive can't be read.
+     */
+open func nameSuggestion(item: String)throws  -> NameSuggestion  {
+    return try  FfiConverterTypeNameSuggestion_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_name_suggestion(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(item),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Renames the item `item` and its card together to `new_name`, updating links to it, as
+     * `carrel rename` does.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] for an unknown item, a name that isn't portable or is taken,
+     * or an item that's checked out, [`CarrelError::Busy`] if another writer holds the
+     * archive, or [`CarrelError::Failed`] if it can't be renamed.
+     */
+open func renameItem(item: String, newName: String)throws  -> RenamedItem  {
+    return try  FfiConverterTypeRenamedItem_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_rename_item(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(item),
+        FfiConverterString.lower(newName),uniffiCallStatus
     )
 })
 }
@@ -5044,6 +5204,75 @@ public func FfiConverterTypeCollectionSummary_lower(_ value: CollectionSummary) 
 
 
 /**
+ * A tag in a collection's vocabulary, and what it means.
+ */
+public struct CollectionTag: Equatable, Hashable {
+    /**
+     * The tag: lowercase words joined by hyphens.
+     */
+    public var name: String
+    /**
+     * What it means.
+     */
+    public var meaning: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The tag: lowercase words joined by hyphens.
+         */name: String, 
+        /**
+         * What it means.
+         */meaning: String) {
+        self.name = name
+        self.meaning = meaning
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CollectionTag: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCollectionTag: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CollectionTag {
+        return
+            try CollectionTag(
+                name: FfiConverterString.read(from: &buf), 
+                meaning: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CollectionTag, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterString.write(value.meaning, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCollectionTag_lift(_ buf: RustBuffer) throws -> CollectionTag {
+    return try FfiConverterTypeCollectionTag.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCollectionTag_lower(_ value: CollectionTag) -> RustBuffer {
+    return FfiConverterTypeCollectionTag.lower(value)
+}
+
+
+/**
  * One row of a side-by-side comparison of a proposal and an archived item.
  */
 public struct ComparedField: Equatable, Hashable {
@@ -5448,6 +5677,95 @@ public func FfiConverterTypeCorrectionChanges_lift(_ buf: RustBuffer) throws -> 
 #endif
 public func FfiConverterTypeCorrectionChanges_lower(_ value: CorrectionChanges) -> RustBuffer {
     return FfiConverterTypeCorrectionChanges.lower(value)
+}
+
+
+/**
+ * A collection that was created.
+ */
+public struct CreatedCollection: Equatable, Hashable {
+    /**
+     * Its folder, relative to the archive root.
+     */
+    public var path: String
+    /**
+     * Its identifier.
+     */
+    public var id: String
+    /**
+     * Its design document, relative to the archive root, for the owner to fill in.
+     */
+    public var designDocument: String
+    /**
+     * The history commit.
+     */
+    public var commit: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Its folder, relative to the archive root.
+         */path: String, 
+        /**
+         * Its identifier.
+         */id: String, 
+        /**
+         * Its design document, relative to the archive root, for the owner to fill in.
+         */designDocument: String, 
+        /**
+         * The history commit.
+         */commit: String?) {
+        self.path = path
+        self.id = id
+        self.designDocument = designDocument
+        self.commit = commit
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CreatedCollection: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCreatedCollection: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CreatedCollection {
+        return
+            try CreatedCollection(
+                path: FfiConverterString.read(from: &buf), 
+                id: FfiConverterString.read(from: &buf), 
+                designDocument: FfiConverterString.read(from: &buf), 
+                commit: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CreatedCollection, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.path, into: &buf)
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.designDocument, into: &buf)
+        FfiConverterOptionString.write(value.commit, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCreatedCollection_lift(_ buf: RustBuffer) throws -> CreatedCollection {
+    return try FfiConverterTypeCreatedCollection.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCreatedCollection_lower(_ value: CreatedCollection) -> RustBuffer {
+    return FfiConverterTypeCreatedCollection.lower(value)
 }
 
 
@@ -6154,6 +6472,137 @@ public func FfiConverterTypeEntriesDecided_lift(_ buf: RustBuffer) throws -> Ent
 #endif
 public func FfiConverterTypeEntriesDecided_lower(_ value: EntriesDecided) -> RustBuffer {
     return FfiConverterTypeEntriesDecided.lower(value)
+}
+
+
+/**
+ * A filed compressed file that was expanded.
+ */
+public struct ExpandedItem: Equatable, Hashable {
+    /**
+     * The compressed file's path before, relative to the archive root.
+     */
+    public var from: String
+    /**
+     * What it held, now the item.
+     */
+    public var to: String
+    /**
+     * The card's path after.
+     */
+    public var card: String
+    /**
+     * What the item is now.
+     */
+    public var kind: ItemKind
+    /**
+     * How many files were written.
+     */
+    public var files: UInt64
+    /**
+     * How many bytes.
+     */
+    public var size: UInt64
+    /**
+     * Why the compressed file couldn't go to the Trash, when it couldn't; it's then left
+     * beside the item.
+     */
+    public var trashProblem: String?
+    /**
+     * The history commit.
+     */
+    public var commit: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The compressed file's path before, relative to the archive root.
+         */from: String, 
+        /**
+         * What it held, now the item.
+         */to: String, 
+        /**
+         * The card's path after.
+         */card: String, 
+        /**
+         * What the item is now.
+         */kind: ItemKind, 
+        /**
+         * How many files were written.
+         */files: UInt64, 
+        /**
+         * How many bytes.
+         */size: UInt64, 
+        /**
+         * Why the compressed file couldn't go to the Trash, when it couldn't; it's then left
+         * beside the item.
+         */trashProblem: String?, 
+        /**
+         * The history commit.
+         */commit: String?) {
+        self.from = from
+        self.to = to
+        self.card = card
+        self.kind = kind
+        self.files = files
+        self.size = size
+        self.trashProblem = trashProblem
+        self.commit = commit
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension ExpandedItem: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeExpandedItem: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ExpandedItem {
+        return
+            try ExpandedItem(
+                from: FfiConverterString.read(from: &buf), 
+                to: FfiConverterString.read(from: &buf), 
+                card: FfiConverterString.read(from: &buf), 
+                kind: FfiConverterTypeItemKind.read(from: &buf), 
+                files: FfiConverterUInt64.read(from: &buf), 
+                size: FfiConverterUInt64.read(from: &buf), 
+                trashProblem: FfiConverterOptionString.read(from: &buf), 
+                commit: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ExpandedItem, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.from, into: &buf)
+        FfiConverterString.write(value.to, into: &buf)
+        FfiConverterString.write(value.card, into: &buf)
+        FfiConverterTypeItemKind.write(value.kind, into: &buf)
+        FfiConverterUInt64.write(value.files, into: &buf)
+        FfiConverterUInt64.write(value.size, into: &buf)
+        FfiConverterOptionString.write(value.trashProblem, into: &buf)
+        FfiConverterOptionString.write(value.commit, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeExpandedItem_lift(_ buf: RustBuffer) throws -> ExpandedItem {
+    return try FfiConverterTypeExpandedItem.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeExpandedItem_lower(_ value: ExpandedItem) -> RustBuffer {
+    return FfiConverterTypeExpandedItem.lower(value)
 }
 
 
@@ -7832,6 +8281,75 @@ public func FfiConverterTypeNameProblem_lower(_ value: NameProblem) -> RustBuffe
 
 
 /**
+ * An item's name now and the one `carrel rename` suggests for it.
+ */
+public struct NameSuggestion: Equatable, Hashable {
+    /**
+     * Its name now.
+     */
+    public var current: String
+    /**
+     * A name that works on every system: the same as `current` when it already does.
+     */
+    public var suggested: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Its name now.
+         */current: String, 
+        /**
+         * A name that works on every system: the same as `current` when it already does.
+         */suggested: String) {
+        self.current = current
+        self.suggested = suggested
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension NameSuggestion: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeNameSuggestion: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> NameSuggestion {
+        return
+            try NameSuggestion(
+                current: FfiConverterString.read(from: &buf), 
+                suggested: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: NameSuggestion, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.current, into: &buf)
+        FfiConverterString.write(value.suggested, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNameSuggestion_lift(_ buf: RustBuffer) throws -> NameSuggestion {
+    return try FfiConverterTypeNameSuggestion.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNameSuggestion_lower(_ value: NameSuggestion) -> RustBuffer {
+    return FfiConverterTypeNameSuggestion.lower(value)
+}
+
+
+/**
  * A proposal that couldn't be filed.
  */
 public struct NotFiled: Equatable, Hashable {
@@ -9045,6 +9563,105 @@ public func FfiConverterTypeRelatedItem_lift(_ buf: RustBuffer) throws -> Relate
 #endif
 public func FfiConverterTypeRelatedItem_lower(_ value: RelatedItem) -> RustBuffer {
     return FfiConverterTypeRelatedItem.lower(value)
+}
+
+
+/**
+ * An item that was renamed.
+ */
+public struct RenamedItem: Equatable, Hashable {
+    /**
+     * Its path before, relative to the archive root.
+     */
+    public var from: String
+    /**
+     * Its path after.
+     */
+    public var to: String
+    /**
+     * Its card's path after.
+     */
+    public var card: String
+    /**
+     * The cards whose links to it were updated.
+     */
+    public var relinked: [String]
+    /**
+     * The history commit.
+     */
+    public var commit: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Its path before, relative to the archive root.
+         */from: String, 
+        /**
+         * Its path after.
+         */to: String, 
+        /**
+         * Its card's path after.
+         */card: String, 
+        /**
+         * The cards whose links to it were updated.
+         */relinked: [String], 
+        /**
+         * The history commit.
+         */commit: String?) {
+        self.from = from
+        self.to = to
+        self.card = card
+        self.relinked = relinked
+        self.commit = commit
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension RenamedItem: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRenamedItem: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RenamedItem {
+        return
+            try RenamedItem(
+                from: FfiConverterString.read(from: &buf), 
+                to: FfiConverterString.read(from: &buf), 
+                card: FfiConverterString.read(from: &buf), 
+                relinked: FfiConverterSequenceString.read(from: &buf), 
+                commit: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: RenamedItem, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.from, into: &buf)
+        FfiConverterString.write(value.to, into: &buf)
+        FfiConverterString.write(value.card, into: &buf)
+        FfiConverterSequenceString.write(value.relinked, into: &buf)
+        FfiConverterOptionString.write(value.commit, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRenamedItem_lift(_ buf: RustBuffer) throws -> RenamedItem {
+    return try FfiConverterTypeRenamedItem.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRenamedItem_lower(_ value: RenamedItem) -> RustBuffer {
+    return FfiConverterTypeRenamedItem.lower(value)
 }
 
 
@@ -11200,6 +11817,103 @@ public func FfiConverterTypeEntryDecision_lower(_ value: EntryDecision) -> RustB
 
 
 /**
+ * Whether a filed item can be expanded, to ask before expanding it.
+ */
+
+public enum Expandable: Equatable, Hashable {
+    
+    /**
+     * It expands as it is.
+     */
+    case yes
+    /**
+     * It's kept compressed for this reason, but expands all the same when asked.
+     */
+    case allTheSame(
+        /**
+         * Why it's kept compressed.
+         */reason: String
+    )
+    /**
+     * It can't be expanded.
+     */
+    case no(
+        /**
+         * Why not.
+         */reason: String
+    )
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension Expandable: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeExpandable: FfiConverterRustBuffer {
+    typealias SwiftType = Expandable
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Expandable {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .yes
+        
+        case 2: return .allTheSame(reason: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 3: return .no(reason: try FfiConverterString.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: Expandable, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .yes:
+            writeInt(&buf, Int32(1))
+        
+        
+        case let .allTheSame(reason):
+            writeInt(&buf, Int32(2))
+            FfiConverterString.write(reason, into: &buf)
+            
+        
+        case let .no(reason):
+            writeInt(&buf, Int32(3))
+            FfiConverterString.write(reason, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeExpandable_lift(_ buf: RustBuffer) throws -> Expandable {
+    return try FfiConverterTypeExpandable.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeExpandable_lower(_ value: Expandable) -> RustBuffer {
+    return FfiConverterTypeExpandable.lower(value)
+}
+
+
+
+/**
  * What a result is.
  */
 
@@ -12487,6 +13201,31 @@ fileprivate struct FfiConverterSequenceTypeCollectionSummary: FfiConverterRustBu
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeCollectionTag: FfiConverterRustBuffer {
+    typealias SwiftType = [CollectionTag]
+
+    public static func write(_ value: [CollectionTag], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeCollectionTag.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [CollectionTag] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [CollectionTag]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeCollectionTag.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeComparedField: FfiConverterRustBuffer {
     typealias SwiftType = [ComparedField]
 
@@ -13193,6 +13932,18 @@ public func versionSummary() -> String  {
     )
 })
 }
+/**
+ * Whether the item at `path` (or its card's) is named as a compressed file, so Browse
+ * offers to expand it. [`ArchiveHandle::expandable`] says whether it would.
+ */
+public func looksCompressed(path: String) -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_func_looks_compressed(
+        FfiConverterString.lower(path),uniffiCallStatus
+    )
+})
+}
 
 private enum InitializationResult {
     case ok
@@ -13210,6 +13961,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.contractVersionMismatch
     }
     if (uniffi_carrel_ffi_checksum_func_version_summary() != 21134) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_func_looks_compressed() != 40569) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_collections() != 26221) {
@@ -13279,6 +14033,21 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_record_sessions() != 29355) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_create_collection() != 22333) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_expand_item() != 63940) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_expandable() != 2391) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_name_suggestion() != 21639) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_rename_item() != 34041) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_learn() != 5796) {

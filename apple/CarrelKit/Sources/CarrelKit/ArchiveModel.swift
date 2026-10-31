@@ -417,6 +417,41 @@ public final class ArchiveModel {
         try await changed { try await $0.refreshActive() }
     }
 
+    // MARK: - Browse
+
+    /// Creates the collection `path`, saying what belongs there and with its tags, as one
+    /// change.
+    @discardableResult
+    public func createCollection(
+        _ path: String, description: String? = nil, tags: [CollectionTag] = []
+    ) async throws -> CreatedCollection {
+        let created = try await call {
+            try $0.createCollection(path: path, description: description, tags: tags)
+        }
+        try await changed { _ in }
+        return created
+    }
+
+    /// Renames the item `id` and its card together to `name`, as one change.
+    @discardableResult
+    public func rename(_ id: String, to name: String) async throws -> RenamedItem {
+        let renamed = try await call { try $0.renameItem(item: id, newName: name) }
+        try await changed { _ in }
+        return renamed
+    }
+
+    /// Expands the filed compressed file `id` in place, as one change; `anyway` when it's
+    /// kept compressed for a reason the owner overrides. Ask with `handle.expandable(item:)`
+    /// first.
+    @discardableResult
+    public func expand(_ id: String, anyway: Bool = false) async throws -> ExpandedItem {
+        let expanded = try await call(reporting: "Expanding") { handle, _ in
+            try handle.expandItem(item: id, anyway: anyway)
+        }
+        try await changed { _ in }
+        return expanded
+    }
+
     // MARK: - Search and History
 
     /// Searches for `query`, words and filters, publishing the results.
