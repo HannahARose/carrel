@@ -818,6 +818,7 @@ impl Ranking for ByMeaning {
             .map(|near| Ranked {
                 id: near.id,
                 passage: self.passage(&near, &terms),
+                score: f64::from(near.score),
             })
             .collect()
     }

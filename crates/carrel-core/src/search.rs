@@ -189,6 +189,9 @@ pub struct Ranked {
     pub id: Id,
     /// The passage that matched, if the ranking knows one.
     pub passage: Option<Passage>,
+    /// How near it is, such as the cosine similarity: higher is nearer. Kept so a benchmark
+    /// can replay how rankings are merged.
+    pub score: f64,
 }
 
 /// A second ranking of items, merged with the word ranking by reciprocal rank fusion. The

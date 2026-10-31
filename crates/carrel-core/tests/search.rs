@@ -236,7 +236,11 @@ impl Ranking for Near {
         [self.0]
             .into_iter()
             .filter(|id| allowed(*id))
-            .map(|id| Ranked { id, passage: None })
+            .map(|id| Ranked {
+                id,
+                passage: None,
+                score: 0.5,
+            })
             .collect()
     }
 
