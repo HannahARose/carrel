@@ -119,11 +119,5 @@ final class AppModel {
 
 /// What went wrong, in the core's own words for the core's errors.
 func message(for error: any Error) -> String {
-    switch error {
-    case CarrelError.NotAnArchive(let message), CarrelError.Failed(let message),
-        CarrelError.Callback(let message):
-        message
-    default:
-        error.localizedDescription
-    }
+    (error as? CarrelError)?.message ?? error.localizedDescription
 }
