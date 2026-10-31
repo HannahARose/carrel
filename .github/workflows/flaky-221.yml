@@ -1,0 +1,51 @@
+# Temporary (#221): runs the same-size edit check 200 times on Windows, against dev's change
+# detector and this branch's. Removed before the pull request merges.
+name: Flaky test loop (#221)
+
+on:
+  push:
+    branches: [claude/inspiring-wozniak-x6r0y2]
+  workflow_dispatch:
+
+permissions:
+  contents: read # check out the code
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  loop:
+    name: Loop on Windows (${{ matrix.variant }})
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [before, after]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: Use dev's core crate
+        if: matrix.variant == 'before'
+        shell: bash
+        run: git checkout origin/dev -- crates/carrel-core
+      - name: Build the loop test
+        shell: bash
+        run: |
+          cp .github/flaky-221/loop.rs crates/carrel-core/tests/flaky221.rs
+          cargo test -p carrel-core --test flaky221 --no-run --locked
+      - name: Run each test 200 times
+        shell: bash
+        env:
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          exe=$(ls target/debug/deps/flaky221-*.exe | head -n 1)
+          for name in unpinned pinned; do
+            passed=0
+            for _ in $(seq 200); do
+              if "$exe" --exact "$name" -q > /dev/null 2>&1; then passed=$((passed + 1)); fi
+            done
+            echo "$VARIANT $name: $passed/200 passed" | tee -a "$GITHUB_STEP_SUMMARY"
+          done
