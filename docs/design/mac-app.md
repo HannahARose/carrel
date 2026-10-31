@@ -1,6 +1,6 @@
 # Design: the Mac app (v0.5)
 
-Status: accepted 2026-10-31, with the five recommendations below. Issue #84; built in #232, #233, #91 (with its CI, #44), #234, #235, #236, #237 and #238.
+Status: accepted 2026-10-31, with the five recommendations below. Issue #84; built in #232, #233, #91 (with its CI, #44), #234, #235, #236, #256, #237 and #238. Item previews and the grid view (#256) were added on 2026-10-31 at the owner's request, from the design spec's browsing.
 
 ## What this adds
 
@@ -26,7 +26,7 @@ Each screen does what its interactive-mode counterpart does, through the same co
 | Review | Approve, hold, move and reject, one at a time or a selection; batches approve together. The inspector edits the card in place. |
 | Questions | Answer a term in a text field or pick a collection; dismiss. |
 | Active | Checked-out and desk items with their pending entries: return, cancel, open the working copy, approve, combine, edit or drop entries. |
-| Browse | The collection tree in the sidebar, items in the content column. Quick actions: check out, correct, edit, show in Finder. |
+| Browse | The collection tree in the sidebar, items in the content column as a list or a grid of thumbnails, and the chosen item's preview above its card in the inspector. Quick actions: check out, correct, edit, show in Finder. |
 | History | Every change, with undo after a confirmation sheet that says what undoing does and doesn't restore. |
 
 - **Search** is the toolbar field (⌘F): the same `carrel search` with its filters, results as a list with the matched passage highlighted. Typing filters as you go over words; meaning search runs when you pause, so typing never waits on the model.
@@ -69,6 +69,14 @@ Each screen does what its interactive-mode counterpart does, through the same co
 - **Locally,** Xcode builds and runs it with the owner's personal team.
 - **Tests:** CarrelKit's Swift tests against the sample archive; the FFI layer's Rust tests; and UI tests for the review, correction and checkout flows against a temporary archive, run on the self-hosted runner because they need a logged-in session.
 
+## Previews
+
+- **The inspector shows the chosen item** above its card: Quick Look's own preview (`QLPreviewView`) for anything it can show, such as PDFs, images, documents, video, USDZ and STL, and a folder's contents for folders and bundles. A restricted item shows its card only, with its preview one click away.
+- **Browse has a grid view** of thumbnails beside the list, made by `QLThumbnailGenerator` in the background.
+- **Formats Quick Look can't show,** such as STEP, IGES or a 3MF, use the drawings the CAD provider and the 3MF reader already make (`docs/design/models-3d.md`).
+- **Thumbnails and drawings are cached on each device,** in Carrel's `cache.nosync` folder, so each is made once. They're never written into the archive, so the archive stays plain files, and history and backups leave them out.
+- **Previews never hold up the window:** until one is ready, the item shows its kind's icon.
+
 ## Not in v0.5
 
 - **Finder integration** (badges, context actions), the share sheet, Quick Look previews of cards, Spotlight and App Intents: v1.3, macOS system integration (#35).
@@ -84,8 +92,9 @@ Each screen does what its interactive-mode counterpart does, through the same co
 4. Review, Questions, corrections and editing.
 5. Active, checkout and return, the desk, and History with undo.
 6. Search in the toolbar, and adding items by dragging and from the menu.
-7. The agent: the login item, file-system watching for work sessions, the menu bar list, and the CLI's worker stepping aside.
-8. The user guide's Mac app pages, then the gate.
+7. Item previews and the grid view in Browse (#256), below.
+8. The agent: the login item, file-system watching for work sessions, the menu bar list, and the CLI's worker stepping aside.
+9. The user guide's Mac app pages, then the gate.
 
 ## Decisions (accepted 2026-10-31)
 
