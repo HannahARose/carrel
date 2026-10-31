@@ -555,7 +555,7 @@ pub fn review(
 }
 
 /// The item's text, as drafting read it, for the model's context; empty when it can't be read.
-fn item_text(
+pub(crate) fn item_text(
     archive: &Archive,
     registry: &carrel_core::providers::Registry,
     path: &Path,

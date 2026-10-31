@@ -379,3 +379,79 @@ fn likely_duplicates_are_filed_as_versions_or_beside_the_archived_item() {
     assert_eq!(row("file name").archived, "parts-list.csv");
     assert!(row("file name").differs);
 }
+
+#[test]
+fn a_filed_card_edit_is_checked_and_may_lower_sensitivity_to_the_floor() {
+    use carrel_core::actions::EditedCard;
+    use carrel_core::card_file::CardFile;
+    let archive =
+        Archive::open(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/sample-archive"))
+            .unwrap();
+    let item = archive
+        .items()
+        .unwrap()
+        .into_iter()
+        .find(|i| i.card == "Projects/Hardware/parts-list.csv.md")
+        .unwrap();
+    let file = CardFile::parse(&std::fs::read_to_string(archive.root().join(&item.card)).unwrap())
+        .unwrap();
+    let collection = "Projects/Hardware";
+    let text =
+        actions::card_text(&archive, file.card(), collection, Sensitivity::Public, &[]).unwrap();
+    assert!(text.contains("# Tags that apply here:"), "{text}");
+
+    let edit = |text: &str, floor| {
+        let mut card = file.card().clone();
+        let result = actions::apply_card(&archive, &mut card, collection, floor, text).unwrap();
+        (result, card)
+    };
+    let (result, _) = edit(&text, Sensitivity::Public);
+    assert_eq!(result, EditedCard::Unchanged);
+
+    assert!(text.contains("\ndates:\n"), "{text}");
+    let dated = text.replacen("\ndates:\n", "\ndates:\n  created: 2019-03-31\n", 1);
+    let (result, card) = edit(&dated, Sensitivity::Public);
+    assert_eq!(result, EditedCard::Changed(vec!["dates"]));
+    assert_eq!(card.dates.unwrap().created.unwrap().0, "2019-03-31");
+    let wrong_date = text.replacen("\ndates:\n", "\ndates:\n  created: last spring\n", 1);
+    let (result, _) = edit(&wrong_date, Sensitivity::Public);
+    assert!(
+        matches!(result, EditedCard::Problems(ref p) if p[0].contains("isn't a date")),
+        "{result:?}"
+    );
+
+    let wrong = text.replace("- electronics", "- not-a-tag-here");
+    let (result, _) = edit(&wrong, Sensitivity::Public);
+    assert!(
+        matches!(result, EditedCard::Problems(ref p) if p[0].contains("add it to the collection's tags")),
+        "{result:?}"
+    );
+
+    let lowered = regex_lite_replace(&text, "public");
+    let (result, card) = edit(&lowered, Sensitivity::Public);
+    assert!(matches!(
+        result,
+        EditedCard::Changed(_) | EditedCard::Unchanged
+    ));
+    assert_eq!(card.sensitivity, Sensitivity::Public);
+    let (result, _) = edit(&lowered, Sensitivity::Sensitive);
+    assert!(
+        matches!(result, EditedCard::Problems(ref p) if p[0].contains("can't go below")),
+        "{result:?}"
+    );
+}
+
+/// `text` with its `sensitivity:` line set to `level`.
+fn regex_lite_replace(text: &str, level: &str) -> String {
+    text.lines()
+        .map(|l| {
+            if l.starts_with("sensitivity:") {
+                format!("sensitivity: {level}")
+            } else {
+                l.to_owned()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n"
+}
