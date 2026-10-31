@@ -127,6 +127,12 @@ pub fn extension(path: &Path) -> String {
 /// What would read `media_type`, when Carrel knows.
 #[must_use]
 pub fn hint(media_type: &str) -> Option<&'static str> {
+    if matches!(
+        media_type,
+        "application/x-7z-compressed" | "application/vnd.rar"
+    ) {
+        return Some("install 7-Zip (7zz or 7z) or unar to open and expand it");
+    }
     if media_type.starts_with("image/") || media_type == "application/pdf" {
         return Some(if cfg!(target_os = "macos") {
             "the Apple provider (carrel-provider-apple) reads it"

@@ -305,3 +305,37 @@ fn encrypted_and_unreadable_archives_say_why() {
         Err(Error::Invalid(_))
     ));
 }
+
+#[cfg(unix)]
+#[test]
+fn seven_zip_files_are_listed_and_expanded_by_an_installed_tool() {
+    use carrel_core::compressed::tools::{Tool, expand_with, list_with};
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let dir = tempfile::tempdir().unwrap();
+    let program = dir.path().join("7z");
+    // A stand-in for 7-Zip: lists one folder and one file, and expands them.
+    std::fs::write(
+        &program,
+        r#"#!/bin/sh
+case "$1" in
+l) printf '7-Zip\n\n--\nPath = %s\nType = 7z\n\n----------\nPath = Holiday\nFolder = +\nAttributes = D\n\nPath = Holiday/beach.jpg\nFolder = -\nSize = 5\nModified = 2024-05-06 07:08:00\nAttributes = A\n' "$5" ;;
+x) out="${2#-o}"; mkdir -p "$out/Holiday"; printf 'beach' > "$out/Holiday/beach.jpg" ;;
+esac
+"#,
+    )
+    .unwrap();
+    std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let tool = Tool::SevenZip(program);
+    let path = write(dir.path(), "photos.7z", b"7z\xbc\xaf\x27\x1c\0\x04");
+
+    let listing = list_with(&tool, &path, Compressed::SevenZ).unwrap();
+    assert_eq!(listing.shape(), Shape::OneFolder("Holiday".into()));
+    assert_eq!(listing.total_size(), 5);
+    let base = dir.path().join("out/photos");
+    expand_with(&tool, &path, &base).unwrap();
+    assert_eq!(
+        std::fs::read(base.join("Holiday/beach.jpg")).unwrap(),
+        b"beach"
+    );
+}

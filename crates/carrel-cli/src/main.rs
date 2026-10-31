@@ -12,6 +12,7 @@ mod config;
 mod correct;
 mod desk;
 mod edit;
+mod expand;
 mod formats;
 mod ingest;
 mod models;
@@ -119,6 +120,16 @@ enum Command {
     Edit {
         /// The item: its identifier, or its card's or contents' path.
         item: String,
+    },
+    /// Expand a filed compressed file (zip, tar, gzip and the like) so what it holds can be
+    /// browsed: it takes the compressed file's place, which goes to the Trash. One change undo
+    /// can reverse.
+    Expand {
+        /// The item: its identifier, or its card's or contents' path.
+        item: String,
+        /// Expand software or a very large archive all the same.
+        #[arg(long)]
+        anyway: bool,
     },
     /// Correct a filed item's card in plain words, narrowly ("it's from 2019") or broadly
     /// ("it's a picture of A, not B"), or with `field: value` lines. The changes are shown
@@ -680,6 +691,7 @@ fn main() -> ExitCode {
         },
         Command::Review { all, action } => review_command(cli.archive.as_deref(), all, action),
         Command::Edit { item } => edit::edit(cli.archive.as_deref(), &item),
+        Command::Expand { item, anyway } => expand::expand(cli.archive.as_deref(), &item, anyway),
         Command::Correct {
             item,
             words,

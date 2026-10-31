@@ -1331,3 +1331,70 @@ fn approved_zips_are_expanded_unless_kept_compressed() {
         "{settings}"
     );
 }
+
+#[test]
+fn expand_opens_a_filed_zip_in_one_change_that_undo_reverses() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(&root, &["init", root.to_str().unwrap()]);
+    sandbox.ok(&root, &["settings", "set", "compressed_files", "keep"]);
+    let downloads = sandbox.path("Downloads");
+    std::fs::create_dir(&downloads).unwrap();
+    write_zip(
+        &downloads.join("Spectra.zip"),
+        &[
+            ("Spectra/run1.csv", b"nm,counts\n"),
+            ("Spectra/run2.csv", b"nm,counts\n"),
+        ],
+    );
+    sandbox.ok(
+        &root,
+        &["ingest", "--wait", "--each", downloads.to_str().unwrap()],
+    );
+    let entries = sandbox.json(&root, &["review"])["entries"].clone();
+    let entry = entries
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| {
+            e["source"]["path"]
+                .as_str()
+                .unwrap()
+                .ends_with("Spectra.zip")
+        })
+        .unwrap();
+    assert_eq!(entry["compressed"]["action"], "keep");
+    let approved = sandbox.json(&root, &["review", "approve", entry["id"].as_str().unwrap()]);
+    let zip_path = approved["filed"][0]["path"].as_str().unwrap().to_owned();
+    assert!(zip_path.ends_with("Spectra.zip"), "{approved}");
+
+    let expanded = sandbox.json(&root, &["expand", &zip_path]);
+    let to = expanded["to"].as_str().unwrap();
+    assert!(to.ends_with("/Spectra"), "{expanded}");
+    assert_eq!(expanded["kind"], "folder");
+    assert!(root.join(to).join("run2.csv").is_file());
+    assert!(!root.join(&zip_path).exists());
+    assert!(sandbox.path("Trash/Spectra.zip").is_file());
+    let card = std::fs::read_to_string(root.join(expanded["card"].as_str().unwrap())).unwrap();
+    assert!(
+        card.contains("kind: folder") && card.contains("name: Spectra.zip"),
+        "{card}"
+    );
+    assert!(
+        !root.join(format!("{zip_path}.md")).exists(),
+        "the card follows the item"
+    );
+
+    let again = sandbox.run_in(&root, &["expand", to]);
+    assert!(!again.status.success());
+    assert!(String::from_utf8_lossy(&again.stderr).contains("isn't a compressed file"));
+
+    let commit = expanded["commit"].as_str().unwrap();
+    sandbox.ok(&root, &["undo", commit]);
+    assert!(
+        !root.join(to).exists(),
+        "what was expanded leaves the collection"
+    );
+    let restored = std::fs::read_to_string(root.join(format!("{zip_path}.md"))).unwrap();
+    assert!(restored.contains("kind: file"), "{restored}");
+}
