@@ -64,6 +64,55 @@ fn leave() {
 /// Background work's outcome, as a line for the owner.
 type Done = Receiver<Result<String, String>>;
 
+/// Shows what looking for work sessions found, and reloads when it wrote something.
+fn recorded_sessions(app: &mut App, result: Option<Result<String, Failure>>) {
+    match result {
+        Some(Ok(text)) if !text.is_empty() => {
+            let message = text.lines().collect::<Vec<_>>().join("; ");
+            if let Err(Failure(e)) = app.reload() {
+                app.message = Some(e);
+            } else {
+                app.message = Some(format!("{message}; approve them with `carrel sessions`"));
+            }
+        }
+        Some(Err(Failure(e))) => app.message = Some(format!("Work sessions weren't recorded: {e}")),
+        _ => {}
+    }
+}
+
+/// Work sessions, looked for in a background thread about once a minute; `record_if_due`
+/// keeps the looking itself to every few minutes.
+#[derive(Default)]
+struct SessionLook {
+    looking: Option<Receiver<Option<Result<String, Failure>>>>,
+    last: Option<std::time::Instant>,
+}
+
+impl SessionLook {
+    /// Starts a look when one is due, and shows what a finished one found.
+    fn tick(&mut self, app: &mut App) {
+        if self.looking.is_none()
+            && self
+                .last
+                .is_none_or(|t| t.elapsed() >= Duration::from_mins(1))
+        {
+            self.last = Some(std::time::Instant::now());
+            let (send, receive) = std::sync::mpsc::channel();
+            let root = app.archive.root().to_owned();
+            std::thread::spawn(move || {
+                let _ = send.send(crate::sessions::record_if_due(Some(&root)));
+            });
+            self.looking = Some(receive);
+        }
+        if let Some(done) = &self.looking
+            && let Ok(result) = done.try_recv()
+        {
+            self.looking = None;
+            recorded_sessions(app, result);
+        }
+    }
+}
+
 fn event_loop(
     terminal: &mut ratatui::DefaultTerminal,
     app: &mut App,
@@ -73,7 +122,9 @@ fn event_loop(
     let mut running: Option<Done> = None;
     let mut preparing: Option<Preparing> = None;
     let mut checked = std::time::Instant::now();
+    let mut sessions = SessionLook::default();
     while !app.quit {
+        sessions.tick(app);
         // The worker runs in another process; see what it has done about once a second.
         if checked.elapsed() >= Duration::from_secs(1) {
             checked = std::time::Instant::now();
@@ -244,6 +295,33 @@ fn prepared(app: &mut App, result: Result<crate::correct::Prepared, String>) {
 
 /// Starts work that takes the writer lease, or does it at once when it's quick. The
 /// commands do the work, so the interactive mode reports exactly what they report.
+/// Changes proposals without filing anything: their destination, or whether a compressed file
+/// is expanded.
+fn change_proposals(root: &Path, effect: Effect) -> Result<String, String> {
+    let ids = |ids: &[carrel_core::card::Id]| -> Vec<String> {
+        ids.iter().map(ToString::to_string).collect()
+    };
+    match effect {
+        Effect::Compressed {
+            ids: chosen,
+            choice,
+        } => crate::review::choose_compressed(Some(root), &ids(&chosen), choice)
+            .map(|r| r.text)
+            .map_err(|Failure(e)| e),
+        Effect::Move { ids: chosen, to } => {
+            let mut text = String::new();
+            for id in ids(&chosen) {
+                match crate::review::move_to(Some(root), &id, &to) {
+                    Ok(report) => text.push_str(&report.text),
+                    Err(Failure(e)) => writeln!(text, "{e}").unwrap(),
+                }
+            }
+            Ok(text)
+        }
+        _ => Ok(String::new()),
+    }
+}
+
 fn background(app: &mut App, effect: Effect) -> Option<Done> {
     let root: PathBuf = app.archive.root().to_owned();
     let ids = |ids: &[carrel_core::card::Id]| -> Vec<String> {
@@ -260,15 +338,8 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
             finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
             return None;
         }
-        Effect::Move { ids: chosen, to } => {
-            let mut text = String::new();
-            for id in ids(&chosen) {
-                match crate::review::move_to(Some(&root), &id, &to) {
-                    Ok(report) => text.push_str(&report.text),
-                    Err(Failure(e)) => writeln!(text, "{e}").unwrap(),
-                }
-            }
-            finished(app, Ok(text));
+        effect @ (Effect::Compressed { .. } | Effect::Move { .. }) => {
+            finished(app, change_proposals(&root, effect));
             return None;
         }
         // The run loop does these itself, on the terminal or in the pop-up.
@@ -972,6 +1043,41 @@ mod tests {
                 .last()
                 .unwrap()
                 .contains("Filing 2 proposals…")
+        );
+    }
+
+    #[test]
+    fn z_keeps_a_compressed_file_compressed_or_expands_it() {
+        use carrel_core::compressed::plan::{Choice, Plan};
+        let (_dir, mut app) = review_sample();
+        app.key(key(KeyCode::Char('2')));
+        assert_eq!(app.key(key(KeyCode::Char('z'))), None);
+        assert_eq!(app.message.as_deref(), Some("Not a compressed file"));
+        let queue = carrel_core::review::ReviewQueue::of(&app.archive);
+        let mut entry = app.queue[app.chosen].clone();
+        entry.compressed = Some(Plan {
+            format: carrel_core::detect::Compressed::Zip,
+            action: Choice::Expand,
+            reason: None,
+            by_owner: false,
+            files: Some(2),
+            size: Some(10),
+            kind: Some(carrel_core::card::Kind::Folder),
+            sealed: None,
+            name: Some("Export".into()),
+            extra: carrel_core::card::Extra::new(),
+        });
+        queue.save(&entry).unwrap();
+        app.reload().unwrap();
+        let chosen = app.queue.iter().position(|e| e.id == entry.id).unwrap();
+        app.chosen = chosen;
+        assert!(app.keys().contains(&("z", "keep compressed")));
+        assert_eq!(
+            app.key(key(KeyCode::Char('z'))),
+            Some(Effect::Compressed {
+                ids: vec![entry.id],
+                choice: Choice::Keep
+            })
         );
     }
 

@@ -326,9 +326,11 @@ fn new_card(
         location: None,
         url: None,
         checked_out: None,
+        snapshots: None,
         generated: modelled.and_then(|d| provenance(d, title.is_some(), summary.is_some())),
         placement: None,
         removed: None,
+        expanded_from: None,
         extra: Extra::new(),
     }
 }

@@ -20,6 +20,7 @@ use std::path::{Path, PathBuf};
 use crate::archive::{Archive, ArchiveError};
 use crate::card::{Checksum, Id, Kind, Sealing};
 use crate::card_file::CardFile;
+use crate::compressed::plan::Choice;
 use crate::detect::is_ignored;
 use crate::manifest::{Manifest, ManifestError};
 use crate::review::{CardDraft, Destination, Problem, ReviewEntry, ReviewMarker, Source, State};
@@ -467,6 +468,37 @@ fn repeats_restricted(draft: &card::Draft, sensitivity: &sensitivity::Assessment
     })
 }
 
+/// The problem a proposal has when some of the drafted tags don't apply at its destination.
+fn left_off(
+    drafted: &[crate::card::Tag],
+    kept: &[crate::card::Tag],
+    path: &str,
+) -> Option<Problem> {
+    let dropped: Vec<&str> = drafted
+        .iter()
+        .filter(|t| !kept.contains(t))
+        .map(|t| t.0.as_str())
+        .collect();
+    (!dropped.is_empty()).then(|| Problem {
+        stage: "route".into(),
+        message: format!(
+            "tags {} don't apply in {path}, so they were left off",
+            dropped.join(", ")
+        ),
+    })
+}
+
+/// The problem a compressed file's plan gives a proposal when it asks the owner to choose.
+fn asking(plan: &crate::compressed::plan::Plan) -> Option<Problem> {
+    (plan.action == Choice::Ask).then(|| Problem {
+        stage: "compressed".into(),
+        message: format!(
+            "{}: say whether to expand it or keep it compressed",
+            plan.reason.as_deref().unwrap_or("the owner decides")
+        ),
+    })
+}
+
 /// An ingest batch: where its proposals go and who is making them.
 #[derive(Debug, Clone, Copy)]
 pub struct Batch<'a> {
@@ -492,6 +524,40 @@ impl Batch<'_> {
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .or(self.archive.doc().sensitivity_default)
             .unwrap_or(crate::card::Sensitivity::Personal)
+    }
+
+    /// The plan for a compressed `candidate` going where `route` says: what the routing rule,
+    /// the destination collection and the archive say about compressed files, applied to
+    /// what's inside.
+    #[must_use]
+    pub fn compressed_plan(
+        &self,
+        candidate: &Candidate,
+        inside: &crate::compressed::Inside,
+        route: &route::Route,
+    ) -> crate::compressed::plan::Plan {
+        let collection = self
+            .collections
+            .iter()
+            .find(|c| Some(c.doc.id) == route.collection);
+        let setting = collection.and_then(|c| {
+            c.doc
+                .extra
+                .get("compressed_files")
+                .and_then(|v| serde_json::from_value::<Choice>(v.clone()).ok())
+                .map(|choice| (c.path.as_str(), choice))
+        });
+        let rules = self.archive.rules().unwrap_or_default();
+        crate::compressed::plan::plan(
+            &candidate.path,
+            inside,
+            &rules,
+            crate::compressed::plan::Owner {
+                rule: route.rule.as_deref().filter(|_| route.keep_compressed),
+                collection: setting,
+                archive: self.archive.settings().compressed_files,
+            },
+        )
     }
 
     /// The review entry proposing to file `candidate` as `draft`, where `route` says (stage
@@ -521,22 +587,7 @@ impl Batch<'_> {
             })
             .collect();
         let tags = route::tags_for(archive, collections, &route.path, &draft.tags);
-        let dropped: Vec<&str> = draft
-            .tags
-            .iter()
-            .filter(|t| !tags.contains(t))
-            .map(|t| t.0.as_str())
-            .collect();
-        if !dropped.is_empty() {
-            problems.push(Problem {
-                stage: "route".into(),
-                message: format!(
-                    "tags {} don't apply in {}, so they were left off",
-                    dropped.join(", "),
-                    route.path
-                ),
-            });
-        }
+        problems.extend(left_off(&draft.tags, &tags, &route.path));
         let repeated = repeats_restricted(draft, sensitivity);
         if repeated {
             problems.push(Problem {
@@ -550,7 +601,13 @@ impl Batch<'_> {
         attempts.extend(sensitivity.attempts.iter().cloned());
         attempts.extend(draft.attempts.iter().cloned());
         attempts.extend(route.attempts.iter().cloned());
-        let state = if draft.problems.is_empty() && !repeated {
+        let compressed = candidate
+            .inside
+            .as_ref()
+            .map(|inside| self.compressed_plan(candidate, inside, route));
+        problems.extend(compressed.as_ref().and_then(asking));
+        let asks = compressed.as_ref().is_some_and(|p| p.action == Choice::Ask);
+        let state = if draft.problems.is_empty() && !repeated && !asks {
             State::Proposed
         } else {
             State::NeedsOwner
@@ -603,6 +660,7 @@ impl Batch<'_> {
             problems,
             attempts,
             sensitivity_reasons: sensitivity.reasons.clone(),
+            compressed,
             extra: crate::card::Extra::new(),
         })
     }

@@ -175,7 +175,7 @@ Most items are filed and left alone, but some are still being worked on: a proje
 - **Checking out** copies an item out of the archive to work on, to the Desktop unless you say where: `carrel checkout ITEM [--to FOLDER] [--due DATE]`. The archive copy is read-only until it comes back, and the card records where it went and when. On a Mac, the working copy has a “Checked Out” tag in Finder while it's out; returning or cancelling takes it off and leaves your own tags alone.
 - **Returning** brings the working copy back: `carrel return ITEM` shows what changed and the history entry it adds, and asks first. A backup snapshot is taken, and the change can be undone from History. `--discard` cancels the checkout instead, leaving the archive copy as it was.
 - **The desk** is for things you work on where they are, without archiving them yet: `carrel desk add PATH` writes a card beside the file or folder, drafted by your text model as ingest would, and nothing inside it is changed or moved. When it's done, `carrel desk archive PATH` queues it for ingest: you review its proposal as usual, and the card it had on the desk, history and all, goes into the archive with it. `carrel status` suggests folders on your Desktop or in `~/Code` that look like work in progress, and desk items you haven't touched for 60 days.
-- **Work sessions:** `carrel sessions` looks at what's checked out on this device for changes (and Git commits), adds a pending history entry to the card for each finished stretch of work, and lists every pending entry. Approve, combine or drop them there, or on the Active screen.
+- **Work sessions:** Carrel notices work on checked-out and desk items and adds a pending history entry for each finished stretch of it; see [Work sessions](#work-sessions). Approve, combine or drop them with `carrel sessions`, or on the Active screen.
 
 The **Active** screen (`3`) lists what's checked out and what's on this device's desk, each with its pending entries under it. The chosen item's details are on the right: where the working copy is, when it was checked out and is due, what has changed, and its pending entries, numbered.
 
@@ -184,6 +184,16 @@ The **Active** screen (`3`) lists what's checked out and what's on this device's
 - `a`, `c` and `d` approve, combine or drop the chosen item's pending entries: all of them, or the ones marked with `Space`.
 
 Active/ in the archive, and the Journal, show the same in Obsidian, and are kept current with every checkout and return. `Active/On desk/` has a copy of each desk item's card, so you can read and annotate it with the rest of the archive: notes you write there, outside the box at the top and the history, are copied to the card beside the item the next time you run `carrel desk` or change the desk.
+
+### Work sessions
+
+Carrel notices work on checked-out and desk items from what's on disk: each file's modification time, and a Git repository's commits. Changes closer together than `sessions.idle_minutes` (45 by default) are one **session**, and each finished session becomes a pending entry in the card's history, with the files changed, the commits and the time spent. A session still going isn't written until it's over.
+
+Carrel looks for sessions whenever it runs, at most every five minutes: before each command that changes the archive, and in the background while the interactive mode is open. It never waits for another program that's writing to the archive; it looks the next time. `carrel sessions` looks right away and lists the pending entries; `carrel sessions approve ITEM`, `combine` or `drop` decide them. Until the Mac app watches items live, a file changed and then changed back isn't seen.
+
+When backups are set up, each time Carrel finds finished sessions on an item it also takes a snapshot of the working copy, so work in progress is backed up before it's returned. That's the state when Carrel noticed, which for most work is the state when the session ended. For large data, such as a 60 GB dataset, add `snapshots: return-only` to the card to skip these and keep only the checkout and return snapshots.
+
+Returning an item lists its session snapshots. Once the item is back, Carrel snapshots the returned version and asks whether to forget the session snapshots, keeping the return's; `--trim-snapshots` forgets them without asking. Without an answer, as with only `--yes`, they're kept: deleting backups is your call.
 
 ## History and undo
 
@@ -212,6 +222,8 @@ History keeps the cards; [Kopia](https://kopia.io) keeps the files. After `carre
 - The interactive mode's Backups screen (`9`) does the same: it lists the snapshots with their changes (from history, so it works with the drive unplugged), and `n` takes a snapshot, `v` verifies, `r` restores an item as of the chosen snapshot, and `s` sets up or connects a repository: choose its folder with your file picker or the built-in browser (`/` to type a path), then type the password, shown as dots.
 
 If the backup drive isn't connected, filing still works; the next snapshot covers what was missed.
+
+Snapshots of checked-out and desk items' working copies ([Work sessions](#work-sessions)) are kept in the same repository, but `carrel backup list` shows only the archive's.
 
 ## Models and providers
 
@@ -258,6 +270,7 @@ Outside any archive, in `~/Library/Application Support/Carrel` on macOS, `%APPDA
 | `models/` | Downloaded models (or `CARREL_MODELS_DIR`) |
 | `workers/` | Each archive's worker lock, status and log |
 | `backups/` | Kopia's configuration for each archive's repository |
+| `sessions/` | When each archive's checked-out and desk items were last looked at for work sessions |
 | `logs/network.log` | Every request `carrel-fetch` made |
 
 ## Troubleshooting

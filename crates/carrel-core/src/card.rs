@@ -73,6 +73,10 @@ pub struct Card {
     /// Present while the item is checked out (FORMAT.md §9.1).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub checked_out: Option<Checkout>,
+    /// When the item's working copy is snapshotted while it's being worked on (FORMAT.md
+    /// §5.2); every session unless set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snapshots: Option<Snapshots>,
     /// How program-written fields were produced (FORMAT.md §5.6).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub generated: Option<Provenance>,
@@ -82,6 +86,9 @@ pub struct Card {
     /// Why and when the item was removed; required for tombstones (FORMAT.md §10).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub removed: Option<Removal>,
+    /// The compressed file the item was expanded from (FORMAT.md §5.2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expanded_from: Option<ExpandedFrom>,
     /// Fields this version doesn't know, preserved unchanged.
     #[serde(flatten)]
     #[schemars(skip)]
@@ -153,6 +160,14 @@ impl Kind {
             Self::Physical | Self::Url | Self::External | Self::Tombstone
         )
     }
+}
+
+/// When a checked-out or desk item's working copy is snapshotted (FORMAT.md §5.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum Snapshots {
+    /// Only at checkout and return, not after each work session: for large data.
+    ReturnOnly,
 }
 
 /// How strictly a bundle is protected (FORMAT.md §4.2).
@@ -383,6 +398,22 @@ pub struct ManifestRef {
     pub checksum: Checksum,
     /// The manifest's path under `_System/manifests/`.
     pub path: String,
+    /// Keys this version doesn't know.
+    #[serde(flatten)]
+    #[schemars(skip)]
+    pub extra: Extra,
+}
+
+/// The compressed file an item was expanded from (FORMAT.md §5.2), so it's clear the item
+/// was, say, a zip, and which one.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ExpandedFrom {
+    /// The compressed file's name.
+    pub name: String,
+    /// Its size in bytes.
+    pub size: u64,
+    /// Its checksum.
+    pub checksum: Checksum,
     /// Keys this version doesn't know.
     #[serde(flatten)]
     #[schemars(skip)]
