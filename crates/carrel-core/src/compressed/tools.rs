@@ -325,7 +325,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         assert_eq!(find_in(&[dir.path().to_owned()]), None);
         let make = |name: &str| {
-            let path = dir.path().join(name);
+            let path = dir
+                .path()
+                .join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
             std::fs::write(&path, "#!/bin/sh\n").unwrap();
             #[cfg(unix)]
             {
