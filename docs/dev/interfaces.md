@@ -20,7 +20,7 @@ The command line and the interactive mode run on macOS, Linux and Windows. The M
 | Review: duplicates (keep both, file as a version) | `review` | ✓ | ✓ (#234) |
 | Questions: answer and dismiss | `questions` | ✓ Questions | ✓ (#234) |
 | Browse collections and items | `show`, `status` | ✓ Browse | ✓ Browse |
-| Previews of items | the item's path in `show` | #258 | #256 |
+| Previews of items | the item's path in `show` | #258 | ✓ inspector and grid (#256) |
 | An item's history and related items | `show` | ✓ | ✓ |
 | Search, with filters and reasons | `search` | ✓ `/` | ✓ ⌘F (#236) |
 | The embedding index: status, rebuild, switch models | `index` | #263 | #267 |

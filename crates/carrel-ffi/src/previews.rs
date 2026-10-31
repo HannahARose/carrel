@@ -26,6 +26,13 @@ pub struct ItemPreview {
     pub restricted: bool,
 }
 
+/// The longest side of a thumbnail in the preview cache, in pixels.
+#[uniffi::export]
+#[must_use]
+pub fn thumbnail_pixels() -> u32 {
+    previews::THUMBNAIL
+}
+
 #[uniffi::export]
 impl ArchiveHandle {
     /// How to preview each cataloged item, by card path.
