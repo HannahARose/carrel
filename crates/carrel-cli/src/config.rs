@@ -74,6 +74,10 @@ pub struct Prefs {
     /// `llama/qwen3.5-4b`). Unset, Carrel uses the best available by priority.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    /// The text model asked again when the first isn't sure where an item goes: a model
+    /// name, or `off`. Unset, a recommended model that's installed, if there is one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub second_model: Option<String>,
     /// The folder files were last picked from, where picking starts next time.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_folder: Option<PathBuf>,

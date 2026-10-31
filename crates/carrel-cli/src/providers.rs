@@ -32,11 +32,36 @@ pub fn registry() -> (Registry, Vec<Failed>) {
             Err(error) => failed.push(Failed { found, error }),
         }
     }
-    let chosen = crate::config::Prefs::load().ok().and_then(|p| p.model);
-    if let Some(Ok(model)) = chosen.map(|name| resolve_model(&registry, &name)) {
+    let prefs = crate::config::Prefs::load().unwrap_or_default();
+    if let Some(Ok(model)) = prefs.model.map(|name| resolve_model(&registry, &name)) {
         registry.prefer(Capability::TextModel, &model.provider, &model.offer);
     }
+    let second = second_model(&registry, prefs.second_model.as_deref());
+    registry.second_opinion(
+        Capability::TextModel,
+        second
+            .as_ref()
+            .map(|m| (m.provider.as_str(), m.offer.as_str())),
+    );
     (registry, failed)
+}
+
+/// The model asked for a second opinion: the one `setting` names, none for `off`, or, unset,
+/// the best installed model the benchmark recommends, other than the first choice.
+#[must_use]
+pub fn second_model(registry: &Registry, setting: Option<&str>) -> Option<TextModel> {
+    match setting.map(str::trim) {
+        Some("off") => None,
+        Some(name) if !name.is_empty() => resolve_model(registry, name).ok(),
+        _ => {
+            let models = text_models(registry);
+            let first = models.first()?.name();
+            models.into_iter().find(|m| {
+                m.name() != first
+                    && carrel_core::models::find(&m.offer).is_some_and(|c| c.recommended)
+            })
+        }
+    }
 }
 
 /// An available text model.

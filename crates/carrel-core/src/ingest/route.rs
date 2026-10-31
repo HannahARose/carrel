@@ -292,6 +292,52 @@ fn children<'a>(collections: &'a [Collection], parent: Option<&str>) -> Vec<&'a 
         .collect()
 }
 
+/// Whether a model's route is one a second model should look at: Holding, or low confidence.
+fn unsure(route: &Route) -> bool {
+    route.rule.is_none() && (route.path == HOLDING_CHOICE || route.confidence == Confidence::Low)
+}
+
+/// A model's name for reasons, such as `apple/Apple Foundation Model`.
+fn label(provider: &dyn Provider, offer: &Offer) -> String {
+    format!(
+        "{}/{}",
+        provider.name(),
+        offer.label.as_deref().unwrap_or(&offer.id)
+    )
+}
+
+/// The better of a route and a second model's: out of Holding beats Holding, then higher
+/// confidence. Either way, every call made is kept, and the reasons say what happened.
+fn second_opinion(first: Route, second: Route, first_model: &str, second_model: &str) -> Route {
+    let rank = |r: &Route| (r.path != HOLDING_CHOICE, r.confidence);
+    let mut attempts = first.attempts.clone();
+    attempts.extend(second.attempts.iter().cloned());
+    if rank(&second) > rank(&first) {
+        let mut reasons = vec![format!(
+            "{first_model} wasn't sure ({}), so {second_model} was asked",
+            if first.reasons.is_empty() {
+                "it gave no reason".to_owned()
+            } else {
+                first.reasons.join("; ")
+            }
+        )];
+        reasons.extend(second.reasons);
+        Route {
+            reasons,
+            attempts,
+            ..second
+        }
+    } else {
+        let mut reasons = first.reasons.clone();
+        reasons.push(format!("{second_model} wasn't sure either"));
+        Route {
+            reasons,
+            attempts,
+            ..first
+        }
+    }
+}
+
 /// Everything routing needs about the archive.
 pub struct Router<'a> {
     archive: &'a Archive,
@@ -338,6 +384,9 @@ impl<'a> Router<'a> {
     /// means medium confidence; a partial fit keeps the collection with low confidence; a poor
     /// fit at the top, or passes that disagree, mean Holding (or the parent, below the top) with
     /// low confidence. Without a model, items go to Holding.
+    ///
+    /// When that leaves the item in Holding or with low confidence, the registry's second
+    /// opinion (if one is set) routes it again, and the better of the two is kept.
     #[must_use]
     pub fn route(
         &self,
@@ -357,7 +406,26 @@ impl<'a> Router<'a> {
                 Vec::new(),
             );
         };
+        let route = self.ask_model(provider, offer, draft);
+        if !unsure(&route) {
+            return route;
+        }
+        match registry.second(Capability::TextModel, (provider.name(), &offer.id)) {
+            Some((second, second_offer)) => {
+                let again = self.ask_model(second, second_offer, draft);
+                second_opinion(
+                    route,
+                    again,
+                    &label(provider, offer),
+                    &label(second, second_offer),
+                )
+            }
+            None => route,
+        }
+    }
 
+    /// Chooses where `draft`'s item goes with one model, as [`Router::route`] describes.
+    fn ask_model(&self, provider: &dyn Provider, offer: &Offer, draft: &Draft) -> Route {
         let mut attempts = Vec::new();
         let mut reasons = Vec::new();
         let mut chosen: Option<&Collection> = None;

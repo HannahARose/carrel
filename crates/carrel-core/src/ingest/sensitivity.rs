@@ -9,7 +9,7 @@ use regex::Regex;
 use serde_json::json;
 
 use crate::card::Sensitivity;
-use crate::providers::{Capability, CompletionRequest, Registry};
+use crate::providers::{Capability, CompletionRequest, Offer, Provider, Registry};
 use crate::review::Attempt;
 
 /// How much of an item's text the floor rules read, in bytes.
@@ -256,16 +256,30 @@ fn level_name(level: Sensitivity) -> &'static str {
     }
 }
 
-/// The floor, then the best text model's judgment, which may only raise it.
+/// The floor, then the best text model's judgment, which may only raise it. A model that
+/// declines or fails passes the item to the next, as drafting does.
 #[must_use]
 pub fn assess(registry: &Registry, name: &str, text: &str, default: Sensitivity) -> Assessment {
     let mut assessment = floor(name, text, default);
     if assessment.level == Sensitivity::Restricted {
         return assessment;
     }
-    let Some((provider, offer)) = registry.ranked(Capability::TextModel).into_iter().next() else {
-        return assessment;
-    };
+    for (provider, offer) in registry.ranked(Capability::TextModel) {
+        if rate(provider, offer, name, text, &mut assessment) {
+            break;
+        }
+    }
+    assessment
+}
+
+/// One model's rating, raising `assessment` if it's higher. Whether the model answered.
+fn rate(
+    provider: &dyn Provider,
+    offer: &Offer,
+    name: &str,
+    text: &str,
+    assessment: &mut Assessment,
+) -> bool {
     let allowed: Vec<&str> = [
         Sensitivity::Public,
         Sensitivity::Personal,
@@ -310,6 +324,7 @@ pub fn assess(registry: &Registry, name: &str, text: &str, default: Sensitivity)
         result: result.into(),
         message,
     };
+    let mut answered = false;
     match provider.complete(&offer.id, &request) {
         Ok(completion) => {
             let json = completion.json.unwrap_or_default();
@@ -323,6 +338,7 @@ pub fn assess(registry: &Registry, name: &str, text: &str, default: Sensitivity)
             match level {
                 Some(level) => {
                     assessment.attempts.push(attempt("ok", None));
+                    answered = true;
                     if level > assessment.level {
                         assessment.level = level;
                         if level >= Sensitivity::Sensitive
@@ -344,5 +360,5 @@ pub fn assess(registry: &Registry, name: &str, text: &str, default: Sensitivity)
                 .push(attempt(result, Some(error.to_string())));
         }
     }
-    assessment
+    answered
 }
