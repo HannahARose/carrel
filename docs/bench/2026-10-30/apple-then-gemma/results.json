@@ -1,0 +1,2907 @@
+{
+  "carrel": "0.1.0",
+  "date": "2026-10-30",
+  "os": "macos",
+  "arch": "aarch64",
+  "bar": {
+    "valid": 0.95,
+    "routing": 0.8,
+    "under_rated_restricted": 0,
+    "under_rated": 0.05,
+    "seconds_per_item": 30.0
+  },
+  "models": [
+    {
+      "provider": "apple",
+      "offer": "afm",
+      "label": "apple/Apple Foundation Model then llama/gemma-4-e4b.gguf",
+      "version": "0.1.0",
+      "score": {
+        "items": 65,
+        "valid": 1.0,
+        "first_try": 0.8923076923076924,
+        "declined": 0.1076923076923077,
+        "routing": 0.8923076923076924,
+        "sensitivity_exact": 0.8923076923076924,
+        "under_rated": 0.015384615384615385,
+        "under_rated_restricted": 0,
+        "date": 0.7384615384615385,
+        "tags_found": 0.8461538461538461,
+        "tags_outside": 68,
+        "seconds_per_item": 9.715101489076924
+      },
+      "shortfalls": [],
+      "items": [
+        {
+          "outcome": {
+            "item": "2025 bank statement March.txt",
+            "destination": "Finances",
+            "confidence": "medium",
+            "sensitivity": "restricted",
+            "date": "2025-01-01",
+            "tags": [
+              "bank",
+              "pay"
+            ],
+            "title": "2025 bank statement March",
+            "summary": "A bank statement showing financial transactions for the period from 1 March 2025 to 31 March 2025, including rent, salary, grocery expenses, and a transfer to savings.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "2025 bank statement March.txt",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": false,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [
+              "pay"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Finances"
+            ],
+            "sensitivity": "restricted",
+            "date": "2025-03-31",
+            "tags": [
+              "bank"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "amplifier build log.txt",
+            "destination": "Projects",
+            "confidence": "medium",
+            "sensitivity": "personal",
+            "date": "2025-03-22",
+            "tags": [
+              "electronics",
+              "tools"
+            ],
+            "title": "Headphone amplifier build log",
+            "summary": "A build log for a headphone amplifier, detailing soldering steps, board etching, hole drilling, and initial testing with a slight hum.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "amplifier build log.txt",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [
+              "tools"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Projects"
+            ],
+            "sensitivity": "personal",
+            "date": "2025-03-22",
+            "tags": [
+              "electronics"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "birthday card from sister.txt",
+            "destination": "Letters",
+            "confidence": "medium",
+            "sensitivity": "personal",
+            "date": "2025-01-26",
+            "tags": [
+              "family",
+              "writing"
+            ],
+            "title": "Birthday card from sister",
+            "summary": "A personal message from a sister for a birthday, including a chess reference and an invitation for dinner.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "birthday card from sister.txt",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [
+              "writing"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Letters"
+            ],
+            "sensitivity": "personal",
+            "date": "2025-01-26",
+            "tags": [
+              "family"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "blood test results.txt",
+            "destination": "Health",
+            "confidence": "medium",
+            "sensitivity": "sensitive",
+            "date": "2025-03-07",
+            "tags": [
+              "results"
+            ],
+            "title": "blood test results.txt",
+            "summary": "Lab results reported 7 March 2025 for Alex Morgan, showing low iron stores.",
+            "valid": true,
+            "first_try": false,
+            "declined": true,
+            "problems": [],
+            "failures": [
+              "card: declined: declined: Apple's on-device model declined: Detected content likely to be unsafe",
+              "sensitivity: declined: declined: Apple's on-device model declined: Detected content likely to be unsafe"
+            ]
+          },
+          "score": {
+            "item": "blood test results.txt",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [],
+            "valid": true,
+            "first_try": false,
+            "declined": true
+          },
+          "expected": {
+            "destinations": [
+              "Health"
+            ],
+            "sensitivity": "sensitive",
+            "date": "2025-03-07",
+            "tags": [
+              "results"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "boiler repair note.txt",
+            "destination": "Home",
+            "confidence": "medium",
+            "sensitivity": "personal",
+            "date": "2025-01-29",
+            "tags": [
+              "appliances",
+              "repairs",
+              "household",
+              "utilities"
+            ],
+            "title": "Boiler repair note",
+            "summary": "Engineer's note about boiler pressure loss, valve replacement, system refill, and weekly gauge checks.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "boiler repair note.txt",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [
+              "appliances",
+              "household",
+              "utilities"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Home"
+            ],
+            "sensitivity": "personal",
+            "date": "2025-01-29",
+            "tags": [
+              "repairs"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "budget app notes.md",
+            "destination": "Projects",
+            "confidence": "medium",
+            "sensitivity": "personal",
+            "date": null,
+            "tags": [
+              "applications",
+              "code"
+            ],
+            "title": "budget app: design notes",
+            "summary": "A small terminal app to categorise bank exports by reading CSV exports, guessing categories from the payee, and storing rules in a TOML file with a monthly summary as a table.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "budget app notes.md",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [
+              "applications"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Projects"
+            ],
+            "sensitivity": "personal",
+            "date": null,
+            "tags": [
+              "code"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "building notice water off.txt",
+            "destination": "Home",
+            "confidence": "medium",
+            "sensitivity": "personal",
+            "date": "2025-08-08",
+            "tags": [
+              "household",
+              "utilities"
+            ],
+            "title": "water off.txt",
+            "summary": "Notice to residents about water supply interruption for valve replacement.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "building notice water off.txt",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": false,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [
+              "household"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Home"
+            ],
+            "sensitivity": "personal",
+            "date": "2025-07-08",
+            "tags": [
+              "utilities"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "car insurance renewal.txt",
+            "destination": "Insurance",
+            "confidence": "medium",
+            "sensitivity": "sensitive",
+            "date": "2025-11-01",
+            "tags": [
+              "policy",
+              "utilities"
+            ],
+            "title": "Car insurance renewal",
+            "summary": "Car insurance renewal notice with new premium and policy details.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "car insurance renewal.txt",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [
+              "utilities"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Insurance"
+            ],
+            "sensitivity": "sensitive",
+            "date": "2025-11-01",
+            "tags": [
+              "policy"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "card replacement letter.txt",
+            "destination": "Finances",
+            "confidence": "medium",
+            "sensitivity": "restricted",
+            "date": "2025-09-05",
+            "tags": [
+              "bank",
+              "claim"
+            ],
+            "title": "Replacement debit card",
+            "summary": "A letter from Northbridge Bank containing a replacement debit card and instructions to sign it and discard the old card.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "card replacement letter.txt",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [
+              "claim"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Finances"
+            ],
+            "sensitivity": "restricted",
+            "date": "2025-09-05",
+            "tags": [
+              "bank"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "cell biology review.txt",
+            "destination": "Reading",
+            "confidence": "medium",
+            "sensitivity": "personal",
+            "date": "2024-02-12",
+            "tags": [
+              "biology",
+              "articles"
+            ],
+            "title": "Circadian clocks in single cells: a review",
+            "summary": "A review of circadian clocks in single cells, detailing transcriptional feedback loops, single-cell imaging variability, tissue coupling, light and feeding resets.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "cell biology review.txt",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 1,
+            "tags_expected": 2,
+            "tags_outside": [
+              "articles"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Reading"
+            ],
+            "sensitivity": "personal",
+            "date": "2024-02-12",
+            "tags": [
+              "papers",
+              "biology"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "claim physio costs.md",
+            "destination": "Holding",
+            "confidence": "low",
+            "sensitivity": "sensitive",
+            "date": "2025-10-20",
+            "tags": [
+              "claim",
+              "repairs"
+            ],
+            "title": "Claim for physio costs",
+            "summary": "A claim file detailing a request for reimbursement of 3 physiotherapy sessions for lower back pain, with attached invoices and a reference to be sent by email.",
+            "valid": true,
+            "first_try": false,
+            "declined": true,
+            "problems": [],
+            "failures": [
+              "sensitivity: declined: declined: Apple's on-device model declined: Detected content likely to be unsafe"
+            ]
+          },
+          "score": {
+            "item": "claim physio costs.md",
+            "routing": 0.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [
+              "repairs"
+            ],
+            "valid": true,
+            "first_try": false,
+            "declined": true
+          },
+          "expected": {
+            "destinations": [
+              "Insurance"
+            ],
+            "sensitivity": "sensitive",
+            "date": "2025-10-20",
+            "tags": [
+              "claim"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "coffee machine descaling.txt",
+            "destination": "Manuals",
+            "confidence": "medium",
+            "sensitivity": "personal",
+            "date": null,
+            "tags": [
+              "appliances",
+              "household",
+              "repairs",
+              "utilities"
+            ],
+            "title": "Barista Mini descaling instructions",
+            "summary": "Instructions for descaling a Barista Mini coffee machine, including steps for emptying the drip tray, filling the tank, using descaler, holding buttons, and rinsing.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "coffee machine descaling.txt",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [
+              "household",
+              "repairs",
+              "utilities"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Manuals"
+            ],
+            "sensitivity": "personal",
+            "date": null,
+            "tags": [
+              "appliances"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "conference registration.txt",
+            "destination": "Work",
+            "confidence": "medium",
+            "sensitivity": "personal",
+            "date": "2025-01-01",
+            "tags": [
+              "applications",
+              "meetings"
+            ],
+            "title": "Conference registration",
+            "summary": "Confirmation of registration for a conference event including participant details, poster title, and fee information.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "conference registration.txt",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": false,
+            "tags_found": 0,
+            "tags_expected": 0,
+            "tags_outside": [
+              "applications",
+              "meetings"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Research",
+              "Work",
+              "Travel"
+            ],
+            "sensitivity": "personal",
+            "date": "2025-07-01",
+            "tags": []
+          }
+        },
+        {
+          "outcome": {
+            "item": "cv alex morgan.md",
+            "destination": "Work",
+            "confidence": "medium",
+            "sensitivity": "personal",
+            "date": "2025-02-04",
+            "tags": [
+              "applications",
+              "drafts"
+            ],
+            "title": "cv alex morgan",
+            "summary": "A CV for Alex Morgan detailing experience as a data analyst and education in applied statistics.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "cv alex morgan.md",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": false,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [
+              "drafts"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Work"
+            ],
+            "sensitivity": "personal",
+            "date": "2025-04-02",
+            "tags": [
+              "applications"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "darwin origin chapter 4 notes.md",
+            "destination": "Reading",
+            "confidence": "medium",
+            "sensitivity": "personal",
+            "date": null,
+            "tags": [
+              "notes",
+              "biology"
+            ],
+            "title": "Darwin origin chapter 4 notes",
+            "summary": "Summary of Darwin's chapter on natural selection from 'On the Origin of Species', including key ideas on variation, sexual selection, and the diagram of divergence.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "darwin origin chapter 4 notes.md",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [
+              "notes"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Reading"
+            ],
+            "sensitivity": "personal",
+            "date": null,
+            "tags": [
+              "biology"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "dataset description.md",
+            "destination": "Research",
+            "confidence": "medium",
+            "sensitivity": "personal",
+            "date": "2025-05-09",
+            "tags": [
+              "biology",
+              "results"
+            ],
+            "title": "Cell imaging dataset",
+            "summary": "A dataset of cell imaging records from May 2025, showing 48 wells with one image every 30 minutes for 5 days, stored as TIFF stacks and summarized in a CSV with columns for well, cell, time, intensity.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "dataset description.md",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 0,
+            "tags_expected": 1,
+            "tags_outside": [
+              "biology",
+              "results"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Research"
+            ],
+            "sensitivity": "personal",
+            "date": "2025-05-09",
+            "tags": [
+              "notes"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "dishwasher manual.txt",
+            "destination": "Manuals",
+            "confidence": "medium",
+            "sensitivity": "personal",
+            "date": null,
+            "tags": [
+              "appliances",
+              "household"
+            ],
+            "title": "QuietClean 45 slimline dishwasher: user manual",
+            "summary": "User manual for QuietClean 45 slimline dishwasher, detailing setup steps and cleaning instructions for different programs.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "dishwasher manual.txt",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [
+              "household"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Manuals"
+            ],
+            "sensitivity": "personal",
+            "date": null,
+            "tags": [
+              "appliances"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "draft paper phase response.md",
+            "destination": "Research",
+            "confidence": "medium",
+            "sensitivity": "personal",
+            "date": null,
+            "tags": [
+              "drafts",
+              "biology"
+            ],
+            "title": "phase response curves of weakly coupled cells (draft)",
+            "summary": "A draft document outlining phase response curves in cultured cells, including methods and co-authors.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "draft paper phase response.md",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [
+              "biology"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Research"
+            ],
+            "sensitivity": "personal",
+            "date": null,
+            "tags": [
+              "drafts"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "drill safety and warranty.txt",
+            "destination": "Manuals",
+            "confidence": "medium",
+            "sensitivity": "personal",
+            "date": null,
+            "tags": [
+              "appliances",
+              "warranty",
+              "tools"
+            ],
+            "title": "drill safety and warranty",
+            "summary": "Safety instructions and warranty for a powerLine 18V cordless drill, including battery usage and warranty details.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "drill safety and warranty.txt",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [
+              "appliances",
+              "warranty"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Manuals"
+            ],
+            "sensitivity": "personal",
+            "date": null,
+            "tags": [
+              "tools"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "electricity bill september.txt",
+            "destination": "Home",
+            "confidence": "medium",
+            "sensitivity": "personal",
+            "date": "2025-10-15",
+            "tags": [
+              "appliances",
+              "utilities"
+            ],
+            "title": "electricity bill september",
+            "summary": "Electricity bill for the period 1 to 30 September 2025, showing usage, cost and payment details.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "electricity bill september.txt",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": false,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [
+              "appliances"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Home"
+            ],
+            "sensitivity": "personal",
+            "date": "2025-10-03",
+            "tags": [
+              "utilities"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "email from sam about visit.txt",
+            "destination": "Travel",
+            "confidence": "medium",
+            "sensitivity": "personal",
+            "date": "2025-08-02",
+            "tags": [
+              "appointments",
+              "trains"
+            ],
+            "title": "email from sam about visit.txt",
+            "summary": "An email from Sam confirming a train booking and suggesting a walk along the coast.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "email from sam about visit.txt",
+            "routing": 0.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 0,
+            "tags_expected": 1,
+            "tags_outside": [
+              "appointments",
+              "trains"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Letters"
+            ],
+            "sensitivity": "personal",
+            "date": "2025-08-02",
+            "tags": [
+              "friends"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "employment contract lumen.md",
+            "destination": "Work",
+            "confidence": "medium",
+            "sensitivity": "sensitive",
+            "date": null,
+            "tags": [
+              "contracts",
+              "applications"
+            ],
+            "title": "Employment terms agreement",
+            "summary": "A formal agreement outlining employment terms, including job title, salary, hours, holiday entitlement, and notice period.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "employment contract lumen.md",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": false,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [
+              "applications"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Work"
+            ],
+            "sensitivity": "sensitive",
+            "date": "2023-05-15",
+            "tags": [
+              "contracts"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "essay on attention.md",
+            "destination": "Projects",
+            "confidence": "medium",
+            "sensitivity": "personal",
+            "date": null,
+            "tags": [
+              "articles",
+              "writing"
+            ],
+            "title": "essay on attention",
+            "summary": "An essay about attention as a habit rather than a spotlight, with the idea that we become what we keep returning to.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "essay on attention.md",
+            "routing": 0.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [
+              "writing"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Reading"
+            ],
+            "sensitivity": "personal",
+            "date": null,
+            "tags": [
+              "articles"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "flight booking lisbon.txt",
+            "destination": "Travel",
+            "confidence": "medium",
+            "sensitivity": "personal",
+            "date": "2025-03-30",
+            "tags": [
+              "flights"
+            ],
+            "title": "Flight booking lisbon",
+            "summary": "Flight booking for London Gatwick to Lisbon, confirmed with departure and return times and cabin bag included.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "flight booking lisbon.txt",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Travel"
+            ],
+            "sensitivity": "personal",
+            "date": "2025-03-30",
+            "tags": [
+              "flights"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "fund report q2.txt",
+            "destination": "Finances",
+            "confidence": "medium",
+            "sensitivity": "personal",
+            "date": "2025-07-15",
+            "tags": [
+              "investments",
+              "tax"
+            ],
+            "title": "fund report q2.txt",
+            "summary": "Quarterly report for investors on the Global Equity Index fund, including unit price, cost, and index details.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "fund report q2.txt",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [
+              "tax"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Finances"
+            ],
+            "sensitivity": "personal",
+            "date": "2025-07-15",
+            "tags": [
+              "investments"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "home contents policy.txt",
+            "destination": "Insurance",
+            "confidence": "medium",
+            "sensitivity": "sensitive",
+            "date": null,
+            "tags": [
+              "household",
+              "policy"
+            ],
+            "title": "home contents policy",
+            "summary": "Home contents insurance policy for a flat, covering contents up to 30,000 with accidental damage included, premium 11.40 a month from 1 February 2025 to 31 January 2026.",
+            "valid": true,
+            "first_try": false,
+            "declined": true,
+            "problems": [],
+            "failures": [
+              "sensitivity: declined: declined: Apple's on-device model declined: Detected content likely to be unsafe"
+            ]
+          },
+          "score": {
+            "item": "home contents policy.txt",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": false,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [
+              "household"
+            ],
+            "valid": true,
+            "first_try": false,
+            "declined": true
+          },
+          "expected": {
+            "destinations": [
+              "Insurance"
+            ],
+            "sensitivity": "sensitive",
+            "date": "2025-02-01",
+            "tags": [
+              "policy"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "home office expenses.md",
+            "destination": "Holding",
+            "confidence": "low",
+            "sensitivity": "restricted",
+            "date": "2025-01-25",
+            "tags": [
+              "appliances",
+              "household"
+            ],
+            "title": "Home-working expenses for the tax return",
+            "summary": "List of home office expenses for the tax return, including monitor arm, desk chair, and share of electricity.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "home office expenses.md",
+            "routing": 0.5,
+            "sensitivity": "over",
+            "date": true,
+            "tags_found": 0,
+            "tags_expected": 0,
+            "tags_outside": [
+              "appliances",
+              "household"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Finances",
+              "Receipts"
+            ],
+            "sensitivity": "sensitive",
+            "date": "2025-01-25",
+            "tags": []
+          }
+        },
+        {
+          "outcome": {
+            "item": "hotel booking porto.txt",
+            "destination": "Travel",
+            "confidence": "medium",
+            "sensitivity": "personal",
+            "date": "2025-04-04",
+            "tags": [
+              "hotels",
+              "household"
+            ],
+            "title": "Hotel booking porto",
+            "summary": "Hotel stay at Casa do Rio, Porto from 18 June 2025 to 21 June 2025, double room with river view and breakfast included.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "hotel booking porto.txt",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [
+              "household"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Travel"
+            ],
+            "sensitivity": "personal",
+            "date": "2025-04-04",
+            "tags": [
+              "hotels"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "internet contract.txt",
+            "destination": "Home",
+            "confidence": "medium",
+            "sensitivity": "restricted",
+            "date": null,
+            "tags": [
+              "contracts",
+              "utilities"
+            ],
+            "title": "Internet contract",
+            "summary": "A 24-month broadband contract with Fibrelink, including speed, price, and router details.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "internet contract.txt",
+            "routing": 1.0,
+            "sensitivity": "over",
+            "date": false,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [
+              "contracts"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Home"
+            ],
+            "sensitivity": "personal",
+            "date": "2024-11-12",
+            "tags": [
+              "utilities"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "invoice monitor arm.md",
+            "destination": "Receipts",
+            "confidence": "medium",
+            "sensitivity": "personal",
+            "date": "2025-08-19",
+            "tags": [
+              "appliances",
+              "household"
+            ],
+            "title": "Dual monitor arm receipt",
+            "summary": "A receipt for a dual monitor arm with clamp mount, including VAT and a note that it is payable as a home-working expense.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "invoice monitor arm.md",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 0,
+            "tags_expected": 1,
+            "tags_outside": [
+              "appliances",
+              "household"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Receipts"
+            ],
+            "sensitivity": "personal",
+            "date": "2025-08-19",
+            "tags": [
+              "electronics"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "itinerary portugal.md",
+            "destination": "Travel",
+            "confidence": "medium",
+            "sensitivity": "personal",
+            "date": null,
+            "tags": [
+              "flights",
+              "trains"
+            ],
+            "title": "itinerary portugal",
+            "summary": "Itinerary for a trip to Portugal in June 2025, including travel dates, accommodations, and transport plans.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "itinerary portugal.md",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 2,
+            "tags_expected": 3,
+            "tags_outside": [],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Travel"
+            ],
+            "sensitivity": "personal",
+            "date": null,
+            "tags": [
+              "flights",
+              "trains",
+              "hotels"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "lab notebook oscillators week 12.md",
+            "destination": "Research",
+            "confidence": "medium",
+            "sensitivity": "personal",
+            "date": "2025-03-17",
+            "tags": [
+              "biology",
+              "notes"
+            ],
+            "title": "Lab notebook oscillators week 12",
+            "summary": "A text/markdown file detailing a coupled-oscillator simulation run with N = 500 and K from 0 to 4, noting a sharp rise in order parameter near K = 1.6 matching Lorentzian theory, and a next step to add noise and test threshold movement.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "lab notebook oscillators week 12.md",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": false,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [
+              "biology"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Research"
+            ],
+            "sensitivity": "personal",
+            "date": "2025-03-21",
+            "tags": [
+              "notes"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "lemon drizzle cake.txt",
+            "destination": "Recipes",
+            "confidence": "medium",
+            "sensitivity": "personal",
+            "date": null,
+            "tags": [
+              "baking"
+            ],
+            "title": "lemon drizzle cake",
+            "summary": "Recipe for lemon drizzle cake with ingredients and baking instructions.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "lemon drizzle cake.txt",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Recipes"
+            ],
+            "sensitivity": "personal",
+            "date": null,
+            "tags": [
+              "baking"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "lentil dal.md",
+            "destination": "Recipes",
+            "confidence": "medium",
+            "sensitivity": "personal",
+            "date": null,
+            "tags": [
+              "baking",
+              "dinner"
+            ],
+            "title": "Weeknight red lentil dal",
+            "summary": "Recipe for red lentil dal for 4 servings, including ingredients and cooking steps.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "lentil dal.md",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [
+              "baking"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Recipes"
+            ],
+            "sensitivity": "personal",
+            "date": null,
+            "tags": [
+              "dinner"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "letter from grandma.txt",
+            "destination": "Letters",
+            "confidence": "medium",
+            "sensitivity": "personal",
+            "date": "2025-02-14",
+            "tags": [
+              "family",
+              "household"
+            ],
+            "title": "letter from grandma",
+            "summary": "A personal letter from a grandparent to a family member, mentioning a vegetable patch, photos, and a request for a Sunday lunch.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "letter from grandma.txt",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [
+              "household"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Letters"
+            ],
+            "sensitivity": "personal",
+            "date": "2025-02-14",
+            "tags": [
+              "family"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "letter from tax office.txt",
+            "destination": "Finances",
+            "confidence": "medium",
+            "sensitivity": "sensitive",
+            "date": "2025-02-06",
+            "tags": [
+              "tax",
+              "policy"
+            ],
+            "title": "Letter from tax office",
+            "summary": "A notice from the tax office informing about a change in the tax code due to employer information about benefits.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "letter from tax office.txt",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": false,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [
+              "policy"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Finances"
+            ],
+            "sensitivity": "sensitive",
+            "date": "2025-06-02",
+            "tags": [
+              "tax"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "message to landlord.txt",
+            "destination": "Home",
+            "confidence": "medium",
+            "sensitivity": "personal",
+            "date": "2025-10-12",
+            "tags": [
+              "household",
+              "repairs"
+            ],
+            "title": "Message to landlord",
+            "summary": "A request to fix a dripping kitchen tap and a cracked bathroom window, with a time requirement for a visit.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "message to landlord.txt",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [
+              "household"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Home"
+            ],
+            "sensitivity": "personal",
+            "date": "2025-10-12",
+            "tags": [
+              "repairs"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "misc notes.txt",
+            "destination": "Holding",
+            "confidence": "low",
+            "sensitivity": "personal",
+            "date": null,
+            "tags": [
+              "notes"
+            ],
+            "title": "misc notes",
+            "summary": "A list of tasks and questions to address, including a call back about a specific item, a reminder about 3 AA, and a question about a film mentioned by Priya.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "misc notes.txt",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 0,
+            "tags_expected": 0,
+            "tags_outside": [
+              "notes"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Holding"
+            ],
+            "sensitivity": "personal",
+            "date": null,
+            "tags": []
+          }
+        },
+        {
+          "outcome": {
+            "item": "old us tax form.txt",
+            "destination": "Finances",
+            "confidence": "medium",
+            "sensitivity": "restricted",
+            "date": "2021-04-15",
+            "tags": [
+              "tax",
+              "pay"
+            ],
+            "title": "U.S. Individual Income Tax Return 2020",
+            "summary": "U.S. Individual Income Tax Return for 2020, filed from the year worked in Boston.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "old us tax form.txt",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [
+              "pay"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Finances"
+            ],
+            "sensitivity": "restricted",
+            "date": "2021-04-15",
+            "tags": [
+              "tax"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "order confirmation laptop.txt",
+            "destination": "Manuals",
+            "confidence": "medium",
+            "sensitivity": "personal",
+            "date": "2025-02-11",
+            "tags": [
+              "appliances",
+              "electronics",
+              "warranty"
+            ],
+            "title": "Order confirmation laptop",
+            "summary": "A confirmation for a laptop and dock purchase, including delivery and payment details, with a two-year warranty.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "order confirmation laptop.txt",
+            "routing": 0.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [
+              "appliances"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Receipts"
+            ],
+            "sensitivity": "personal",
+            "date": "2025-02-11",
+            "tags": [
+              "electronics"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "paper kuramoto synchronization.txt",
+            "destination": "Reading",
+            "confidence": "medium",
+            "sensitivity": "personal",
+            "date": null,
+            "tags": [
+              "articles",
+              "physics"
+            ],
+            "title": "paper kuramoto synchronization.txt",
+            "summary": "A scientific paper discussing the Kuramoto model and synchronization in populations of coupled oscillators, including a phase transition description.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "paper kuramoto synchronization.txt",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": false,
+            "tags_found": 1,
+            "tags_expected": 2,
+            "tags_outside": [
+              "articles"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Reading"
+            ],
+            "sensitivity": "personal",
+            "date": "2000-09-01",
+            "tags": [
+              "papers",
+              "physics"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "payslip october.txt",
+            "destination": "Work",
+            "confidence": "medium",
+            "sensitivity": "restricted",
+            "date": "2025-10-31",
+            "tags": [
+              "pay",
+              "bank"
+            ],
+            "title": "payslip october",
+            "summary": "A payslip showing basic pay, income tax, National Insurance, pension deductions and net pay for the employee.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "payslip october.txt",
+            "routing": 1.0,
+            "sensitivity": "over",
+            "date": true,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [
+              "bank"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Work"
+            ],
+            "sensitivity": "sensitive",
+            "date": "2025-10-31",
+            "tags": [
+              "pay"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "pension annual statement.txt",
+            "destination": "Finances",
+            "confidence": "medium",
+            "sensitivity": "restricted",
+            "date": "2025-04-06",
+            "tags": [
+              "bank",
+              "pension"
+            ],
+            "title": "pension annual statement",
+            "summary": "Annual benefit statement for a personal pension investment in the Harbour Balanced Growth fund, showing contributions and projected annual income at age 67.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "pension annual statement.txt",
+            "routing": 1.0,
+            "sensitivity": "over",
+            "date": true,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [
+              "bank"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Finances"
+            ],
+            "sensitivity": "sensitive",
+            "date": "2025-04-06",
+            "tags": [
+              "pension"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "performance review 2025.md",
+            "destination": "Work",
+            "confidence": "medium",
+            "sensitivity": "personal",
+            "date": "2025-06-30",
+            "tags": [
+              "applications",
+              "meetings"
+            ],
+            "title": "performance review 2025",
+            "summary": "A mid-year performance review document outlining strengths, development tasks, and expectations for promotion.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "performance review 2025.md",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 0,
+            "tags_expected": 1,
+            "tags_outside": [
+              "applications"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Work"
+            ],
+            "sensitivity": "personal",
+            "date": "2025-06-30",
+            "tags": [
+              "contracts"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "phone repair receipt.txt",
+            "destination": "Receipts",
+            "confidence": "medium",
+            "sensitivity": "personal",
+            "date": "2025-09-27",
+            "tags": [
+              "appliances",
+              "repairs"
+            ],
+            "title": "phone repair receipt",
+            "summary": "Receipt for phone repairs including screen replacement and screen protector.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "phone repair receipt.txt",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 0,
+            "tags_expected": 1,
+            "tags_outside": [
+              "appliances",
+              "repairs"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Receipts"
+            ],
+            "sensitivity": "personal",
+            "date": "2025-09-27",
+            "tags": [
+              "electronics"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "physio appointment.txt",
+            "destination": "Health",
+            "confidence": "medium",
+            "sensitivity": "personal",
+            "date": "2025-10-09",
+            "tags": [
+              "appointments",
+              "household"
+            ],
+            "title": "physio appointment",
+            "summary": "A confirmed appointment for a follow-up with a physiotherapist regarding lower back pain.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "physio appointment.txt",
+            "routing": 1.0,
+            "sensitivity": "under",
+            "date": true,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [
+              "household"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Health"
+            ],
+            "sensitivity": "sensitive",
+            "date": "2025-10-09",
+            "tags": [
+              "appointments"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "plant monitor readme.md",
+            "destination": "Projects",
+            "confidence": "medium",
+            "sensitivity": "personal",
+            "date": null,
+            "tags": [
+              "electronics",
+              "code"
+            ],
+            "title": "plant monitor",
+            "summary": "A soil moisture monitor for houseplants: an ESP32 reads a capacitive sensor every 10 minutes and posts the reading to a small web page. Includes instructions for building the firmware and wiring the sensor.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "plant monitor readme.md",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 2,
+            "tags_expected": 2,
+            "tags_outside": [],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Projects"
+            ],
+            "sensitivity": "personal",
+            "date": null,
+            "tags": [
+              "code",
+              "electronics"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "prescription amoxicillin.txt",
+            "destination": "Health",
+            "confidence": "medium",
+            "sensitivity": "sensitive",
+            "date": null,
+            "tags": [
+              "prescriptions"
+            ],
+            "title": "prescription amoxicillin.txt",
+            "summary": "Prescription for Amoxicillin 500 mg capsules, one three times a day for 7 days, prescribed by Dr P. Shah for a chest infection.",
+            "valid": true,
+            "first_try": false,
+            "declined": true,
+            "problems": [],
+            "failures": [
+              "card: declined: declined: Apple's on-device model declined: Detected content likely to be unsafe",
+              "sensitivity: declined: declined: Apple's on-device model declined: Detected content likely to be unsafe"
+            ]
+          },
+          "score": {
+            "item": "prescription amoxicillin.txt",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": false,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [],
+            "valid": true,
+            "first_try": false,
+            "declined": true
+          },
+          "expected": {
+            "destinations": [
+              "Health"
+            ],
+            "sensitivity": "sensitive",
+            "date": "2025-01-14",
+            "tags": [
+              "prescriptions"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "receipt and manual blender.txt",
+            "destination": "Manuals",
+            "confidence": "medium",
+            "sensitivity": "personal",
+            "date": "2025-04-12",
+            "tags": [
+              "appliances",
+              "household"
+            ],
+            "title": "PowerBlend 600 blender",
+            "summary": "A receipt and manual for a PowerBlend 600 blender, including instructions and a two-year guarantee.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "receipt and manual blender.txt",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 0,
+            "tags_expected": 0,
+            "tags_outside": [],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Receipts",
+              "Manuals"
+            ],
+            "sensitivity": "personal",
+            "date": "2025-04-12",
+            "tags": []
+          }
+        },
+        {
+          "outcome": {
+            "item": "receipt desk chair.txt",
+            "destination": "Receipts",
+            "confidence": "medium",
+            "sensitivity": "personal",
+            "date": "2025-03-05",
+            "tags": [
+              "household",
+              "warranty"
+            ],
+            "title": "receipt for chair and floor protector",
+            "summary": "A receipt for a chair and floor protector purchase from FURNISH & CO., including a total cost and return policy.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "receipt desk chair.txt",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": false,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Receipts"
+            ],
+            "sensitivity": "personal",
+            "date": "2025-05-03",
+            "tags": [
+              "household"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "referral letter for physio.txt",
+            "destination": "Holding",
+            "confidence": "low",
+            "sensitivity": "sensitive",
+            "date": "2025-08-28",
+            "tags": [
+              "appointments",
+              "claim"
+            ],
+            "title": "Referral letter for physio",
+            "summary": "A letter requesting physiotherapy for mechanical lower back pain of six weeks' duration, noting no red-flag symptoms and that ibuprofen has helped slightly. The letter may be used for an insurance claim.",
+            "valid": true,
+            "first_try": false,
+            "declined": true,
+            "problems": [],
+            "failures": [
+              "sensitivity: declined: declined: Apple's on-device model declined: Detected content likely to be unsafe"
+            ]
+          },
+          "score": {
+            "item": "referral letter for physio.txt",
+            "routing": 0.5,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [
+              "claim"
+            ],
+            "valid": true,
+            "first_try": false,
+            "declined": true
+          },
+          "expected": {
+            "destinations": [
+              "Health"
+            ],
+            "sensitivity": "sensitive",
+            "date": "2025-08-28",
+            "tags": [
+              "appointments"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "rfc 9110 http semantics notes.md",
+            "destination": "Reading",
+            "confidence": "medium",
+            "sensitivity": "restricted",
+            "date": null,
+            "tags": [
+              "code",
+              "applications"
+            ],
+            "title": "HTTP Semantics",
+            "summary": "Defines methods, status codes and headers shared by every version of HTTP.",
+            "valid": true,
+            "first_try": false,
+            "declined": true,
+            "problems": [],
+            "failures": [
+              "sensitivity: declined: declined: Apple's on-device model declined: Detected content likely to be unsafe"
+            ]
+          },
+          "score": {
+            "item": "rfc 9110 http semantics notes.md",
+            "routing": 1.0,
+            "sensitivity": "over",
+            "date": false,
+            "tags_found": 0,
+            "tags_expected": 1,
+            "tags_outside": [
+              "code",
+              "applications"
+            ],
+            "valid": true,
+            "first_try": false,
+            "declined": true
+          },
+          "expected": {
+            "destinations": [
+              "Reading"
+            ],
+            "sensitivity": "personal",
+            "date": "2022-06-01",
+            "tags": [
+              "articles"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "router quick start.md",
+            "destination": "Manuals",
+            "confidence": "medium",
+            "sensitivity": "personal",
+            "date": null,
+            "tags": [
+              "appliances",
+              "electronics"
+            ],
+            "title": "Fibrelink Hub 3: quick start",
+            "summary": "A quick start guide for setting up the Fibrelink Hub 3, including connection steps and troubleshooting.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "router quick start.md",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [
+              "appliances"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Manuals"
+            ],
+            "sensitivity": "personal",
+            "date": null,
+            "tags": [
+              "electronics"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "short story draft.md",
+            "destination": "Projects",
+            "confidence": "medium",
+            "sensitivity": "personal",
+            "date": null,
+            "tags": [
+              "drafts",
+              "writing"
+            ],
+            "title": "The Lighthouse Keeper's Daughter (draft 2)",
+            "summary": "A draft of a short story about a lighthouse keeper's daughter, with notes to cut the opening paragraph and move the storm earlier.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "short story draft.md",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [
+              "drafts"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Projects"
+            ],
+            "sensitivity": "personal",
+            "date": null,
+            "tags": [
+              "writing"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "sourdough loaf.md",
+            "destination": "Recipes",
+            "confidence": "medium",
+            "sensitivity": "personal",
+            "date": null,
+            "tags": [
+              "baking"
+            ],
+            "title": "sourdough loaf",
+            "summary": "Recipe for sourdough loaf including ingredients, mixing steps, resting time, folding instructions, shaping, proofing, baking conditions and water adjustment note.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "sourdough loaf.md",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Recipes"
+            ],
+            "sensitivity": "personal",
+            "date": null,
+            "tags": [
+              "baking"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "talk slides outline.md",
+            "destination": "Work",
+            "confidence": "medium",
+            "sensitivity": "personal",
+            "date": null,
+            "tags": [
+              "talks",
+              "meetings"
+            ],
+            "title": "Group meeting talk outline",
+            "summary": "Outline for a group meeting talk on 14 November 2025 about tissue synchronization, a model threshold, simulations, and next steps.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "talk slides outline.md",
+            "routing": 0.0,
+            "sensitivity": "exact",
+            "date": false,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [
+              "meetings"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Research"
+            ],
+            "sensitivity": "personal",
+            "date": "2025-11-14",
+            "tags": [
+              "talks"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "tax return summary 2024.md",
+            "destination": "Finances",
+            "confidence": "medium",
+            "sensitivity": "sensitive",
+            "date": "2025-01-20",
+            "tags": [
+              "tax",
+              "pay"
+            ],
+            "title": "tax return summary 2024",
+            "summary": "A summary of tax income and payments for the 2023 to 2024 period, showing no balance to pay.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "tax return summary 2024.md",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [
+              "pay"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Finances"
+            ],
+            "sensitivity": "sensitive",
+            "date": "2025-01-20",
+            "tags": [
+              "tax"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "team meeting notes.md",
+            "destination": "Work",
+            "confidence": "medium",
+            "sensitivity": "personal",
+            "date": "2025-09-16",
+            "tags": [
+              "meetings"
+            ],
+            "title": "team meeting notes",
+            "summary": "Team meeting notes for a weekly discussion on churn model status, warehouse migration delay, and hiring for junior analyst role.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "team meeting notes.md",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Work"
+            ],
+            "sensitivity": "personal",
+            "date": "2025-09-16",
+            "tags": [
+              "meetings"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "tenancy agreement.md",
+            "destination": "Home",
+            "confidence": "medium",
+            "sensitivity": "sensitive",
+            "date": null,
+            "tags": [
+              "contracts",
+              "lease"
+            ],
+            "title": "Assured shorthold tenancy agreement",
+            "summary": "A written agreement detailing the terms of a 12-month tenancy from 1 August 2023, followed by a month-to-month arrangement, including rent, deposit, and payment schedule.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "tenancy agreement.md",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": false,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [
+              "contracts"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Home"
+            ],
+            "sensitivity": "sensitive",
+            "date": "2023-08-01",
+            "tags": [
+              "lease"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "train tickets porto.txt",
+            "destination": "Travel",
+            "confidence": "medium",
+            "sensitivity": "personal",
+            "date": null,
+            "tags": [
+              "flights",
+              "trains"
+            ],
+            "title": "Train ticket porto",
+            "summary": "Train ticket for a journey from Lisboa Santa Apolonia to Porto Campanha on 18 June 2025, departing at 09:39 and arriving at 12:24. Coach 4, seat 61.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "train tickets porto.txt",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": false,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [
+              "flights"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Travel"
+            ],
+            "sensitivity": "personal",
+            "date": "2025-06-18",
+            "tags": [
+              "trains"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "travel insurance certificate.txt",
+            "destination": "Insurance",
+            "confidence": "medium",
+            "sensitivity": "sensitive",
+            "date": "2025-05-20",
+            "tags": [
+              "flights",
+              "policy"
+            ],
+            "title": "Travel insurance certificate",
+            "summary": "Travel insurance certificate for a single trip to Portugal, covering medical expenses and cancellation.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "travel insurance certificate.txt",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [
+              "flights"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Insurance"
+            ],
+            "sensitivity": "sensitive",
+            "date": "2025-05-20",
+            "tags": [
+              "policy"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "travel insurance claim lost bag.md",
+            "destination": "Insurance",
+            "confidence": "medium",
+            "sensitivity": "sensitive",
+            "date": "2025-06-27",
+            "tags": [
+              "claim",
+              "flights"
+            ],
+            "title": "Lost luggage claim",
+            "summary": "Claim for lost bag containing clothes and a camera, reported on the flight back from Lisbon on 24 June.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "travel insurance claim lost bag.md",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [
+              "flights"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Insurance"
+            ],
+            "sensitivity": "sensitive",
+            "date": "2025-06-27",
+            "tags": [
+              "claim"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "untitled scan text.txt",
+            "destination": "Work",
+            "confidence": "medium",
+            "sensitivity": "sensitive",
+            "date": null,
+            "tags": [
+              "contracts",
+              "lease"
+            ],
+            "title": "Custody agreement - schedule B",
+            "summary": "A legal agreement regarding custody of an item from schedule B.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "untitled scan text.txt",
+            "routing": 0.0,
+            "sensitivity": "over",
+            "date": true,
+            "tags_found": 0,
+            "tags_expected": 0,
+            "tags_outside": [
+              "contracts",
+              "lease"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Holding"
+            ],
+            "sensitivity": "personal",
+            "date": null,
+            "tags": []
+          }
+        },
+        {
+          "outcome": {
+            "item": "vaccination record.md",
+            "destination": "Health",
+            "confidence": "medium",
+            "sensitivity": "sensitive",
+            "date": null,
+            "tags": [
+              "prescriptions"
+            ],
+            "title": "vaccination record.md",
+            "summary": "A file containing a table of vaccinations with dates.",
+            "valid": true,
+            "first_try": false,
+            "declined": true,
+            "problems": [],
+            "failures": [
+              "card: declined: declined: Apple's on-device model declined: Detected content likely to be unsafe",
+              "route: declined: declined: Apple's on-device model declined: Detected content likely to be unsafe",
+              "route: declined: declined: Apple's on-device model declined: Detected content likely to be unsafe",
+              "sensitivity: declined: declined: Apple's on-device model declined: Detected content likely to be unsafe"
+            ]
+          },
+          "score": {
+            "item": "vaccination record.md",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 0,
+            "tags_expected": 1,
+            "tags_outside": [
+              "prescriptions"
+            ],
+            "valid": true,
+            "first_try": false,
+            "declined": true
+          },
+          "expected": {
+            "destinations": [
+              "Health"
+            ],
+            "sensitivity": "sensitive",
+            "date": null,
+            "tags": [
+              "results"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "wifi and alarm codes.txt",
+            "destination": "Home",
+            "confidence": "medium",
+            "sensitivity": "restricted",
+            "date": null,
+            "tags": [
+              "household",
+              "utilities"
+            ],
+            "title": "Flat info for house-sitters",
+            "summary": "Flat info for house-sitters: bins go out Tuesday night, heating on timer, cat eats half a pouch twice a day.",
+            "valid": true,
+            "first_try": true,
+            "declined": false,
+            "problems": [],
+            "failures": []
+          },
+          "score": {
+            "item": "wifi and alarm codes.txt",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [
+              "household"
+            ],
+            "valid": true,
+            "first_try": true,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Home"
+            ],
+            "sensitivity": "restricted",
+            "date": null,
+            "tags": [
+              "utilities"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
