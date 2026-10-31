@@ -32,6 +32,7 @@ fn extract(
     let (extraction, source, attempts) = registry().extract(&ExtractionRequest {
         path,
         media_type: media_type.into(),
+        context: None,
     })?;
     Ok((
         extraction.text,
@@ -98,6 +99,7 @@ fn a_step_files_header_and_parts_are_read_with_its_date() {
     let request = ExtractionRequest {
         path: path.canonicalize().unwrap(),
         media_type: carrel_core::ingest::text::media_type(&path),
+        context: None,
     };
     let (extraction, source, _) = registry().extract(&request).unwrap();
     assert_eq!(source.offer, "model-details");

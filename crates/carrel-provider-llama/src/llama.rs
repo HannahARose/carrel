@@ -1,13 +1,16 @@
-//! Models through llama.cpp, as a [`Provider`].
+//! Models through llama.cpp, as a [`Provider`]: text models, and the catalog's embedding
+//! models.
 
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
+use carrel_core::models::{Embedding, Pooling};
 use carrel_core::providers::{
-    Capability, Completion, CompletionRequest, Offer, Provider, ProviderError, priority,
+    Capability, Completion, CompletionRequest, EmbeddingRequest, Embeddings, Offer, Provider,
+    ProviderError, priority,
 };
-use llama_cpp_2::context::params::LlamaContextParams;
+use llama_cpp_2::context::params::{LlamaContextParams, LlamaPoolingType};
 use llama_cpp_2::llama_backend::LlamaBackend;
 use llama_cpp_2::llama_batch::LlamaBatch;
 use llama_cpp_2::model::params::LlamaModelParams;
@@ -54,8 +57,9 @@ pub struct LlamaProvider {
 }
 
 impl LlamaProvider {
-    /// Offers every `.gguf` file in `models_dir`, or explains how to add one. The context size
-    /// is `CARREL_LLAMA_CONTEXT`, or 8,192 tokens.
+    /// Offers every `.gguf` file in `models_dir`, or explains how to add one: the catalog's
+    /// embedding models as embedding models, and every other file as a text model. The text
+    /// models' context size is `CARREL_LLAMA_CONTEXT`, or 8,192 tokens.
     pub fn new(models_dir: Option<&Path>) -> Self {
         let context = std::env::var("CARREL_LLAMA_CONTEXT")
             .ok()
@@ -71,12 +75,15 @@ impl LlamaProvider {
         let mut offers: Vec<Offer> = models
             .iter()
             .map(|(id, path)| {
-                let mut offer = model_offer(id, context);
+                let mut offer = match embedding(id) {
+                    Some(embedding) => embedding_offer(id, &embedding),
+                    None => model_offer(id, context),
+                };
                 offer.label = path.file_name().map(|n| n.to_string_lossy().into_owned());
                 offer
             })
             .collect();
-        if offers.is_empty() {
+        if !offers.iter().any(|o| o.capability == Capability::TextModel) {
             let mut offer = model_offer("none", context);
             offer.available = false;
             offer.reason = Some(match models_dir {
@@ -120,6 +127,31 @@ fn model_offer(id: &str, context: u32) -> Offer {
     }
 }
 
+fn embedding_offer(id: &str, embedding: &Embedding) -> Offer {
+    let mut extra = serde_json::Map::new();
+    extra.insert("dimensions".into(), Value::from(embedding.dimensions));
+    extra.insert(
+        "context_tokens".into(),
+        Value::from(embedding.context_tokens),
+    );
+    Offer {
+        capability: Capability::Embed,
+        id: id.to_owned(),
+        label: None,
+        priority: priority::PORTABLE,
+        available: true,
+        reason: None,
+        media_types: Vec::new(),
+        extra,
+    }
+}
+
+/// How to use the model `id`, if the catalog lists it as an embedding model. Its file is
+/// named after it, so a downloaded catalog model is found by its name.
+fn embedding(id: &str) -> Option<Embedding> {
+    carrel_core::models::find(id).and_then(|m| m.embedding)
+}
+
 /// The `.gguf` files in `dir`, by name, identified by their file stem.
 fn find_models(dir: &Path) -> Vec<(String, PathBuf)> {
     let Ok(entries) = std::fs::read_dir(dir) else {
@@ -157,6 +189,11 @@ impl Provider for LlamaProvider {
         offer: &str,
         request: &CompletionRequest,
     ) -> Result<Completion, ProviderError> {
+        if embedding(offer).is_some() {
+            return Err(ProviderError::Unsupported(format!(
+                "{offer} is an embedding model"
+            )));
+        }
         self.with_model(offer, |backend, model| {
             generate(backend, model, offer, self.context, request)
         })
@@ -165,6 +202,15 @@ impl Provider for LlamaProvider {
     fn count_tokens(&self, offer: &str, text: &str) -> Result<u64, ProviderError> {
         self.with_model(offer, |_, model| {
             Ok(model.vocab().tokenize(text.as_bytes(), false, true).len() as u64)
+        })
+    }
+
+    fn embed(&self, offer: &str, request: &EmbeddingRequest) -> Result<Embeddings, ProviderError> {
+        let embedding = embedding(offer).ok_or_else(|| {
+            ProviderError::Unsupported(format!("{offer} isn't an embedding model"))
+        })?;
+        self.with_model(offer, |backend, model| {
+            embed(backend, model, offer, &embedding, request)
         })
     }
 }
@@ -370,6 +416,67 @@ fn generate(
     })
 }
 
+/// Embeds each of `request`'s texts on its own, with the prompt and pooling the model was
+/// trained with, cut to its context. The vectors are scaled to unit length.
+fn embed(
+    backend: &LlamaBackend,
+    model: &LlamaModel,
+    offer: &str,
+    embedding: &Embedding,
+    request: &EmbeddingRequest,
+) -> Result<Embeddings, ProviderError> {
+    let context = embedding.context_tokens;
+    let pooling = match embedding.pooling {
+        Pooling::Mean => LlamaPoolingType::Mean,
+        Pooling::Last => LlamaPoolingType::Last,
+    };
+    // The whole text goes through in one batch, as models that read in both directions need.
+    let params = LlamaContextParams::default()
+        .with_n_ctx(NonZeroU32::new(context))
+        .with_n_batch(context)
+        .with_n_ubatch(context)
+        .with_embeddings(true)
+        .with_pooling_type(pooling);
+    let mut ctx = model
+        .new_context(backend, params)
+        .map_err(|e| failed("context")(e.to_string()))?;
+    let mut vectors = Vec::with_capacity(request.texts.len());
+    for text in &request.texts {
+        let prompt = embedding.prompt(text, request.purpose);
+        let mut tokens = model.vocab().tokenize(prompt.as_bytes(), true, false);
+        tokens.truncate(context as usize);
+        let mut batch = LlamaBatch::new(tokens.len().max(1), 1);
+        for (i, token) in tokens.iter().enumerate() {
+            let pos = i32::try_from(i).expect("within the context");
+            batch
+                .add(*token, pos, &[0], true)
+                .map_err(|e| failed("batch")(e.to_string()))?;
+        }
+        ctx.clear_kv_cache();
+        ctx.decode(&mut batch)
+            .map_err(|e| failed("embedding")(e.to_string()))?;
+        let vector = ctx
+            .embeddings_seq_ith(0)
+            .map_err(|e| failed("embedding")(e.to_string()))?;
+        vectors.push(unit(vector));
+    }
+    Ok(Embeddings {
+        vectors,
+        model: offer.to_owned(),
+        dimensions: embedding.dimensions,
+    })
+}
+
+/// `vector` scaled to unit length, or as it is if it's all zeros.
+fn unit(vector: &[f32]) -> Vec<f32> {
+    let length = vector.iter().map(|n| n * n).sum::<f32>().sqrt();
+    if length > 0.0 {
+        vector.iter().map(|n| n / length).collect()
+    } else {
+        vector.to_vec()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -429,6 +536,98 @@ mod tests {
             provider.complete("none", &CompletionRequest::default()),
             Err(ProviderError::Unsupported(_))
         ));
+    }
+
+    #[test]
+    fn catalog_embedding_models_are_offered_for_embedding_only() {
+        let dir = tempfile::tempdir().unwrap();
+        // Not a real model: the offers come from the file names, and nothing is loaded.
+        std::fs::write(dir.path().join("embeddinggemma-300m.gguf"), b"GGUF").unwrap();
+        let provider = LlamaProvider::with_context(Some(dir.path()), 512);
+        let offers: Vec<_> = provider
+            .offers()
+            .iter()
+            .map(|o| (o.capability, o.id.as_str(), o.available))
+            .collect();
+        assert_eq!(
+            offers,
+            [
+                (
+                    Capability::Embed,
+                    "embeddinggemma-300m",
+                    provider.backend.is_some()
+                ),
+                (Capability::TextModel, "none", false),
+            ]
+        );
+        assert_eq!(provider.offers()[0].extra["dimensions"], 768);
+        assert!(matches!(
+            provider.complete("embeddinggemma-300m", &CompletionRequest::default()),
+            Err(ProviderError::Unsupported(_))
+        ));
+        assert!(matches!(
+            provider.embed("none", &EmbeddingRequest::default()),
+            Err(ProviderError::Unsupported(_))
+        ));
+    }
+
+    #[test]
+    fn vectors_are_scaled_to_unit_length() {
+        assert_eq!(unit(&[3.0, 4.0]), [0.6, 0.8]);
+        assert_eq!(unit(&[0.0, 0.0]), [0.0, 0.0]);
+    }
+
+    /// The folder with a downloaded embedding model, for the test that runs one:
+    /// `CARREL_TEST_LLAMA_EMBEDDING_MODELS`. It passes without checking anything when unset.
+    fn embedding_models() -> Option<PathBuf> {
+        let dir = std::env::var_os("CARREL_TEST_LLAMA_EMBEDDING_MODELS").map(PathBuf::from);
+        if dir.is_none() {
+            eprintln!("CARREL_TEST_LLAMA_EMBEDDING_MODELS isn't set; skipping");
+        }
+        dir
+    }
+
+    #[test]
+    fn an_embedding_model_finds_the_nearer_text() {
+        use carrel_core::providers::Purpose;
+        let Some(dir) = embedding_models() else {
+            return;
+        };
+        let provider = LlamaProvider::with_context(Some(&dir), 512);
+        let offer = provider
+            .offers()
+            .iter()
+            .find(|o| o.capability == Capability::Embed)
+            .expect("an embedding model in the folder")
+            .id
+            .clone();
+        let texts = |texts: &[&str]| texts.iter().map(|t| (*t).to_owned()).collect();
+        let documents = provider
+            .embed(
+                &offer,
+                &EmbeddingRequest {
+                    texts: texts(&[
+                        "Tenancy agreement for the flat on Cowley Road, signed in March.",
+                        "Receipt for an office desk chair, paid by card.",
+                    ]),
+                    purpose: Purpose::Document,
+                },
+            )
+            .unwrap();
+        let query = provider
+            .embed(
+                &offer,
+                &EmbeddingRequest {
+                    texts: texts(&["the lease for my apartment"]),
+                    purpose: Purpose::Query,
+                },
+            )
+            .unwrap();
+        let dot = |a: &[f32], b: &[f32]| a.iter().zip(b).map(|(x, y)| x * y).sum::<f32>();
+        assert_eq!(documents.dimensions, documents.vectors[0].len());
+        let lease = dot(&query.vectors[0], &documents.vectors[0]);
+        let chair = dot(&query.vectors[0], &documents.vectors[1]);
+        assert!(lease > chair, "lease {lease} vs chair {chair}");
     }
 
     #[test]

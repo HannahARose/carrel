@@ -5,6 +5,7 @@
 //! the odd file without writing anything ([`list`], [`read_entry`]); filing expands an
 //! approved archive into a temporary folder, checking every entry as it goes ([`expand`]).
 
+pub mod item;
 pub mod plan;
 pub mod tools;
 
@@ -875,6 +876,18 @@ pub fn expand(
             Ok(Flow::Next)
         })?;
     } else {
+        // The tool can't be watched entry by entry, so its listing is checked first, and
+        // what it wrote afterwards.
+        let listing = tools::list(path, format)?;
+        if let Some(why) = listing.unsafe_entry() {
+            return Err(Error::Unsafe(why));
+        }
+        if listing.encrypted() {
+            return Err(Error::Encrypted);
+        }
+        if let Some(why) = limits.and_then(|l| listing.too_big(l)) {
+            return Err(Error::TooBig(why));
+        }
         tools::expand(path, format, &base)?;
         writer.check_tree()?;
     }

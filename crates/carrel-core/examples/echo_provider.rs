@@ -1,13 +1,15 @@
 //! A complete Carrel provider (`docs/providers.md`), as an example for provider authors and a
 //! stand-in for real providers in Carrel's tests.
 //!
-//! It offers a text model, `echo`, that answers with the prompt, and a plain-text extractor,
-//! `echo-text`. Install it as `carrel-provider-echo` to try it with `carrel providers`.
+//! It offers a text model, `echo`, that answers with the prompt, a plain-text extractor,
+//! `echo-text`, and an embedding model, `echo-embed`, whose three-number vectors count a
+//! text's letters, vowels and spaces. Install it as `carrel-provider-echo` to try it with `carrel providers`.
 //!
 //! For tests, a copy named `carrel-provider-echo-<mode>` behaves differently:
 //! `unavailable` (the model is unavailable), `fail` (requests fail), `exit` (it exits when
 //! asked anything after `initialize`), `garbage` (it answers with something that isn't JSON),
-//! `silent` (it answers only `initialize`) and `old` (it speaks another protocol version).
+//! `silent` (it answers only `initialize`), `old` (it speaks another protocol version) and
+//! `card` (it answers every request for structured output with the same card draft).
 
 use std::io::{BufRead, Write};
 
@@ -72,6 +74,10 @@ fn answer(method: &str, params: &Value, mode: &str) -> Result<Value, (i64, Strin
                 {
                     "capability": "extract-text", "id": "echo-text", "priority": 1,
                     "available": true, "media_types": ["text/plain"]
+                },
+                {
+                    "capability": "embed", "id": "echo-embed", "priority": 1,
+                    "available": true, "dimensions": 3, "context_tokens": 512
                 }
             ]
         })),
@@ -79,10 +85,17 @@ fn answer(method: &str, params: &Value, mode: &str) -> Result<Value, (i64, Strin
         "text/complete" => {
             let prompt = params["prompt"].as_str().unwrap_or_default();
             let text = format!("echo: {prompt}");
-            let json = params
-                .get("schema")
-                .filter(|s| !s.is_null())
-                .map(|_| json!({ "echo": prompt }));
+            let json = params.get("schema").filter(|s| !s.is_null()).map(|_| {
+                if mode == "card" {
+                    json!({
+                        "title": "Echoed card",
+                        "summary": "A card the echo provider drafted.",
+                        "tags": ["draft"]
+                    })
+                } else {
+                    json!({ "echo": prompt })
+                }
+            });
             Ok(
                 json!({"text": text, "json": json, "model": "echo/1", "usage": {"input_tokens": 1, "output_tokens": 1}}),
             )
@@ -93,7 +106,33 @@ fn answer(method: &str, params: &Value, mode: &str) -> Result<Value, (i64, Strin
                 .map(|text| json!({"text": text, "method": "embedded", "pages": 1}))
                 .map_err(|e| (3, format!("{path}: {e}")))
         }
+        "text/embed" => {
+            let query = params["purpose"] == "query";
+            let vectors: Vec<Value> = params["texts"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|text| embed(text.as_str().unwrap_or_default(), query))
+                .collect();
+            Ok(json!({"vectors": vectors, "model": "echo-embed", "dimensions": 3}))
+        }
         "shutdown" => Ok(Value::Null),
         _ => Err((-32601, format!("unknown method {method}"))),
     }
+}
+
+/// A unit vector of how many letters, vowels and spaces `text` has; a query's counts its
+/// vowels twice, as real models embed queries differently.
+fn embed(text: &str, query: bool) -> Value {
+    let count = |f: fn(char) -> bool| {
+        f64::from(u32::try_from(text.chars().filter(|c| f(*c)).count()).unwrap_or(u32::MAX))
+    };
+    let vowels = count(|c| "aeiouAEIOU".contains(c)) * if query { 2.0 } else { 1.0 };
+    let counts = [
+        count(char::is_alphabetic),
+        vowels,
+        count(char::is_whitespace) + 1.0,
+    ];
+    let length = counts.iter().map(|n| n * n).sum::<f64>().sqrt();
+    json!(counts.map(|n| n / length))
 }

@@ -1,0 +1,441 @@
+{
+  "carrel": "0.2.0",
+  "date": "2026-10-31",
+  "os": "macos",
+  "arch": "aarch64",
+  "bar": {
+    "valid": 0.95,
+    "routing": 0.8,
+    "under_rated_restricted": 0,
+    "under_rated": 0.05,
+    "seconds_per_item": 30.0
+  },
+  "models": [
+    {
+      "provider": "llama",
+      "offer": "gemma-4-e4b",
+      "label": "llama/gemma-4-e4b.gguf",
+      "version": "0.2.0",
+      "score": {
+        "items": 9,
+        "valid": 1.0,
+        "first_try": 0.0,
+        "declined": 0.0,
+        "routing": 1.0,
+        "sensitivity_exact": 1.0,
+        "under_rated": 0.0,
+        "under_rated_restricted": 0,
+        "date": 0.8888888888888888,
+        "tags_found": 0.875,
+        "tags_outside": 1,
+        "seconds_per_item": 24.347627953777778
+      },
+      "shortfalls": [],
+      "items": [
+        {
+          "outcome": {
+            "item": "IMG_1502.jpg",
+            "destination": "Recipes",
+            "confidence": "medium",
+            "sensitivity": "personal",
+            "reasons": [],
+            "date": "2025-04-20",
+            "tags": [
+              "baking"
+            ],
+            "title": "Handwritten recipe for oat biscuits",
+            "summary": "A handwritten recipe for oat biscuits, including ingredients and instructions.",
+            "valid": true,
+            "first_try": false,
+            "declined": false,
+            "problems": [],
+            "failures": [
+              "card: failed: the title only repeats the file name; say what the item is"
+            ]
+          },
+          "score": {
+            "item": "IMG_1502.jpg",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [],
+            "valid": true,
+            "first_try": false,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Recipes"
+            ],
+            "sensitivity": "personal",
+            "date": "2025-04-20",
+            "tags": [
+              "baking"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "IMG_1876.jpg",
+            "destination": "Travel",
+            "confidence": "medium",
+            "sensitivity": "personal",
+            "reasons": [
+              "has the place it was taken"
+            ],
+            "date": "2025-05-17",
+            "tags": [
+              "trains"
+            ],
+            "title": "Photo of train departures board",
+            "summary": "A digital sign displaying a list of train departures from Porto Sao Bento, including times, destinations, and lines.",
+            "valid": true,
+            "first_try": false,
+            "declined": false,
+            "problems": [],
+            "failures": [
+              "card: failed: the title only repeats the file name; say what the item is"
+            ]
+          },
+          "score": {
+            "item": "IMG_1876.jpg",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [],
+            "valid": true,
+            "first_try": false,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Travel"
+            ],
+            "sensitivity": "personal",
+            "date": "2025-05-17",
+            "tags": [
+              "trains"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "IMG_2041.jpg",
+            "destination": "Receipts",
+            "confidence": "medium",
+            "sensitivity": "personal",
+            "reasons": [],
+            "date": "2025-06-14",
+            "tags": [
+              "appliances"
+            ],
+            "title": "Receipt for electric kettle purchase",
+            "summary": "A receipt from HARTLEY & SONS HARDWARE showing the purchase of an electric kettle and descaler sachets for a total of 39.49, including details about the two-year guarantee.",
+            "valid": true,
+            "first_try": false,
+            "declined": false,
+            "problems": [],
+            "failures": [
+              "card: failed: the title only repeats the file name; say what the item is"
+            ]
+          },
+          "score": {
+            "item": "IMG_2041.jpg",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 0,
+            "tags_expected": 1,
+            "tags_outside": [
+              "appliances"
+            ],
+            "valid": true,
+            "first_try": false,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Receipts"
+            ],
+            "sensitivity": "personal",
+            "date": "2025-06-14",
+            "tags": [
+              "household"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "IMG_3310.jpg",
+            "destination": "Work",
+            "confidence": "medium",
+            "sensitivity": "personal",
+            "reasons": [],
+            "date": "2025-10-07",
+            "tags": [
+              "meetings"
+            ],
+            "title": "Photo of Sprint 14 planning whiteboard",
+            "summary": "A whiteboard chart titled \"Sprint 14 planning - 7 Oct\" divided into columns: \"TO DO\", \"DOING\", and \"DONE\", listing tasks such as \"Export to CSV (Priya)\", \"Fix login timeout\", \"Dashboard Alters (Sam)\", and \"Release 3.2 notes\".",
+            "valid": true,
+            "first_try": false,
+            "declined": false,
+            "problems": [],
+            "failures": [
+              "card: failed: the title only repeats the file name; say what the item is"
+            ]
+          },
+          "score": {
+            "item": "IMG_3310.jpg",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [],
+            "valid": true,
+            "first_try": false,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Work"
+            ],
+            "sensitivity": "personal",
+            "date": "2025-10-07",
+            "tags": [
+              "meetings"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "IMG_4127.jpg",
+            "destination": "Holding",
+            "confidence": "low",
+            "sensitivity": "personal",
+            "reasons": [
+              "has the place it was taken"
+            ],
+            "date": "2025-09-21",
+            "tags": [],
+            "title": "Photo of an orange cat",
+            "summary": "A photo taken on an iPhone 15 Pro showing an orange cat with closed eyes and white whiskers lying on a blue surface next to a yellow circle.",
+            "valid": true,
+            "first_try": false,
+            "declined": false,
+            "problems": [],
+            "failures": [
+              "card: failed: the title only repeats the file name; say what the item is"
+            ]
+          },
+          "score": {
+            "item": "IMG_4127.jpg",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 0,
+            "tags_expected": 0,
+            "tags_outside": [],
+            "valid": true,
+            "first_try": false,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Holding"
+            ],
+            "sensitivity": "personal",
+            "date": "2025-09-21",
+            "tags": []
+          }
+        },
+        {
+          "outcome": {
+            "item": "Screenshot 2025-08-28 at 09.14.03.png",
+            "destination": "Home",
+            "confidence": "medium",
+            "sensitivity": "sensitive",
+            "reasons": [
+              "mentions a lease"
+            ],
+            "date": "2025-08-28",
+            "tags": [
+              "lease"
+            ],
+            "title": "Screenshot of Rent Review Letter for 4 Elm Court",
+            "summary": "A screenshot of an email from Oakfield Lettings to Alex Morgan regarding a rent increase for Flat 4, Elm Court, effective October 1, 2025.",
+            "valid": true,
+            "first_try": false,
+            "declined": false,
+            "problems": [],
+            "failures": [
+              "card: failed: the title only repeats the file name; say what the item is"
+            ]
+          },
+          "score": {
+            "item": "Screenshot 2025-08-28 at 09.14.03.png",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [],
+            "valid": true,
+            "first_try": false,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Home"
+            ],
+            "sensitivity": "sensitive",
+            "date": "2025-08-28",
+            "tags": [
+              "lease"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "Screenshot 2025-10-03 at 08.41.55.png",
+            "destination": "Finances",
+            "confidence": "medium",
+            "sensitivity": "restricted",
+            "reasons": [
+              "contains what looks like a bank account number (IBAN)",
+              "mentions pay details"
+            ],
+            "date": "2025-10-03",
+            "tags": [
+              "bank"
+            ],
+            "title": "Screenshot of Bank Account Balance",
+            "summary": "A screenshot showing a current account balance of 3,412.07 and a list of recent transactions.",
+            "valid": true,
+            "first_try": false,
+            "declined": false,
+            "problems": [],
+            "failures": [
+              "card: failed: the title only repeats the file name; say what the item is"
+            ]
+          },
+          "score": {
+            "item": "Screenshot 2025-10-03 at 08.41.55.png",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [],
+            "valid": true,
+            "first_try": false,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Finances"
+            ],
+            "sensitivity": "restricted",
+            "date": "2025-10-03",
+            "tags": [
+              "bank"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "export.png",
+            "destination": "Projects",
+            "confidence": "medium",
+            "sensitivity": "personal",
+            "reasons": [],
+            "date": null,
+            "tags": [
+              "electronics"
+            ],
+            "title": "Wiring diagram for plant monitor",
+            "summary": "A wiring diagram for a plant monitor showing connections between a solar panel, an ESP32-C3 dev board, a soil moisture sensor, a relay module, and a 18650 cell with a TP4056 charger.",
+            "valid": true,
+            "first_try": false,
+            "declined": false,
+            "problems": [],
+            "failures": [
+              "card: failed: the title only repeats the file name; say what the item is"
+            ]
+          },
+          "score": {
+            "item": "export.png",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": true,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [],
+            "valid": true,
+            "first_try": false,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Projects"
+            ],
+            "sensitivity": "personal",
+            "date": null,
+            "tags": [
+              "electronics"
+            ]
+          }
+        },
+        {
+          "outcome": {
+            "item": "scan0007.png",
+            "destination": "Letters",
+            "confidence": "medium",
+            "sensitivity": "personal",
+            "reasons": [],
+            "date": null,
+            "tags": [
+              "friends"
+            ],
+            "title": "Letter from Jo to Alex",
+            "summary": "A printed letter from Jo to Alex discussing a parcel, the allotment, and Alex's new job.",
+            "valid": true,
+            "first_try": false,
+            "declined": false,
+            "problems": [],
+            "failures": [
+              "card: failed: the title only repeats the file name; say what the item is"
+            ]
+          },
+          "score": {
+            "item": "scan0007.png",
+            "routing": 1.0,
+            "sensitivity": "exact",
+            "date": false,
+            "tags_found": 1,
+            "tags_expected": 1,
+            "tags_outside": [],
+            "valid": true,
+            "first_try": false,
+            "declined": false
+          },
+          "expected": {
+            "destinations": [
+              "Letters"
+            ],
+            "sensitivity": "personal",
+            "date": "2025-03-03",
+            "tags": [
+              "friends"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

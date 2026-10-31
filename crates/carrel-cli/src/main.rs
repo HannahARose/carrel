@@ -12,6 +12,7 @@ mod config;
 mod correct;
 mod desk;
 mod edit;
+mod expand;
 mod formats;
 mod ingest;
 mod models;
@@ -63,6 +64,9 @@ enum Command {
         /// Create it even if the folder already has files; they become uncataloged.
         #[arg(long)]
         allow_existing_files: bool,
+        /// The model every device uses to search it by meaning, from `carrel models`.
+        #[arg(long, value_name = "NAME", default_value = carrel_core::models::DEFAULT_EMBEDDING_MODEL)]
+        embedding_model: String,
     },
     /// Choose the archive commands use when run outside one, or show the current choice.
     Open {
@@ -133,6 +137,16 @@ enum Command {
         /// The item: its identifier, or its card's or contents' path.
         item: String,
     },
+    /// Expand a filed compressed file (zip, tar, gzip and the like) so what it holds can be
+    /// browsed: it takes the compressed file's place, which goes to the Trash. One change undo
+    /// can reverse.
+    Expand {
+        /// The item: its identifier, or its card's or contents' path.
+        item: String,
+        /// Expand software or a very large archive all the same.
+        #[arg(long)]
+        anyway: bool,
+    },
     /// Correct a filed item's card in plain words, narrowly ("it's from 2019") or broadly
     /// ("it's a picture of A, not B"), or with `field: value` lines. The changes are shown
     /// before and after and saved only when you agree; a new collection refiles it.
@@ -197,7 +211,7 @@ enum Command {
         action: Option<DeskAction>,
     },
     /// Work sessions on checked-out items: finds finished ones and lists the pending history
-    /// entries; approve, combine or drop them.
+    /// entries; approve, edit, combine or drop them.
     Sessions {
         #[command(subcommand)]
         action: Option<SessionsAction>,
@@ -252,6 +266,12 @@ enum DeskAction {
         #[arg(long)]
         delete_card: bool,
     },
+    /// Archive a desk item: queue it for ingest with its card and history, and take it off
+    /// the desk. It's filed when you approve its proposal.
+    Archive {
+        /// The file or folder.
+        path: PathBuf,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -264,6 +284,13 @@ enum SessionsAction {
         item: String,
         /// Which entries; all when none are given.
         numbers: Vec<usize>,
+    },
+    /// Edit one of an item's pending entries in your editor; it stays pending.
+    Edit {
+        /// The item.
+        item: String,
+        /// Which entry: the number `carrel sessions` shows.
+        number: usize,
     },
     /// Combine an item's pending entries into one, still pending.
     Combine {
@@ -296,6 +323,16 @@ enum ModelsAction {
         /// Download without asking.
         #[arg(long)]
         yes: bool,
+    },
+    /// Embed texts with the archive's embedding model, as search will, and show the vectors.
+    /// An archive with no model yet asks for one first.
+    Embed {
+        /// The texts, each embedded on its own.
+        #[arg(required = true)]
+        texts: Vec<String>,
+        /// Embed them as search queries rather than as text to be found.
+        #[arg(long)]
+        query: bool,
     },
     /// Delete a downloaded model, after asking.
     Remove {
@@ -537,7 +574,33 @@ enum ReviewAction {
     },
 }
 
+/// `carrel questions` and its subcommands.
+fn questions_command(
+    archive: Option<&Path>,
+    action: Option<QuestionsAction>,
+) -> Result<Report, Failure> {
+    match action.unwrap_or(QuestionsAction::List) {
+        QuestionsAction::List => questions::list(archive),
+        QuestionsAction::Answer { id, answer } => questions::answer(archive, &id, &answer),
+        QuestionsAction::Dismiss { id } => questions::dismiss(archive, &id),
+    }
+}
+
 /// `carrel desk` and its subcommands.
+fn desk_command(archive: Option<&Path>, action: Option<DeskAction>) -> Result<Report, Failure> {
+    match action.unwrap_or(DeskAction::List) {
+        DeskAction::List => desk::list(archive),
+        DeskAction::Add {
+            path,
+            title,
+            summary,
+        } => desk::add_item(archive, &path, title.as_deref(), summary.as_deref()),
+        DeskAction::Remove { path, delete_card } => desk::remove_item(archive, &path, delete_card),
+        DeskAction::Archive { path } => desk::archive_desk_item(archive, &path),
+    }
+}
+
+/// `carrel backup` and its subcommands.
 fn backup_command(archive: Option<&Path>, action: BackupAction) -> Result<Report, Failure> {
     match action {
         BackupAction::Setup { path, description } => {
@@ -552,18 +615,6 @@ fn backup_command(archive: Option<&Path>, action: BackupAction) -> Result<Report
     }
 }
 
-fn desk_command(archive: Option<&Path>, action: Option<DeskAction>) -> Result<Report, Failure> {
-    match action.unwrap_or(DeskAction::List) {
-        DeskAction::List => desk::list(archive),
-        DeskAction::Add {
-            path,
-            title,
-            summary,
-        } => desk::add_item(archive, &path, title.as_deref(), summary.as_deref()),
-        DeskAction::Remove { path, delete_card } => desk::remove_item(archive, &path, delete_card),
-    }
-}
-
 /// `carrel sessions` and its subcommands.
 fn sessions_command(
     archive: Option<&Path>,
@@ -575,6 +626,7 @@ fn sessions_command(
         SessionsAction::Approve { item, numbers } => {
             sessions::decide(archive, &item, &numbers, Decision::Approve)
         }
+        SessionsAction::Edit { item, number } => sessions::edit(archive, &item, number),
         SessionsAction::Combine { item, numbers } => {
             sessions::decide(archive, &item, &numbers, Decision::Combine)
         }
@@ -666,18 +718,6 @@ impl<E: std::error::Error> From<E> for Failure {
     }
 }
 
-/// `carrel questions` and its subcommands.
-fn questions_command(
-    archive: Option<&Path>,
-    action: Option<QuestionsAction>,
-) -> Result<Report, Failure> {
-    match action.unwrap_or(QuestionsAction::List) {
-        QuestionsAction::List => questions::list(archive),
-        QuestionsAction::Answer { id, answer } => questions::answer(archive, &id, &answer),
-        QuestionsAction::Dismiss { id } => questions::dismiss(archive, &id),
-    }
-}
-
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let Some(command) = cli.command else {
@@ -703,10 +743,12 @@ fn main() -> ExitCode {
             path,
             name,
             allow_existing_files,
+            embedding_model,
         } => commands::init(
             path.as_deref().or(cli.archive.as_deref()),
             name,
             allow_existing_files,
+            &embedding_model,
         ),
         Command::Open { path } => commands::open(path.as_deref().or(cli.archive.as_deref())),
         Command::Status => commands::status(cli.archive.as_deref()),
@@ -729,6 +771,7 @@ fn main() -> ExitCode {
         },
         Command::Review { all, action } => review_command(cli.archive.as_deref(), all, action),
         Command::Edit { item } => edit::edit(cli.archive.as_deref(), &item),
+        Command::Expand { item, anyway } => expand::expand(cli.archive.as_deref(), &item, anyway),
         Command::Correct {
             item,
             words,
@@ -768,15 +811,27 @@ fn main() -> ExitCode {
         Command::Backup { action } => backup_command(cli.archive.as_deref(), action),
         Command::Questions { action } => questions_command(cli.archive.as_deref(), action),
         Command::Bench(args) => bench::bench(&args, cli.json),
-        Command::Models { action } => match action.unwrap_or(ModelsAction::List) {
-            ModelsAction::List => models::list(),
-            ModelsAction::Download { name, format, yes } => {
-                models::download(&name, format, yes, cli.json)
-            }
-            ModelsAction::Remove { name, format, yes } => models::remove(&name, format, yes),
-        },
+        Command::Models { action } => models_command(
+            action.unwrap_or(ModelsAction::List),
+            cli.archive.as_deref(),
+            cli.json,
+        ),
     };
     finish(result, cli.json)
+}
+
+/// `carrel models` and its subcommands.
+fn models_command(
+    action: ModelsAction,
+    archive: Option<&std::path::Path>,
+    json: bool,
+) -> Result<Report, Failure> {
+    match action {
+        ModelsAction::List => models::list(),
+        ModelsAction::Download { name, format, yes } => models::download(&name, format, yes, json),
+        ModelsAction::Embed { texts, query } => models::embed(archive, &texts, query),
+        ModelsAction::Remove { name, format, yes } => models::remove(&name, format, yes),
+    }
 }
 
 /// Whether `command` takes the writer lease to change the archive, so finished work sessions
@@ -786,6 +841,7 @@ fn changes_archive(command: &Command) -> bool {
         Command::Undo { .. }
         | Command::Correct { .. }
         | Command::Edit { .. }
+        | Command::Expand { .. }
         | Command::Rename { .. }
         | Command::Checkout { .. }
         | Command::Return { .. }

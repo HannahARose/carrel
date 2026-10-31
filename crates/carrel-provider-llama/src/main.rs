@@ -1,9 +1,10 @@
-//! `carrel-provider-llama`: Carrel's portable text-model provider (`docs/providers.md`).
+//! `carrel-provider-llama`: Carrel's portable model provider (`docs/providers.md`).
 //!
 //! It runs open models locally through llama.cpp, on any platform: with Metal on Macs, and
 //! optionally Vulkan or CUDA elsewhere. Models are GGUF files in Carrel's models folder
-//! ([`carrel_core::local::models_dir`]); each one is offered as a text model. Answers that
-//! must follow a JSON Schema are constrained with a grammar, so they're always valid JSON.
+//! ([`carrel_core::local::models_dir`]); the catalog's embedding models are offered for
+//! embedding, and every other file as a text model. Answers that must follow a JSON Schema
+//! are constrained with a grammar, so they're always valid JSON.
 
 mod llama;
 

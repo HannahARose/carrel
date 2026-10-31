@@ -371,7 +371,11 @@ fn names_for(
 }
 
 /// Points other cards' links to `item` at its card's new path.
-fn relink(archive: &Archive, item: &ItemRef, card_path: &str) -> Result<Vec<String>, RenameError> {
+pub(crate) fn relink(
+    archive: &Archive,
+    item: &ItemRef,
+    card_path: &str,
+) -> Result<Vec<String>, RenameError> {
     let mut relinked = Vec::new();
     for other in archive.items()? {
         if other.id == item.id {

@@ -17,15 +17,25 @@ pub enum Key {
     OutsideEdits,
     /// What happens to compressed files at ingest.
     CompressedFiles,
+    /// The model every device embeds with for search. It can be chosen once; switching
+    /// models means re-embedding the archive (`docs/design/search.md`).
+    EmbeddingModel,
 }
+
+/// The embedding models an archive can choose: the catalog's, the default first.
+const EMBEDDING_MODELS: [&str; 2] = [
+    crate::models::DEFAULT_EMBEDDING_MODEL,
+    "qwen3-embedding-0.6b",
+];
 
 impl Key {
     /// Every setting, in the order they're shown.
-    pub const ALL: [Self; 4] = [
+    pub const ALL: [Self; 5] = [
         Self::Originals,
         Self::CompressedFiles,
         Self::CrowdedItems,
         Self::OutsideEdits,
+        Self::EmbeddingModel,
     ];
 
     /// Its key in `settings.json`, as FORMAT.md §7.2 writes it.
@@ -36,6 +46,7 @@ impl Key {
             Self::CrowdedItems => "signals.crowded_items",
             Self::OutsideEdits => "outside_edits",
             Self::CompressedFiles => "compressed_files",
+            Self::EmbeddingModel => "embedding.model",
         }
     }
 
@@ -61,6 +72,9 @@ impl Key {
             Self::CompressedFiles => {
                 "What happens to zip and other compressed files when they're approved: expanded so what's inside can be browsed, kept compressed, or asked about each time"
             }
+            Self::EmbeddingModel => {
+                "The model every device uses to search by meaning; chosen once, as switching re-embeds the archive"
+            }
         }
     }
 
@@ -71,6 +85,7 @@ impl Key {
             Self::Originals => Some(&["move", "keep"]),
             Self::OutsideEdits => Some(&["flag", "reconcile", "drift"]),
             Self::CompressedFiles => Some(&["expand", "keep", "ask"]),
+            Self::EmbeddingModel => Some(&EMBEDDING_MODELS),
             Self::CrowdedItems => None,
         }
     }
@@ -90,6 +105,7 @@ impl Key {
                 OutsideEdits::Drift => "drift".into(),
             },
             Self::CompressedFiles => settings.compressed_files.as_str().into(),
+            Self::EmbeddingModel => settings.embedding_model().unwrap_or("none").to_owned(),
         }
     }
 
@@ -127,6 +143,19 @@ impl Key {
             Self::CompressedFiles => {
                 settings.compressed_files =
                     crate::compressed::plan::Choice::parse(value).ok_or_else(wrong)?;
+            }
+            Self::EmbeddingModel => {
+                if !EMBEDDING_MODELS.contains(&value) {
+                    return Err(wrong());
+                }
+                match settings.embedding_model() {
+                    Some(chosen) if chosen != value => {
+                        return Err(format!(
+                            "this archive is searched with {chosen}; switching models re-embeds the archive, which isn't possible yet"
+                        ));
+                    }
+                    _ => settings.set_embedding_model(value),
+                }
             }
         }
         Ok(())
@@ -226,6 +255,12 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_embedding_models_are_the_catalogs() {
+        let catalog: Vec<&str> = crate::models::embedding_models().map(|m| m.name).collect();
+        assert_eq!(catalog, EMBEDDING_MODELS);
+    }
+
+    #[test]
     fn settings_read_and_take_only_their_values() {
         let mut settings = Settings::default();
         assert_eq!(Key::Originals.get(&settings), "move");
@@ -241,6 +276,20 @@ mod tests {
         assert_eq!(settings.signals.crowded_items, 40);
         assert!(Key::CrowdedItems.set(&mut settings, "0").is_err());
         Key::OutsideEdits.set(&mut settings, "drift").unwrap();
+        assert_eq!(Key::EmbeddingModel.get(&settings), "none");
+        assert!(Key::EmbeddingModel.set(&mut settings, "word2vec").is_err());
+        Key::EmbeddingModel
+            .set(&mut settings, "qwen3-embedding-0.6b")
+            .unwrap();
+        assert_eq!(settings.embedding_model(), Some("qwen3-embedding-0.6b"));
+        Key::EmbeddingModel
+            .set(&mut settings, "qwen3-embedding-0.6b")
+            .unwrap();
+        let switch = Key::EmbeddingModel
+            .set(&mut settings, "embeddinggemma-300m")
+            .unwrap_err();
+        assert!(switch.contains("re-embeds"), "{switch}");
+        assert_eq!(Key::parse("embedding.model"), Some(Key::EmbeddingModel));
         assert_eq!(Key::parse("outside_edits"), Some(Key::OutsideEdits));
         assert_eq!(Key::parse("nope"), None);
     }

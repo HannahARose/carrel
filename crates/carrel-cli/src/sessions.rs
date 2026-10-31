@@ -48,6 +48,15 @@ fn record_and_snapshot(archive: &Archive, lease: WriterLease) -> Result<(String,
         )
         .unwrap();
     }
+    for item in &recorded.approved_by_hand {
+        writeln!(
+            text,
+            "Noticed {} on “{}” approved by hand",
+            entries(item.entries),
+            item.title
+        )
+        .unwrap();
+    }
     let mut snapshots = Vec::new();
     if !recorded.items.is_empty()
         && let (Some(kopia), _) = crate::backup::for_batch(archive)
@@ -68,13 +77,18 @@ fn record_and_snapshot(archive: &Archive, lease: WriterLease) -> Result<(String,
             "commit": recorded.commit,
             "sessions": recorded.sessions(),
             "snapshots": snapshots,
+            "approved_by_hand": recorded
+                .approved_by_hand
+                .iter()
+                .map(|a| json!({ "item": a.id, "title": a.title, "entries": a.entries }))
+                .collect::<Vec<_>>(),
         }),
     ))
 }
 
 /// Records finished sessions when it's been [`EVERY`] since they were last looked for, unless
 /// another writer holds the archive: `None` when it didn't look, else what it found, as lines
-/// for the owner (empty when nothing).
+/// for the owner (empty when nothing), saying how to approve new sessions.
 pub fn record_if_due(archive: Option<&Path>) -> Option<Result<String, Failure>> {
     let archive = locate(archive).ok()?;
     let due = Scanned::path(&archive.doc().id.to_string())
@@ -86,7 +100,14 @@ pub fn record_if_due(archive: Option<&Path>) -> Option<Result<String, Failure>> 
     let lease = DiskLock::for_archive(&archive)
         .acquire(holder(&identity), "sessions", DEFAULT_LEASE)
         .ok()?;
-    Some(record_and_snapshot(&archive, lease).map(|(text, _)| text))
+    Some(
+        record_and_snapshot(&archive, lease).map(|(mut text, json)| {
+            if json["sessions"].as_u64().is_some_and(|n| n > 0) {
+                text.push_str("Approve them with `carrel sessions`.\n");
+            }
+            text
+        }),
+    )
 }
 
 /// Before a command that changes the archive: [`record_if_due`], with what it found on
@@ -94,7 +115,7 @@ pub fn record_if_due(archive: Option<&Path>) -> Option<Result<String, Failure>> 
 pub fn record_before_command(archive: Option<&Path>, quiet: bool) {
     match record_if_due(archive) {
         Some(Ok(text)) if !quiet && !text.is_empty() => {
-            eprintln!("{text}Approve them with `carrel sessions`.");
+            eprint!("{text}");
         }
         Some(Err(Failure(e))) if !quiet => {
             eprintln!("warning: work sessions weren't recorded: {e}");
@@ -208,7 +229,7 @@ pub fn list(archive: Option<&Path>) -> Result<Report, Failure> {
         text.push_str("No pending history entries\n");
     } else {
         text.push_str(
-            "\nApprove with `carrel sessions approve ITEM [N...]`, or combine or drop them.\n",
+            "\nApprove with `carrel sessions approve ITEM [N...]`, or edit, combine or drop them.\n",
         );
     }
     Ok(Report::new(
@@ -216,6 +237,7 @@ pub fn list(archive: Option<&Path>) -> Result<Report, Failure> {
         json!({
             "recorded": recorded["commit"],
             "sessions": recorded["sessions"],
+            "approved_by_hand": recorded["approved_by_hand"],
             "snapshots": recorded["snapshots"],
             "items": items,
         }),
@@ -281,13 +303,7 @@ pub fn decide(
     } else {
         numbers
             .iter()
-            .map(|&n| {
-                pending.get(n.wrapping_sub(1)).copied().ok_or_else(|| {
-                    Failure::new(format!(
-                        "there's no pending entry {n}; `carrel sessions` lists them"
-                    ))
-                })
-            })
+            .map(|&n| position(&pending, n))
             .collect::<Result<_, _>>()?
     };
     if chosen.is_empty() {
@@ -323,6 +339,71 @@ pub fn decide(
     ))
 }
 
+/// Where pending entry `n` (as `carrel sessions` numbers them, from 1) is among `pending`.
+fn position(pending: &[usize], n: usize) -> Result<usize, Failure> {
+    pending.get(n.wrapping_sub(1)).copied().ok_or_else(|| {
+        Failure::new(format!(
+            "there's no pending entry {n}; `carrel sessions` lists them"
+        ))
+    })
+}
+
+/// `carrel sessions edit ITEM N`: opens pending entry `N`'s text in the owner's editor, and
+/// saves what they write as the entry's text, still pending, in one change. The card is read
+/// again once the editor closes, so changes made meanwhile (in Obsidian, say) are kept.
+///
+/// # Errors
+///
+/// [`Failure`] if the item or the entry isn't found, the editor fails, or the text would
+/// break the history section; the text written is then kept in a file the message names.
+pub fn edit(archive: Option<&Path>, query: &str, n: usize) -> Result<Report, Failure> {
+    let archive = locate(archive)?;
+    let card = find_card(&archive, query)?;
+    let file = CardFile::parse(&std::fs::read_to_string(&card.path)?)?;
+    let log = file.history()?;
+    let entry = log.entries[position(&log.pending(), n)?].clone();
+    let temp = std::env::temp_dir().join(format!("carrel-entry-{}-{n}.md", card.id));
+    let mut text = entry.lines.join("\n");
+    text.push('\n');
+    std::fs::write(&temp, &text).map_err(|e| Failure::io(&temp, &e))?;
+    crate::review::run_editor(&temp)?;
+    let edited = std::fs::read_to_string(&temp).map_err(|e| Failure::io(&temp, &e))?;
+
+    let mut file = CardFile::parse(&std::fs::read_to_string(&card.path)?)?;
+    let mut log = file.history()?;
+    let Some(i) = log.pending().into_iter().find(|&i| log.entries[i] == entry) else {
+        return Err(Failure::new(format!(
+            "the entry changed while it was being edited, so nothing was saved; your text is \
+             in {}",
+            temp.display()
+        )));
+    };
+    match log.edit(i, &edited) {
+        Ok(false) => {
+            let _ = std::fs::remove_file(&temp);
+            return Ok(Report::new(
+                "Nothing changed\n",
+                json!({ "item": card.id, "commit": null }),
+            ));
+        }
+        Ok(true) => {}
+        Err(e) => {
+            return Err(Failure::new(format!(
+                "{e}; nothing was saved, and your text is in {}",
+                temp.display()
+            )));
+        }
+    }
+    let _ = std::fs::remove_file(&temp);
+    file.set_history(&log)?;
+    let summary = format!("Edit a history entry of “{}”", file.card().title);
+    let commit = write_and_commit(&archive, &card.path, &file, card.id, &summary)?;
+    Ok(Report::new(
+        format!("{summary}\n"),
+        json!({ "item": card.id, "entries": 1, "commit": commit }),
+    ))
+}
+
 /// `1 history entry`, `2 history entries`.
 fn entries(n: usize) -> String {
     if n == 1 {
@@ -353,6 +434,8 @@ fn write_and_commit(
             lease.info().device,
         );
         change.items = vec![item];
+        // The Journal lists approved entries, so it follows the cards.
+        carrel_core::active::regenerate(archive)?;
         Ok(History::open(archive)?.commit(archive, &change, &lease)?)
     })();
     lease.release()?;

@@ -140,6 +140,17 @@ items:
     sensitivity: personal
     date: null
     tags: [appliances]
+  "kettle manual.zip":
+    destinations: [Manuals]
+    sensitivity: personal
+    date: null
+    tags: [appliances]
+  "label printer driver.zip":
+    destinations: [Manuals]
+    sensitivity: personal
+    date: null
+    tags: [electronics]
+    may: [tools]
   "employment contract lumen.md":
     destinations: [Work]
     sensitivity: sensitive
@@ -181,6 +192,12 @@ items:
     sensitivity: personal
     date: null
     tags: [code]
+  "lamp dimmer firmware.zip":
+    destinations: [Projects]
+    sensitivity: personal
+    date: null
+    tags: [code]
+    may: [electronics]
   "amplifier build log.txt":
     destinations: [Projects]
     sensitivity: personal
@@ -346,3 +363,76 @@ items:
     sensitivity: personal
     date: 2025-10-12
     tags: [repairs]
+  # Invented images (docs/design/images.md), drawn by make-images.swift with the metadata a
+  # phone, the screenshot tool or a scanner writes. A photo's date is when it was taken.
+  "IMG_2041.jpg":
+    destinations: [Receipts]
+    sensitivity: personal
+    date: 2025-06-14
+    tags: [household]
+    may: [warranty]
+  "IMG_3310.jpg":
+    destinations: [Work]
+    sensitivity: personal
+    date: 2025-10-07
+    tags: [meetings]
+  "IMG_4127.jpg":
+    destinations: [Holding]
+    sensitivity: personal
+    date: 2025-09-21
+    tags: []
+  "IMG_1876.jpg":
+    destinations: [Travel]
+    sensitivity: personal
+    date: 2025-05-17
+    tags: [trains]
+  "IMG_1502.jpg":
+    destinations: [Recipes]
+    sensitivity: personal
+    date: 2025-04-20
+    tags: [baking]
+  "Screenshot 2025-08-28 at 09.14.03.png":
+    destinations: [Home]
+    sensitivity: sensitive
+    date: 2025-08-28
+    tags: [lease]
+  "Screenshot 2025-10-03 at 08.41.55.png":
+    destinations: [Finances]
+    sensitivity: restricted
+    date: 2025-10-03
+    tags: [bank]
+  "scan0007.png":
+    destinations: [Letters]
+    sensitivity: personal
+    date: 2025-03-03
+    tags: [friends]
+  "export.png":
+    destinations: [Projects]
+    sensitivity: personal
+    date: null
+    tags: [electronics]
+    may: [code]
+  # 3D models (docs/design/models-3d.md), named as files often are: their names say little.
+  # Only a reader that draws and describes them can tell a bracket from a tray.
+  "part_v3_final.stl":
+    destinations: [Projects, Home]
+    ambiguous: true
+    sensitivity: personal
+    date: null
+    tags: [3d-printing]
+    may: [repairs]
+  "print_0412.stl":
+    destinations: [Projects]
+    sensitivity: personal
+    date: null
+    tags: [3d-printing]
+  "ring_v2.stl":
+    destinations: [Projects]
+    sensitivity: personal
+    date: null
+    tags: [3d-printing]
+  "scan_0007.stl":
+    destinations: [Projects]
+    sensitivity: personal
+    date: null
+    tags: [3d-printing]

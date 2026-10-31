@@ -9,6 +9,7 @@ use carrel_core::archive::{Archive, ArchiveError, InitOptions, ItemRef};
 use carrel_core::card::{Card, Id};
 use carrel_core::card_file::CardFile;
 use carrel_core::coordinator::{Coordinator, DEFAULT_LEASE, DiskLock, Holder, LockInfo};
+use carrel_core::entries::HistoryEntry;
 use carrel_core::history::{Entry, History, HistoryError, Operation};
 use serde_json::{Value, json};
 
@@ -60,13 +61,23 @@ fn archive_json(archive: &Archive) -> Value {
     })
 }
 
-/// `carrel init`: creates an archive, or starts history for an existing archive that has
-/// none (one made by hand or by another program).
+/// `carrel init`: creates an archive searched with `embedding_model`, or starts history for an
+/// existing archive that has none (one made by hand or by another program).
 pub fn init(
     path: Option<&Path>,
     name: Option<String>,
     allow_existing_files: bool,
+    embedding_model: &str,
 ) -> Result<Report, Failure> {
+    let embedding_choices = carrel_core::settings::Key::EmbeddingModel
+        .choices()
+        .unwrap_or_default();
+    if !embedding_choices.contains(&embedding_model) {
+        return Err(Failure::new(format!(
+            "no embedding model {embedding_model}; choose one of {}",
+            embedding_choices.join(", ")
+        )));
+    }
     let root = match path {
         Some(path) => path.to_owned(),
         None => std::env::current_dir().map_err(|e| Failure::io(Path::new("."), &e))?,
@@ -102,6 +113,7 @@ pub fn init(
         };
         let mut options = InitOptions::new(name);
         options.allow_existing_files = allow_existing_files;
+        options.embedding_model = Some(embedding_model.to_owned());
         Archive::init(&root, &options)?
     };
     let lease =
@@ -130,6 +142,14 @@ pub fn init(
             archive.root().display()
         )
     };
+    let model = archive.settings().embedding_model();
+    if let Some(model) = model.filter(|_| !existing) {
+        writeln!(
+            text,
+            "Every device searches it with {model}; `carrel models download {model}` gets it"
+        )
+        .unwrap();
+    }
     for warning in &warnings {
         writeln!(text, "warning: {warning}").unwrap();
     }
@@ -138,6 +158,7 @@ pub fn init(
         json!({
             "archive": archive_json(&archive),
             "history": if existing { "started" } else { "created" },
+            "embedding_model": model,
             "warnings": warnings,
         }),
     ))
@@ -191,13 +212,84 @@ struct LoadedCard {
 }
 
 fn load_card(archive: &Archive, item: &ItemRef) -> Result<LoadedCard, Failure> {
-    let path = archive.root().join(&item.card);
-    let text = std::fs::read_to_string(&path).map_err(|e| Failure::io(&path, &e))?;
-    let file = CardFile::parse(&text).map_err(|e| Failure::new(format!("{}: {e}", item.card)))?;
     Ok(LoadedCard {
         item: item.clone(),
-        card: file.card().clone(),
+        card: load_file(archive, item)?.card().clone(),
     })
+}
+
+fn load_file(archive: &Archive, item: &ItemRef) -> Result<CardFile, Failure> {
+    let path = archive.root().join(&item.card);
+    let text = std::fs::read_to_string(&path).map_err(|e| Failure::io(&path, &e))?;
+    CardFile::parse(&text).map_err(|e| Failure::new(format!("{}: {e}", item.card)))
+}
+
+/// How many lines `carrel status` gives Recent.
+const RECENT: usize = 10;
+
+/// Something filed, changed or worked on lately, for Recent.
+struct Recent {
+    /// When, as `YYYY-MM-DD HH:MM` for a change and `YYYY-MM-DD` for work, so they sort
+    /// together.
+    when: String,
+    /// What happened, for people.
+    what: String,
+    /// The same for programs.
+    json: Value,
+}
+
+/// A work session's approved history entry, as Recent shows it.
+fn worked_on(item: Id, title: &str, entry: &HistoryEntry) -> Option<Recent> {
+    let duration = entry.duration.as_ref()?;
+    let first = entry.lines.iter().map(|l| l.trim()).find(|l| !l.is_empty());
+    let mut what = format!("Worked on “{title}” for {duration}");
+    if let Some(first) = first {
+        write!(what, ": {first}").unwrap();
+    }
+    Some(Recent {
+        when: entry.date.clone(),
+        json: json!({
+            "kind": "work",
+            "date": entry.date,
+            "item": item,
+            "title": title,
+            "duration": duration,
+            "summary": first,
+        }),
+        what,
+    })
+}
+
+/// The latest changes and work sessions, newest first. Recording or approving a session is
+/// left out: the session itself is shown, on the day it happened.
+fn recent(history: Option<&[Entry]>, mut work: Vec<Recent>) -> Vec<Recent> {
+    let changes = history
+        .unwrap_or_default()
+        .iter()
+        .filter(|e| e.operation != Some(Operation::Session))
+        .take(RECENT)
+        .map(|e| Recent {
+            when: local_time(e.time),
+            what: e.summary.clone(),
+            json: json!({ "kind": "change", "change": entry_json(e) }),
+        });
+    work.extend(changes);
+    work.sort_by(|a, b| b.when.cmp(&a.when));
+    work.truncate(RECENT);
+    work
+}
+
+/// The part of `carrel status` about what was filed, changed or worked on lately.
+fn recent_section(recent: &[Recent]) -> String {
+    let mut text = String::new();
+    if recent.is_empty() {
+        return text;
+    }
+    text.push_str("\nRecent:\n");
+    for r in recent {
+        writeln!(text, "  {:<16}  {}", r.when, r.what).unwrap();
+    }
+    text
 }
 
 /// The collection a card belongs to: the deepest collection folder containing it.
@@ -223,30 +315,8 @@ fn writer_json(lock: Option<&LockInfo>) -> Value {
     })
 }
 
-/// `carrel status`.
-pub fn status(archive: Option<&Path>) -> Result<Report, Failure> {
-    let archive = locate(archive)?;
-    let collections: Vec<String> = archive.collections()?.into_iter().map(|c| c.path).collect();
-    let items = archive.items()?;
-    let mut by_kind: BTreeMap<String, usize> = BTreeMap::new();
-    let mut problems = Vec::new();
-    for item in &items {
-        *by_kind.entry(kind_name(item)).or_default() += 1;
-        let loaded = load_card(&archive, item)?;
-        let found = loaded.card.problems();
-        if !found.is_empty() {
-            problems.push((item.card.clone(), found));
-        }
-    }
-    let history = match History::open(&archive) {
-        Ok(history) => Some(history.log()?),
-        Err(HistoryError::NotInitialized) => None,
-        Err(e) => return Err(e.into()),
-    };
-    let lock = DiskLock::for_archive(&archive).current()?;
-    let synced = DiskLock::is_synced_folder(archive.root());
-    let this_device = Identity::load()?.map(|i| i.device);
-
+/// The start of `carrel status`: the archive's name, where it is, and what it is.
+fn archive_header(archive: &Archive) -> String {
     let mut text = String::new();
     let info = archive.info();
     writeln!(text, "{}", archive.doc().name).unwrap();
@@ -261,6 +331,44 @@ pub fn status(archive: Option<&Path>) -> Result<Report, Failure> {
     .unwrap();
     writeln!(text, "  created   {}", info.created.0).unwrap();
     text.push('\n');
+    text
+}
+
+/// `carrel status`.
+pub fn status(archive: Option<&Path>) -> Result<Report, Failure> {
+    let archive = locate(archive)?;
+    let collections: Vec<String> = archive.collections()?.into_iter().map(|c| c.path).collect();
+    let items = archive.items()?;
+    let mut by_kind: BTreeMap<String, usize> = BTreeMap::new();
+    let mut problems = Vec::new();
+    let mut work = Vec::new();
+    for item in &items {
+        *by_kind.entry(kind_name(item)).or_default() += 1;
+        let file = load_file(&archive, item)?;
+        let found = file.card().problems();
+        if !found.is_empty() {
+            problems.push((item.card.clone(), found));
+        }
+        // A card whose history section can't be read shows its problem in `carrel show`.
+        if let Ok(log) = file.history() {
+            work.extend(
+                log.entries
+                    .iter()
+                    .filter(|e| !e.pending)
+                    .filter_map(|e| worked_on(item.id, &file.card().title, e)),
+            );
+        }
+    }
+    let history = match History::open(&archive) {
+        Ok(history) => Some(history.log()?),
+        Err(HistoryError::NotInitialized) => None,
+        Err(e) => return Err(e.into()),
+    };
+    let lock = DiskLock::for_archive(&archive).current()?;
+    let synced = DiskLock::is_synced_folder(archive.root());
+    let this_device = Identity::load()?.map(|i| i.device);
+
+    let mut text = archive_header(&archive);
     let kinds: Vec<String> = by_kind.iter().map(|(k, n)| format!("{n} {k}")).collect();
     writeln!(
         text,
@@ -277,6 +385,8 @@ pub fn status(archive: Option<&Path>) -> Result<Report, Failure> {
     text.push_str(&history_line(history.as_deref()));
     text.push_str(&crate::backup::status_line(&archive, history.as_deref()));
     text.push_str(&writer_line(lock.as_ref(), this_device));
+    let recent = recent(history.as_deref(), work);
+    text.push_str(&recent_section(&recent));
     if !problems.is_empty() {
         writeln!(text, "\n{} with problems:", plural(problems.len(), "card")).unwrap();
         for (card, found) in &problems {
@@ -290,6 +400,8 @@ pub fn status(archive: Option<&Path>) -> Result<Report, Failure> {
     text.push_str(&names_section(&names));
     let signals = carrel_core::signals::signals(&archive)?;
     text.push_str(&signals_section(&signals));
+    let (desk_text, desk) = crate::desk::suggestions_section(&archive, this_device)?;
+    text.push_str(&desk_text);
     let mut warnings = Vec::new();
     if synced {
         warnings.push(SYNCED_WARNING);
@@ -309,7 +421,9 @@ pub fn status(archive: Option<&Path>) -> Result<Report, Failure> {
             "last": log.first().map(entry_json),
         })),
         "writer": writer_json(lock.as_ref()),
+        "recent": recent.iter().map(|r| &r.json).collect::<Vec<_>>(),
         "signals": signals,
+        "desk": desk,
         "names": names.iter().map(|f| json!({
             "path": f.path,
             "problems": f.problems,
@@ -450,12 +564,36 @@ pub(crate) fn find_item<'a>(
         .ok_or_else(|| Failure::new(format!("{query} has no card in this archive")))
 }
 
-/// `carrel show`.
-pub fn show(archive: Option<&Path>, query: &str) -> Result<Report, Failure> {
-    let archive = locate(archive)?;
+/// An item another links to, as the item's view shows it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Linked {
+    /// How it's linked: `version-of`, `related`, `part-of`, and so on.
+    pub link_type: String,
+    /// The linked item.
+    pub id: Id,
+    /// Its card's path, if it's in the archive.
+    pub card: Option<String>,
+    /// Its title, if its card could be read.
+    pub title: Option<String>,
+}
+
+/// A filed item as `carrel show` describes it, before its links and history.
+pub(crate) struct Shown {
+    /// The item's identifier.
+    pub id: Id,
+    /// The card's fields, summary and problems, for people.
+    pub text: String,
+    /// The same for programs.
+    pub json: Value,
+    /// The items it links to.
+    pub links: Vec<Linked>,
+}
+
+/// Describes the item `query` names: its card, and what it links to.
+pub(crate) fn describe(archive: &Archive, query: &str) -> Result<Shown, Failure> {
     let items = archive.items()?;
-    let item = find_item(&archive, &items, query)?;
-    let LoadedCard { item, card } = load_card(&archive, item)?;
+    let item = find_item(archive, &items, query)?;
+    let LoadedCard { item, card } = load_card(archive, item)?;
     let collections: Vec<String> = archive.collections()?.into_iter().map(|c| c.path).collect();
     let collection = collection_of(&collections, &item.card);
     let problems = card.problems();
@@ -501,26 +639,30 @@ pub fn show(archive: Option<&Path>, query: &str) -> Result<Report, Failure> {
     if let Some(summary) = &card.summary {
         writeln!(text, "\n{}", summary.trim_end()).unwrap();
     }
-    if !card.links.is_empty() {
-        writeln!(text, "\n{}:", plural(card.links.len(), "link")).unwrap();
-        for link in &card.links {
-            let target = items
-                .iter()
-                .find(|i| i.id == link.id)
-                .map_or_else(|| link.id.to_string(), |i| i.card.clone());
-            let link_type = serde_json::to_value(&link.link_type)
-                .ok()
-                .and_then(|v| v.as_str().map(str::to_owned))
-                .unwrap_or_default();
-            writeln!(text, "  {link_type} {target}").unwrap();
-        }
-    }
     if !problems.is_empty() {
         writeln!(text, "\nProblems:").unwrap();
         for problem in &problems {
             writeln!(text, "  {problem}").unwrap();
         }
     }
+    let links = card
+        .links
+        .iter()
+        .map(|link| {
+            let target = items.iter().find(|i| i.id == link.id);
+            Linked {
+                link_type: serde_json::to_value(&link.link_type)
+                    .ok()
+                    .and_then(|v| v.as_str().map(str::to_owned))
+                    .unwrap_or_default(),
+                id: link.id,
+                card: target.map(|i| i.card.clone()),
+                title: target
+                    .and_then(|i| load_card(archive, i).ok())
+                    .map(|loaded| loaded.card.title),
+            }
+        })
+        .collect();
 
     let json = json!({
         "card": item.card,
@@ -529,7 +671,71 @@ pub fn show(archive: Option<&Path>, query: &str) -> Result<Report, Failure> {
         "fields": card,
         "problems": problems.iter().map(|p| json!({ "field": p.field, "message": p.message })).collect::<Vec<_>>(),
     });
+    Ok(Shown {
+        id: card.id,
+        text,
+        json,
+        links,
+    })
+}
+
+/// `carrel show`.
+pub fn show(archive: Option<&Path>, query: &str) -> Result<Report, Failure> {
+    let archive = locate(archive)?;
+    let Shown {
+        id,
+        mut text,
+        mut json,
+        links,
+    } = describe(&archive, query)?;
+    if !links.is_empty() {
+        writeln!(text, "\n{}:", plural(links.len(), "link")).unwrap();
+        for link in &links {
+            let target = link.card.clone().unwrap_or_else(|| link.id.to_string());
+            writeln!(text, "  {} {target}", link.link_type).unwrap();
+        }
+    }
+    let history = match History::open(&archive) {
+        Ok(history) => Some(history.item_log(id)?),
+        Err(HistoryError::NotInitialized) => None,
+        Err(e) => return Err(e.into()),
+    };
+    if let Some(entries) = &history {
+        text.push_str(&item_history_section(entries));
+    }
+    json["history"] = history.map_or(Value::Null, |entries| {
+        Value::Array(entries.iter().map(entry_json).collect())
+    });
     Ok(Report::new(text, json))
+}
+
+/// The part of `carrel show` about every change that touched the item, newest first.
+fn item_history_section(entries: &[Entry]) -> String {
+    let mut text = String::new();
+    if entries.is_empty() {
+        return text;
+    }
+    writeln!(
+        text,
+        "\nHistory ({}; undo one with `carrel undo CHANGE`):",
+        plural(entries.len(), "change")
+    )
+    .unwrap();
+    for entry in entries {
+        writeln!(text, "  {}", log_line(entry)).unwrap();
+    }
+    text
+}
+
+/// A change on one line: its short identifier, when, the operation and the summary.
+pub(crate) fn log_line(entry: &Entry) -> String {
+    format!(
+        "{}  {}  {:<11} {}",
+        &entry.id[..entry.id.len().min(10)],
+        local_time(entry.time),
+        entry.operation.map_or("", |o| o.as_str()),
+        entry.summary
+    )
 }
 
 fn entry_json(entry: &Entry) -> Value {
@@ -565,16 +771,7 @@ pub fn log(archive: Option<&Path>, max_count: Option<usize>) -> Result<Report, F
     }
     let mut text = String::new();
     for entry in &entries {
-        let operation = entry.operation.map_or("", |o| o.as_str());
-        writeln!(
-            text,
-            "{}  {}  {:<11} {}",
-            &entry.id[..entry.id.len().min(10)],
-            local_time(entry.time),
-            operation,
-            entry.summary
-        )
-        .unwrap();
+        writeln!(text, "{}", log_line(entry)).unwrap();
     }
     Ok(Report::new(
         text,

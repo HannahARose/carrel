@@ -1,6 +1,6 @@
 # Model benchmark results
 
-How each text model does at Carrel's work: drafting a card, choosing a collection, and rating sensitivity, on the benchmark's test set of 65 invented documents with known answers (`fixtures/bench`). The design, the scoring and the bar are in [docs/design/benchmark.md](../design/benchmark.md). Each run's full report, with every item's draft, is kept in a folder named by its date.
+How each text model does at Carrel's work: drafting a card, choosing a collection, and rating sensitivity, on the benchmark's test set of invented documents and images with known answers (`fixtures/bench`). The design, the scoring and the bar are in [docs/design/benchmark.md](../design/benchmark.md). Each run's full report, with every item's draft, is kept in a folder named by its date.
 
 ## 2026-10-30
 
@@ -61,10 +61,38 @@ MLX is about 40% faster and every answer was valid, but it routes much worse: it
 
 - **A larger model for 32 GB Macs,** as the design planned, needs a download of about 20 GB, which hasn't been asked for.
 
+## 2026-10-31: images, with and without descriptions
+
+Does Apple's description of an image (#179) help file it? Nine invented images were added to the test set, drawn by [`fixtures/bench/make-images.swift`](../../fixtures/bench/make-images.swift) with the metadata a phone, the screenshot tool or a scanner writes: a till receipt, a whiteboard, a cat on a sofa, a departure board with a location, a handwritten recipe card, a mail screenshot, a banking-app screenshot, a scanned letter and a wiring diagram. Each image was read by the Apple provider's `image` offer with Apple's description and again without it (`CARREL_IMAGE_DESCRIPTIONS=off`), so the only difference is the `Shows:` line. Metadata, Vision's labels and OCR were there both times.
+
+On the reference machine (M4 Max, 36 GB, macOS 27.2), with Carrel 0.2.0 from `dev` after #198, the nine images alone, each setup run three times with nothing else compiling. The figures are the averages of the three runs. Reports: [Apple, then Gemma](2026-10-31/apple-then-gemma/report.md) ([without](2026-10-31/apple-then-gemma-no-descriptions/report.md)) · [Apple's model](2026-10-31/apple/report.md) ([without](2026-10-31/apple-no-descriptions/report.md)) · [Gemma 4 E4B](2026-10-31/gemma/report.md) ([without](2026-10-31/gemma-no-descriptions/report.md))
+
+| Setup | Descriptions | Routing | Sensitivity exact | Dates | Tags found | Extra tags | s/item |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| **Apple, then Gemma** (recommended) | with | 100% | 44% | 100% | 71% | 12.0 | 15.0 |
+| | without | 100% | 30% | 100% | 67% | 12.7 | 12.4 |
+| Apple's model alone | with | **85%** | 52% | 100% | 79% | 11.3 | 9.6 |
+| | without | 63% | 33% | 100% | 62% | 12.7 | 7.1 |
+| Gemma 4 E4B alone | with | 100% | 100% | 93% | 83% | 1.7 | 21.5 |
+| | without | 100% | 100% | 100% | 75% | 3.0 | 19.8 |
+
+Every answer was valid, nothing was declined, and nothing was under-rated.
+
+- **Descriptions help the model that's weakest at routing.** Apple's model alone routed 85% of the images with descriptions and 63% without. Without them it sent the whiteboard, the rent-review screenshot and the diagram to Holding every time (or the diagram to Manuals), and the letter once; with them, the screenshot and the letter were filed every time and the diagram two times in three. The whiteboard went to Holding every time either way. With the recommended pair, routing was already 100% either way: what Apple's model sends to Holding, Gemma places from the OCR text.
+- **Text-heavy images file by their text.** The receipt, the departure board, the recipe card and the bank screenshot were filed correctly by every setup either way. The description matters most for pictures with little or no text, and for titles: the cat photo was "Photo on iPhone" or "Photo of location" without a description and "Illustration of a cat" with one (it is a drawing).
+- **Dates come from the metadata**, or, for the scanned letter, from its text, and were right in almost every run. The one miss: Gemma left the letter's date empty in two of its three runs with descriptions.
+- **Sensitivity was over-rated by Apple's model**, which rated most images `sensitive` (a receipt "contains payment details", a whiteboard has "security and operational implications"). The pair keeps Apple's ratings, so it shares this. It's the safe direction, and descriptions made it better (30% to 44% exact with the pair). Gemma rated every image exactly. The located photos were given "has the place it was taken" every time, and stayed `personal`.
+- **Descriptions cost about 2.5 seconds an image**, the time Apple's model takes to look at it.
+- **Gemma's first card for a camera-named image** usually failed the check that a title isn't just the file name (`IMG_4127.jpg`), and needed a retry, hence its low first-try rate in these reports.
+
+So descriptions are worth keeping on: they cost little, they help when Apple's model files alone or Gemma isn't installed, and they give photos titles and summaries that say what's in them.
+
 ## Running it again
 
 ```bash
 carrel bench --out bench-results
 ```
+
+To measure images without Apple's descriptions, run it with `CARREL_IMAGE_DESCRIPTIONS=off`.
 
 It's resumable (`--fresh` starts over), shows progress, and `--compare` puts a run beside an earlier `results.json`. The on-device runner runs it weekly ([docs/dev/on-device-runner.md](../dev/on-device-runner.md)). Results change with the prompts, so record a new dated folder here when a release changes them.

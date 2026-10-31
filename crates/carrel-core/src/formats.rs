@@ -127,6 +127,12 @@ pub fn extension(path: &Path) -> String {
 /// What would read `media_type`, when Carrel knows.
 #[must_use]
 pub fn hint(media_type: &str) -> Option<&'static str> {
+    if matches!(
+        media_type,
+        "application/x-7z-compressed" | "application/vnd.rar"
+    ) {
+        return Some("install 7-Zip (7zz or 7z) or unar to open and expand it");
+    }
     if media_type.starts_with("image/") || media_type == "application/pdf" {
         return Some(if cfg!(target_os = "macos") {
             "the Apple provider (carrel-provider-apple) reads it"
@@ -137,7 +143,12 @@ pub fn hint(media_type: &str) -> Option<&'static str> {
     if MODELS.contains(&media_type) && cfg!(target_os = "macos") {
         return Some("the Apple provider (carrel-provider-apple) reads it");
     }
-    if ["model/3mf", "text/x-gcode", "model/step", "model/iges"].contains(&media_type) {
+    if ["model/step", "model/iges"].contains(&media_type) {
+        return Some(
+            "the portable extraction provider (carrel-provider-extract) reads its details; to draw it, install OpenCascade and build carrel-provider-cad",
+        );
+    }
+    if ["model/3mf", "text/x-gcode"].contains(&media_type) {
         return Some(
             "the portable extraction provider (carrel-provider-extract) reads its details",
         );

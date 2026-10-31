@@ -466,7 +466,13 @@ fn file_item(
     expansion: Option<&Expansion>,
 ) -> Result<Filed, FilingError> {
     let source = &entry.source.path;
-    let id = Id::new_v7();
+    // An item archived from the desk keeps its desk card's identifier and body.
+    let desk_card = crate::desk::carried_card(&entry.extra);
+    let desk = desk_card
+        .as_deref()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|t| CardFile::parse(&t).ok());
+    let id = desk.as_ref().map_or_else(Id::new_v7, |f| f.card().id);
     let original_name = expansion
         .map_or(source.as_path(), |e| e.item.as_path())
         .file_name()
@@ -524,8 +530,15 @@ fn file_item(
     }
     let note = name_note(&name, &portable, &original_name);
     let card_name = format!("{name}.md");
-    let text = CardFile::new(card, &note)?.to_text()?;
-    write_new(&folder.join(&card_name), &text)?;
+    let file = match &desk {
+        Some(desk) => CardFile::with_body(card, &format!("{note}{}", desk.body())),
+        None => CardFile::new(card, &note)?,
+    };
+    write_new(&folder.join(&card_name), &file.to_text()?)?;
+    if let Some(desk_card) = &desk_card {
+        // It's in the archive now, beside the item; the copy on the desk would only mislead.
+        let _ = std::fs::remove_file(desk_card);
+    }
 
     if placement == Placement::Destination {
         add_tags(archive, collection, entry)?;
