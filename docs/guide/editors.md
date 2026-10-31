@@ -17,7 +17,7 @@ Neovim 0.9 or later. No other plugins are needed; [Telescope](https://github.com
 
 In Telescope, `Enter` opens the item and `Ctrl-e` its card, and the preview shows the card. With `ui = "float"`, results are listed in a floating window instead: `Enter` opens the item, `c` its card, `q` or `Esc` close it.
 
-### Installing
+### Installing the Neovim plugin
 
 The plugin is in the `editors/nvim` folder of the Carrel repository, so plugin managers are told to add that folder.
 
@@ -63,7 +63,7 @@ ln -s ~/src/carrel/editors/nvim ~/.local/share/nvim/site/pack/carrel/start/carre
 
 Then `:helptags ALL` makes `:help carrel` work.
 
-### Settings
+### Settings for Neovim
 
 `setup()` takes these, all optional:
 
@@ -91,7 +91,7 @@ Emacs 27.1 or later.
 | `M-x carrel-show` | Shows the card of the file in the current buffer, or of the file at point in Dired (the folder itself, which may be an item, when point is on none), in another window: its fields, summary, problems and history. In it, `o` opens the item and `c` the card file in another window, `g` shows it again, and `q` closes it. |
 | `M-x carrel-index-status` | Says how much of the archive the meaning index covers, from `carrel index status`. |
 
-### Installing
+### Installing the Emacs package
 
 With `use-package`, from a clone of the repository:
 
@@ -122,7 +122,7 @@ With [straight.el](https://github.com/radian-software/straight.el):
 
 By hand, add the folder to `load-path` and load it: `(add-to-list 'load-path "~/src/carrel/editors/emacs")` and `(require 'carrel)`.
 
-### Settings
+### Settings for Emacs
 
 `M-x customize-group RET carrel` lists them:
 
