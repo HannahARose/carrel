@@ -6,7 +6,7 @@ Carrel is a personal archivist with native apps for macOS, iPadOS and iOS and a 
 
 Every document is analyzed on your own devices. Nothing is sent anywhere unless you explicitly opt in.
 
-> **Status:** [v0.2.0](https://github.com/HannahARose/carrel/releases/tag/v0.2.0) is the latest release: ingest from the `carrel` CLI and its interactive mode, on macOS, Linux and Windows, with review, questions, history and undo, backups and local models. v0.3 adds checking items out and editing cards; the Mac app follows in v0.5. New here? Start with [Getting started](docs/guide/getting-started.md).
+> **Status:** [v0.3.0](https://github.com/HannahARose/carrel/releases/tag/v0.3.0) is the latest release: ingest from the `carrel` CLI and its interactive mode on macOS, Linux and Windows, plus checking items out and returning them, work sessions noticed for you, the desk, corrections and editing of cards, and reading inside zips, 3D models and CAD files. v0.4 adds explorer and search; the Mac app follows in v0.5. New here? Start with [Getting started](docs/guide/getting-started.md).
 
 ## Principles
 
@@ -35,7 +35,7 @@ From v0.2, each [release](https://github.com/HannahARose/carrel/releases) has an
 To check a download came from this repository's release workflow:
 
 ```bash
-gh attestation verify carrel-0.2.0-linux-x86_64.tar.gz --repo HannahARose/carrel
+gh attestation verify carrel-0.3.0-linux-x86_64.tar.gz --repo HannahARose/carrel
 ```
 
 The binaries aren't signed yet (that comes with the Mac app), so on macOS a browser download needs `xattr -d com.apple.quarantine` on each program before it runs; downloads with `curl` or `gh release download` don't. Then download a model for drafting cards with `carrel models`, unless your Mac has Apple's on-device model.
