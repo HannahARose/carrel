@@ -40,6 +40,9 @@ pub struct Model {
     pub mlx: Option<MlxBuild>,
     /// For an embedding model, how to use it; `None` for a text model.
     pub embedding: Option<Embedding>,
+    /// The provider a model comes with, such as Apple's sentence embedding with
+    /// `carrel-provider-apple`: there's nothing to download. `None` for a model to download.
+    pub comes_with: Option<&'static str>,
 }
 
 /// How to use an embedding model (`docs/design/search.md`). Every provider that runs the
@@ -66,6 +69,8 @@ pub enum Pooling {
     Mean,
     /// The last token's vector.
     Last,
+    /// The model's own: it gives the text's vector itself, as Apple's sentence embedding does.
+    Own,
 }
 
 impl Embedding {
@@ -145,7 +150,8 @@ impl Model {
 /// The models Carrel can download. Each is open weights under a permissive license, not gated
 /// behind an account, and loadable by the llama.cpp Carrel ships. Their MLX builds are the
 /// model makers' own where there is one (IBM's), else `mlx-community`'s 4-bit conversion,
-/// with the files `carrel-provider-mlx` reads.
+/// with the files `carrel-provider-mlx` reads. The embedding models' are 8-bit, nearest the
+/// GGUFs' `Q8_0`, so their vectors stay close to the llama.cpp provider's.
 pub const CATALOG: &[Model] = &[
     Model {
         name: "granite-4.2-3b",
@@ -195,6 +201,7 @@ pub const CATALOG: &[Model] = &[
             ],
         }),
         embedding: None,
+        comes_with: None,
     },
     Model {
         name: "qwen3.5-4b",
@@ -244,6 +251,7 @@ pub const CATALOG: &[Model] = &[
             ],
         }),
         embedding: None,
+        comes_with: None,
     },
     Model {
         name: "gemma-4-e4b",
@@ -298,6 +306,7 @@ pub const CATALOG: &[Model] = &[
             ],
         }),
         embedding: None,
+        comes_with: None,
     },
     Model {
         name: "granite-4.2-8b",
@@ -347,6 +356,7 @@ pub const CATALOG: &[Model] = &[
             ],
         }),
         embedding: None,
+        comes_with: None,
     },
     Model {
         name: "qwen3.5-9b",
@@ -401,21 +411,45 @@ pub const CATALOG: &[Model] = &[
             ],
         }),
         embedding: None,
+        comes_with: None,
     },
-    // The embedding models aren't pinned yet: their commits, sizes and SHA-256s are filled in
-    // from the Hub, and until then they can't be downloaded.
     Model {
         name: "embeddinggemma-300m",
         title: "EmbeddingGemma 300M, Q8_0",
         repository: "ggml-org/embeddinggemma-300M-GGUF",
-        revision: "",
+        revision: "0f741b5a6585bd53aeb15cd1372c56f2a0f65e12",
         file: "embeddinggemma-300M-Q8_0.gguf",
-        size: 0,
-        sha256: "",
+        size: 333_590_944,
+        sha256: "b5ce9d77a3fc4b3b39ccb5643c36777911cc4eb46a66962eadfa3f5f60490d63",
         license: "Gemma",
         memory_gb: 2,
         recommended: false,
-        mlx: None,
+        mlx: Some(MlxBuild {
+            repository: "mlx-community/embeddinggemma-300m-8bit",
+            revision: "c8316c9e35cf8830541b04d315398c67faa6e497",
+            files: &[
+                ModelFile {
+                    path: "config.json",
+                    size: 1_726,
+                    sha256: "c4498b5ab0058828f8c535fa4198a1ea117f6ad533c3d774d9f8784eb13b38cb",
+                },
+                ModelFile {
+                    path: "model.safetensors",
+                    size: 326_958_701,
+                    sha256: "fcd54e677a802889db7cde3f4cce2e620c55b5239203379d8b7431e2252af286",
+                },
+                ModelFile {
+                    path: "tokenizer.json",
+                    size: 33_385_008,
+                    sha256: "6852f8d561078cc0cebe70ca03c5bfdd0d60a45f9d2e0e1e4cc05b68e9ec329e",
+                },
+                ModelFile {
+                    path: "tokenizer_config.json",
+                    size: 1_155_346,
+                    sha256: "9076840490613047bc9115963ee96b7702018b0d26ba644240bf856efda93118",
+                },
+            ],
+        }),
         embedding: Some(Embedding {
             dimensions: 768,
             context_tokens: 2048,
@@ -423,19 +457,45 @@ pub const CATALOG: &[Model] = &[
             query_prefix: "task: search result | query: ",
             document_prefix: "title: none | text: ",
         }),
+        comes_with: None,
     },
     Model {
         name: "qwen3-embedding-0.6b",
         title: "Qwen3-Embedding 0.6B, Q8_0",
         repository: "Qwen/Qwen3-Embedding-0.6B-GGUF",
-        revision: "",
+        revision: "370f27d7550e0def9b39c1f16d3fbaa13aa67728",
         file: "Qwen3-Embedding-0.6B-Q8_0.gguf",
-        size: 0,
-        sha256: "",
+        size: 639_150_592,
+        sha256: "06507c7b42688469c4e7298b0a1e16deff06caf291cf0a5b278c308249c3e439",
         license: "Apache-2.0",
         memory_gb: 2,
         recommended: false,
-        mlx: None,
+        mlx: Some(MlxBuild {
+            repository: "mlx-community/Qwen3-Embedding-0.6B-8bit",
+            revision: "407ad2329cd30702720aafe83f74a1ba30fdfbca",
+            files: &[
+                ModelFile {
+                    path: "config.json",
+                    size: 857,
+                    sha256: "65fb46306262bac47c6a89e5ad8a766c3d40d559057c1931e9c10976266a4fc7",
+                },
+                ModelFile {
+                    path: "model.safetensors",
+                    size: 633_152_041,
+                    sha256: "fe956e8d346b4f08215a3cfc48a874354f900c20a59e965b75df0d9d77c54b28",
+                },
+                ModelFile {
+                    path: "tokenizer.json",
+                    size: 11_423_705,
+                    sha256: "def76fb086971c7867b829c23a26261e38d9d74e02139253b38aeb9df8b4b50a",
+                },
+                ModelFile {
+                    path: "tokenizer_config.json",
+                    size: 5_404,
+                    sha256: "443bfa629eb16387a12edbf92a76f6a6f10b2af3b53d87ba1550adfcf45f7fa0",
+                },
+            ],
+        }),
         embedding: Some(Embedding {
             dimensions: 1024,
             context_tokens: 8192,
@@ -443,6 +503,28 @@ pub const CATALOG: &[Model] = &[
             query_prefix: "Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery:",
             document_prefix: "",
         }),
+        comes_with: None,
+    },
+    Model {
+        name: "apple-nl-sentence-en",
+        title: "Apple sentence embedding, English (Apple devices only)",
+        repository: "",
+        revision: "",
+        file: "",
+        size: 0,
+        sha256: "",
+        license: "macOS",
+        memory_gb: 1,
+        recommended: false,
+        mlx: None,
+        embedding: Some(Embedding {
+            dimensions: 512,
+            context_tokens: 256,
+            pooling: Pooling::Own,
+            query_prefix: "",
+            document_prefix: "",
+        }),
+        comes_with: Some("carrel-provider-apple"),
     },
 ];
 
@@ -548,6 +630,8 @@ pub enum ModelError {
     NoMlx(String),
     /// The model's file isn't pinned to a size and SHA-256 yet, so it can't be checked.
     Unpinned(String),
+    /// The model comes with a provider, the second field, so there's nothing to download.
+    ComesWith(String, &'static str),
     /// Reading or writing the models folder failed.
     Io(std::io::Error),
 }
@@ -573,6 +657,10 @@ impl std::fmt::Display for ModelError {
             Self::Unpinned(name) => write!(
                 f,
                 "{name}'s file isn't pinned to a checksum yet, so it can't be downloaded safely"
+            ),
+            Self::ComesWith(name, provider) => write!(
+                f,
+                "{name} comes with {provider}, so there's nothing to download"
             ),
             Self::Io(e) => write!(f, "{e}"),
         }
@@ -893,9 +981,9 @@ pub fn network_log() -> Option<PathBuf> {
 ///
 /// # Errors
 ///
-/// [`ModelError::Unpinned`] if the catalog doesn't pin its file yet, [`ModelError::Fetch`] if
-/// the download stops, [`ModelError::Mismatch`] if the file isn't the one expected, or
-/// [`ModelError::Io`].
+/// [`ModelError::ComesWith`] if a provider has it built in, [`ModelError::Unpinned`] if the
+/// catalog doesn't pin its file yet, [`ModelError::Fetch`] if the download stops,
+/// [`ModelError::Mismatch`] if the file isn't the one expected, or [`ModelError::Io`].
 pub fn download(
     model: &Model,
     dir: &Path,
@@ -903,6 +991,9 @@ pub fn download(
     log: Option<&Path>,
     progress: &mut dyn FnMut(u64, u64),
 ) -> Result<PathBuf, ModelError> {
+    if let Some(provider) = model.comes_with {
+        return Err(ModelError::ComesWith(model.name.to_owned(), provider));
+    }
     if !model.is_pinned() {
         return Err(ModelError::Unpinned(model.name.to_owned()));
     }
@@ -1028,13 +1119,18 @@ mod tests {
     #[test]
     fn the_catalog_is_pinned_and_permissive() {
         for model in CATALOG {
-            if !model.is_pinned() {
-                // Only the embedding models may wait for their pins, and then with nothing
-                // half-filled.
-                assert!(model.embedding.is_some(), "{} isn't pinned", model.name);
-                assert_eq!((model.revision, model.sha256, model.size), ("", "", 0));
+            if let Some(provider) = model.comes_with {
+                // A model a provider has built in has nothing to download or pin.
+                assert!(provider.starts_with("carrel-provider-"), "{}", model.name);
+                assert!(model.embedding.is_some(), "{}", model.name);
+                assert_eq!(
+                    (model.repository, model.file, model.revision, model.size),
+                    ("", "", "", 0)
+                );
+                assert!(model.mlx.is_none());
                 continue;
             }
+            assert!(model.is_pinned(), "{} isn't pinned", model.name);
             assert_eq!(model.revision.len(), 40, "{}", model.name);
             assert_eq!(model.sha256.len(), 64, "{}", model.name);
             assert!(
@@ -1149,6 +1245,77 @@ mod tests {
         .unwrap_err();
         assert!(matches!(error, ModelError::Unpinned(_)), "{error}");
         assert!(!part_path(&unpinned, dir.path()).exists());
+    }
+
+    #[test]
+    fn a_model_that_comes_with_a_provider_is_never_downloaded() {
+        let dir = tempfile::tempdir().unwrap();
+        let apple = find("apple-nl-sentence-en").unwrap();
+        let error = download(
+            apple,
+            dir.path(),
+            &Writes(b"anything".to_vec()),
+            None,
+            &mut |_, _| {},
+        )
+        .unwrap_err();
+        assert!(matches!(
+            error,
+            ModelError::ComesWith(_, "carrel-provider-apple")
+        ));
+        assert!(std::fs::read_dir(dir.path()).unwrap().next().is_none());
+    }
+
+    /// The Swift providers' copies of the catalog's embedding models, which can't read this
+    /// one: the MLX provider's table and Apple's sentence embedding.
+    #[test]
+    fn the_swift_providers_embed_as_the_catalog_says() {
+        let apple = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apple");
+        let read = |path: &str| std::fs::read_to_string(apple.join(path)).unwrap();
+        let mlx = read("CarrelMLX/Sources/CarrelMLXProvider/EmbeddingCatalog.swift");
+        let swift = |text: &str| text.replace('\n', "\\n");
+        for model in embedding_models() {
+            let embedding = model.embedding.unwrap();
+            if model.comes_with.is_some() {
+                let apple =
+                    read("CarrelProviders/Sources/CarrelAppleProviders/SentenceEmbedding.swift");
+                assert!(apple.contains(&format!("id = \"{}\"", model.name)));
+                assert!(apple.contains(&format!("dimensions = {}", embedding.dimensions)));
+                assert!(apple.contains(&format!("contextWords = {}", embedding.context_tokens)));
+                continue;
+            }
+            let pooling = match embedding.pooling {
+                Pooling::Mean => ".mean",
+                Pooling::Last => ".last",
+                Pooling::Own => unreachable!("{} pools itself", model.name),
+            };
+            let entry = format!(
+                "id: \"{}\", label: \"{}\", dimensions: {},\n            contextTokens: {}, pooling: {pooling},",
+                model.name,
+                mlx_label(model),
+                embedding.dimensions,
+                embedding.context_tokens,
+            );
+            assert!(
+                mlx.contains(&entry),
+                "{} in the MLX provider: {entry}",
+                model.name
+            );
+            for prefix in [embedding.query_prefix, embedding.document_prefix] {
+                assert!(
+                    mlx.contains(&format!("\"{}\"", swift(prefix))),
+                    "{}'s prefix {prefix:?} in the MLX provider",
+                    model.name
+                );
+            }
+        }
+    }
+
+    /// The MLX provider's label for an embedding model: its title, without the GGUF's
+    /// quantization.
+    fn mlx_label(model: &Model) -> String {
+        let name = model.title.split(',').next().unwrap_or(model.title);
+        format!("{name} (MLX)")
     }
 
     #[test]
