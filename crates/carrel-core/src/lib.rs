@@ -29,6 +29,7 @@
 //! | [`search`] | Search: the word index, the text cache, filters and results | §7.11, §7.12, `docs/design/search.md` |
 //! | [`questions`] | Questions for the owner, and the glossary their answers teach | §7.3, §7.9 |
 //! | [`local`] | Where this device keeps its own data: configuration and models | none |
+//! | [`previews`] | Thumbnails and drawings of items, cached on this device | `docs/design/mac-app.md` |
 //! | [`providers`] | Text models and text extraction from providers, native or portable | `docs/providers.md` |
 //! | [`status`] | What the Status screen shows: counts, problems, Recent and suggestions | none |
 //! | [`worker`] | The worker loop: drafting the intake queue, then catching up the embedding index | `docs/design/tui-ingest.md` |
@@ -80,6 +81,7 @@ pub mod manifest;
 pub mod mirrors;
 pub mod models;
 pub mod names;
+pub mod previews;
 pub mod providers;
 pub mod questions;
 pub mod rename;
