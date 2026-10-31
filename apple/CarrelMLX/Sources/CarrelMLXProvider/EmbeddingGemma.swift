@@ -150,8 +150,8 @@ final class EmbeddingGemma: Module, EmbeddingModel {
         let reach = window / 2
         guard length > reach + 1 else { return .none }
         let positions = MLXArray(Int32(0)..<Int32(length))
-        let distance = abs(positions[0..., .newAxis] - positions[.newAxis])
-        return .array(distance .<= reach)
+        let distance = MLX.abs(positions[0..., .newAxis] - positions[.newAxis])
+        return .array(distance .<= MLXArray(Int32(reach)))
     }
 
     /// One vector for each row of `inputs`: every token is a text's, with no padding.

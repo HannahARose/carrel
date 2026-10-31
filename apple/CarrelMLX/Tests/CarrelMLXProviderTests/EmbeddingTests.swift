@@ -60,7 +60,7 @@ struct EmbeddingTests {
         let model = try Self.tinyGemma()
         let pooled = try #require(Self.run(model, [2, 7, 9, 11, 3, 5, 8]).pooledOutput)
         #expect(pooled.shape == [1, 32])
-        let length = (pooled * pooled).sum().sqrt().item(Float.self)
+        let length = MLX.sqrt((pooled * pooled).sum()).item(Float.self)
         #expect(abs(length - 1) < 1e-4)
     }
 

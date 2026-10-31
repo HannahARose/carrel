@@ -11,7 +11,7 @@ import MLXLMCommon
 /// Loads embedding models: MLXEmbedders' own for Qwen3, and EmbeddingGemma read in both
 /// directions (`EmbeddingGemma.swift`) in place of its causal port.
 let embedderFactory = EmbedderModelFactory(
-    typeRegistry: ModelTypeRegistry<EmbeddingModel>(creators: [
+    typeRegistry: ModelTypeRegistry<any EmbeddingModel>(creators: [
         "qwen3": { Qwen3Model(try JSONDecoder().decode(Qwen3Configuration.self, from: $0)) },
         "gemma3_text": { EmbeddingGemma(try JSONDecoder().decode(Gemma3Configuration.self, from: $0)) },
         "gemma3": { EmbeddingGemma(try JSONDecoder().decode(Gemma3Configuration.self, from: $0)) },
@@ -55,9 +55,10 @@ public struct MLXEmbedder: Embedder {
         } catch {
             throw .unavailable("can't load \(folder.name): \(error)")
         }
-        let (spec, prompts) = (spec, texts.map { spec.prompt($0, purpose: purpose) })
+        let model = spec
+        let prompts = texts.map { model.prompt($0, purpose: purpose) }
         let vectors = await container.perform { context in
-            prompts.map { Self.vector(of: $0, spec: spec, context: context) }
+            prompts.map { Self.vector(of: $0, spec: model, context: context) }
         }
         await loaded.touch()
         guard vectors.allSatisfy({ $0.count == spec.dimensions }) else {
@@ -83,7 +84,8 @@ public struct MLXEmbedder: Embedder {
             // EmbeddingGemma pools itself, through its dense layers.
             pooled = output.pooledOutput ?? output.hiddenStates!.mean(axis: 1)
         case .last:
-            pooled = output.hiddenStates![0..., -1, 0...]
+            let hidden = output.hiddenStates!
+            pooled = hidden[0..., hidden.dim(1) - 1, 0...]
         }
         let vector = pooled.asType(.float32).reshaped(-1)
         eval(vector)
