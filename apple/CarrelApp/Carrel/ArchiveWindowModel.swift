@@ -17,6 +17,7 @@ enum Screen: Hashable {
     /// Browse, showing the collection at this path.
     case collection(String)
     case history
+    case backups
 }
 
 /// A collection and the collections nested inside it.
@@ -87,6 +88,7 @@ final class ArchiveWindowModel {
     // Review, Questions, corrections and editing (#234).
     private(set) var review: ReviewModel?
     private(set) var questions: QuestionsModel?
+    private(set) var backups: BackupsModel?
     /// The correction sheet's, while it's open.
     var correction: CorrectionModel?
     /// The filed item whose card the inspector is editing (⌘E).
@@ -135,6 +137,7 @@ final class ArchiveWindowModel {
             review = ReviewModel(archive: archive)
             review?.filed = { [weak self] in await self?.refreshItems() }
             questions = QuestionsModel(archive: archive)
+            backups = BackupsModel(archive: archive)
             try? await archive.refreshAll()
         } catch {
             problem = message(for: error)
@@ -182,6 +185,7 @@ final class ArchiveWindowModel {
         case .active: "Active"
         case .collection(let path): collections.first { $0.path == path }?.title ?? path
         case .history: "History"
+        case .backups: "Backups"
         }
     }
 

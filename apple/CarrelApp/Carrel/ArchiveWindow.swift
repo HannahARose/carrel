@@ -95,6 +95,7 @@ private struct Sidebar: View {
             }
             Section {
                 Label("History", systemImage: "clock.arrow.circlepath").tag(Screen.history)
+                Label("Backups", systemImage: "externaldrive.badge.timemachine").tag(Screen.backups)
             }
         }
         .listStyle(.sidebar)
@@ -132,6 +133,8 @@ private struct ScreenContent: View {
             ComingScreen(
                 title: "History", systemImage: "clock.arrow.circlepath",
                 text: "Every change to the archive, with undo.")
+        case .backups:
+            if let backups = model.backups { BackupsView(backups: backups) }
         }
     }
 }
@@ -165,6 +168,10 @@ private struct Inspector: View {
             QuestionInspector(
                 question: question, questions: questions,
                 collections: model.collections.map(\.path))
+        } else if model.screen == .backups, let backups = model.backups,
+            let change = backups.selected
+        {
+            BackupInspector(change: change, backups: backups, items: model.items)
         } else if let item = model.selectedItem {
             if let edit = model.editing, edit.target == .item(item.id) {
                 ItemEditor(item: item, edit: edit) { model.editing = nil }
