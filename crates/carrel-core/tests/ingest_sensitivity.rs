@@ -140,3 +140,33 @@ fn restricted_items_and_failed_models_keep_the_floor() {
     assert_eq!(assessment.level, Sensitivity::Personal);
     assert_eq!(assessment.attempts[0].result, "unavailable");
 }
+
+#[test]
+fn a_model_that_declines_passes_the_rating_to_the_next() {
+    let mut registry = Registry::new();
+    registry.add(Box::new(Scripted::new(
+        "fast",
+        100,
+        8192,
+        vec![Err(ProviderError::Declined("unsafe".into()))],
+    )));
+    registry.add(Box::new(Scripted::new(
+        "careful",
+        50,
+        8192,
+        vec![Ok(json!({"level": "sensitive", "reason": "a lab result"}))],
+    )));
+    let assessment = assess(
+        &registry,
+        "blood test.txt",
+        "Ferritin 12",
+        Sensitivity::Personal,
+    );
+    assert_eq!(assessment.level, Sensitivity::Sensitive);
+    let results: Vec<(&str, &str)> = assessment
+        .attempts
+        .iter()
+        .map(|a| (a.provider.as_str(), a.result.as_str()))
+        .collect();
+    assert_eq!(results, [("fast", "declined"), ("careful", "ok")]);
+}

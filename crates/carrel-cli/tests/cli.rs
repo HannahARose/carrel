@@ -561,7 +561,7 @@ fn models_lists_the_catalog_and_asks_before_downloading() {
     std::fs::write(models.join("mine.gguf"), b"GGUF").unwrap();
 
     let listed = sandbox.json(&here, &["models"]);
-    assert_eq!(listed["provisional"], true);
+    assert_eq!(listed["provisional"], false, "the benchmark has chosen");
     let catalog = listed["catalog"].as_array().unwrap();
     assert!(catalog.iter().all(|m| m["state"] == "available"));
     assert!(catalog.iter().any(|m| m["name"] == "granite-4.2-3b"));

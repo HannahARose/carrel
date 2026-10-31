@@ -91,7 +91,7 @@ Backups need [Kopia](https://kopia.io), beside `carrel` or on `PATH`.
 | Command | What it does |
 | --- | --- |
 | `carrel settings` | Lists this device's preferences and the archive's shared settings. |
-| `carrel settings set KEY VALUE` | Changes one. `picker`, `editor` and `model` are this device's (an empty value, or `default`, clears them); `model` takes `provider/offer`, the offer alone, or a provider such as `apple`, and must be one that's available. `ingest.originals`, `signals.crowded_items` and `outside_edits` are shared by every device, and each change can be undone from History. |
+| `carrel settings set KEY VALUE` | Changes one. `picker`, `editor`, `model` and `second_model` are this device's (an empty value, or `default`, clears them); `model` takes `provider/offer`, the offer alone, or a provider such as `apple`, and must be one that's available; `second_model` also takes `off`. `ingest.originals`, `signals.crowded_items` and `outside_edits` are shared by every device, and each change can be undone from History. |
 
 ## The interactive mode
 
@@ -106,6 +106,7 @@ Backups need [Kopia](https://kopia.io), beside `carrel` or on `PATH`.
 | `5` | **History**: `u` to undo the chosen change |
 | `6` | **Ingest**: the queue; `x` remove, `t` to the front, `r` retry |
 | `7` | **Settings**: `Enter` to change the chosen setting |
+| `8` | **Backups**: the snapshots, each with its change; `n` snapshot now, `v` verify, `r` restore an item as of the chosen snapshot, `s` set up or connect a repository |
 
 `i` on any screen chooses files to ingest. `Ctrl-R` reads everything again, and `q` quits; the worker keeps going.
 

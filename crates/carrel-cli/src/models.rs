@@ -48,6 +48,28 @@ fn state(model: &Model, dir: &Path, found: &[Installed]) -> (&'static str, Optio
     }
 }
 
+/// What `carrel models` adds after a model: recommended, downloaded, or how much of it.
+fn state_note(model: &Model, state: &str, part: Option<u64>) -> String {
+    let shown = match part {
+        Some(bytes) => format!(
+            "{} of {} downloaded",
+            human_size(bytes),
+            human_size(model.size)
+        ),
+        None if state == "downloaded" => "downloaded".to_owned(),
+        None => String::new(),
+    };
+    if !model.recommended {
+        return shown;
+    }
+    let note = format!("recommended for {} GB", model.memory_gb);
+    if shown.is_empty() {
+        note
+    } else {
+        format!("{note}, {shown}")
+    }
+}
+
 /// `carrel models`: the catalog, what's downloaded, and other models in the folder.
 ///
 /// # Errors
@@ -65,15 +87,7 @@ pub fn list() -> Result<Report, Failure> {
     let mut catalog = Vec::new();
     for model in CATALOG {
         let (state, part) = state(model, &dir, &found);
-        let shown = match part {
-            Some(bytes) => format!(
-                "{} of {} downloaded",
-                human_size(bytes),
-                human_size(model.size)
-            ),
-            None if state == "downloaded" => "downloaded".to_owned(),
-            None => String::new(),
-        };
+        let shown = state_note(model, state, part);
         writeln!(
             text,
             "  {:width$}  {:>6}  needs {:>2} GB memory  {}  {}{}",
@@ -125,7 +139,11 @@ pub fn list() -> Result<Report, Failure> {
         }
     }
     let recommended = CATALOG.iter().any(|m| m.recommended);
-    if !recommended {
+    if recommended {
+        text.push_str(
+            "\nRecommended models met the benchmark's bar; the results are in docs/bench/.\n",
+        );
+    } else {
         text.push_str(
             "\nThis list is provisional: none is recommended until the model benchmark chooses.\n",
         );

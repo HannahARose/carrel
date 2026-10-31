@@ -591,7 +591,7 @@ fn main() -> ExitCode {
         },
         Command::Backup { action } => match action {
             BackupAction::Setup { path, description } => {
-                backup::setup(cli.archive.as_deref(), &path, description.as_deref())
+                backup::setup(cli.archive.as_deref(), &path, description.as_deref(), None)
             }
             BackupAction::Now => backup::now(cli.archive.as_deref()),
             BackupAction::List => backup::list(cli.archive.as_deref()),

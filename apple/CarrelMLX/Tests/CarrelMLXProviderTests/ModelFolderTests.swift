@@ -57,3 +57,26 @@ struct ModelFolderTests {
         #expect(await loaded.isLoaded == false)
     }
 }
+
+/// Carrel's JSON value; MLX has a type of the same name.
+typealias Value = CarrelAppleProviders.JSONValue
+
+struct SchemaTextTests {
+    @Test func propertiesFollowRequiredThenName() throws {
+        let schema = try #require(Value(parsing: """
+            {"type": "object", "required": ["title", "summary", "created"],
+             "properties": {"created": {"type": "string"}, "new_tag": {"type": "string"},
+                            "summary": {"type": "string", "description": "Say \\"what\\""},
+                            "title": {"type": "string"}},
+             "additionalProperties": false}
+            """))
+        let text = SchemaText.write(schema)
+        let order = ["\"title\"", "\"summary\"", "\"created\"", "\"new_tag\""].map {
+            text.range(of: $0)!.lowerBound
+        }
+        #expect(order == order.sorted(), "\(text)")
+        #expect(text.hasPrefix("{\"type\":\"object\""))
+        #expect(text.contains("Say \\\"what\\\""))
+        #expect(Value(parsing: text) == schema, "the same schema, reordered")
+    }
+}
