@@ -22,6 +22,7 @@ mod progress;
 mod providers;
 mod questions;
 mod review;
+mod search;
 mod sessions;
 mod settings;
 mod tui;
@@ -78,6 +79,18 @@ enum Command {
     Show {
         /// The item's identifier, or the path of the item or its card.
         item: String,
+    },
+    /// Find items by what's in their cards and text: words, exact names and numbers, and
+    /// filters such as collection:Finances, tag:receipts, kind:folder, after:2025-01,
+    /// before:2026, sensitivity:sensitive and checked-out. Collection documents and glossary
+    /// facts are found too. Restricted items are found by their card only.
+    Search {
+        /// The words and filters.
+        #[arg(required = true, value_name = "QUERY")]
+        query: Vec<String>,
+        /// Show at most this many results.
+        #[arg(short = 'n', long, value_name = "COUNT", default_value_t = search::DEFAULT_LIMIT)]
+        limit: usize,
     },
     /// List recorded changes, newest first.
     Log {
@@ -740,6 +753,9 @@ fn main() -> ExitCode {
         Command::Open { path } => commands::open(path.as_deref().or(cli.archive.as_deref())),
         Command::Status => commands::status(cli.archive.as_deref()),
         Command::Show { item } => commands::show(cli.archive.as_deref(), &item),
+        Command::Search { query, limit } => {
+            search::search(cli.archive.as_deref(), &query, limit, cli.json)
+        }
         Command::Log { max_count } => commands::log(cli.archive.as_deref(), max_count),
         Command::Providers => Ok(providers::list()),
         Command::Formats => Ok(formats::list()),

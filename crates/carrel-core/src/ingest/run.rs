@@ -289,11 +289,31 @@ impl Run {
         for entry in self.entries.iter().flatten() {
             queue.save(entry)?;
         }
+        self.keep_texts(archive);
         let asked = QuestionQueue::of(archive);
         for question in &self.questions {
             asked.save(question)?;
         }
         Ok(())
+    }
+
+    /// Keeps each proposed item's text for search, so it's never read again. Restricted items'
+    /// text isn't kept, and a cache that can't be written is only a slower search later.
+    fn keep_texts(&self, archive: &Archive) {
+        let cache = crate::search::texts::TextCache::of(archive);
+        for ((candidate, text), (entry, assessment)) in self
+            .candidates
+            .iter()
+            .zip(&self.texts)
+            .zip(self.entries.iter().zip(&self.assessments))
+        {
+            if let (Some(text), Some(_), Some(assessment)) = (text, entry, assessment)
+                && assessment.level != Sensitivity::Restricted
+                && text.unread != Some(crate::ingest::text::Unread::NoReader)
+            {
+                let _ = cache.put(&candidate.checksum, &text.text);
+            }
+        }
     }
 
     /// The proposals an owner rule files without review (design decision 4).

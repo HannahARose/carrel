@@ -1840,6 +1840,102 @@ fn edit_opens_a_filed_card_keeps_its_body_and_undo_reverses_it() {
     );
 }
 
+/// Files a text file in `collection` with a card beside it carrying `fields`.
+fn file_with_card(root: &Path, collection: &str, name: &str, contents: &str, fields: &str) {
+    let path = root.join(collection).join(name);
+    std::fs::write(&path, contents).unwrap();
+    let checksum = carrel_core::card::Checksum::of_file(&path).unwrap();
+    let card = format!(
+        "---\ncarrel: card\nformat: \"1.0\"\nid: {}\nkind: file\nitem: \"{name}\"\n{fields}\
+         checksum: \"{}\"\nsize: {}\n---\n\n<!-- carrel:history -->\n## History\n\
+         <!-- /carrel:history -->\n",
+        carrel_core::card::Id::new_v7(),
+        checksum.0,
+        contents.len()
+    );
+    std::fs::write(root.join(collection).join(format!("{name}.md")), card).unwrap();
+}
+
+#[test]
+fn search_finds_items_by_their_words_with_filters_and_reasons() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    file_with_card(
+        &root,
+        "Holding",
+        "invoice.txt",
+        "Please pay invoice 2057-4038 by Friday.",
+        "title: \"Furniture shop bill\"\nsummary: \"A bill for office furniture.\"\n\
+         tags: [receipts]\ndates:\n  document: \"2025-03-02\"\nsensitivity: sensitive\n",
+    );
+    file_with_card(
+        &root,
+        "Holding",
+        "statement.txt",
+        "Balance owed on invoice 2057-4038.",
+        "title: \"Bank statement\"\nsensitivity: restricted\n",
+    );
+
+    let found = sandbox.json(&root, &["search", "invoice", "2057-4038"]);
+    assert_eq!(
+        found["total"], 1,
+        "the restricted statement's text isn't searched: {found}"
+    );
+    let first = &found["results"][0];
+    assert_eq!(first["found"]["type"], "item");
+    assert_eq!(first["found"]["title"], "Furniture shop bill");
+    assert_eq!(first["found"]["collection"], "Holding");
+    assert_eq!(first["found"]["sensitivity"], "sensitive");
+    assert_eq!(first["found"]["date"], "2025-03-02");
+    assert_eq!(first["why"], json!(["text"]));
+    assert_eq!(first["passage_from"], "text");
+    assert_eq!(found["meaning"]["state"], "off");
+    let text = first["passage"]["text"].as_str().unwrap();
+    let range = &first["passage"]["highlights"][1];
+    let (start, end) = (
+        usize::try_from(range["start"].as_u64().unwrap()).unwrap(),
+        usize::try_from(range["end"].as_u64().unwrap()).unwrap(),
+    );
+    assert_eq!(&text[start..end], "2057-4038");
+    assert!(
+        root.join("_System/cache.nosync/text").is_dir(),
+        "texts are kept in the cache"
+    );
+
+    let report = sandbox.ok(&root, &["search", "invoice 2057-4038"]);
+    assert_eq!(
+        report,
+        "1 result for “invoice 2057-4038”:\n\nFurniture shop bill  [sensitive]\n  \
+         Holding · 2025-03-02 · file\n  Please pay **invoice** **2057-4038** by Friday.\n  \
+         matched: text\n"
+    );
+    let report = sandbox.ok(&root, &["search", "bank", "statement"]);
+    assert!(report.contains("Bank statement  [restricted]"), "{report}");
+
+    let filtered = sandbox.json(&root, &["search", "tag:receipts", "before:2026"]);
+    assert_eq!(
+        filtered["results"][0]["found"]["title"],
+        "Furniture shop bill"
+    );
+    assert_eq!(filtered["results"][0]["why"], json!(["filters"]));
+    let checked_out = sandbox.json(&root, &["search", "checked-out"]);
+    assert_eq!(checked_out["results"][0]["found"]["checked_out"], true);
+    let limited = sandbox.json(&root, &["search", "oscillators", "--limit", "1"]);
+    assert_eq!(limited["results"].as_array().unwrap().len(), 1);
+    assert!(limited["total"].as_u64().unwrap() > 1, "{limited}");
+    let glossary = sandbox.json(&root, &["search", "implements"]);
+    assert_eq!(glossary["results"][0]["found"]["type"], "glossary");
+    assert_eq!(
+        sandbox.ok(&root, &["search", "zebra"]),
+        "Nothing found for “zebra”.\n"
+    );
+
+    let bad = sandbox.run_in(&root, &["search", "kind:box"]);
+    assert_eq!(bad.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&bad.stderr).contains("kind:box isn't a kind"));
+    assert_eq!(sandbox.run_in(&root, &["search"]).status.code(), Some(2));
+}
+
 #[test]
 fn init_chooses_the_archives_embedding_model() {
     let sandbox = Sandbox::new();

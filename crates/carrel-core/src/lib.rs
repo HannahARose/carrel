@@ -26,6 +26,7 @@
 //! | [`coordinator`] | Which writer may change an archive: leases and the disk lock | §8.4 |
 //! | [`ingest`] | Ingest: intake, text, cards, routing, sensitivity, and filing approved items | `docs/design/ingest.md` |
 //! | [`review`] | The review queue: proposals to file items, waiting for the owner | §7.9 |
+//! | [`search`] | Search: the word index, the text cache, filters and results | §7.11, §7.12, `docs/design/search.md` |
 //! | [`questions`] | Questions for the owner, and the glossary their answers teach | §7.3, §7.9 |
 //! | [`local`] | Where this device keeps its own data: configuration and models | none |
 //! | [`providers`] | Text models and text extraction from providers, native or portable | `docs/providers.md` |
@@ -79,6 +80,7 @@ pub mod providers;
 pub mod questions;
 pub mod rename;
 pub mod review;
+pub mod search;
 pub mod sections;
 pub mod sessions;
 pub mod settings;
