@@ -92,6 +92,10 @@ final class ArchiveWindowModel {
     /// The filed item whose card the inspector is editing (⌘E).
     var editing: CardEditModel?
 
+    // Active and History (#235).
+    private(set) var activeScreen: ActiveScreenModel?
+    private(set) var historyScreen: HistoryScreenModel?
+
     var screen: Screen? = .status {
         didSet { if screen != oldValue { selectedItemID = nil } }
     }
@@ -135,6 +139,12 @@ final class ArchiveWindowModel {
             review = ReviewModel(archive: archive)
             review?.filed = { [weak self] in await self?.refreshItems() }
             questions = QuestionsModel(archive: archive)
+            activeScreen = ActiveScreenModel(archive: archive) { [weak self] in
+                await self?.refreshItems()
+            }
+            historyScreen = HistoryScreenModel(archive: archive) { [weak self] in
+                await self?.refreshItems()
+            }
             try? await archive.refreshAll()
         } catch {
             problem = message(for: error)
