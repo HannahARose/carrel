@@ -638,6 +638,136 @@ fileprivate struct FfiConverterString: FfiConverter {
 
 
 /**
+ * The agent's claim on an archive on this device. While it's held, the CLI's background
+ * worker steps aside. It goes when released, when dropped, or with the process.
+ */
+public protocol AgentClaimProtocol: AnyObject, Sendable {
+    
+    /**
+     * Lets go, so the CLI's worker drafts again, as when the agent is paused.
+     */
+    func release() 
+    
+}
+/**
+ * The agent's claim on an archive on this device. While it's held, the CLI's background
+ * worker steps aside. It goes when released, when dropped, or with the process.
+ */
+open class AgentClaim: AgentClaimProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_carrel_ffi_fn_clone_agentclaim(self.handle, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_carrel_ffi_fn_free_agentclaim(handle, $0) }
+    }
+
+    
+
+    
+    /**
+     * Lets go, so the CLI's worker drafts again, as when the agent is paused.
+     */
+open func release()  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_agentclaim_release(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+}
+}
+    
+
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAgentClaim: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = AgentClaim
+
+    public static func lift(_ handle: UInt64) throws -> AgentClaim {
+        return AgentClaim(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: AgentClaim) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AgentClaim {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: AgentClaim, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAgentClaim_lift(_ handle: UInt64) throws -> AgentClaim {
+    return try FfiConverterTypeAgentClaim.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAgentClaim_lower(_ value: AgentClaim) -> UInt64 {
+    return FfiConverterTypeAgentClaim.lower(value)
+}
+
+
+
+
+
+
+/**
  * An open archive.
  */
 public protocol ArchiveHandleProtocol: AnyObject, Sendable {
@@ -803,6 +933,57 @@ public protocol ArchiveHandleProtocol: AnyObject, Sendable {
      * checked out or its working copy can't be read.
      */
     func returnPreview(item: String) throws  -> ReturnPreview
+    
+    /**
+     * Whether an agent looks after this archive on this device. With none, the app runs the
+     * worker on demand with [`ArchiveHandle::draft_queued`], as the CLI does.
+     */
+    func agentRunning()  -> Bool
+    
+    /**
+     * Snapshots the whole archive, as `carrel backup now` does, described as `description`.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if backups aren't set up, [`CarrelError::Busy`] if another
+     * writer holds the archive, or [`CarrelError::Failed`] if the snapshot fails, as when
+     * the backup drive isn't plugged in.
+     */
+    func backUp(description: String) throws  -> BackedUp
+    
+    /**
+     * Whether backups are set up for this archive on this device, so the agent takes
+     * scheduled snapshots.
+     */
+    func backupsSetUp()  -> Bool
+    
+    /**
+     * Claims this archive for the agent on this device, or `None` if another agent has it.
+     * While the claim is held, the CLI starts no worker of its own for the archive.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the claim's file can't be opened.
+     */
+    func claimForAgent() throws  -> AgentClaim?
+    
+    /**
+     * How long a pause in work ends a work session, in minutes (`sessions.idle_minutes`):
+     * a session is recorded once it has been idle this long.
+     */
+    func idleMinutes()  -> UInt32
+    
+    /**
+     * Records the finished work sessions on the items checked out to this device and on its
+     * desk, as pending history entries, then snapshots their working copies when backups are
+     * set up: what the CLI does before a command every few minutes.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Busy`] if another writer holds the archive, or [`CarrelError::Failed`]
+     * if the cards or history can't be written.
+     */
+    func recordSessions() throws  -> SessionsRecorded
     
     /**
      * Adds `fact` to the glossary, as one history change, when the owner agrees to the fact
@@ -1646,6 +1827,100 @@ open func returnPreview(item: String)throws  -> ReturnPreview  {
     uniffi_carrel_ffi_fn_method_archivehandle_return_preview(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(item),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Whether an agent looks after this archive on this device. With none, the app runs the
+     * worker on demand with [`ArchiveHandle::draft_queued`], as the CLI does.
+     */
+open func agentRunning() -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_agent_running(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Snapshots the whole archive, as `carrel backup now` does, described as `description`.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if backups aren't set up, [`CarrelError::Busy`] if another
+     * writer holds the archive, or [`CarrelError::Failed`] if the snapshot fails, as when
+     * the backup drive isn't plugged in.
+     */
+open func backUp(description: String)throws  -> BackedUp  {
+    return try  FfiConverterTypeBackedUp_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_back_up(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(description),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Whether backups are set up for this archive on this device, so the agent takes
+     * scheduled snapshots.
+     */
+open func backupsSetUp() -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_backups_set_up(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Claims this archive for the agent on this device, or `None` if another agent has it.
+     * While the claim is held, the CLI starts no worker of its own for the archive.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the claim's file can't be opened.
+     */
+open func claimForAgent()throws  -> AgentClaim?  {
+    return try  FfiConverterOptionTypeAgentClaim.lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_claim_for_agent(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * How long a pause in work ends a work session, in minutes (`sessions.idle_minutes`):
+     * a session is recorded once it has been idle this long.
+     */
+open func idleMinutes() -> UInt32  {
+    return try!  FfiConverterUInt32.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_idle_minutes(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Records the finished work sessions on the items checked out to this device and on its
+     * desk, as pending history entries, then snapshots their working copies when backups are
+     * set up: what the CLI does before a command every few minutes.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Busy`] if another writer holds the archive, or [`CarrelError::Failed`]
+     * if the cards or history can't be written.
+     */
+open func recordSessions()throws  -> SessionsRecorded  {
+    return try  FfiConverterTypeSessionsRecorded_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_record_sessions(
+            self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
 }
@@ -3575,6 +3850,75 @@ public func FfiConverterTypeAnswered_lift(_ buf: RustBuffer) throws -> Answered 
 #endif
 public func FfiConverterTypeAnswered_lower(_ value: Answered) -> RustBuffer {
     return FfiConverterTypeAnswered.lower(value)
+}
+
+
+/**
+ * A snapshot taken on schedule.
+ */
+public struct BackedUp: Equatable, Hashable {
+    /**
+     * The snapshot's identifier in the backup system.
+     */
+    public var snapshot: String
+    /**
+     * The history commit, when there was a change to record it with.
+     */
+    public var commit: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The snapshot's identifier in the backup system.
+         */snapshot: String, 
+        /**
+         * The history commit, when there was a change to record it with.
+         */commit: String?) {
+        self.snapshot = snapshot
+        self.commit = commit
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension BackedUp: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBackedUp: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BackedUp {
+        return
+            try BackedUp(
+                snapshot: FfiConverterString.read(from: &buf), 
+                commit: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BackedUp, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.snapshot, into: &buf)
+        FfiConverterOptionString.write(value.commit, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBackedUp_lift(_ buf: RustBuffer) throws -> BackedUp {
+    return try FfiConverterTypeBackedUp.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBackedUp_lower(_ value: BackedUp) -> RustBuffer {
+    return FfiConverterTypeBackedUp.lower(value)
 }
 
 
@@ -8446,6 +8790,105 @@ public func FfiConverterTypeSearchResults_lower(_ value: SearchResults) -> RustB
 
 
 /**
+ * What recording work sessions found.
+ */
+public struct SessionsRecorded: Equatable, Hashable {
+    /**
+     * How many sessions were found, on all the items.
+     */
+    public var sessions: UInt32
+    /**
+     * The titles of the items they were found on.
+     */
+    public var items: [String]
+    /**
+     * How many items had pending entries approved by hand, noticed and recorded.
+     */
+    public var approvedByHand: UInt32
+    /**
+     * The history commit, when anything in the archive was written.
+     */
+    public var commit: String?
+    /**
+     * Why a working copy's snapshot after its sessions wasn't taken, one line each.
+     */
+    public var snapshotFailures: [String]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * How many sessions were found, on all the items.
+         */sessions: UInt32, 
+        /**
+         * The titles of the items they were found on.
+         */items: [String], 
+        /**
+         * How many items had pending entries approved by hand, noticed and recorded.
+         */approvedByHand: UInt32, 
+        /**
+         * The history commit, when anything in the archive was written.
+         */commit: String?, 
+        /**
+         * Why a working copy's snapshot after its sessions wasn't taken, one line each.
+         */snapshotFailures: [String]) {
+        self.sessions = sessions
+        self.items = items
+        self.approvedByHand = approvedByHand
+        self.commit = commit
+        self.snapshotFailures = snapshotFailures
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension SessionsRecorded: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSessionsRecorded: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SessionsRecorded {
+        return
+            try SessionsRecorded(
+                sessions: FfiConverterUInt32.read(from: &buf), 
+                items: FfiConverterSequenceString.read(from: &buf), 
+                approvedByHand: FfiConverterUInt32.read(from: &buf), 
+                commit: FfiConverterOptionString.read(from: &buf), 
+                snapshotFailures: FfiConverterSequenceString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SessionsRecorded, into buf: inout [UInt8]) {
+        FfiConverterUInt32.write(value.sessions, into: &buf)
+        FfiConverterSequenceString.write(value.items, into: &buf)
+        FfiConverterUInt32.write(value.approvedByHand, into: &buf)
+        FfiConverterOptionString.write(value.commit, into: &buf)
+        FfiConverterSequenceString.write(value.snapshotFailures, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSessionsRecorded_lift(_ buf: RustBuffer) throws -> SessionsRecorded {
+    return try FfiConverterTypeSessionsRecorded.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSessionsRecorded_lower(_ value: SessionsRecorded) -> RustBuffer {
+    return FfiConverterTypeSessionsRecorded.lower(value)
+}
+
+
+/**
  * One of the archive's shared settings.
  */
 public struct Setting: Equatable, Hashable {
@@ -10333,6 +10776,30 @@ fileprivate struct FfiConverterOptionString: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeAgentClaim: FfiConverterRustBuffer {
+    typealias SwiftType = AgentClaim?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeAgentClaim.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeAgentClaim.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeModelProvider: FfiConverterRustBuffer {
     typealias SwiftType = ModelProvider?
 
@@ -11473,6 +11940,24 @@ private let initializationResult: InitializationResult = {
     if (uniffi_carrel_ffi_checksum_method_archivehandle_return_preview() != 49568) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_agent_running() != 64561) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_back_up() != 57286) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_backups_set_up() != 63113) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_claim_for_agent() != 64333) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_idle_minutes() != 7957) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_record_sessions() != 29355) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_learn() != 5796) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -11609,6 +12094,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_textmodel_complete() != 62907) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_agentclaim_release() != 20833) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_correction_changes() != 53890) {
