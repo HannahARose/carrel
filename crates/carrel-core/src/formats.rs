@@ -140,8 +140,20 @@ pub fn hint(media_type: &str) -> Option<&'static str> {
             "install Tesseract for OCR"
         });
     }
+    if MODELS.contains(&media_type) && cfg!(target_os = "macos") {
+        return Some("the Apple provider (carrel-provider-apple) reads it");
+    }
     None
 }
+
+/// The 3D model types the Apple provider reads, through `ModelIO`.
+const MODELS: [&str; 5] = [
+    "model/stl",
+    "model/obj",
+    "model/ply",
+    "model/vnd.usdz+zip",
+    "model/vnd.usd",
+];
 
 #[cfg(test)]
 mod tests {
@@ -175,6 +187,17 @@ mod tests {
             Unreadable::load(&dir.path().join("missing.json")),
             Unreadable::default()
         );
+    }
+
+    #[test]
+    fn models_are_read_by_the_apple_provider_on_a_mac() {
+        assert_eq!(
+            hint("model/stl").is_some(),
+            cfg!(target_os = "macos"),
+            "{:?}",
+            hint("model/stl")
+        );
+        assert_eq!(hint("application/x-unknown"), None);
     }
 
     #[test]

@@ -967,6 +967,38 @@ fn sessions_on_a_checked_out_item_become_pending_entries_to_approve() {
 }
 
 #[test]
+fn a_desk_items_pending_entries_are_decided_by_its_path() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    let project = sandbox.path("Code/thesis");
+    std::fs::create_dir_all(&project).unwrap();
+    std::fs::write(project.join("draft.md"), "# Draft\n").unwrap();
+    sandbox.ok(&root, &["desk", "add", project.to_str().unwrap()]);
+    let card = sandbox.path("Code/thesis.md");
+    let mut file =
+        carrel_core::card_file::CardFile::parse(&std::fs::read_to_string(&card).unwrap()).unwrap();
+    let mut log = file.history().unwrap();
+    log.add(carrel_core::entries::HistoryEntry::pending(
+        "2026-10-30",
+        Some(70),
+        vec!["Changed 1 file(s): draft.md".into()],
+    ));
+    file.set_history(&log).unwrap();
+    std::fs::write(&card, file.to_text().unwrap()).unwrap();
+
+    let dropped = sandbox.json(&root, &["sessions", "drop", project.to_str().unwrap(), "1"]);
+    assert_eq!(dropped["entries"], 1, "{dropped}");
+    assert!(!std::fs::read_to_string(&card).unwrap().contains("draft.md"));
+    let unknown = sandbox.run_in(&root, &["sessions", "drop", "Code/elsewhere"]);
+    assert!(
+        String::from_utf8_lossy(&unknown.stderr).contains("isn't an item"),
+        "{}",
+        String::from_utf8_lossy(&unknown.stderr)
+    );
+}
+
+#[test]
 fn review_correct_shows_the_change_and_saves_only_when_told() {
     let sandbox = Sandbox::new();
     let root = sandbox.sample();

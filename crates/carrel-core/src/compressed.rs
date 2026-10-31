@@ -844,7 +844,7 @@ pub struct Expanded {
 /// Expands `path`, a compressed file of `format`, into `into` (a new, empty folder on the
 /// volume it's going to), and unwraps it: one file inside becomes that file, one folder
 /// wrapping everything becomes that folder, and anything else a folder named after the
-/// archive. Every entry is checked as it's written: no path or link may land outside,
+/// archive. On Windows, symbolic links are left out. Every entry is checked as it's written: no path or link may land outside,
 /// `limits` hold even if the listing understated them (`None` when the owner said to go ahead
 /// anyway), and each file's CRC-32 (zip) or size (tar) must match. Modification times and execute permissions are kept; `__MACOSX/`,
 /// `.DS_Store` and `._` files are dropped.
@@ -1187,12 +1187,11 @@ fn make_link(link: &str, at: &Path) -> Result<(), Error> {
     std::os::unix::fs::symlink(link, at).map_err(io(at))
 }
 
+/// Where making a symbolic link needs privileges most people don't have (Windows), links are
+/// left out; their targets are expanded like any other entry.
 #[cfg(not(unix))]
-fn make_link(_link: &str, at: &Path) -> Result<(), Error> {
-    Err(Error::Unsafe(format!(
-        "{} is a link, which this device can't make",
-        at.display()
-    )))
+fn make_link(_link: &str, _at: &Path) -> Result<(), Error> {
+    Ok(())
 }
 
 fn remove(path: &Path) -> std::io::Result<()> {
