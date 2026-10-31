@@ -60,6 +60,7 @@ pub mod desk;
 pub mod detect;
 pub mod documents;
 pub mod entries;
+pub mod formats;
 pub mod frontmatter;
 pub mod history;
 pub mod ingest;
