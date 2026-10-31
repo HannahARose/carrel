@@ -210,6 +210,7 @@ pub fn add(
         location: None,
         url: None,
         checked_out: None,
+        snapshots: None,
         generated: None,
         placement: None,
         removed: None,

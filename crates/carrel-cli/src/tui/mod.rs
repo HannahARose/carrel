@@ -62,6 +62,22 @@ fn leave() {
 /// Background work's outcome, as a line for the owner.
 type Done = Receiver<Result<String, String>>;
 
+/// Shows what looking for work sessions found, and reloads when it wrote something.
+fn recorded_sessions(app: &mut App, result: Option<Result<String, Failure>>) {
+    match result {
+        Some(Ok(text)) if !text.is_empty() => {
+            let message = text.lines().collect::<Vec<_>>().join("; ");
+            if let Err(Failure(e)) = app.reload() {
+                app.message = Some(e);
+            } else {
+                app.message = Some(format!("{message}; approve them with `carrel sessions`"));
+            }
+        }
+        Some(Err(Failure(e))) => app.message = Some(format!("Work sessions weren't recorded: {e}")),
+        _ => {}
+    }
+}
+
 fn event_loop(
     terminal: &mut ratatui::DefaultTerminal,
     app: &mut App,
@@ -71,7 +87,28 @@ fn event_loop(
     let mut running: Option<Done> = None;
     let mut preparing: Option<Preparing> = None;
     let mut checked = std::time::Instant::now();
+    // Work sessions, looked for in the background; `record_if_due` keeps it to every few
+    // minutes.
+    let mut sessions: Option<Receiver<Option<Result<String, Failure>>>> = None;
+    let mut sessions_checked: Option<std::time::Instant> = None;
     while !app.quit {
+        if sessions.is_none()
+            && sessions_checked.is_none_or(|t| t.elapsed() >= Duration::from_mins(1))
+        {
+            sessions_checked = Some(std::time::Instant::now());
+            let (send, receive) = std::sync::mpsc::channel();
+            let root = app.archive.root().to_owned();
+            std::thread::spawn(move || {
+                let _ = send.send(crate::sessions::record_if_due(Some(&root)));
+            });
+            sessions = Some(receive);
+        }
+        if let Some(done) = &sessions
+            && let Ok(result) = done.try_recv()
+        {
+            sessions = None;
+            recorded_sessions(app, result);
+        }
         // The worker runs in another process; see what it has done about once a second.
         if checked.elapsed() >= Duration::from_secs(1) {
             checked = std::time::Instant::now();

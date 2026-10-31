@@ -183,6 +183,23 @@ Only one program changes an archive at a time: it holds the **writer lock** (`_S
 
 `carrel status` lists names that won't work on every system: characters Windows forbids (`: ? * |`), reserved names like `CON`, trailing dots or spaces, or two names that differ only in case. `carrel rename ITEM` renames an item and its card to the suggested portable name, and updates links to it. Ingest files new items under portable names automatically.
 
+## Working on items
+
+An item you're still working on can leave the archive for a while, or never enter it:
+
+- `carrel checkout ITEM` copies an item to the Desktop (or `--to FOLDER`) and makes the archive copy read-only. `carrel return ITEM` shows what changed and brings the working copy back, as one change in history.
+- `carrel desk add PATH` tracks a file or folder where it is, with a card beside it, without archiving it.
+
+### Work sessions
+
+Carrel notices work on checked-out and desk items from what's on disk: each file's modification time, and a Git repository's commits. Changes closer together than `sessions.idle_minutes` (45 by default) are one **session**, and each finished session becomes a pending entry in the card's history, with the files changed, the commits and the time spent. A session still going isn't written until it's over.
+
+Carrel looks for sessions whenever it runs, at most every five minutes: before each command that changes the archive, and in the background while the interactive mode is open. It never waits for another program that's writing to the archive; it looks the next time. `carrel sessions` looks right away and lists the pending entries; `carrel sessions approve ITEM`, `combine` or `drop` decide them. Until the Mac app watches items live, a file changed and then changed back isn't seen.
+
+When backups are set up, each time Carrel finds finished sessions on an item it also takes a snapshot of the working copy, so work in progress is backed up before it's returned. That's the state when Carrel noticed, which for most work is the state when the session ended. For large data, such as a 60 GB dataset, add `snapshots: return-only` to the card to skip these and keep only the checkout and return snapshots.
+
+Returning an item lists its session snapshots. Once the item is back, Carrel snapshots the returned version and asks whether to forget the session snapshots, keeping the return's; `--trim-snapshots` forgets them without asking. Without an answer, as with only `--yes`, they're kept: deleting backups is your call.
+
 ## Backups
 
 History keeps the cards; [Kopia](https://kopia.io) keeps the files. After `carrel backup setup PATH` (an external drive is safest; a synced folder is refused), each approved batch takes a snapshot, and its history entry names it.
@@ -194,6 +211,8 @@ History keeps the cards; [Kopia](https://kopia.io) keeps the files. After `carre
 - The interactive mode's Backups screen (`8`) does the same: it lists the snapshots with their changes (from history, so it works with the drive unplugged), and `n` takes a snapshot, `v` verifies, `r` restores an item as of the chosen snapshot, and `s` sets up or connects a repository: choose its folder with your file picker or the built-in browser (`/` to type a path), then type the password, shown as dots.
 
 If the backup drive isn't connected, filing still works; the next snapshot covers what was missed.
+
+Snapshots of checked-out and desk items' working copies ([Work sessions](#work-sessions)) are kept in the same repository, but `carrel backup list` shows only the archive's.
 
 ## Models and providers
 
@@ -240,6 +259,7 @@ Outside any archive, in `~/Library/Application Support/Carrel` on macOS, `%APPDA
 | `models/` | Downloaded models (or `CARREL_MODELS_DIR`) |
 | `workers/` | Each archive's worker lock, status and log |
 | `backups/` | Kopia's configuration for each archive's repository |
+| `sessions/` | When each archive's checked-out and desk items were last looked at for work sessions |
 | `logs/network.log` | Every request `carrel-fetch` made |
 
 ## Troubleshooting

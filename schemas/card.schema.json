@@ -141,6 +141,17 @@
         }
       ]
     },
+    "snapshots": {
+      "description": "When the item's working copy is snapshotted while it's being worked on (FORMAT.md\n§5.2); every session unless set.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Snapshots"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "generated": {
       "description": "How program-written fields were produced (FORMAT.md §5.6).",
       "anyOf": [
@@ -462,6 +473,16 @@
         "device",
         "person",
         "since"
+      ]
+    },
+    "Snapshots": {
+      "description": "When a checked-out or desk item's working copy is snapshotted (FORMAT.md §5.2).",
+      "oneOf": [
+        {
+          "description": "Only at checkout and return, not after each work session: for large data.",
+          "type": "string",
+          "const": "return-only"
+        }
       ]
     },
     "Provenance": {

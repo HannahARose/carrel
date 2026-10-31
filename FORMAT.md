@@ -183,6 +183,7 @@ Fields are owned by programs unless marked as owner fields. Optional fields are 
 | `location` | string | for `physical`, `external` | Where the item is, in words or as a path or URI |
 | `url` | string | for `url` | The resource's address |
 | `checked_out` | map | no | Present while checked out (§9.1) |
+| `snapshots` | `return-only` | no | Snapshot the working copy only at checkout and return, not after each work session (§9.1), as for large data (owner may set) |
 | `generated` | map | no | Provenance of program-written fields (§5.6) |
 | `placement` | map | no | How sure filing was of the item's collection, when it wasn't (§5.8) |
 | `removed` | map | for `tombstone` | §10 |
@@ -791,6 +792,8 @@ checked_out:
 ```
 
 The archive copy **must not** be modified while `checked_out` is present, except by the return that removes it.
+
+Where backups are set up (`backups`, §7.2), programs **may** snapshot the working copy of a checked-out or desk item (§9.4) after each work session. They **must not** when its card has `snapshots: return-only`.
 
 ### 9.2 `Active/`
 

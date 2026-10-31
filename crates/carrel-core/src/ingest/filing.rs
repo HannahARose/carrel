@@ -530,6 +530,7 @@ fn card_for(
         location: None,
         url: None,
         checked_out: None,
+        snapshots: None,
         generated: draft.generated.clone(),
         placement: placement_record(entry, placement),
         removed: None,
