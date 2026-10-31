@@ -155,7 +155,7 @@ prompt; THUNK's value is returned with the candidates and prompt seen."
       (should (equal (cadr err) "carrel: the filter broken: isn't one search knows")))
     (let* ((carrel-program "carrel-that-is-not-installed")
            (err (should-error (carrel-search "x") :type 'user-error)))
-      (should (string-match-p "isn't installed" (cadr err))))))
+      (should (string-match-p "isn.t installed" (cadr err))))))
 
 (ert-deftest carrel-test-show ()
   "`carrel-show' shows the current file's card, with keys to open the item and card."
