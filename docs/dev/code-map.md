@@ -16,6 +16,7 @@ The code documentation is built from `dev` on every merge, private items include
 | What kind of item something is | [`detect`](https://hrose.me/carrel/carrel_core/detect/), with the `Rules` from `_System/rules/` | `detect.rs` |
 | Checksums and folder manifests | [`Manifest`](https://hrose.me/carrel/carrel_core/manifest/struct.Manifest.html) | `manifest.rs` |
 | Names that work on every system | [`names::check`](https://hrose.me/carrel/carrel_core/names/fn.check.html), [`names::portable`](https://hrose.me/carrel/carrel_core/names/fn.portable.html) | `names.rs` |
+| What the Status screen shows: counts, problems, Recent, suggestions | [`status::summary`](https://hrose.me/carrel/carrel_core/status/fn.summary.html), [`Summary`](https://hrose.me/carrel/carrel_core/status/struct.Summary.html) | `status.rs` |
 | The generated contents lists and changelogs | [`listing::refresh`](https://hrose.me/carrel/carrel_core/listing/fn.refresh.html) | `listing.rs` |
 | The format itself | [FORMAT.md](../../FORMAT.md), and the JSON Schema in `schemas/card.schema.json` | |
 
@@ -34,7 +35,8 @@ The code documentation is built from `dev` on every merge, private items include
 | To work on | Read | Where |
 | --- | --- | --- |
 | Planning paths: intake, kinds, duplicates | [`ingest::plan`](https://hrose.me/carrel/carrel_core/ingest/fn.plan.html), [`Candidate`](https://hrose.me/carrel/carrel_core/ingest/struct.Candidate.html), [`IntakeOptions`](https://hrose.me/carrel/carrel_core/ingest/struct.IntakeOptions.html) | `ingest.rs` |
-| The intake queue | [`intake::add`](https://hrose.me/carrel/carrel_core/intake/fn.add.html), [`intake::process`](https://hrose.me/carrel/carrel_core/intake/fn.process.html), [`IntakeEntry`](https://hrose.me/carrel/carrel_core/intake/struct.IntakeEntry.html) | `intake.rs` |
+| The intake queue | [`intake::add`](https://hrose.me/carrel/carrel_core/intake/fn.add.html), [`intake::listing`](https://hrose.me/carrel/carrel_core/intake/fn.listing.html), [`intake::remove`](https://hrose.me/carrel/carrel_core/intake/fn.remove.html), [`intake::process`](https://hrose.me/carrel/carrel_core/intake/fn.process.html), [`IntakeEntry`](https://hrose.me/carrel/carrel_core/intake/struct.IntakeEntry.html) | `intake.rs` |
+| The worker loop: drafting the queue, then catching up the index | [`Worker`](https://hrose.me/carrel/carrel_core/worker/struct.Worker.html), [`Progress`](https://hrose.me/carrel/carrel_core/worker/trait.Progress.html), [`DeviceLock`](https://hrose.me/carrel/carrel_core/worker/trait.DeviceLock.html), [`Status`](https://hrose.me/carrel/carrel_core/worker/struct.Status.html) | `worker.rs` |
 | One item through every stage, with progress | [`run_with_progress`](https://hrose.me/carrel/carrel_core/ingest/run/fn.run_with_progress.html), [`Run`](https://hrose.me/carrel/carrel_core/ingest/run/struct.Run.html) | `ingest/run.rs` |
 | Reading text, and fitting it to a model | [`ingest::text::read`](https://hrose.me/carrel/carrel_core/ingest/text/fn.read.html), [`fit`](https://hrose.me/carrel/carrel_core/ingest/text/fn.fit.html) | `ingest/text.rs` |
 | Drafting and checking cards | [`ingest::card::draft`](https://hrose.me/carrel/carrel_core/ingest/card/fn.draft.html), [`Draft`](https://hrose.me/carrel/carrel_core/ingest/card/struct.Draft.html), [`machine_made`](https://hrose.me/carrel/carrel_core/ingest/card/fn.machine_made.html) | `ingest/card.rs` |
@@ -45,6 +47,7 @@ The code documentation is built from `dev` on every merge, private items include
 | The review queue and proposals | [`ReviewEntry`](https://hrose.me/carrel/carrel_core/review/struct.ReviewEntry.html), and [`Queue`](https://hrose.me/carrel/carrel_core/review/struct.Queue.html), the file-per-entry queue every queue uses | `review.rs` |
 | The question queue and glossary | [`QuestionEntry`](https://hrose.me/carrel/carrel_core/questions/struct.QuestionEntry.html), [`questions::add_fact`](https://hrose.me/carrel/carrel_core/questions/fn.add_fact.html) | `questions.rs` |
 | The owner's decisions, for every interface | [`actions`](https://hrose.me/carrel/carrel_core/actions/): `decide`, `move_to`, `reject`, `teach`, `apply_draft` | `actions.rs` |
+| Typed corrections: working them out, preparing and saving them | [`correct::work_out`](https://hrose.me/carrel/carrel_core/correct/fn.work_out.html), [`correct::prepare`](https://hrose.me/carrel/carrel_core/correct/prepare/) | `correct.rs`, `correct/prepare.rs` |
 | Restructure signals | [`signals::signals`](https://hrose.me/carrel/carrel_core/signals/fn.signals.html), [`Signal`](https://hrose.me/carrel/carrel_core/signals/enum.Signal.html) | `signals.rs` |
 
 ## Providers, models and backups
@@ -63,6 +66,8 @@ The code documentation is built from `dev` on every merge, private items include
 | The network helper | [`carrel_fetch`](https://hrose.me/carrel/carrel_fetch/) | `crates/carrel-fetch` |
 | Backups | [`Backups`](https://hrose.me/carrel/carrel_core/backup/trait.Backups.html), [`Kopia`](https://hrose.me/carrel/carrel_core/backup/struct.Kopia.html) | `backup.rs` |
 | The model benchmark | [`bench::score`](https://hrose.me/carrel/carrel_core/bench/fn.score.html), [`bench::check`](https://hrose.me/carrel/carrel_core/bench/fn.check.html), and `fixtures/bench` | `bench.rs` |
+| The findability test | [`bench::findability`](https://hrose.me/carrel/carrel_core/bench/findability/index.html) and `fixtures/bench/descriptions.yaml` | `bench/findability.rs` |
+| The meaning index, and the items nearest an item in it | [`Index`](https://hrose.me/carrel/carrel_core/index/struct.Index.html): `embed`, `nearest`, `near_item`; [`index::plan`](https://hrose.me/carrel/carrel_core/index/fn.plan.html) | `index.rs` |
 
 ## The command-line tool
 
@@ -71,9 +76,10 @@ The code documentation is built from `dev` on every merge, private items include
 | How a command reports | [`Report`](https://hrose.me/carrel/carrel/struct.Report.html), [`Failure`](https://hrose.me/carrel/carrel/struct.Failure.html), and the `Command` enum in `main.rs` | `crates/carrel-cli/src/main.rs` |
 | The archive commands | [`commands`](https://hrose.me/carrel/carrel/commands/) | `commands.rs` |
 | Ingest and the queue | [`ingest`](https://hrose.me/carrel/carrel/ingest/) | `ingest.rs` |
-| The worker | [`worker::work`](https://hrose.me/carrel/carrel/worker/fn.work.html), [`worker::start`](https://hrose.me/carrel/carrel/worker/fn.start.html), [`Status`](https://hrose.me/carrel/carrel/worker/struct.Status.html) | `worker.rs` |
+| Starting the worker detached, its lock and its log | [`worker::start`](https://hrose.me/carrel/carrel/worker/fn.start.html), [`worker::try_lock`](https://hrose.me/carrel/carrel/worker/fn.try_lock.html), [`worker::work`](https://hrose.me/carrel/carrel/worker/fn.work.html); the loop itself is the core's | `worker.rs` |
 | Review, questions, backups, models, settings | [`review`](https://hrose.me/carrel/carrel/review/), [`questions`](https://hrose.me/carrel/carrel/questions/), [`backup`](https://hrose.me/carrel/carrel/backup/), [`models`](https://hrose.me/carrel/carrel/models/), [`settings`](https://hrose.me/carrel/carrel/settings/) | one file each |
 | File pickers | [`picker::KNOWN`](https://hrose.me/carrel/carrel/picker/constant.KNOWN.html), [`picker::run`](https://hrose.me/carrel/carrel/picker/fn.run.html) | `picker.rs` |
+| Search, and the items listed as related to an item | [`search`](https://hrose.me/carrel/carrel/search/), [`related`](https://hrose.me/carrel/carrel/related/) | `search.rs`, `related.rs` |
 | Progress bars | [`progress::Display`](https://hrose.me/carrel/carrel/progress/struct.Display.html) | `progress.rs` |
 | What's kept on this device | [`config`](https://hrose.me/carrel/carrel/config/), and [`carrel_core::local`](https://hrose.me/carrel/carrel_core/local/) | `config.rs` |
 
@@ -84,14 +90,27 @@ The code documentation is built from `dev` on every merge, private items include
 | State, keys and effects | [`App`](https://hrose.me/carrel/carrel/tui/app/struct.App.html), [`Tab`](https://hrose.me/carrel/carrel/tui/app/enum.Tab.html), [`Effect`](https://hrose.me/carrel/carrel/tui/app/enum.Effect.html) | `tui/app.rs` |
 | The event loop, background work, suspending for the editor or picker | [`tui`](https://hrose.me/carrel/carrel/tui/) | `tui/mod.rs` |
 | Drawing | [`tui::ui`](https://hrose.me/carrel/carrel/tui/ui/) | `tui/ui.rs` |
-| Each screen | `review.rs`, `screens.rs` (Questions and Browse), `intake.rs` (Ingest), `settings.rs`, `browser.rs` (the built-in file browser) | `tui/` |
+| Each screen | `review.rs`, `screens.rs` (Questions and Browse), `intake.rs` (Ingest), `settings.rs`, `browser.rs` (the built-in file browser), `item.rs` (an item's view in Browse) | `tui/` |
 
 `App` never touches the terminal, so screens are tested by sending it keys and drawing it to ratatui's `TestBackend`; see the tests in `tui/mod.rs`.
+
+## The editor plugins
+
+| To work on | Read | Where |
+| --- | --- | --- |
+| The Neovim plugin: running `carrel`, results, pickers, the card view | `lua/carrel/init.lua`, with the commands in `plugin/carrel.lua` and `:help carrel` in `doc/carrel.txt` | `editors/nvim` |
+| The Emacs package | `carrel.el` | `editors/emacs` |
+| Their tests, the fake `carrel` and its fixtures | `run.sh`, `bin/carrel`, `fixtures/`, `archive/`, with the tests in `editors/nvim/tests/run.lua` and `editors/emacs/test/carrel-test.el` | `editors/test` |
+
+They only run `carrel --json`, so a change to the JSON that `carrel search`, `carrel show` or `carrel index status` prints needs the fixtures, and maybe the plugins, changed with it.
 
 ## The Swift side
 
 | To work on | Read | Where |
 | --- | --- | --- |
 | What Swift can call | [`carrel_ffi`](https://hrose.me/carrel/carrel_ffi/) | `crates/carrel-ffi/src/lib.rs` |
-| Building the XCFramework and bindings | `scripts/build-xcframework.sh` | |
+| Building the XCFramework | `scripts/build-xcframework.sh` | |
+| Generating the Swift bindings | `scripts/generate-bindings.sh` | `apple/CarrelKit/Sources/CarrelKit/Generated` (committed) |
+| Formatting the Swift | `scripts/swift-format.sh` | `.swift-format` |
 | The Swift package the apps use | `apple/CarrelKit` | |
+| The Mac app: its window, screens, Settings and view models | `apple/CarrelApp/README.md` | `apple/CarrelApp/Carrel`, tests in `apple/CarrelApp/CarrelTests` |

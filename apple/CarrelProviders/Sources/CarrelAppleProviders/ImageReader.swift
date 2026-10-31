@@ -17,10 +17,11 @@ import FoundationModels
 /// result's `located` flag lets Carrel rate it.
 public struct ImageReader: TextExtractor {
     /// The image types it reads: those Vision OCR reads, and RAW photos.
-    public static let imageTypes = VisionOCR.imageTypes + [
-        "image/x-adobe-dng", "image/x-canon-cr2", "image/x-canon-cr3", "image/x-nikon-nef",
-        "image/x-sony-arw", "image/x-fuji-raf", "image/x-olympus-orf", "image/x-panasonic-rw2",
-    ]
+    public static let imageTypes =
+        VisionOCR.imageTypes + [
+            "image/x-adobe-dng", "image/x-canon-cr2", "image/x-canon-cr3", "image/x-nikon-nef",
+            "image/x-sony-arw", "image/x-fuji-raf", "image/x-olympus-orf", "image/x-panasonic-rw2",
+        ]
 
     /// The long side, in pixels, an image is scaled to for the description: its tokens come out
     /// of the model's context, and larger ones are slower.
@@ -38,14 +39,16 @@ public struct ImageReader: TextExtractor {
 
     /// Whether `environment` leaves descriptions on.
     static func describes(_ environment: [String: String]) -> Bool {
-        environment["CARREL_IMAGE_DESCRIPTIONS"]?.trimmingCharacters(in: .whitespaces).lowercased() != "off"
+        environment["CARREL_IMAGE_DESCRIPTIONS"]?.trimmingCharacters(in: .whitespaces).lowercased()
+            != "off"
     }
 
     init(describes: Bool) { self.describes = describes }
 
     public var offer: Offer {
         Offer(
-            capability: .extractText, id: "image", label: "Image reader", mediaTypes: Self.imageTypes,
+            capability: .extractText, id: "image", label: "Image reader",
+            mediaTypes: Self.imageTypes,
             describes: Self.canSee ? true : nil)
     }
 
@@ -69,7 +72,8 @@ public struct ImageReader: TextExtractor {
         } catch {
             throw .failed("\(url.lastPathComponent): \(error.localizedDescription)")
         }
-        let description = describes ? await Self.describe(source, labels: labels, context: context) : nil
+        let description =
+            describes ? await Self.describe(source, labels: labels, context: context) : nil
 
         var lines = ["Image: " + metadata.summary]
         if let description {
@@ -88,7 +92,8 @@ public struct ImageReader: TextExtractor {
         guard let observations = try? await ClassifyImageRequest().perform(on: url) else {
             return []
         }
-        return observations
+        return
+            observations
             .filter { $0.confidence >= labelConfidence }
             .sorted { $0.confidence > $1.confidence }
             .prefix(labelCount)
@@ -109,9 +114,12 @@ public struct ImageReader: TextExtractor {
     /// One or two sentences from Apple's model on what the image shows, or nil when the model
     /// can't see images (before macOS 27, or Apple Intelligence off) or declines. `context`
     /// says what a picture Carrel was given is, such as a 3D print project's thumbnail.
-    static func describe(_ source: CGImageSource, labels: [String], context: String? = nil) async -> String? {
+    static func describe(_ source: CGImageSource, labels: [String], context: String? = nil) async
+        -> String?
+    {
         guard canSee, let image = scaled(source) else { return nil }
-        let hint = labels.isEmpty ? "" : " Vision's labels for it: \(labels.joined(separator: ", "))."
+        let hint =
+            labels.isEmpty ? "" : " Vision's labels for it: \(labels.joined(separator: ", "))."
         if let context, !context.isEmpty {
             // Told what the picture is, the model tends to say it back; asked what the thing in
             // it is, it looks.
@@ -162,7 +170,9 @@ public struct ImageReader: TextExtractor {
                 return text.isEmpty ? nil : text
             } catch {
                 FileHandle.standardError.write(
-                    Data("carrel-provider-apple: no description: \(error.localizedDescription)\n".utf8))
+                    Data(
+                        "carrel-provider-apple: no description: \(error.localizedDescription)\n"
+                            .utf8))
                 return nil
             }
         }
@@ -199,8 +209,10 @@ struct Metadata: Equatable {
         let gps = properties[kCGImagePropertyGPSDictionary] as? [CFString: Any] ?? [:]
 
         let make = (tiff[kCGImagePropertyTIFFMake] as? String)?.trimmingCharacters(in: .whitespaces)
-        let model = (tiff[kCGImagePropertyTIFFModel] as? String)?.trimmingCharacters(in: .whitespaces)
-        let software = (tiff[kCGImagePropertyTIFFSoftware] as? String)?.trimmingCharacters(in: .whitespaces)
+        let model = (tiff[kCGImagePropertyTIFFModel] as? String)?.trimmingCharacters(
+            in: .whitespaces)
+        let software = (tiff[kCGImagePropertyTIFFSoftware] as? String)?.trimmingCharacters(
+            in: .whitespaces)
         if (exif[kCGImagePropertyExifUserComment] as? String)?.lowercased() == "screenshot" {
             kind = "screenshot"
         } else if model != nil || exif[kCGImagePropertyExifExposureTime] != nil {
@@ -209,10 +221,10 @@ struct Metadata: Equatable {
         switch (make, model) {
         // The maker's name only where the model doesn't say it: `SONY ILCE-7M3`, but `Canon EOS
         // R5` and `iPhone 15 Pro` alone.
-        case let (make?, model?)
+        case (let make?, let model?)
         where make != "Apple" && !model.lowercased().hasPrefix(make.lowercased().prefix(5)):
             camera = "\(make) \(model)"
-        case let (_, model?):
+        case (_, let model?):
             camera = model
         default:
             break
@@ -220,11 +232,14 @@ struct Metadata: Equatable {
         self.software = software.flatMap { $0.isEmpty ? nil : $0 }
         // EXIF's dates, not TIFF's `DateTime`: that's when it was last saved.
         if let original = exif[kCGImagePropertyExifDateTimeOriginal] as? String {
-            (taken, created) = Self.date(original, offset: exif["OffsetTimeOriginal" as CFString] as? String)
+            (taken, created) = Self.date(
+                original, offset: exif["OffsetTimeOriginal" as CFString] as? String)
         } else if let digitized = exif[kCGImagePropertyExifDateTimeDigitized] as? String {
-            (taken, created) = Self.date(digitized, offset: exif["OffsetTimeDigitized" as CFString] as? String)
+            (taken, created) = Self.date(
+                digitized, offset: exif["OffsetTimeDigitized" as CFString] as? String)
         }
-        located = gps[kCGImagePropertyGPSLatitude] != nil || gps[kCGImagePropertyGPSLongitude] != nil
+        located =
+            gps[kCGImagePropertyGPSLatitude] != nil || gps[kCGImagePropertyGPSLongitude] != nil
     }
 
     /// EXIF's `2026:06:24 16:28:05` as `2026-06-24 16:28` for the text, and as the card's date:

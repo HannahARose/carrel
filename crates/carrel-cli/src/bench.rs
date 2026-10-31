@@ -6,6 +6,8 @@
 //! Items are ingested one at a time, and each result is saved to `runs/` in the output folder
 //! as soon as it's done. Stopping a run (Ctrl-C) loses at most the item in progress, and
 //! running again with the same `--out` carries on where it stopped; `--fresh` starts over.
+//!
+//! `--search` runs the findability test instead ([`crate::findability`]).
 
 use std::fmt::Write as _;
 use std::io::Write as _;
@@ -43,7 +45,8 @@ struct Measured {
 #[derive(Debug, clap::Args)]
 pub struct BenchArgs {
     /// A model to measure, as `provider/offer` or the offer alone; repeat for more.
-    /// Defaults to every available text model.
+    /// Defaults to every available text model. With `--search`, an embedding model by name,
+    /// defaulting to every one on offer.
     #[arg(long = "model", value_name = "MODEL")]
     pub models: Vec<String>,
     /// The test set: a folder with `archive`, `items` and `answers.yaml`.
@@ -67,6 +70,16 @@ pub struct BenchArgs {
     /// ingest does with a recommended model. Without it, each model is measured alone.
     #[arg(long, value_name = "MODEL")]
     pub second: Option<String>,
+    /// Measure search instead of filing: look up the test set's hand-written descriptions
+    /// (`descriptions.yaml`) by words, by meaning and by both, with each embedding model, and
+    /// write `results.json` and `report.md` to `search/` in `--out`. Each model's index is
+    /// kept there and reused by the next run.
+    #[arg(long, conflicts_with_all = ["compare", "second"])]
+    pub search: bool,
+    /// With `--search`: title and summarize each item's card as a model drafted it in an
+    /// earlier run's `results.json`, instead of by its file name; repeat for more.
+    #[arg(long, value_name = "RESULTS", requires = "search")]
+    pub cards: Vec<PathBuf>,
 }
 
 /// `carrel bench`.
@@ -76,6 +89,15 @@ pub struct BenchArgs {
 /// [`Failure`] if the test set is inconsistent, a model asked for isn't available, or the
 /// results can't be written; or, with `--compare`, if a model no longer meets the bar.
 pub fn bench(args: &BenchArgs, json: bool) -> Result<Report, Failure> {
+    if args.search {
+        crate::findability::findability(args, json)
+    } else {
+        filing(args, json)
+    }
+}
+
+/// The benchmark of filing: each text model ingests the test set.
+fn filing(args: &BenchArgs, json: bool) -> Result<Report, Failure> {
     let (corpus, wanted, out, limit, fresh) = (
         args.corpus.as_path(),
         args.models.as_slice(),

@@ -1,19 +1,18 @@
 //! Typed corrections (`docs/design/corrections.md`): `carrel review correct ID "…"` for a
 //! proposal. The owner's words, narrow or broad, become field changes, shown before and after
-//! and saved only on a yes.
+//! and saved only on a yes. The core prepares and saves the correction
+//! ([`carrel_core::correct::prepare`]); this module words it and asks on the terminal.
 
 use std::fmt::Write as _;
 use std::io::{BufRead as _, IsTerminal as _, Write as _};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use carrel_core::actions;
 use carrel_core::archive::Archive;
 use carrel_core::card_file::CardFile;
-use carrel_core::correct::{
-    Correctable as _, Fact, Fields, Subject, Worked, level, notes, work_out,
-};
-use carrel_core::ingest::card::Vocabulary;
-use carrel_core::review::{ReviewQueue, short_id};
+use carrel_core::correct::prepare;
+use carrel_core::correct::{Fact, Fields, Worked, level};
+use carrel_core::review::short_id;
 use serde_json::json;
 
 use crate::commands::locate;
@@ -59,21 +58,6 @@ fn working(words: &str) {
     if !lines && std::io::stderr().is_terminal() {
         eprintln!("Working out what that changes…");
     }
-}
-
-/// The collections as the model sees them, by path with what each is for.
-fn described(collections: &[carrel_core::archive::Collection]) -> Vec<(String, String)> {
-    collections
-        .iter()
-        .map(|c| {
-            let purpose = c
-                .doc
-                .description
-                .clone()
-                .unwrap_or_else(|| c.doc.title.clone());
-            (c.path.clone(), purpose)
-        })
-        .collect()
 }
 
 /// Each changed field before and after, and where it goes, for people.
@@ -223,25 +207,7 @@ pub struct Prepared {
     pub shown: String,
     /// A lasting fact to offer for the glossary once it's saved.
     pub fact: Option<Fact>,
-    words: String,
-    worked: Worked,
-    changed: Vec<&'static str>,
-    kept_sensitive: bool,
-    to: Option<String>,
-    pending: Pending,
-}
-
-/// What a prepared correction saves.
-#[derive(Debug)]
-enum Pending {
-    /// A proposal, corrected.
-    Proposal(Box<carrel_core::review::ReviewEntry>),
-    /// A filed item's card, corrected, refiled when `to` is set.
-    Filed {
-        item: carrel_core::archive::ItemRef,
-        card_path: PathBuf,
-        file: Box<CardFile>,
-    },
+    inner: prepare::Prepared,
 }
 
 /// What saving a correction did.
@@ -256,6 +222,29 @@ pub struct Saved {
 }
 
 impl Prepared {
+    /// `prepared`, described for people.
+    fn of(prepared: prepare::Prepared) -> Self {
+        let moved = prepared
+            .moved
+            .as_ref()
+            .map(|(from, to)| (from.as_str(), to.as_str()));
+        let mut shown = describe(&prepared.before, &prepared.after, moved, &prepared.worked);
+        if !shown.is_empty() {
+            shown = notes_after(
+                &shown,
+                prepared.kept_sensitive,
+                &prepared.dropped,
+                prepared.fact(),
+            );
+        }
+        Self {
+            title: prepared.title.clone(),
+            shown,
+            fact: prepared.fact().cloned(),
+            inner: prepared,
+        }
+    }
+
     /// Whether it changes nothing.
     #[must_use]
     pub fn is_empty(&self) -> bool {
@@ -264,35 +253,14 @@ impl Prepared {
 
     /// Everything about it, as JSON, for `--json`.
     fn json(&self) -> serde_json::Value {
+        let prepared = &self.inner;
         json!({
-            "changed": self.changed,
-            "collection": self.to,
-            "kept_sensitive": self.kept_sensitive,
+            "changed": prepared.changed,
+            "collection": prepared.to(),
+            "kept_sensitive": prepared.kept_sensitive,
             "fact": self.fact,
-            "model": self.worked.model,
-            "changes": self.worked.changes,
-        })
-    }
-}
-
-/// The context a correction is worked out in: the archive's collections and tags, and its
-/// text models.
-struct Context {
-    registry: carrel_core::providers::Registry,
-    collections: Vec<carrel_core::archive::Collection>,
-    described: Vec<(String, String)>,
-    vocabulary: Vocabulary,
-}
-
-impl Context {
-    fn of(archive: &Archive) -> Result<Self, Failure> {
-        let (registry, _) = crate::providers::registry();
-        let collections = archive.collections()?;
-        Ok(Self {
-            registry,
-            vocabulary: Vocabulary::of(archive, &collections),
-            described: described(&collections),
-            collections,
+            "model": prepared.worked.model,
+            "changes": prepared.worked.changes,
         })
     }
 }
@@ -303,47 +271,10 @@ impl Context {
 ///
 /// [`Failure`] if the proposal isn't found, or the correction can't be worked out.
 pub fn prepare_review(archive: &Archive, id: &str, words: &str) -> Result<Prepared, Failure> {
-    let entry = actions::proposals(archive, &[id.to_owned()])?
-        .pop()
-        .ok_or_else(|| Failure::new(format!("no proposal {id}")))?;
-    let context = Context::of(archive)?;
-    let before = entry.card.fields();
-    let earlier: Vec<String> = notes(&before).into_iter().map(|n| n.said).collect();
-    let text = item_text(archive, &context.registry, &entry.source.path, entry.kind);
-    let subject = Subject {
-        card: &before,
-        collection: &entry.destination.path,
-        text: &text,
-        collections: &context.described,
-        vocabulary: &context.vocabulary,
-    };
-    let worked = work_out(&context.registry, &subject, words, &earlier)?;
-    let corrected = actions::correct_proposal(archive, &context.registry, &entry, &worked, words)?;
-    let after = corrected.entry.card.fields();
-    let moved = corrected
-        .to
-        .as_deref()
-        .map(|to| (entry.destination.path.as_str(), to));
-    let mut shown = describe(&before, &after, moved, &worked);
-    if !shown.is_empty() {
-        shown = notes_after(
-            &shown,
-            corrected.kept_sensitive,
-            &corrected.dropped,
-            worked.changes.fact.as_ref(),
-        );
-    }
-    Ok(Prepared {
-        title: entry.card.title.clone(),
-        shown,
-        fact: worked.changes.fact.clone(),
-        words: words.to_owned(),
-        changed: corrected.changed,
-        kept_sensitive: corrected.kept_sensitive,
-        to: corrected.to,
-        worked,
-        pending: Pending::Proposal(Box::new(corrected.entry)),
-    })
+    let (registry, _) = crate::providers::registry();
+    Ok(Prepared::of(prepare::prepare_review(
+        archive, &registry, id, words,
+    )?))
 }
 
 /// Works out what `words` change in the filed item `query`, without saving anything.
@@ -354,62 +285,10 @@ pub fn prepare_review(archive: &Archive, id: &str, words: &str) -> Result<Prepar
 pub fn prepare_filed(archive: &Archive, query: &str, words: &str) -> Result<Prepared, Failure> {
     let items = archive.items()?;
     let item = crate::commands::find_item(archive, &items, query)?.clone();
-    let card_path = archive.root().join(&item.card);
-    let mut file = CardFile::parse(&std::fs::read_to_string(&card_path)?)?;
-    let context = Context::of(archive)?;
-    let before = file.card().fields();
-    let earlier: Vec<String> = notes(&before).into_iter().map(|n| n.said).collect();
-    let here = item.card.rsplit_once('/').map_or("", |(f, _)| f).to_owned();
-    let contents = item.item.as_ref().map(|p| archive.root().join(p));
-    let text = contents
-        .as_deref()
-        .map(|p| item_text(archive, &context.registry, p, item.kind))
-        .unwrap_or_default();
-    let subject = Subject {
-        card: &before,
-        collection: &here,
-        text: &text,
-        collections: &context.described,
-        vocabulary: &context.vocabulary,
-    };
-    let worked = work_out(&context.registry, &subject, words, &earlier)?;
-    let (after, changed, kept_sensitive) =
-        corrected(&before, &worked, words, contents.as_deref(), &text);
-    let to = target_of(
-        archive,
-        &context.registry,
-        &context.collections,
-        &item,
-        contents.as_deref(),
-        &after,
-        &worked,
-    )
-    .filter(|t| *t != here);
-    let mut shown = describe(
-        &before,
-        &after,
-        to.as_deref().map(|t| (here.as_str(), t)),
-        &worked,
-    );
-    if !shown.is_empty() {
-        shown = notes_after(&shown, kept_sensitive, &[], worked.changes.fact.as_ref());
-    }
-    file.card_mut().set_fields(after);
-    Ok(Prepared {
-        title: before.title.clone(),
-        shown,
-        fact: worked.changes.fact.clone(),
-        words: words.to_owned(),
-        changed,
-        kept_sensitive,
-        to,
-        worked,
-        pending: Pending::Filed {
-            item,
-            card_path,
-            file: Box::new(file),
-        },
-    })
+    let (registry, _) = crate::providers::registry();
+    Ok(Prepared::of(prepare::prepare_filed(
+        archive, &registry, item, words,
+    )?))
 }
 
 /// Saves a prepared correction: a proposal back to the queue, or a filed item's card as one
@@ -419,39 +298,22 @@ pub fn prepare_filed(archive: &Archive, query: &str, words: &str) -> Result<Prep
 ///
 /// [`Failure`] if it can't be written or committed.
 pub fn save(archive: &Archive, prepared: Prepared) -> Result<Saved, Failure> {
-    match prepared.pending {
-        Pending::Proposal(entry) => {
-            ReviewQueue::of(archive).save(&entry)?;
-            Ok(Saved {
-                message: format!("Saved the correction to “{}”.", entry.card.title),
-                commit: None,
-                card: None,
-            })
-        }
-        Pending::Filed {
-            item,
-            card_path,
-            file,
-        } => {
-            let title = file.card().title.clone();
-            let (card, commit) = save_filed(
-                archive,
-                &item,
-                &card_path,
-                *file,
-                prepared.to.as_deref(),
-                &prepared.words,
-                &prepared.changed,
-            )?;
-            Ok(Saved {
-                message: format!(
-                    "Saved the correction to “{title}”; undo it from History or with `carrel undo`."
-                ),
-                commit,
-                card: Some(card),
-            })
-        }
-    }
+    let saved = prepare::save(archive, prepared.inner, || {
+        crate::config::Identity::load_or_create().map(|i| crate::commands::holder(&i))
+    })?;
+    let message = if saved.filed {
+        format!(
+            "Saved the correction to “{}”; undo it from History or with `carrel undo`.",
+            saved.title
+        )
+    } else {
+        format!("Saved the correction to “{}”.", saved.title)
+    };
+    Ok(Saved {
+        message,
+        commit: saved.commit,
+        card: saved.card,
+    })
 }
 
 /// Adds `fact` to the glossary, as the owner agreed.
@@ -500,8 +362,8 @@ fn finish(
     let fact = prepared.fact.clone();
     match agree(yes)? {
         Some(true) => {
-            if let Pending::Proposal(entry) = &prepared.pending {
-                json["entry"] = serde_json::to_value(entry.as_ref()).unwrap_or_default();
+            if let Some(entry) = prepared.inner.proposal() {
+                json["entry"] = serde_json::to_value(entry).unwrap_or_default();
             }
             let saved = save(archive, prepared)?;
             json["saved"] = json!(true);
@@ -561,22 +423,7 @@ pub(crate) fn item_text(
     path: &Path,
     kind: carrel_core::card::Kind,
 ) -> String {
-    let Ok(rules) = archive.rules() else {
-        return String::new();
-    };
-    let candidate = carrel_core::ingest::Candidate {
-        path: path.to_owned(),
-        kind,
-        sealed: None,
-        markers: Vec::new(),
-        checksum: carrel_core::card::Checksum(String::new()),
-        size: 0,
-        duplicate_of: None,
-        likely: Vec::new(),
-        same_as: None,
-        inside: None,
-    };
-    carrel_core::ingest::text::read(registry, &rules, &candidate).text
+    prepare::item_text(archive, registry, path, kind)
 }
 
 /// `carrel correct ITEM [WORDS...] [--yes] [--learn]`: corrects a filed item's card, and
@@ -611,158 +458,4 @@ pub fn filed(
         learn_fact,
         json,
     )
-}
-
-/// `before` with the correction applied, the fields changed, and whether a lower sensitivity
-/// was kept at sensitive because a rule finds a restricted value in the item at `contents`,
-/// read as `text`.
-fn corrected(
-    before: &Fields,
-    worked: &Worked,
-    words: &str,
-    contents: Option<&Path>,
-    text: &str,
-) -> (Fields, Vec<&'static str>, bool) {
-    use carrel_core::card::Sensitivity;
-    use carrel_core::ingest::sensitivity::{floor, restricted_by_rule};
-
-    let mut after = before.clone();
-    let at = carrel_core::card::DateOrTime(
-        jiff::Zoned::now()
-            .strftime("%Y-%m-%dT%H:%M:%S%:z")
-            .to_string(),
-    );
-    let changed = carrel_core::correct::apply(&mut after, worked, words, &at);
-    let name = contents
-        .and_then(Path::file_name)
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    let kept = after.sensitivity < Sensitivity::Sensitive
-        && floor(&name, text, Sensitivity::Public)
-            .reasons
-            .iter()
-            .any(|r| restricted_by_rule(r));
-    if kept {
-        after.sensitivity = Sensitivity::Sensitive;
-    }
-    (after, changed, kept)
-}
-
-/// Writes a filed item's corrected card, refiling it into `target` when there is one, as one
-/// change described with the owner's words. Returns the card's path and the commit.
-fn save_filed(
-    archive: &Archive,
-    item: &carrel_core::archive::ItemRef,
-    card_path: &Path,
-    file: CardFile,
-    target: Option<&str>,
-    words: &str,
-    changed: &[&str],
-) -> Result<(String, Option<String>), Failure> {
-    use carrel_core::coordinator::{Coordinator as _, DEFAULT_LEASE, DiskLock};
-    use carrel_core::history::{Change, History, Operation};
-
-    let mut said: String = words.split_whitespace().collect::<Vec<_>>().join(" ");
-    if said.chars().count() > 200 {
-        said = said.chars().take(200).collect::<String>() + "…";
-    }
-    let summary = format!(
-        "Correct “{}”: {}. Owner: {said}",
-        file.card().title,
-        changed.join(", ")
-    );
-    let identity = crate::config::Identity::load_or_create()?;
-    let lease = DiskLock::for_archive(archive).acquire(
-        crate::commands::holder(&identity),
-        "correct",
-        DEFAULT_LEASE,
-    )?;
-    let result = (|| -> Result<(String, Option<String>), Failure> {
-        if let Some(to) = target {
-            let moved = carrel_core::rename::refile(archive, item, to, file, &summary, &lease)
-                .map_err(|e| Failure::new(e.to_string()))?;
-            return Ok((moved.card, moved.commit));
-        }
-        let temp = card_path.with_extension("md.tmp-correct");
-        std::fs::write(&temp, file.to_text()?)?;
-        std::fs::rename(&temp, card_path)?;
-        let mut change = Change::new(
-            Operation::Edit,
-            summary,
-            lease.info().person,
-            lease.info().device,
-        );
-        change.items = vec![item.id];
-        Ok((
-            item.card.clone(),
-            History::open(archive)?.commit(archive, &change, &lease)?,
-        ))
-    })();
-    lease.release()?;
-    result
-}
-
-/// The collection a correction sends a filed item to: one the owner named, or, when what it is
-/// changed, wherever it's routed now.
-fn target_of(
-    archive: &Archive,
-    registry: &carrel_core::providers::Registry,
-    collections: &[carrel_core::archive::Collection],
-    item: &carrel_core::archive::ItemRef,
-    contents: Option<&Path>,
-    fields: &Fields,
-    worked: &Worked,
-) -> Option<String> {
-    if let Some(named) = &worked.changes.collection {
-        return Some(named.value.clone());
-    }
-    worked
-        .changes
-        .reroute
-        .then(|| reroute(archive, registry, collections, item, contents, fields))
-        .flatten()
-}
-
-/// Where a corrected item belongs now, routed again from its corrected card.
-fn reroute(
-    archive: &Archive,
-    registry: &carrel_core::providers::Registry,
-    collections: &[carrel_core::archive::Collection],
-    item: &carrel_core::archive::ItemRef,
-    contents: Option<&Path>,
-    fields: &Fields,
-) -> Option<String> {
-    use carrel_core::ingest::route::{Router, RoutingRules};
-    let rules = RoutingRules::of(archive, collections);
-    let router = Router::new(archive, collections, &rules);
-    let path = contents.map_or_else(|| archive.root().join(&item.card), Path::to_owned);
-    let candidate = carrel_core::ingest::Candidate {
-        path: path.clone(),
-        kind: item.kind,
-        sealed: None,
-        markers: Vec::new(),
-        checksum: carrel_core::card::Checksum(String::new()),
-        size: 0,
-        duplicate_of: None,
-        likely: Vec::new(),
-        same_as: None,
-        inside: None,
-    };
-    let draft = carrel_core::ingest::card::Draft {
-        title: fields.title.clone(),
-        summary: fields.summary.clone(),
-        tags: fields.tags.clone(),
-        new_tag: None,
-        created: fields.dates.as_ref().and_then(|d| d.created.clone()),
-        generated: None,
-        attempts: Vec::new(),
-        problems: Vec::new(),
-    };
-    let source = path.parent().unwrap_or(&path).to_owned();
-    let route = router.route(registry, &candidate, &source, &draft);
-    // Only somewhere it fits: an unsure answer, or Holding, leaves it where it is.
-    (route.collection.is_some()
-        && route.confidence != carrel_core::review::Confidence::Low
-        && route.path != "Holding")
-        .then_some(route.path)
 }

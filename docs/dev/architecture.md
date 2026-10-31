@@ -58,7 +58,8 @@ Three ideas run through it:
 | `carrel-provider-apple` (`apple/CarrelProviders`) | Swift program | Apple's on-device model (Foundation Models), PDFKit and Vision. |
 | [`carrel-fetch`](https://hrose.me/carrel/carrel_fetch/) | Program | The network helper: downloads models, and is the only Carrel program that goes online. |
 | Kopia | Third-party program | Deduplicated, encrypted backups of file contents. |
-| [`carrel-ffi`](https://hrose.me/carrel/carrel_ffi/), `apple/CarrelKit` | Rust library and Swift package | UniFFI bindings for the Mac and iOS apps (v0.5); today they open archives and list collections and items. |
+| [`carrel-ffi`](https://hrose.me/carrel/carrel_ffi/), `apple/CarrelKit` | Rust library and Swift package | UniFFI bindings for the Mac and iOS apps (v0.5); today they create and open archives and list collections and items. |
+| `apple/CarrelApp` | Xcode project | The Mac app (v0.5), over CarrelKit. |
 
 ### Inside the core
 

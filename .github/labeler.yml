@@ -18,7 +18,7 @@
 
 'area: cli':
   - changed-files:
-      - any-glob-to-any-file: 'crates/carrel-cli/**'
+      - any-glob-to-any-file: ['crates/carrel-cli/**', 'editors/**']
 
 'area: apple-apps':
   - changed-files:
@@ -27,6 +27,9 @@
           - 'crates/carrel-ffi/**'
           - 'crates/uniffi-bindgen/**'
           - scripts/build-xcframework.sh
+          - scripts/generate-bindings.sh
+          - scripts/swift-format.sh
+          - .swift-format
 
 'area: ci':
   - changed-files:

@@ -237,6 +237,53 @@ pub fn retry(archive: &Archive, id: &str) -> Result<IntakeEntry, ReviewError> {
     Ok(entry)
 }
 
+/// Takes the entry `id` off the queue, whichever device it's waiting on.
+///
+/// # Errors
+///
+/// [`ReviewError`] if it isn't found or the queue can't be written.
+pub fn remove(archive: &Archive, id: &str) -> Result<IntakeEntry, ReviewError> {
+    let queue = IntakeQueue::of(archive);
+    let entry = queue.find(id)?;
+    queue.remove(entry.id)?;
+    Ok(entry)
+}
+
+/// This device's queue as `carrel ingest --status` and the Ingest screen show it.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Listing {
+    /// The entries waiting, in the order they'll be processed.
+    pub waiting: Vec<IntakeEntry>,
+    /// The entries that have failed too often to be tried again without the owner.
+    pub failed: Vec<IntakeEntry>,
+}
+
+/// This device's queue: what's waiting, in order, and what has failed.
+///
+/// # Errors
+///
+/// [`ReviewError`] if the queue can't be read.
+pub fn listing(archive: &Archive, device: Id) -> Result<Listing, ReviewError> {
+    let (failed, waiting) = waiting(archive, device, true)?
+        .into_iter()
+        .partition(IntakeEntry::stuck);
+    Ok(Listing { waiting, failed })
+}
+
+/// How many of the entries `ids` are still waiting to be processed, on any device. Those that
+/// have failed too often count as done.
+///
+/// # Errors
+///
+/// [`ReviewError`] if the queue can't be read.
+pub fn remaining(archive: &Archive, ids: &[Id]) -> Result<usize, ReviewError> {
+    let (entries, _) = IntakeQueue::of(archive).list()?;
+    Ok(entries
+        .iter()
+        .filter(|e| ids.contains(&e.id) && !e.stuck())
+        .count())
+}
+
 /// What processing one entry did.
 #[derive(Debug)]
 pub struct Processed {

@@ -193,6 +193,7 @@ fn event_loop(
                 leave();
                 let result = crate::edit::edit(Some(app.archive.root()), &card);
                 *terminal = enter();
+                changed(app.archive.root(), &result);
                 finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
             }
             Some(Effect::EditEntry { item, number }) => {
@@ -271,6 +272,9 @@ fn correction(app: &mut App, step: Step, preparing: &mut Option<Preparing>) {
                 let fact = prepared.fact.clone();
                 let result = crate::correct::save(&app.archive, prepared);
                 let saved = result.is_ok();
+                if saved {
+                    crate::worker::after_change(Some(app.archive.root()));
+                }
                 finished(app, result.map(|s| s.message).map_err(|Failure(e)| e));
                 if let (true, Some(fact)) = (saved, fact) {
                     app.confirm = Some(Confirm::Learn {
@@ -339,6 +343,7 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
     let (busy, work): (String, Work) = match effect {
         Effect::Undo(id) => {
             let result = crate::commands::undo(Some(&root), &id);
+            changed(&root, &result);
             finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
             return None;
         }
@@ -408,7 +413,11 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
         | Effect::BackupSetup { .. }) => backup_work(root, effect),
         Effect::ApproveAllHigh => (
             "Filing every high-confidence proposal…".into(),
-            Box::new(move || crate::review::approve(Some(&root), &[], true, None, None)),
+            Box::new(move || {
+                let result = crate::review::approve(Some(&root), &[], true, None, None);
+                changed(&root, &result);
+                result
+            }),
         ),
         Effect::Keep { id, kept, target } => keep(root, id, kept, target),
     };
@@ -559,9 +568,21 @@ fn decide(root: PathBuf, chosen: Vec<String>, holding: bool) -> (String, Work) {
     let work: Work = if holding {
         Box::new(move || crate::review::hold(Some(&root), &chosen))
     } else {
-        Box::new(move || crate::review::approve(Some(&root), &chosen, false, None, None))
+        Box::new(move || {
+            let result = crate::review::approve(Some(&root), &chosen, false, None, None);
+            changed(&root, &result);
+            result
+        })
     };
     (busy, work)
+}
+
+/// Starts a worker to embed what changed for search, when `result` says filed items changed
+/// in the archive at `root`.
+fn changed<T>(root: &Path, result: &Result<T, Failure>) {
+    if result.is_ok() {
+        crate::worker::after_change(Some(root));
+    }
 }
 
 /// The work for [`Effect::Keep`]: filing a proposal linked to the archived item it duplicates.
@@ -576,7 +597,10 @@ fn keep(root: PathBuf, id: Id, kept: Kept, target: Id) -> (String, Work) {
             Kept::AsVersion => (Some(target.as_str()), None),
             Kept::Both => (None, Some(target.as_str())),
         };
-        crate::review::approve(Some(&root), &[id.to_string()], false, version, related)
+        let result =
+            crate::review::approve(Some(&root), &[id.to_string()], false, version, related);
+        changed(&root, &result);
+        result
     });
     (busy.into(), work)
 }
@@ -1359,6 +1383,130 @@ mod tests {
         app.key(key(KeyCode::Esc));
         assert_eq!(app.browse_pane, Pane::Items, "Esc leaves the item's view");
         assert!(!app.quit);
+    }
+
+    /// A unit vector of 32 numbers counting `text`'s words, as the fake embedder in the
+    /// core's index tests makes them, so texts sharing words are near each other.
+    fn word_vector(text: &str) -> Vec<f32> {
+        let mut v = [0.0f32; 32];
+        for word in text
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|w| !w.is_empty())
+        {
+            let place = word
+                .to_lowercase()
+                .chars()
+                .fold(7usize, |h, c| h.wrapping_mul(31).wrapping_add(c as usize));
+            v[place % 32] += 1.0;
+        }
+        let length = v.iter().map(|n| n * n).sum::<f32>().sqrt();
+        v.iter().map(|n| n / length).collect()
+    }
+
+    /// Builds the archive's index from each item's card text, as a model making `vector`'s
+    /// vectors would, with no model.
+    fn build_index(archive: &Archive, vector: &dyn Fn(&str, &str) -> Vec<f32>) {
+        use carrel_core::index::{Entry, Index, Part, plan};
+        let model = archive.settings().embedding_model().unwrap().to_owned();
+        let mut index = Index::new(archive, &model);
+        for pending in plan(archive, None).unwrap().pending {
+            let entry = Entry {
+                id: pending.id,
+                card: carrel_core::card::Checksum::of_bytes(pending.card_text.as_bytes()),
+                text: pending.contents.clone(),
+                parts: vec![Part::Card],
+            };
+            let v = vector(&pending.card, &pending.card_text);
+            index.put(entry, &[v]).unwrap();
+        }
+        index.save().unwrap();
+    }
+
+    #[test]
+    fn an_items_view_lists_the_items_nearest_it_by_meaning() {
+        use super::item::Relation;
+        use carrel_core::card::Sensitivity;
+        let (_dir, mut app) = sample(false);
+        app.key(key(KeyCode::Char('5')));
+        let parts = "Projects/Hardware/parts-list.csv.md";
+        let notes = "Projects/Hardware/notes.md.md";
+        let show = |app: &mut App, card: &str| {
+            app.browse_items = vec![(card.to_owned(), String::new())];
+            app.browse_item = 0;
+            app.load_card();
+        };
+
+        // No index yet: only the links, and why.
+        show(&mut app, parts);
+        assert_eq!(app.item.related.len(), 1, "{:?}", app.item.related);
+        let why = app.item.links_only.clone().unwrap();
+        assert!(why.contains("carrel index rebuild"), "{why}");
+        let text = screen(&app, 200, 40);
+        assert!(text.contains("no meaning index"), "{text}");
+
+        // Hardware notes, made restricted, is embedded by its card like any other, here as
+        // near the parts list as can be.
+        let path = app.archive.root().join(notes);
+        let card = std::fs::read_to_string(&path).unwrap();
+        std::fs::write(
+            &path,
+            card.replace("sensitivity: personal", "sensitivity: restricted"),
+        )
+        .unwrap();
+        let parts_text = std::fs::read_to_string(app.archive.root().join(parts)).unwrap();
+        let parts_card = carrel_core::card_file::CardFile::parse(&parts_text).unwrap();
+        let parts_vector = word_vector(&carrel_core::index::chunk::card_text(
+            parts_card.card(),
+            "Projects/Hardware",
+        ));
+        build_index(&app.archive, &|card, text| {
+            if card == notes {
+                parts_vector.clone()
+            } else {
+                word_vector(text)
+            }
+        });
+
+        show(&mut app, parts);
+        assert_eq!(app.item.links_only, None);
+        let related = &app.item.related;
+        assert!(matches!(&related[0].relation, Relation::Link(how) if how == "part-of"));
+        let near: Vec<_> = related[1..].iter().collect();
+        assert_eq!(near.len(), crate::related::NEAREST, "{related:?}");
+        assert!(near.iter().all(|r| matches!(r.relation, Relation::Near(_))));
+        assert!(
+            near.iter().all(|r| {
+                let card = r.card.as_deref();
+                card != Some(parts) && card != Some("Projects/Hardware/lamp-build.md")
+            }),
+            "neither itself nor what it links to: {near:?}"
+        );
+        assert_eq!(near[0].card.as_deref(), Some(notes));
+        assert_eq!(near[0].relation, Relation::Near(Sensitivity::Restricted));
+        let text = screen(&app, 200, 40);
+        assert!(
+            text.contains("near  Hardware notes  [restricted]"),
+            "{text}"
+        );
+
+        // Enter on a near item goes to it, as on a link.
+        app.browse_pane = Pane::Item;
+        app.item.chosen = 1;
+        app.key(key(KeyCode::Enter));
+        assert_eq!(app.browse_pane, Pane::Items);
+        assert_eq!(app.browse_items[app.browse_item].0, notes);
+
+        // A card the index hasn't caught up with lists its links only, and says why.
+        let path = app.archive.root().join(parts);
+        std::fs::write(
+            &path,
+            parts_text.replace("Desk lamp parts list", "Lamp parts"),
+        )
+        .unwrap();
+        show(&mut app, parts);
+        assert_eq!(app.item.related.len(), 1);
+        let why = app.item.links_only.clone().unwrap();
+        assert!(why.contains("hasn't caught up"), "{why}");
     }
 
     #[test]

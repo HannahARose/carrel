@@ -15,6 +15,7 @@ public enum Priority {
 public enum Capability: String, Codable, Sendable {
     case textModel = "text-model"
     case extractText = "extract-text"
+    case embed
 }
 
 /// One thing a provider offers, as reported by `initialize`.
@@ -33,11 +34,14 @@ public struct Offer: Codable, Equatable, Sendable {
     /// For extractors: whether it describes what images show, so Carrel gives it pictures to
     /// describe, such as a 3MF's thumbnail.
     public var describes: Bool?
+    /// For embedding models: how many numbers each vector has.
+    public var dimensions: Int?
 
     public init(
         capability: Capability, id: String, label: String? = nil, priority: Int = Priority.native,
         available: Bool = true, reason: String? = nil, mediaTypes: [String]? = nil,
-        contextTokens: Int? = nil, structuredOutput: Bool? = nil, describes: Bool? = nil
+        contextTokens: Int? = nil, structuredOutput: Bool? = nil, describes: Bool? = nil,
+        dimensions: Int? = nil
     ) {
         self.capability = capability
         self.id = id
@@ -49,10 +53,11 @@ public struct Offer: Codable, Equatable, Sendable {
         self.contextTokens = contextTokens
         self.structuredOutput = structuredOutput
         self.describes = describes
+        self.dimensions = dimensions
     }
 
     enum CodingKeys: String, CodingKey {
-        case capability, id, label, priority, available, reason, describes
+        case capability, id, label, priority, available, reason, describes, dimensions
         case mediaTypes = "media_types"
         case contextTokens = "context_tokens"
         case structuredOutput = "structured_output"
@@ -107,7 +112,8 @@ public struct Extraction: Equatable, Sendable {
     public var located: Bool?
 
     public init(
-        text: String, method: String, pages: Int? = nil, created: String? = nil, located: Bool? = nil
+        text: String, method: String, pages: Int? = nil, created: String? = nil,
+        located: Bool? = nil
     ) {
         self.text = text
         self.method = method
@@ -127,7 +133,8 @@ public protocol TextExtractor: Sendable {
 
     /// The same, for a picture Carrel was given to describe: `context` says what it is, since
     /// its file's name says nothing. Extractors that don't describe images ignore it.
-    func extract(_ url: URL, mediaType: String, context: String?) async throws(ProviderError) -> Extraction
+    func extract(_ url: URL, mediaType: String, context: String?) async throws(ProviderError)
+        -> Extraction
 }
 
 extension TextExtractor {
@@ -179,8 +186,9 @@ public enum JSONValue: Sendable, Equatable {
 
     /// Parses JSON text.
     public init?(parsing text: String) {
-        guard let object = try? JSONSerialization.jsonObject(
-            with: Data(text.utf8), options: [.fragmentsAllowed])
+        guard
+            let object = try? JSONSerialization.jsonObject(
+                with: Data(text.utf8), options: [.fragmentsAllowed])
         else { return nil }
         self.init(object)
     }
@@ -210,7 +218,9 @@ public struct CompletionRequest: Sendable, Equatable {
     public var schema: JSONValue?
     public var maxTokens: Int?
 
-    public init(system: String? = nil, prompt: String, schema: JSONValue? = nil, maxTokens: Int? = nil) {
+    public init(
+        system: String? = nil, prompt: String, schema: JSONValue? = nil, maxTokens: Int? = nil
+    ) {
         self.system = system
         self.prompt = prompt
         self.schema = schema
@@ -252,21 +262,63 @@ extension TextModel {
     }
 }
 
-/// Answers provider protocol messages for a set of models and extractors.
+/// What a text is embedded for: to be found, or to search with. Some models embed the two
+/// differently, each with its own prompt.
+public enum EmbeddingPurpose: String, Sendable {
+    case document
+    case query
+}
+
+/// An embedding model's answer: one vector for each text.
+public struct Embeddings: Sendable, Equatable {
+    /// One vector for each text, in order, each of unit length.
+    public var vectors: [[Float]]
+    /// The model's identifier, the same as its offer's.
+    public var model: String
+    public var dimensions: Int
+
+    public init(vectors: [[Float]], model: String, dimensions: Int) {
+        self.vectors = vectors
+        self.model = model
+        self.dimensions = dimensions
+    }
+}
+
+/// An embedding model, for search (`text/embed` in docs/providers.md). Its offer's `id` is the
+/// model's identifier, the same on every provider that runs it, so vectors can be compared.
+public protocol Embedder: Sendable {
+    /// What it offers. Checked when the provider starts, so availability is current.
+    var offer: Offer { get }
+
+    /// One vector for each of `texts`, each embedded on its own. A text longer than the
+    /// model's context is cut.
+    func embed(_ texts: [String], purpose: EmbeddingPurpose) async throws(ProviderError)
+        -> Embeddings
+}
+
+/// `vector` scaled to unit length, or as it is if it's all zeros.
+public func unitLength(_ vector: [Float]) -> [Float] {
+    let length = vector.reduce(0) { $0 + $1 * $1 }.squareRoot()
+    return length > 0 ? vector.map { $0 / length } : vector
+}
+
+/// Answers provider protocol messages for a set of models, extractors and embedders.
 public struct Server: Sendable {
     public let name: String
     public let version: String
     public let models: [any TextModel]
     public let extractors: [any TextExtractor]
+    public let embedders: [any Embedder]
 
     public init(
         name: String, version: String, models: [any TextModel] = [],
-        extractors: [any TextExtractor] = []
+        extractors: [any TextExtractor] = [], embedders: [any Embedder] = []
     ) {
         self.name = name
         self.version = version
         self.models = models
         self.extractors = extractors
+        self.embedders = embedders
     }
 
     /// The reply to one line of input, or nil when no reply is due (a notification, or a line
@@ -303,7 +355,8 @@ public struct Server: Sendable {
                 "protocol": protocolVersion,
                 "name": name,
                 "version": version,
-                "offers": (models.map(\.offer) + extractors.map(\.offer)).map(Self.json),
+                "offers": (models.map(\.offer) + extractors.map(\.offer) + embedders.map(\.offer))
+                    .map(Self.json),
             ]
         case "shutdown":
             return NSNull()
@@ -334,7 +387,8 @@ public struct Server: Sendable {
             }
             return json
         case "text/count-tokens":
-            guard let offerID = params["offer"] as? String, let text = params["text"] as? String else {
+            guard let offerID = params["offer"] as? String, let text = params["text"] as? String
+            else {
                 throw .invalidParams("text/count-tokens needs offer and text")
             }
             guard let model = models.first(where: { $0.offer.id == offerID }) else {
@@ -366,9 +420,48 @@ public struct Server: Sendable {
                 json["json"] = value.any
             }
             return json
+        case "text/embed":
+            return try await embed(params)
         default:
             throw .unknownMethod("unknown method \(method)")
         }
+    }
+
+    func embed(_ params: [String: Any]) async throws(ProviderError) -> Any {
+        guard let offerID = params["offer"] as? String, let texts = params["texts"] as? [String]
+        else {
+            throw .invalidParams("text/embed needs offer and texts")
+        }
+        let purpose: EmbeddingPurpose
+        switch params["purpose"] {
+        case nil, is NSNull:
+            purpose = .document
+        case let name as String:
+            guard let named = EmbeddingPurpose(rawValue: name) else {
+                throw .invalidParams("purpose is document or query, not \(name)")
+            }
+            purpose = named
+        default:
+            throw .invalidParams("purpose is document or query")
+        }
+        guard let embedder = embedders.first(where: { $0.offer.id == offerID }) else {
+            throw .unsupported("\(name) has no embedding model \(offerID)")
+        }
+        guard embedder.offer.available else {
+            throw .unavailable(embedder.offer.reason ?? "\(offerID) is unavailable")
+        }
+        let result = try await embedder.embed(texts, purpose: purpose)
+        return [
+            "vectors": result.vectors.map { $0.map(Self.number) },
+            "model": result.model,
+            "dimensions": result.dimensions,
+        ] as [String: Any]
+    }
+
+    /// `value` as JSON writes it shortest, so 0.0213 is written as that and not as the Double
+    /// nearest the Float, 0.021299999207258224: a vector's text is half as long.
+    static func number(_ value: Float) -> NSNumber {
+        value.isFinite ? NSDecimalNumber(string: "\(value)") : NSNumber(value: 0)
     }
 
     static func json(_ offer: Offer) -> Any {

@@ -30,6 +30,8 @@
 //! | [`questions`] | Questions for the owner, and the glossary their answers teach | §7.3, §7.9 |
 //! | [`local`] | Where this device keeps its own data: configuration and models | none |
 //! | [`providers`] | Text models and text extraction from providers, native or portable | `docs/providers.md` |
+//! | [`status`] | What the Status screen shows: counts, problems, Recent and suggestions | none |
+//! | [`worker`] | The worker loop: drafting the intake queue, then catching up the embedding index | `docs/design/tui-ingest.md` |
 //!
 //! Two promises run through every module: owner text outside managed sections is never
 //! changed, and fields this version doesn't recognize are always preserved.
@@ -68,6 +70,7 @@ pub mod finder;
 pub mod formats;
 pub mod frontmatter;
 pub mod history;
+pub mod index;
 pub mod ingest;
 pub mod intake;
 pub mod listing;
@@ -85,7 +88,9 @@ pub mod sections;
 pub mod sessions;
 pub mod settings;
 pub mod signals;
+pub mod status;
 pub mod trash;
+pub mod worker;
 
 /// The version of the archive format this build reads and writes (`FORMAT.md`).
 pub const FORMAT_VERSION: FormatVersion = FormatVersion { major: 1, minor: 0 };

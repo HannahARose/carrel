@@ -201,6 +201,11 @@ fn show_finds_items_by_id_card_or_item_path() {
     let root = sandbox.sample();
     let by_item = sandbox.json(&root, &["show", "Projects/Hardware/parts-list.csv"]);
     assert_eq!(by_item["card"], "Projects/Hardware/parts-list.csv.md");
+    assert_eq!(
+        Path::new(by_item["root"].as_str().unwrap()),
+        root.canonicalize().unwrap(),
+        "paths are relative to the root it gives"
+    );
     assert_eq!(by_item["item"], "Projects/Hardware/parts-list.csv");
     assert_eq!(by_item["collection"], "Projects/Hardware");
     assert_eq!(by_item["fields"]["title"], "Desk lamp parts list");
@@ -599,7 +604,11 @@ fn models_lists_the_catalog_and_asks_before_downloading() {
     let listed = sandbox.json(&here, &["models"]);
     assert_eq!(listed["provisional"], false, "the benchmark has chosen");
     let catalog = listed["catalog"].as_array().unwrap();
-    assert!(catalog.iter().all(|m| m["state"] == "available"));
+    assert!(
+        catalog
+            .iter()
+            .all(|m| m["state"] == "available" || !m["comes_with"].is_null())
+    );
     assert!(catalog.iter().any(|m| m["name"] == "granite-4.2-3b"));
     assert_eq!(listed["others"][0]["name"], "mine");
 
@@ -1856,6 +1865,10 @@ fn file_with_card(root: &Path, collection: &str, name: &str, contents: &str, fie
     std::fs::write(root.join(collection).join(format!("{name}.md")), card).unwrap();
 }
 
+/// What search says when the sample archive, which has no meaning index, is searched.
+const WORDS_ONLY: &str = "There's no meaning index for sample/embedding-model-v1 yet, so this \
+                          was searched by words only; build it with `carrel index rebuild`.\n";
+
 #[test]
 fn search_finds_items_by_their_words_with_filters_and_reasons() {
     let sandbox = Sandbox::new();
@@ -1881,6 +1894,10 @@ fn search_finds_items_by_their_words_with_filters_and_reasons() {
         found["total"], 1,
         "the restricted statement's text isn't searched: {found}"
     );
+    assert_eq!(
+        Path::new(found["root"].as_str().unwrap()),
+        root.canonicalize().unwrap()
+    );
     let first = &found["results"][0];
     assert_eq!(first["found"]["type"], "item");
     assert_eq!(first["found"]["title"], "Furniture shop bill");
@@ -1905,9 +1922,11 @@ fn search_finds_items_by_their_words_with_filters_and_reasons() {
     let report = sandbox.ok(&root, &["search", "invoice 2057-4038"]);
     assert_eq!(
         report,
-        "1 result for “invoice 2057-4038”:\n\nFurniture shop bill  [sensitive]\n  \
+        format!(
+            "1 result for “invoice 2057-4038”:\n\nFurniture shop bill  [sensitive]\n  \
          Holding · 2025-03-02 · file\n  Please pay **invoice** **2057-4038** by Friday.\n  \
-         matched: text\n"
+         matched: text\n\n{WORDS_ONLY}"
+        )
     );
     let report = sandbox.ok(&root, &["search", "bank", "statement"]);
     assert!(report.contains("Bank statement  [restricted]"), "{report}");
@@ -1927,7 +1946,7 @@ fn search_finds_items_by_their_words_with_filters_and_reasons() {
     assert_eq!(glossary["results"][0]["found"]["type"], "glossary");
     assert_eq!(
         sandbox.ok(&root, &["search", "zebra"]),
-        "Nothing found for “zebra”.\n"
+        format!("Nothing found for “zebra”.\n\n{WORDS_ONLY}")
     );
 
     let bad = sandbox.run_in(&root, &["search", "kind:box"]);
@@ -2079,7 +2098,7 @@ fn texts_are_embedded_with_the_archives_model_and_no_other() {
 }
 
 #[test]
-fn embedding_models_are_listed_apart_and_unpinned_ones_are_never_downloaded() {
+fn embedding_models_are_listed_apart_and_built_in_ones_are_never_downloaded() {
     let sandbox = Sandbox::new();
     let here = sandbox.path("");
     let listed = sandbox.json(&here, &["models"]);
@@ -2094,18 +2113,25 @@ fn embedding_models_are_listed_apart_and_unpinned_ones_are_never_downloaded() {
             .iter()
             .any(|m| m["name"] == "qwen3-embedding-0.6b" && m["embedding"]["pooling"] == "last")
     );
+    assert_eq!(gemma["pinned"], true);
+    let apple = catalog
+        .iter()
+        .find(|m| m["name"] == "apple-nl-sentence-en")
+        .unwrap();
+    assert_eq!(apple["state"], "built in");
+    assert_eq!(apple["comes_with"], "carrel-provider-apple");
     let text = sandbox.ok(&here, &["models"]);
     assert!(text.contains("For search by meaning"), "{text}");
+    assert!(text.contains("nothing to download"), "{text}");
 
-    if gemma["pinned"] == false {
-        let out = sandbox.run_in(
-            &here,
-            &["models", "download", "embeddinggemma-300m", "--yes"],
-        );
-        assert!(!out.status.success());
-        assert!(String::from_utf8_lossy(&out.stderr).contains("isn't pinned"));
-        assert!(!sandbox.path("config/logs/network.log").exists());
-    }
+    let out = sandbox.run_in(
+        &here,
+        &["models", "download", "apple-nl-sentence-en", "--yes"],
+    );
+    assert!(!out.status.success());
+    let error = String::from_utf8_lossy(&out.stderr);
+    assert!(error.contains("nothing to download"), "{error}");
+    assert!(!sandbox.path("config/logs/network.log").exists());
 }
 
 #[test]
@@ -2265,4 +2291,489 @@ fn expand_opens_a_filed_zip_in_one_change_that_undo_reverses() {
     );
     let restored = std::fs::read_to_string(root.join(format!("{zip_path}.md"))).unwrap();
     assert!(restored.contains("kind: file"), "{restored}");
+}
+
+/// Runs carrel in `root` with only `bin`'s providers on the path, and the worker off.
+fn run_with_providers(sandbox: &Sandbox, root: &Path, bin: &Path, args: &[&str]) -> Output {
+    std::process::Command::new(env!("CARGO_BIN_EXE_carrel"))
+        .args(args)
+        .current_dir(root)
+        .env("PATH", bin)
+        .env("CARREL_CONFIG_DIR", sandbox.path("config"))
+        .env("CARREL_TRASH_DIR", sandbox.path("Trash"))
+        .env("CARREL_WORKER", "off")
+        .output()
+        .unwrap()
+}
+
+/// Its standard output as JSON, after checking it succeeded.
+fn json_of(out: &Output) -> Value {
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    serde_json::from_slice(&out.stdout).unwrap()
+}
+
+#[test]
+fn the_index_is_rebuilt_reported_and_caught_up_by_the_worker() {
+    let sandbox = Sandbox::new();
+    let bin = sandbox.path("bin");
+    std::fs::create_dir(&bin).unwrap();
+    let suffix = std::env::consts::EXE_SUFFIX;
+    std::fs::copy(
+        echo_provider(),
+        bin.join(format!("carrel-provider-echo{suffix}")),
+    )
+    .unwrap();
+    let root = sandbox.sample();
+    file_with_card(
+        &root,
+        "Holding",
+        "lease.txt",
+        "The landlord repairs the boiler. The tenant keeps the garden tidy.",
+        "title: \"Tenancy agreement\"\nsensitivity: personal\n",
+    );
+    let run = |args: &[&str]| run_with_providers(&sandbox, &root, &bin, args);
+
+    // No index yet: search says it used words only.
+    let status = sandbox.json(&root, &["index", "status"]);
+    assert_eq!(status["model"], "sample/embedding-model-v1");
+    assert_eq!(status["exists"], false);
+    let text = sandbox.ok(&root, &["index"]);
+    assert!(text.contains("no meaning index"), "{text}");
+    let found = sandbox.json(&root, &["search", "boiler"]);
+    assert_eq!(found["meaning"]["state"], "off");
+    assert!(
+        found["words_only"]
+            .as_str()
+            .unwrap()
+            .contains("carrel index rebuild"),
+        "{found}"
+    );
+
+    // Only the archive's model is used: the echo provider doesn't run the sample's.
+    let out = run(&["index", "rebuild"]);
+    assert!(!out.status.success());
+    let error = String::from_utf8_lossy(&out.stderr);
+    assert!(error.contains("sample/embedding-model-v1"), "{error}");
+    assert!(!root.join("_System/index").exists(), "nothing written");
+
+    set_embedding_model(&root, Some("echo-embed"));
+    let rebuilt = json_of(&run(&["index", "rebuild", "--json"]));
+    let items = rebuilt["items"].as_u64().unwrap();
+    assert!(items > 5, "{rebuilt}");
+    assert_eq!(rebuilt["embedded"], items);
+    assert_eq!(rebuilt["dimensions"], 3);
+    assert_eq!(rebuilt["resumed"], false);
+    assert!(root.join("_System/index/echo-embed/index.json").is_file());
+    let status = json_of(&run(&["index", "status", "--json"]));
+    assert_eq!(status["embedded"], items);
+    assert_eq!(status["behind"], 0);
+
+    // Search merges meaning with words.
+    let found = json_of(&run(&["search", "boiler", "--json"]));
+    assert_eq!(found["meaning"]["state"], "current", "{found}");
+    assert_eq!(found["words_only"], Value::Null);
+    let lease = found["results"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["found"]["title"] == "Tenancy agreement")
+        .unwrap();
+    assert!(
+        lease["why"].as_array().unwrap().contains(&json!("text")),
+        "{lease}"
+    );
+    assert!(
+        found["results"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r["why"].as_array().unwrap().contains(&json!("meaning"))),
+        "{found}"
+    );
+
+    // A changed card puts it behind until the worker embeds it again.
+    let card = root.join("Holding/lease.txt.md");
+    let text = std::fs::read_to_string(&card).unwrap();
+    std::fs::write(&card, text.replace("Tenancy agreement", "Flat lease")).unwrap();
+    let status = json_of(&run(&["index", "status", "--json"]));
+    assert_eq!(status["behind"], 1);
+    let report = String::from_utf8_lossy(&run(&["index", "status"]).stdout).into_owned();
+    assert!(report.contains("1 behind"), "{report}");
+    let found = json_of(&run(&["search", "lease", "--json"]));
+    assert_eq!(found["meaning"], json!({ "state": "behind", "items": 1 }));
+    let worked = json_of(&run(&["worker", "--json"]));
+    assert_eq!(worked["embedded"], 1);
+    let status = json_of(&run(&["index", "status", "--json"]));
+    assert_eq!(status["behind"], 0);
+
+    // Without the model, search falls back to words and says so.
+    let found = sandbox.json(&root, &["search", "boiler"]);
+    assert_eq!(found["meaning"]["state"], "off");
+    assert!(
+        found["words_only"]
+            .as_str()
+            .unwrap()
+            .contains("No provider on this device runs echo-embed"),
+        "{found}"
+    );
+    assert_eq!(found["results"][0]["found"]["title"], "Flat lease");
+}
+
+#[test]
+fn bench_search_scores_findability_and_reuses_each_models_index() {
+    let sandbox = Sandbox::new();
+    let bin = sandbox.path("bin");
+    std::fs::create_dir(&bin).unwrap();
+    let suffix = std::env::consts::EXE_SUFFIX;
+    std::fs::copy(
+        echo_provider(),
+        bin.join(format!("carrel-provider-echo{suffix}")),
+    )
+    .unwrap();
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/bench");
+    let out = sandbox.path("results");
+    let corpus = corpus.to_str().unwrap();
+    let out_arg = out.to_str().unwrap();
+    let args = ["bench", "--search", "--corpus", corpus, "--out", out_arg];
+    let cwd = sandbox.dir.path().to_owned();
+
+    let first = run_with_providers(&sandbox, &cwd, &bin, &args);
+    assert!(
+        first.status.success(),
+        "{}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+    let text = String::from_utf8_lossy(&first.stdout).into_owned();
+    assert!(text.contains("| Words alone | none |"), "{text}");
+    assert!(text.contains("| Meaning alone | echo-embed |"), "{text}");
+    assert!(
+        text.contains("| Words and meaning | echo-embed |"),
+        "{text}"
+    );
+    assert!(text.contains("Built an index for echo-embed"), "{text}");
+    let report = std::fs::read_to_string(out.join("search/report.md")).unwrap();
+    assert!(report.contains("## Not in the top five"), "{report}");
+    assert!(
+        out.join("search/archive/_System/index/echo-embed/index.json")
+            .is_file()
+    );
+    let results: Value =
+        serde_json::from_str(&std::fs::read_to_string(out.join("search/results.json")).unwrap())
+            .unwrap();
+    let rankings = results["rankings"].as_array().unwrap();
+    assert_eq!(rankings.len(), 3);
+    assert_eq!(rankings[0]["way"], "words");
+    let described = results["descriptions"].as_u64().unwrap();
+    assert_eq!(rankings[0]["score"]["descriptions"], described);
+    assert!(rankings[0]["score"]["top_five"].as_f64().unwrap() > 0.3);
+
+    // Run again, the archive and index are reused: nothing is embedded again.
+    let again = json_of(&run_with_providers(
+        &sandbox,
+        &cwd,
+        &bin,
+        &[args.as_slice(), &["--json"]].concat(),
+    ));
+    let note = again["notes"][0].as_str().unwrap();
+    assert!(
+        note.starts_with("Reused the index for echo-embed") && note.contains("0 embedded again"),
+        "{note}"
+    );
+
+    // Without an embedding model on offer, words alone are measured, and a missing one fails.
+    let nothing = sandbox.path("no-providers");
+    std::fs::create_dir(&nothing).unwrap();
+    let words = json_of(&run_with_providers(
+        &sandbox,
+        &cwd,
+        &nothing,
+        &[args.as_slice(), &["--json"]].concat(),
+    ));
+    assert_eq!(words["rankings"].as_array().unwrap().len(), 1);
+    assert!(
+        words["notes"][0]
+            .as_str()
+            .unwrap()
+            .contains("No embedding model is on offer"),
+        "{words}"
+    );
+    let missing = run_with_providers(
+        &sandbox,
+        &cwd,
+        &nothing,
+        &[args.as_slice(), &["--model", "nope"]].concat(),
+    );
+    assert_eq!(missing.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&missing.stderr).contains("no embedding model nope"));
+}
+
+/// The sample archive with history, searched with `echo-embed` and its index built, and a
+/// folder of providers offering `echo-embed` and `echo-embed-wide`.
+fn echo_archive(sandbox: &Sandbox) -> (PathBuf, PathBuf) {
+    let bin = sandbox.path("bin");
+    std::fs::create_dir(&bin).unwrap();
+    let suffix = std::env::consts::EXE_SUFFIX;
+    for name in ["carrel-provider-echo", "carrel-provider-echo-wide"] {
+        std::fs::copy(echo_provider(), bin.join(format!("{name}{suffix}"))).unwrap();
+    }
+    let root = sandbox.sample();
+    sandbox.ok(&root, &["init", root.to_str().unwrap()]);
+    file_with_card(
+        &root,
+        "Holding",
+        "lease.txt",
+        "The landlord repairs the boiler. The tenant keeps the garden tidy.",
+        "title: \"Tenancy agreement\"\nsensitivity: personal\n",
+    );
+    set_embedding_model(&root, Some("echo-embed"));
+    json_of(&run_with_providers(
+        sandbox,
+        &root,
+        &bin,
+        &["index", "rebuild", "--json"],
+    ));
+    (root, bin)
+}
+
+#[test]
+fn show_lists_the_items_nearest_by_meaning_under_related() {
+    let sandbox = Sandbox::new();
+
+    // No index: the links only, and why.
+    let plain = sandbox.sample();
+    let parts = sandbox.json(&plain, &["show", "Projects/Hardware/parts-list.csv"]);
+    assert_eq!(parts["near"], json!([]));
+    assert!(
+        parts["links_only"]
+            .as_str()
+            .unwrap()
+            .contains("carrel index rebuild"),
+        "{parts}"
+    );
+    let report = sandbox.ok(&plain, &["show", "Projects/Hardware/parts-list.csv"]);
+    assert!(
+        report.contains("\nRelated:\n  part-of Projects/Hardware/lamp-build.md\n  Only its links"),
+        "{report}"
+    );
+
+    // A restricted copy of the lease, whose card reads like the lease's, so it's nearest.
+    let (root, bin) = echo_archive(&sandbox);
+    file_with_card(
+        &root,
+        "Holding",
+        "lease copy.txt",
+        "Account 4111 1111 1111 1111.",
+        "title: \"Tenancy agreement\"\nsensitivity: restricted\n",
+    );
+    json_of(&run_with_providers(
+        &sandbox,
+        &root,
+        &bin,
+        &["index", "rebuild", "--json"],
+    ));
+
+    // Nothing is embedded to show it, so it needs no provider: none is on the path here.
+    let lease = sandbox.json(&root, &["show", "Holding/lease.txt"]);
+    assert_eq!(lease["links_only"], Value::Null, "{lease}");
+    let near = lease["near"].as_array().unwrap();
+    assert_eq!(near.len(), 5, "{lease}");
+    assert!(near.iter().all(|n| n["card"] != "Holding/lease.txt.md"));
+    assert_eq!(near[0]["card"], "Holding/lease copy.txt.md", "{lease}");
+    assert_eq!(near[0]["sensitivity"], "restricted");
+    assert!(near[0]["score"].as_f64().unwrap() > near[4]["score"].as_f64().unwrap());
+    let report = sandbox.ok(&root, &["show", "Holding/lease.txt"]);
+    assert!(
+        report.contains("  near Holding/lease copy.txt.md  Tenancy agreement  [restricted]"),
+        "{report}"
+    );
+
+    // What it links to is listed as a link, not again as near it.
+    let parts = sandbox.json(&root, &["show", "Projects/Hardware/parts-list.csv"]);
+    let near = parts["near"].as_array().unwrap();
+    assert_eq!(near.len(), 5, "{parts}");
+    assert!(
+        near.iter()
+            .all(|n| n["card"] != "Projects/Hardware/lamp-build.md"),
+        "{parts}"
+    );
+
+    // A card the index hasn't caught up with lists its links only, and says why.
+    let card = root.join("Holding/lease.txt.md");
+    let text = std::fs::read_to_string(&card).unwrap();
+    std::fs::write(&card, text.replace("Tenancy agreement", "Flat lease")).unwrap();
+    let lease = sandbox.json(&root, &["show", "Holding/lease.txt"]);
+    assert_eq!(lease["near"], json!([]));
+    assert!(
+        lease["links_only"]
+            .as_str()
+            .unwrap()
+            .contains("hasn't caught up"),
+        "{lease}"
+    );
+}
+
+#[test]
+fn index_model_lists_the_models_here_and_refuses_others() {
+    let sandbox = Sandbox::new();
+    let (root, bin) = echo_archive(&sandbox);
+    let run = |args: &[&str]| run_with_providers(&sandbox, &root, &bin, args);
+    let new = root.join("_System/index/echo-embed-wide");
+
+    // Without a name: the model in use and the ones this device has.
+    let listed = json_of(&run(&["index", "model", "--json"]));
+    assert_eq!(listed["model"], "echo-embed");
+    assert_eq!(listed["switch"], Value::Null);
+    let available: Vec<&str> = listed["available"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| m["model"].as_str().unwrap())
+        .collect();
+    assert!(available.contains(&"echo-embed-wide"), "{listed}");
+    let text = String::from_utf8_lossy(&run(&["index", "model"]).stdout).into_owned();
+    assert!(
+        text.contains("echo-embed-wide  through echo-wide, 4 numbers"),
+        "{text}"
+    );
+    assert!(text.contains("download it with"), "{text}");
+
+    // A model no provider here offers is refused, saying which can be used.
+    let out = run(&["index", "model", "qwen3-embedding-0.6b"]);
+    assert!(!out.status.success());
+    let error = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        error.contains("no provider on this device offers"),
+        "{error}"
+    );
+    assert!(
+        error.contains("this device can embed with echo-embed"),
+        "{error}"
+    );
+    assert!(error.contains("echo-embed-wide"), "{error}");
+    assert!(error.contains("carrel models download"), "{error}");
+    assert!(!new.exists());
+}
+
+#[test]
+fn index_model_switches_models_while_the_old_index_serves() {
+    let sandbox = Sandbox::new();
+    let (root, bin) = echo_archive(&sandbox);
+    let run = |args: &[&str]| run_with_providers(&sandbox, &root, &bin, args);
+    let old = root.join("_System/index/echo-embed");
+    let new = root.join("_System/index/echo-embed-wide");
+
+    // Stopped part way: the switch is recorded, and search keeps using the old index.
+    let out = stopped_switch(&sandbox, &root, &bin);
+    assert!(!out.status.success());
+    assert_eq!(
+        archive_settings(&root)["embedding"],
+        json!({ "model": "echo-embed", "switching_to": "echo-embed-wide" })
+    );
+    let status = json_of(&run(&["index", "status", "--json"]));
+    assert_eq!(status["model"], "echo-embed");
+    assert_eq!(status["switch"]["to"], "echo-embed-wide");
+    assert_eq!(status["switch"]["embedded"], 2);
+    // Another device without the new model sees the switch too.
+    let text = sandbox.ok(&root, &["index", "status"]);
+    assert!(
+        text.contains("Switching to echo-embed-wide: 2 of"),
+        "{text}"
+    );
+    assert!(text.contains("search uses echo-embed until"), "{text}");
+    let found = json_of(&run(&["search", "boiler", "--json"]));
+    assert_eq!(found["meaning"]["state"], "current", "{found}");
+    assert!(old.join("index.json").is_file());
+
+    // Run again, it carries on, switches, and removes the old index.
+    let switched = json_of(&run(&["index", "model", "echo-embed-wide", "--json"]));
+    assert_eq!(switched["resumed"], true);
+    assert_eq!(switched["switched"], true);
+    assert_eq!(switched["from"], "echo-embed");
+    assert_eq!(switched["dimensions"], 4);
+    assert_eq!(
+        switched["embedded"],
+        switched["items"].as_u64().unwrap() - 2
+    );
+    assert_eq!(
+        archive_settings(&root)["embedding"],
+        json!({ "model": "echo-embed-wide" })
+    );
+    assert!(!old.exists());
+    let status = json_of(&run(&["index", "status", "--json"]));
+    assert_eq!(status["model"], "echo-embed-wide");
+    assert_eq!(status["switch"], Value::Null);
+    assert_eq!(status["behind"], 0);
+    let found = json_of(&run(&["search", "boiler", "--json"]));
+    assert_eq!(found["meaning"]["state"], "current", "{found}");
+    let log = sandbox.ok(&root, &["log"]);
+    assert!(
+        log.contains("Switch the embedding model from echo-embed to echo-embed-wide"),
+        "{log}"
+    );
+
+    // The worker uses the new model.
+    let card = root.join("Holding/lease.txt.md");
+    let text = std::fs::read_to_string(&card).unwrap();
+    std::fs::write(&card, text.replace("Tenancy agreement", "Flat lease")).unwrap();
+    let worked = json_of(&run(&["worker", "--json"]));
+    assert_eq!(worked["embedded"], 1);
+    assert!(!old.exists());
+
+    // A device without the new model searches by words, and says why.
+    let found = sandbox.json(&root, &["search", "boiler"]);
+    assert_eq!(found["meaning"]["state"], "off");
+    assert!(
+        found["words_only"]
+            .as_str()
+            .unwrap()
+            .contains("No provider on this device runs echo-embed-wide"),
+        "{found}"
+    );
+
+    // Switching back runs to the end; a switch stopped part way is given up by choosing the
+    // archive's model again.
+    let back = json_of(&run(&["index", "model", "echo-embed", "--json"]));
+    assert_eq!(back["from"], "echo-embed-wide");
+    assert!(!new.exists());
+    let interrupted = stopped_switch(&sandbox, &root, &bin);
+    assert!(!interrupted.status.success());
+    assert!(new.is_dir());
+    let text = String::from_utf8_lossy(&run(&["index", "model", "echo-embed"]).stdout).into_owned();
+    assert!(
+        text.contains("Stopped switching to echo-embed-wide"),
+        "{text}"
+    );
+    assert_eq!(
+        archive_settings(&root)["embedding"],
+        json!({ "model": "echo-embed" })
+    );
+    assert!(!new.exists());
+    assert!(old.join("index.json").is_file());
+    let text = String::from_utf8_lossy(&run(&["index", "model", "echo-embed"]).stdout).into_owned();
+    assert!(text.contains("already searched with echo-embed"), "{text}");
+}
+
+/// The archive's shared settings.
+fn archive_settings(root: &Path) -> Value {
+    serde_json::from_str(&std::fs::read_to_string(root.join("_System/settings.json")).unwrap())
+        .unwrap()
+}
+
+/// `carrel index model echo-embed-wide`, with the wide echo provider stopping after the test
+/// query and two items.
+fn stopped_switch(sandbox: &Sandbox, root: &Path, bin: &Path) -> Output {
+    std::process::Command::new(env!("CARGO_BIN_EXE_carrel"))
+        .args(["index", "model", "echo-embed-wide"])
+        .current_dir(root)
+        .env("PATH", bin)
+        .env("CARREL_CONFIG_DIR", sandbox.path("config"))
+        .env("CARREL_TRASH_DIR", sandbox.path("Trash"))
+        .env("CARREL_WORKER", "off")
+        .env("ECHO_EMBED_FAIL_AFTER", "3")
+        .output()
+        .unwrap()
 }

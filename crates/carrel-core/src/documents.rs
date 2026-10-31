@@ -168,6 +168,10 @@ pub struct EmbeddingSettings {
     /// The identifier of the model every device embeds with, such as `embeddinggemma-300m`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    /// The model the archive is switching to, while its index is built beside the current
+    /// model's (`carrel index model`); `model` changes once it's complete.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub switching_to: Option<String>,
     /// Keys this version doesn't know.
     #[serde(flatten)]
     pub extra: Extra,
@@ -188,6 +192,25 @@ impl Settings {
         self.embedding
             .get_or_insert_with(EmbeddingSettings::default)
             .model = Some(model.to_owned());
+    }
+
+    /// The model the archive is switching to, while its index is being built.
+    #[must_use]
+    pub fn embedding_switch(&self) -> Option<&str> {
+        self.embedding
+            .as_ref()
+            .and_then(|e| e.switching_to.as_deref())
+            .filter(|m| !m.trim().is_empty())
+    }
+
+    /// Records that the archive is switching to `model`, or, with `None`, that it isn't.
+    pub fn set_embedding_switch(&mut self, model: Option<&str>) {
+        if model.is_none() && self.embedding.is_none() {
+            return;
+        }
+        self.embedding
+            .get_or_insert_with(EmbeddingSettings::default)
+            .switching_to = model.map(str::to_owned);
     }
 }
 

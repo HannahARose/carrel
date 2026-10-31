@@ -25,12 +25,13 @@ let idleUnload: Duration = .seconds(300)
 /// A fixed seed, so the same prompt gives the same answer.
 let seed: UInt64 = 0x00ca_7e11
 
-/// The one model a provider process has loaded, if any. Loading another unloads it first, so
-/// at most one model's memory is held.
+/// The one model a provider process has loaded, if any: a text model or an embedding model.
+/// Loading another unloads it first, so at most one model's memory is held.
 public actor Loaded {
     public static let shared = Loaded()
 
     private var current: (name: String, container: ModelContainer)?
+    private var embedder: (name: String, encoder: LoadedEncoder)?
     private var tokenizers: [String: any MLXLMCommon.Tokenizer] = [:]
     private var biases: [String: Biases] = [:]
     private var lastUse = ContinuousClock.now
@@ -43,12 +44,33 @@ public actor Loaded {
             return current.container
         }
         current = nil
+        embedder = nil
         Memory.clearCache()
         let container = try await LLMModelFactory.shared.loadContainer(
             from: folder.url, using: LocalTokenizerLoader())
         current = (folder.name, container)
         scheduleIdleUnload()
         return container
+    }
+
+    /// The vectors of `prompts` through `folder`'s embedding model, loading it if it isn't the
+    /// one loaded. The model is used only here, inside the actor, one request at a time.
+    func vectors(of prompts: [String], spec: EmbeddingSpec, folder: ModelFolder) async throws
+        -> [[Float]]
+    {
+        lastUse = .now
+        if embedder?.name != folder.name {
+            current = nil
+            embedder = nil
+            Memory.clearCache()
+            let encoder = try await LoadedEncoder.load(folder)
+            embedder = (folder.name, encoder)
+            scheduleIdleUnload()
+        }
+        guard let encoder = embedder?.encoder else { return [] }
+        let vectors = prompts.map { encoder.vector(of: $0, spec: spec) }
+        lastUse = .now
+        return vectors
     }
 
     /// `folder`'s tokenizer alone, for counting tokens without loading the weights.
@@ -69,7 +91,8 @@ public actor Loaded {
         }
         let (whitespace, whitespaceTokenIDs) = WhitespaceTokenBias.compute(tokenizer: tokenizer)
         let made = Biases(
-            closing: ClosingTokenBias.compute(tokenizer: tokenizer, eosTokenId: tokenizer.eosTokenId),
+            closing: ClosingTokenBias.compute(
+                tokenizer: tokenizer, eosTokenId: tokenizer.eosTokenId),
             whitespace: whitespace, whitespaceTokenIDs: whitespaceTokenIDs)
         biases[name] = made
         return made
@@ -79,14 +102,15 @@ public actor Loaded {
     public func unload() {
         idleTask?.cancel()
         idleTask = nil
-        guard current != nil else { return }
+        guard isLoaded else { return }
         current = nil
+        embedder = nil
         Memory.clearCache()
         FileHandle.standardError.write(Data("carrel-provider-mlx: unloaded the model\n".utf8))
     }
 
     /// Whether a model is loaded, for tests.
-    public var isLoaded: Bool { current != nil }
+    public var isLoaded: Bool { current != nil || embedder != nil }
 
     private func scheduleIdleUnload() {
         idleTask?.cancel()
@@ -103,10 +127,10 @@ public actor Loaded {
     }
 
     private func idle(for duration: Duration) -> Bool {
-        current != nil && ContinuousClock.now - lastUse >= duration
+        isLoaded && ContinuousClock.now - lastUse >= duration
     }
 
-    fileprivate func touch() {
+    func touch() {
         lastUse = .now
     }
 }
@@ -321,7 +345,8 @@ enum SchemaText {
     }
 
     static func appendProperties(
-        _ properties: [String: CarrelAppleProviders.JSONValue], order: [String], to out: inout String
+        _ properties: [String: CarrelAppleProviders.JSONValue], order: [String],
+        to out: inout String
     ) {
         let listed = order.filter { properties[$0] != nil }
         let rest = properties.keys.filter { !listed.contains($0) }.sorted()
@@ -337,10 +362,10 @@ enum SchemaText {
     }
 
     static func quoted(_ s: String) -> String {
-        let data = (try? JSONSerialization.data(withJSONObject: [s], options: [.fragmentsAllowed])) ?? Data()
+        let data =
+            (try? JSONSerialization.data(withJSONObject: [s], options: [.fragmentsAllowed]))
+            ?? Data()
         let array = String(data: data, encoding: .utf8) ?? "[\"\"]"
         return String(array.dropFirst().dropLast())
     }
 }
-
-

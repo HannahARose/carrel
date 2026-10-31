@@ -2,14 +2,15 @@
 //!
 //! A manifest lists every file in a folder or bundle with its checksum, size and modification
 //! time. Building one again reuses checksums for files whose size and modification time are
-//! unchanged, so large items are only re-read where something changed. Comparing two manifests
+//! unchanged and whose modification time is safely older than the previous build, so large
+//! items are only re-read where something changed. Comparing two manifests
 //! gives the files added, removed, changed and renamed.
 
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Write as _;
 use std::io::Read as _;
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use sha2::{Digest, Sha256};
 
@@ -18,6 +19,12 @@ use crate::detect::{Rules, is_ignored};
 
 /// The first line every manifest starts with, before its fields.
 const HEADER: &str = "# carrel manifest 1.0";
+
+/// How much older than the previous build a file's modification time must be before its
+/// checksum is reused. File systems stamp writes from a coarse clock (about 16 ms on Windows,
+/// a second on HFS+, two seconds on FAT), so a file edited just after it was read can keep the
+/// modification time that was recorded; such a "racy" file is read again instead.
+const RACY_WINDOW: Duration = Duration::from_secs(2);
 
 impl Checksum {
     /// The SHA-256 checksum of `bytes`.
@@ -75,6 +82,10 @@ pub struct Manifest {
     pub item: Id,
     /// Its files, sorted by path (byte order).
     pub entries: Vec<Entry>,
+    /// When the manifest was built: the time just before its files were read, written as the
+    /// header's `built` field. Checksums are only reused for files modified well before it
+    /// (FORMAT.md §7.7); without it, none are.
+    pub built: Option<SystemTime>,
 }
 
 /// Why a manifest couldn't be built or read.
@@ -133,6 +144,16 @@ pub(crate) fn timestamp(time: SystemTime) -> DateOrTime {
     DateOrTime(zoned.strftime("%Y-%m-%dT%H:%M:%S%.f%:z").to_string())
 }
 
+/// Whether a file last modified at `mtime` can't have been edited since a manifest built at
+/// `built` read it without its modification time changing (see [`RACY_WINDOW`]).
+fn settled_before(mtime: SystemTime, built: Option<SystemTime>) -> bool {
+    built.is_some_and(|built| {
+        mtime
+            .checked_add(RACY_WINDOW)
+            .is_some_and(|safe| safe <= built)
+    })
+}
+
 impl Manifest {
     /// Builds the manifest of the folder at `root`.
     ///
@@ -140,7 +161,9 @@ impl Manifest {
     /// regenerable folders (§4.3), which change too often to track and can be rebuilt.
     /// Symbolic links are recorded, never followed. When `previous` is given, files whose size
     /// and modification time match its entry keep that entry's checksum instead of being read
-    /// again.
+    /// again, provided they were last modified safely before `previous` was built. A file
+    /// modified within the file system's clock resolution of that build may have been edited
+    /// again without its modification time changing, so it is always read.
     ///
     /// ```
     /// use carrel_core::card::Id;
@@ -169,6 +192,8 @@ impl Manifest {
         rules: &Rules,
         previous: Option<&Manifest>,
     ) -> Result<Self, ManifestError> {
+        let built = SystemTime::now();
+        let previous_built = previous.and_then(|m| m.built);
         let known: HashMap<&str, &Entry> = previous
             .map(|m| m.entries.iter().map(|e| (e.path.as_str(), e)).collect())
             .unwrap_or_default();
@@ -197,7 +222,8 @@ impl Manifest {
                     }
                     continue;
                 }
-                let modified = timestamp(meta.modified().map_err(io(&path))?);
+                let mtime = meta.modified().map_err(io(&path))?;
+                let modified = timestamp(mtime);
                 let entry = if meta.file_type().is_symlink() {
                     let target = std::fs::read_link(&path).map_err(io(&path))?;
                     let target = target.to_string_lossy();
@@ -210,7 +236,11 @@ impl Manifest {
                 } else {
                     let size = meta.len();
                     let checksum = match known.get(relative.as_str()) {
-                        Some(old) if old.size == size && old.modified == modified => {
+                        Some(old)
+                            if old.size == size
+                                && old.modified == modified
+                                && settled_before(mtime, previous_built) =>
+                        {
                             old.checksum.clone()
                         }
                         _ => Checksum::of_file(&path).map_err(io(&path))?,
@@ -226,7 +256,11 @@ impl Manifest {
             }
         }
         entries.sort_by(|a, b| a.path.cmp(&b.path));
-        Ok(Self { item, entries })
+        Ok(Self {
+            item,
+            entries,
+            built: Some(built),
+        })
     }
 
     /// The total size of every file in the manifest.
@@ -238,7 +272,11 @@ impl Manifest {
     /// The manifest as written to `_System/manifests/<item-id>.tsv`.
     #[must_use]
     pub fn to_tsv(&self) -> String {
-        let mut out = format!("{HEADER}\tid={}\n", self.item);
+        let mut out = format!("{HEADER}\tid={}", self.item);
+        if let Some(built) = self.built {
+            let _ = write!(out, "\tbuilt={}", timestamp(built).0);
+        }
+        out.push('\n');
         for e in &self.entries {
             let _ = writeln!(
                 out,
@@ -286,7 +324,15 @@ impl Manifest {
         if fields.next() != Some(HEADER) {
             return Err(bad(1, "doesn't start with `# carrel manifest 1.0`"));
         }
+        let fields: Vec<&str> = fields.collect();
+        // An unreadable build time only costs re-reading files, so it isn't an error.
+        let built = fields
+            .iter()
+            .find_map(|f| f.strip_prefix("built="))
+            .and_then(|t| t.parse::<jiff::Timestamp>().ok())
+            .map(SystemTime::from);
         let item = fields
+            .iter()
             .find_map(|f| f.strip_prefix("id="))
             .and_then(|id| uuid::Uuid::parse_str(id).ok())
             .map(Id)
@@ -316,7 +362,11 @@ impl Manifest {
         if entries.windows(2).any(|w| w[0].path >= w[1].path) {
             return Err(bad(1, "entries aren't sorted by path, or a path repeats"));
         }
-        Ok(Self { item, entries })
+        Ok(Self {
+            item,
+            entries,
+            built,
+        })
     }
 
     /// The differences from `self` (older) to `newer`. Modification times are ignored: only

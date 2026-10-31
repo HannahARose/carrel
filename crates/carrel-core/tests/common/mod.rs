@@ -86,7 +86,33 @@ pub struct ScriptedEmbed {
     /// How many numbers its vectors have.
     pub dimensions: usize,
     pub failure: Option<ProviderError>,
+    /// Whether its vectors count each text's words, so texts sharing words are near each
+    /// other, instead of being made from each text's length.
+    pub by_words: bool,
     pub asked: Arc<Mutex<Vec<(String, EmbeddingRequest)>>>,
+}
+
+/// A unit vector of `dimensions` numbers counting `text`'s lowercased words, each word in the
+/// place its letters' sum picks.
+pub fn word_vector(text: &str, dimensions: usize) -> Vec<f32> {
+    let mut v = vec![0.0f32; dimensions];
+    for word in text
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+    {
+        let place = word
+            .to_lowercase()
+            .chars()
+            .fold(7usize, |h, c| h.wrapping_mul(31).wrapping_add(c as usize));
+        v[place % dimensions] += 1.0;
+    }
+    let length = v.iter().map(|n| n * n).sum::<f32>().sqrt();
+    if length > 0.0 {
+        for n in &mut v {
+            *n /= length;
+        }
+    }
+    v
 }
 
 impl ScriptedEmbed {
@@ -109,6 +135,7 @@ impl ScriptedEmbed {
             answers_as: None,
             dimensions,
             failure: None,
+            by_words: false,
             asked: Arc::new(Mutex::new(Vec::new())),
         }
     }
@@ -133,6 +160,9 @@ impl Provider for ScriptedEmbed {
             .texts
             .iter()
             .map(|t| {
+                if self.by_words {
+                    return word_vector(t, self.dimensions);
+                }
                 let mut v = vec![0.0; self.dimensions];
                 v[t.len() % self.dimensions] = 1.0;
                 v
