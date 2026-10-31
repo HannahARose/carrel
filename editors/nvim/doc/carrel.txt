@@ -67,4 +67,4 @@ require("carrel").run({args}, {cwd}, {done})          *carrel.run()*
     Run `carrel --json {args}` in {cwd} and call {done}(result) with the
     decoded JSON, or {done}(nil, message) if it failed.
 
- vim:tw=78:ts=8:noet:ft=help:norl:
+ vim:tw=78:ts=8:noexpandtab:ft=help:norl:
