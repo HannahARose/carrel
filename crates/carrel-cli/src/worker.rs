@@ -58,6 +58,19 @@ pub fn log_path(archive: &Archive) -> Result<PathBuf, Failure> {
     file_for(archive, "log")
 }
 
+/// Opens the worker's log for appending, creating it and its folder: before the first worker
+/// on this device, the folder isn't there yet.
+fn open_log(path: &Path) -> Result<File, Failure> {
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| Failure::io(dir, &e))?;
+    }
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .map_err(|e| Failure::io(path, &e))
+}
+
 /// Held while a worker runs for an archive on this device.
 pub struct Lock {
     file: File,
@@ -150,11 +163,7 @@ pub fn start(archive: &Archive) -> Result<bool, Failure> {
     let exe =
         std::env::current_exe().map_err(|e| Failure::new(format!("can't find carrel: {e}")))?;
     let log_file = log_path(archive)?;
-    let log = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&log_file)
-        .map_err(|e| Failure::io(&log_file, &e))?;
+    let log = open_log(&log_file)?;
     let mut command = std::process::Command::new(exe);
     command
         .arg("--archive")
@@ -299,4 +308,25 @@ fn now() -> String {
     jiff::Zoned::now()
         .strftime("%Y-%m-%dT%H:%M:%S%:z")
         .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_log_and_its_folder_are_made_before_the_first_worker() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join("workers").join("archive.log");
+        let mut file = open_log(&log).unwrap();
+        writeln!(file, "started").unwrap();
+        drop(file);
+        let mut again = open_log(&log).unwrap();
+        writeln!(again, "again").unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&log).unwrap(),
+            "started\nagain\n",
+            "it appends"
+        );
+    }
 }
