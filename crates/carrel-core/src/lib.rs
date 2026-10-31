@@ -47,6 +47,7 @@
 //! ```
 
 pub mod actions;
+pub mod active;
 pub mod archive;
 pub mod backup;
 pub mod bench;
