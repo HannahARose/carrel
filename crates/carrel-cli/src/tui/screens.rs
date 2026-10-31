@@ -275,8 +275,8 @@ impl App {
         }
     }
 
-    /// Handles a key on the Browse screen: ←→ move between collections and items, `/`
-    /// searches, and Esc clears a search.
+    /// Handles a key on the Browse screen: ←→ move between collections and items, `c`
+    /// corrects the chosen item in words, `/` searches, and Esc clears a search.
     pub(super) fn browse_key(&mut self, key: KeyEvent) -> Handled {
         match key.code {
             // Here ←→ move between the panes; Tab still switches screens.
@@ -289,6 +289,11 @@ impl App {
             KeyCode::Left | KeyCode::Char('h') => {
                 if self.search.is_none() {
                     self.browse_in_items = false;
+                }
+            }
+            KeyCode::Char('c') if self.browse_in_items => {
+                if let Some((card, _)) = self.browse_items.get(self.browse_item) {
+                    return Handled::Yes(Some(Effect::CorrectItem(card.clone())));
                 }
             }
             KeyCode::Char('/') => {

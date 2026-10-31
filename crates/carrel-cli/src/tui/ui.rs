@@ -259,7 +259,10 @@ fn draw_help(frame: &mut Frame, theme: Theme, area: Rect) {
         ),
         ("↑↓, j k, PgUp PgDn, Home End", "scroll, or choose a change"),
         ("a  h", "approve, or hold in Holding (Review)"),
-        ("m  e  x", "move, edit or reject (Review)"),
+        (
+            "m  e  c  x",
+            "move, edit, correct in words, or reject (Review)",
+        ),
         (
             "v  b  s  [ ]",
             "a duplicate: file as a version, keep both, skip; other matches (Review)",
@@ -270,8 +273,8 @@ fn draw_help(frame: &mut Frame, theme: Theme, area: Rect) {
         ),
         ("Enter  d", "answer or dismiss a question (Questions)"),
         (
-            "←→  /  Esc",
-            "collections or items; search; clear it (Browse)",
+            "←→  c  /  Esc",
+            "collections or items; correct an item; search; clear it (Browse)",
         ),
         ("u", "undo the chosen change (History)"),
         (

@@ -115,6 +115,26 @@ fn event_loop(
                 *terminal = enter();
                 finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
             }
+            Some(Effect::Correct(id)) => {
+                // Words and the yes are asked on the plain terminal, as the editor uses it.
+                leave();
+                let result = crate::correct::review(
+                    Some(app.archive.root()),
+                    &id.to_string(),
+                    &[],
+                    false,
+                    false,
+                );
+                *terminal = enter();
+                finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
+            }
+            Some(Effect::CorrectItem(card)) => {
+                leave();
+                let result =
+                    crate::correct::filed(Some(app.archive.root()), &card, &[], false, false);
+                *terminal = enter();
+                finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
+            }
             Some(Effect::Pick(words)) => {
                 // The picker needs the terminal to itself, as the editor does.
                 leave();
@@ -180,7 +200,9 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
             finished(app, Ok(text));
             return None;
         }
-        Effect::Edit(_) | Effect::Pick(_) => return None,
+        Effect::Edit(_) | Effect::Correct(_) | Effect::CorrectItem(_) | Effect::Pick(_) => {
+            return None;
+        }
         Effect::Dismiss(id) => {
             let result = crate::questions::dismiss(Some(&root), &id.to_string());
             finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
@@ -842,6 +864,31 @@ mod tests {
         app.key(key(KeyCode::Esc));
         assert!(app.picker.is_none(), "Esc cancels");
         assert!(!app.quit, "and doesn't quit");
+    }
+
+    #[test]
+    fn c_corrects_the_chosen_proposal_or_browsed_item() {
+        let (_dir, mut app) = review_sample();
+        app.key(key(KeyCode::Char('2')));
+        let first = app.queue[0].id;
+        assert_eq!(
+            app.key(key(KeyCode::Char('c'))),
+            Some(Effect::Correct(first))
+        );
+
+        let (_dir, mut app) = sample(false);
+        app.key(key(KeyCode::Char('4')));
+        assert_eq!(
+            app.key(key(KeyCode::Char('c'))),
+            None,
+            "a collection isn't an item"
+        );
+        app.key(key(KeyCode::Right));
+        let card = app.browse_items[app.browse_item].0.clone();
+        assert_eq!(
+            app.key(key(KeyCode::Char('c'))),
+            Some(Effect::CorrectItem(card))
+        );
     }
 
     #[test]

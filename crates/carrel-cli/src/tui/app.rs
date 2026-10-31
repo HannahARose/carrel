@@ -142,6 +142,10 @@ pub enum Effect {
     },
     /// Edit this proposal's card in the owner's editor.
     Edit(Id),
+    /// Correct this proposal in words, on the plain terminal.
+    Correct(Id),
+    /// Correct this filed item, by its card's path, in words on the plain terminal.
+    CorrectItem(String),
     /// Answer this question.
     Answer {
         /// The question.

@@ -30,6 +30,7 @@ Exit status is `0` on success, `1` when the command failed, and `2` for a usage 
 | `carrel desk remove PATH [--delete-card]` | Takes it off the desk; its card stays unless `--delete-card`. |
 | `carrel sessions` | Finds finished work sessions on items checked out on this device (changes closer together than 45 minutes are one session, and Git commits count too) and adds a pending history entry for each, then lists every pending entry, numbered. A session still going isn't written until it's over. |
 | `carrel sessions approve\|combine\|drop ITEM [N...]` | Approves, combines into one, or drops an item's pending entries, by the numbers `carrel sessions` shows; all of them when none are given. Each is a history change. |
+| `carrel correct ITEM [WORDS…] [--yes] [--learn]` | Corrects a filed item's card the same way, and refiles it when the collection changes. One change, which `carrel undo` reverses. |
 | `carrel rename ITEM [NEW_NAME]` | Renames an item and its card together, and updates links to it. Without a new name, uses the portable name `carrel status` suggests. Can be undone. |
 | `carrel collection new PATH [--description TEXT] [--tag NAME=MEANING]...` | Creates a collection with a design document to fill in. `PATH` is a name, or `Parent/Name` inside an existing collection. |
 
@@ -56,6 +57,7 @@ Exit status is `0` on success, `1` when the command failed, and `2` for a usage 
 | `carrel review hold ID...` | Files the items in Holding, to place later. |
 | `carrel review move-to ID COLLECTION` | Proposes another collection; the item is filed there when approved. |
 | `carrel review edit ID` | Opens the card in your editor, checks it when you save, and reopens it with the problems listed until it checks out. |
+| `carrel review correct ID [WORDS…] [--yes] [--learn]` | Corrects a proposal in plain words ("it's from 2019", "it's a picture of Annecy, not Geneva") or `field: value` lines. Shows each change before and after, and saves only when you agree (`--yes` saves without asking). A broad correction can route it again. `--learn` adds a lasting fact it states to the glossary without asking. |
 | `carrel review reject ID...` | Rejects proposals; the items stay where they are. |
 
 Identifiers can be shortened to their last eight characters, as the list shows them.

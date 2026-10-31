@@ -377,3 +377,22 @@ fn rate(
     }
     answered
 }
+
+/// The reasons the floor rules give for a restricted value (a card number, an account number,
+/// a key, a password, recovery codes), as opposed to a model's.
+const RESTRICTED_REASONS: [&str; 7] = [
+    "contains what looks like a card number",
+    "contains what looks like a bank account number (IBAN)",
+    "contains what looks like a social security number",
+    "contains a private key",
+    "contains what looks like a password",
+    "holds account recovery codes",
+    "its name says it holds recovery codes",
+];
+
+/// Whether `reason` is one a floor rule gives for a restricted value. Such an item stays at
+/// least sensitive whatever a correction says, so a typed slip can't expose the value.
+#[must_use]
+pub fn restricted_by_rule(reason: &str) -> bool {
+    RESTRICTED_REASONS.contains(&reason)
+}
