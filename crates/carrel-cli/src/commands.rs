@@ -206,12 +206,12 @@ pub fn open(path: Option<&Path>) -> Result<Report, Failure> {
 }
 
 /// A card read from disk along with where it is.
-struct LoadedCard {
-    item: ItemRef,
-    card: Card,
+pub(crate) struct LoadedCard {
+    pub item: ItemRef,
+    pub card: Card,
 }
 
-fn load_card(archive: &Archive, item: &ItemRef) -> Result<LoadedCard, Failure> {
+pub(crate) fn load_card(archive: &Archive, item: &ItemRef) -> Result<LoadedCard, Failure> {
     Ok(LoadedCard {
         item: item.clone(),
         card: load_file(archive, item)?.card().clone(),
@@ -587,6 +587,12 @@ pub(crate) struct Shown {
     pub json: Value,
     /// The items it links to.
     pub links: Vec<Linked>,
+    /// Its card.
+    pub card: Card,
+    /// Its card's path.
+    pub card_path: String,
+    /// Every item in the archive, as it was listed to find it.
+    pub items: Vec<ItemRef>,
 }
 
 /// Describes the item `query` names: its card, and what it links to.
@@ -676,37 +682,71 @@ pub(crate) fn describe(archive: &Archive, query: &str) -> Result<Shown, Failure>
         text,
         json,
         links,
+        card,
+        card_path: item.card,
+        items,
     })
 }
 
 /// `carrel show`.
 pub fn show(archive: Option<&Path>, query: &str) -> Result<Report, Failure> {
     let archive = locate(archive)?;
-    let Shown {
-        id,
-        mut text,
-        mut json,
-        links,
-    } = describe(&archive, query)?;
-    if !links.is_empty() {
-        writeln!(text, "\n{}:", plural(links.len(), "link")).unwrap();
-        for link in &links {
-            let target = link.card.clone().unwrap_or_else(|| link.id.to_string());
-            writeln!(text, "  {} {target}", link.link_type).unwrap();
-        }
-    }
+    let mut shown = describe(&archive, query)?;
+    let near = crate::related::open(&archive)
+        .and_then(|index| crate::related::nearest(&archive, &index, &shown));
+    let mut text = std::mem::take(&mut shown.text);
+    text.push_str(&related_section(&shown.links, &near));
     let history = match History::open(&archive) {
-        Ok(history) => Some(history.item_log(id)?),
+        Ok(history) => Some(history.item_log(shown.id)?),
         Err(HistoryError::NotInitialized) => None,
         Err(e) => return Err(e.into()),
     };
     if let Some(entries) = &history {
         text.push_str(&item_history_section(entries));
     }
+    let mut json = shown.json;
     json["history"] = history.map_or(Value::Null, |entries| {
         Value::Array(entries.iter().map(entry_json).collect())
     });
+    json["near"] = Value::Array(
+        near.as_ref()
+            .map(|n| n.iter().map(crate::related::Neighbour::json).collect())
+            .unwrap_or_default(),
+    );
+    json["links_only"] = near.err().map_or(Value::Null, Value::String);
     Ok(Report::new(text, json))
+}
+
+/// The part of `carrel show` about the items related to it: those it links to, then those
+/// nearest it by meaning, or why there are none of those.
+fn related_section(
+    links: &[Linked],
+    near: &Result<Vec<crate::related::Neighbour>, String>,
+) -> String {
+    let mut text = String::new();
+    let near_ones = near.as_deref().unwrap_or_default();
+    if links.is_empty() && near_ones.is_empty() && near.is_ok() {
+        return text;
+    }
+    writeln!(text, "\nRelated:").unwrap();
+    for link in links {
+        let target = link.card.clone().unwrap_or_else(|| link.id.to_string());
+        writeln!(text, "  {} {target}", link.link_type).unwrap();
+    }
+    for neighbour in near_ones {
+        writeln!(
+            text,
+            "  near {}  {}{}",
+            neighbour.card,
+            neighbour.title,
+            crate::related::mark(neighbour.sensitivity)
+        )
+        .unwrap();
+    }
+    if let Err(why) = near {
+        writeln!(text, "  {why}").unwrap();
+    }
+    text
 }
 
 /// The part of `carrel show` about every change that touched the item, newest first.

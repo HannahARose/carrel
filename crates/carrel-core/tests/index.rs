@@ -338,6 +338,54 @@ fn the_nearest_items_come_with_their_best_passage() {
 }
 
 #[test]
+fn an_items_neighbours_are_found_by_its_card_without_embedding() {
+    let s = setup();
+    let root = s.archive.root().to_owned();
+    let renewal = file(
+        &root,
+        "renewal.txt",
+        "The tenancy is renewed for another year.",
+        "title: \"Tenancy agreement renewal\"\nsummary: \"A year's lease, renewed.\"\nsensitivity: personal\n",
+    );
+    let (registry, asked) = registry(MODEL);
+    let index = build(&s.archive, &registry);
+    let embedded = asked.lock().unwrap().len();
+
+    // The item's own card vector is the query: nothing is embedded to find its neighbours.
+    let card = index.card_vector(s.lease).unwrap();
+    assert_eq!(card.len(), index.dimensions());
+    let near = index.near_item(s.lease, &|_| true, 5).unwrap();
+    assert_eq!(asked.lock().unwrap().len(), embedded);
+    assert_eq!(near.len(), 5);
+    assert_eq!(near[0].id, renewal, "{near:?}");
+    assert!(
+        near.iter().all(|n| n.id != s.lease),
+        "never itself, nor its passages"
+    );
+    let without = index.near_item(s.lease, &|id| id != renewal, 5).unwrap();
+    assert!(without.iter().all(|n| n.id != renewal));
+
+    // A restricted item has only its card in the index, and finds its neighbours by it.
+    let near = index.near_item(s.statement, &|_| true, 5).unwrap();
+    assert!(near.iter().all(|n| n.id != s.statement));
+    assert!(index.near_item(Id::new_v7(), &|_| true, 5).is_none());
+
+    // Whether the index is current for an item, as `plan` would find it.
+    let path = root.join("Holding/agreement.txt.md");
+    let parse = |path: &Path| {
+        carrel_core::card_file::CardFile::parse(&std::fs::read_to_string(path).unwrap())
+            .unwrap()
+            .card()
+            .clone()
+    };
+    assert!(index.is_current(&s.archive, &parse(&path), "Holding"));
+    assert!(!index.is_current(&s.archive, &parse(&path), "Finances"));
+    let text = std::fs::read_to_string(&path).unwrap();
+    std::fs::write(&path, text.replace("Tenancy agreement", "Flat lease")).unwrap();
+    assert!(!index.is_current(&s.archive, &parse(&path), "Holding"));
+}
+
+#[test]
 fn search_merges_meaning_with_words_and_says_when_it_is_behind() {
     let s = setup();
     let (registry, _) = registry(MODEL);
