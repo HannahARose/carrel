@@ -265,7 +265,8 @@ impl ArchiveHandle {
         let item = Self::item(&archive, &item)?;
         let destination = match to {
             Some(to) => PathBuf::from(to),
-            None => carrel_core::local::home_dir()
+            None => self
+                .home()
                 .map(|home| home.join("Desktop"))
                 .ok_or_else(|| CarrelError::invalid("no home folder to check out to"))?,
         };

@@ -218,7 +218,8 @@ impl ArchiveHandle {
         let device = carrel_core::local::Identity::load_or_create_in(&self.config_dir()?)
             .ok()
             .map(|i| i.device);
-        let summary = carrel_core::status::summary(&archive, &Looking::here(device))?;
+        let summary =
+            carrel_core::status::summary(&archive, &Looking::in_home(device, self.home()))?;
         let (review, _) = carrel_core::review::ReviewQueue::of(&archive).list()?;
         let (questions, _) = carrel_core::questions::QuestionQueue::of(&archive).list()?;
         Ok(StatusSummary {

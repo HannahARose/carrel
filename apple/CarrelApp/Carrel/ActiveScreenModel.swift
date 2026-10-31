@@ -61,8 +61,17 @@ final class ActiveScreenModel {
     /// What went wrong with the last action, for an alert.
     var problem: String?
 
-    init(archive: ArchiveModel, didChange: @escaping () async -> Void = {}) {
+    /// Where a checkout goes unless changed: the Desktop, or the folder tests give.
+    let checkoutFolder: URL
+
+    init(
+        archive: ArchiveModel,
+        checkoutFolder: URL = FileManager.default.urls(
+            for: .desktopDirectory, in: .userDomainMask)[0],
+        didChange: @escaping () async -> Void = {}
+    ) {
         self.archive = archive
+        self.checkoutFolder = checkoutFolder
         self.didChange = didChange
     }
 
@@ -186,10 +195,10 @@ final class ActiveScreenModel {
 
     // MARK: - Checking out and the desk
 
-    /// Starts checking out the item `id`, to the Desktop with no due date unless changed.
+    /// Starts checking out the item `id`, to the checkout folder with no due date unless
+    /// changed.
     func startCheckout(of id: String, titled title: String) {
-        let desktop = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask)[0]
-        checkingOut = CheckoutDraft(item: id, title: title, folder: desktop, due: nil)
+        checkingOut = CheckoutDraft(item: id, title: title, folder: checkoutFolder, due: nil)
     }
 
     /// Checks out the item as `draft` sets it up.

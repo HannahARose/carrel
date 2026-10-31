@@ -7026,6 +7026,14 @@ public struct OpenOptions: Equatable, Hashable {
      * text, and corrections need a [`ModelProvider`](correct::ModelProvider).
      */
     public var startProviders: Bool
+    /**
+     * The folder standing for the person's home: where Status looks for active work (its
+     * Desktop and Code folders), where a checkout goes by default (its Desktop), and what
+     * `~` means in a checked-out path. `None` for the person's own
+     * ([`carrel_core::local::home_dir`]). Tests give a temporary folder, so they never look
+     * in the owner's.
+     */
+    public var home: String?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -7042,10 +7050,18 @@ public struct OpenOptions: Equatable, Hashable {
         /**
          * Whether to start provider programs; without them only the built-in providers read
          * text, and corrections need a [`ModelProvider`](correct::ModelProvider).
-         */startProviders: Bool) {
+         */startProviders: Bool, 
+        /**
+         * The folder standing for the person's home: where Status looks for active work (its
+         * Desktop and Code folders), where a checkout goes by default (its Desktop), and what
+         * `~` means in a checked-out path. `None` for the person's own
+         * ([`carrel_core::local::home_dir`]). Tests give a temporary folder, so they never look
+         * in the owner's.
+         */home: String? = nil) {
         self.configDir = configDir
         self.providerFolders = providerFolders
         self.startProviders = startProviders
+        self.home = home
     }
 
     
@@ -7066,7 +7082,8 @@ public struct FfiConverterTypeOpenOptions: FfiConverterRustBuffer {
             try OpenOptions(
                 configDir: FfiConverterOptionString.read(from: &buf), 
                 providerFolders: FfiConverterSequenceString.read(from: &buf), 
-                startProviders: FfiConverterBool.read(from: &buf)
+                startProviders: FfiConverterBool.read(from: &buf), 
+                home: FfiConverterOptionString.read(from: &buf)
         )
     }
 
@@ -7074,6 +7091,7 @@ public struct FfiConverterTypeOpenOptions: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.configDir, into: &buf)
         FfiConverterSequenceString.write(value.providerFolders, into: &buf)
         FfiConverterBool.write(value.startProviders, into: &buf)
+        FfiConverterOptionString.write(value.home, into: &buf)
     }
 }
 

@@ -16,13 +16,18 @@ extension ArchiveHandle {
 
 extension OpenOptions {
     /// Keeps this device's identity and preferences in `config` rather than the device's own
-    /// folder, starting provider programs only when `startProviders` says so. Tests use it so
-    /// they never write the real configuration.
-    public static func isolated(config: URL, startProviders: Bool = false) -> OpenOptions {
+    /// folder, and takes `home` (`home` in `config` unless given) for the person's home, so
+    /// Status looks for active work there and checkouts go to its Desktop. Starts provider
+    /// programs only when `startProviders` says so. Tests use it so they never write the real
+    /// configuration or look in the owner's folders.
+    public static func isolated(config: URL, home: URL? = nil, startProviders: Bool = false)
+        -> OpenOptions
+    {
         OpenOptions(
             configDir: config.path(percentEncoded: false),
             providerFolders: [],
-            startProviders: startProviders
+            startProviders: startProviders,
+            home: (home ?? config.appending(path: "home")).path(percentEncoded: false)
         )
     }
 
@@ -31,7 +36,8 @@ extension OpenOptions {
         OpenOptions(
             configDir: nil,
             providerFolders: helpers.map { [$0.path(percentEncoded: false)] } ?? [],
-            startProviders: true
+            startProviders: true,
+            home: nil
         )
     }
 }
