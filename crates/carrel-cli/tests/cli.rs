@@ -965,6 +965,99 @@ fn sessions_on_a_checked_out_item_become_pending_entries_to_approve() {
     assert_eq!(sandbox.json(&root, &["log"])[0]["operation"], "session");
 }
 
+#[cfg(unix)]
+#[test]
+fn sessions_edit_opens_an_entry_in_the_editor_and_keeps_it_pending() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    let item = "Projects/Hardware/parts-list.csv";
+    let card = root.join(format!("{item}.md"));
+    let mut file =
+        carrel_core::card_file::CardFile::parse(&std::fs::read_to_string(&card).unwrap()).unwrap();
+    let mut log = file.history().unwrap();
+    log.add(carrel_core::entries::HistoryEntry::pending(
+        "2099-01-02",
+        Some(70),
+        vec!["Changed 1 file(s): parts-list.csv".into()],
+    ));
+    file.set_history(&log).unwrap();
+    std::fs::write(&card, file.to_text().unwrap()).unwrap();
+    let editor = |name: &str, text: &str| {
+        let path = sandbox.path(name);
+        std::fs::write(&path, format!("#!/bin/sh\nprintf '{text}' > \"$1\"\n")).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        path.to_str().unwrap().to_owned()
+    };
+    let run = |editor: &str| {
+        std::process::Command::new(env!("CARGO_BIN_EXE_carrel"))
+            .args(["sessions", "edit", item, "1"])
+            .current_dir(&root)
+            .env("CARREL_CONFIG_DIR", sandbox.path("config"))
+            .env_remove("VISUAL")
+            .env("EDITOR", editor)
+            .output()
+            .unwrap()
+    };
+
+    let out = run(&editor(
+        "rewrite.sh",
+        "Added the new switch.\\nMy notes: order spares.\\n",
+    ));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout),
+        "Edit a history entry of “Desk lamp parts list”\n"
+    );
+    let text = std::fs::read_to_string(&card).unwrap();
+    assert!(
+        text.contains(
+            "> [!pending] 2099-01-02 · 1h 10m · auto-generated\n\
+             > Added the new switch.\n\
+             > My notes: order spares.\n"
+        ),
+        "{text}"
+    );
+    let log = sandbox.json(&root, &["log"]);
+    assert_eq!(log[0]["operation"], "session");
+
+    // Nothing saved, or text that would break the section, changes nothing.
+    assert_eq!(
+        String::from_utf8_lossy(&run("true").stdout),
+        "Nothing changed\n"
+    );
+    let out = run(&editor(
+        "breaks.sh",
+        "Fine.\\n### 2099-01-03\\nNot an entry.\\n",
+    ));
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("would break the history section"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("your text is in"), "{stderr}");
+    assert_eq!(std::fs::read_to_string(&card).unwrap(), text);
+    let out = run("false");
+    assert!(!out.status.success(), "a failed editor is an error");
+    let missing = sandbox.run_in(&root, &["sessions", "edit", item, "2"]);
+    assert!(
+        String::from_utf8_lossy(&missing.stderr).contains("there's no pending entry 2"),
+        "{}",
+        String::from_utf8_lossy(&missing.stderr)
+    );
+
+    // Approved, it's in the Journal as edited.
+    sandbox.ok(&root, &["sessions", "approve", item, "1"]);
+    let journal = std::fs::read_to_string(root.join("Journal/2099/2099-01.md")).unwrap();
+    assert!(journal.contains("Added the new switch."), "{journal}");
+}
+
 #[test]
 fn a_desk_items_pending_entries_are_decided_by_its_path() {
     let sandbox = Sandbox::new();

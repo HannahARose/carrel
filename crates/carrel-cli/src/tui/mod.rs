@@ -193,6 +193,13 @@ fn event_loop(
                 *terminal = enter();
                 finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
             }
+            Some(Effect::EditEntry { item, number }) => {
+                // The editor needs the terminal to itself.
+                leave();
+                let result = crate::sessions::edit(Some(app.archive.root()), &item, number);
+                *terminal = enter();
+                finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
+            }
             Some(Effect::Pick(words)) => {
                 // The picker needs the terminal to itself, as the editor does.
                 leave();
@@ -325,6 +332,7 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
         // The run loop does these itself, on the terminal or in the pop-up.
         Effect::Edit(_)
         | Effect::EditItem(_)
+        | Effect::EditEntry { .. }
         | Effect::Pick(_)
         | Effect::Correction(_)
         | Effect::Open(_) => return None,
@@ -1530,7 +1538,21 @@ mod tests {
             Some(entries(vec![], crate::sessions::Decision::Approve)),
             "all of them, with none marked"
         );
+        assert_eq!(app.key(key(KeyCode::Char('e'))), None);
+        assert_eq!(
+            app.message.as_deref(),
+            Some("Choose an entry to edit it"),
+            "two entries: which?"
+        );
         app.key(key(KeyCode::Down));
+        assert!(app.keys().contains(&("e", "edit")), "{:?}", app.keys());
+        assert_eq!(
+            app.key(key(KeyCode::Char('e'))),
+            Some(Effect::EditEntry {
+                item: item.id.to_string(),
+                number: 1
+            })
+        );
         app.key(key(KeyCode::Char(' ')));
         assert_eq!(app.active_chosen, row + 2, "marking moves on");
         assert!(screen(&app, 140, 30).contains("1 marked"));

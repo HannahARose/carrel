@@ -208,7 +208,7 @@ pub fn list(archive: Option<&Path>) -> Result<Report, Failure> {
         text.push_str("No pending history entries\n");
     } else {
         text.push_str(
-            "\nApprove with `carrel sessions approve ITEM [N...]`, or combine or drop them.\n",
+            "\nApprove with `carrel sessions approve ITEM [N...]`, or edit, combine or drop them.\n",
         );
     }
     Ok(Report::new(
@@ -281,13 +281,7 @@ pub fn decide(
     } else {
         numbers
             .iter()
-            .map(|&n| {
-                pending.get(n.wrapping_sub(1)).copied().ok_or_else(|| {
-                    Failure::new(format!(
-                        "there's no pending entry {n}; `carrel sessions` lists them"
-                    ))
-                })
-            })
+            .map(|&n| position(&pending, n))
             .collect::<Result<_, _>>()?
     };
     if chosen.is_empty() {
@@ -323,6 +317,71 @@ pub fn decide(
     ))
 }
 
+/// Where pending entry `n` (as `carrel sessions` numbers them, from 1) is among `pending`.
+fn position(pending: &[usize], n: usize) -> Result<usize, Failure> {
+    pending.get(n.wrapping_sub(1)).copied().ok_or_else(|| {
+        Failure::new(format!(
+            "there's no pending entry {n}; `carrel sessions` lists them"
+        ))
+    })
+}
+
+/// `carrel sessions edit ITEM N`: opens pending entry `N`'s text in the owner's editor, and
+/// saves what they write as the entry's text, still pending, in one change. The card is read
+/// again once the editor closes, so changes made meanwhile (in Obsidian, say) are kept.
+///
+/// # Errors
+///
+/// [`Failure`] if the item or the entry isn't found, the editor fails, or the text would
+/// break the history section; the text written is then kept in a file the message names.
+pub fn edit(archive: Option<&Path>, query: &str, n: usize) -> Result<Report, Failure> {
+    let archive = locate(archive)?;
+    let card = find_card(&archive, query)?;
+    let file = CardFile::parse(&std::fs::read_to_string(&card.path)?)?;
+    let log = file.history()?;
+    let entry = log.entries[position(&log.pending(), n)?].clone();
+    let temp = std::env::temp_dir().join(format!("carrel-entry-{}-{n}.md", card.id));
+    let mut text = entry.lines.join("\n");
+    text.push('\n');
+    std::fs::write(&temp, &text).map_err(|e| Failure::io(&temp, &e))?;
+    crate::review::run_editor(&temp)?;
+    let edited = std::fs::read_to_string(&temp).map_err(|e| Failure::io(&temp, &e))?;
+
+    let mut file = CardFile::parse(&std::fs::read_to_string(&card.path)?)?;
+    let mut log = file.history()?;
+    let Some(i) = log.pending().into_iter().find(|&i| log.entries[i] == entry) else {
+        return Err(Failure::new(format!(
+            "the entry changed while it was being edited, so nothing was saved; your text is \
+             in {}",
+            temp.display()
+        )));
+    };
+    match log.edit(i, &edited) {
+        Ok(false) => {
+            let _ = std::fs::remove_file(&temp);
+            return Ok(Report::new(
+                "Nothing changed\n",
+                json!({ "item": card.id, "commit": null }),
+            ));
+        }
+        Ok(true) => {}
+        Err(e) => {
+            return Err(Failure::new(format!(
+                "{e}; nothing was saved, and your text is in {}",
+                temp.display()
+            )));
+        }
+    }
+    let _ = std::fs::remove_file(&temp);
+    file.set_history(&log)?;
+    let summary = format!("Edit a history entry of “{}”", file.card().title);
+    let commit = write_and_commit(&archive, &card.path, &file, card.id, &summary)?;
+    Ok(Report::new(
+        format!("{summary}\n"),
+        json!({ "item": card.id, "entries": 1, "commit": commit }),
+    ))
+}
+
 /// `1 history entry`, `2 history entries`.
 fn entries(n: usize) -> String {
     if n == 1 {
@@ -353,6 +412,8 @@ fn write_and_commit(
             lease.info().device,
         );
         change.items = vec![item];
+        // The Journal lists approved entries, so it follows the cards.
+        carrel_core::active::regenerate(archive)?;
         Ok(History::open(archive)?.commit(archive, &change, &lease)?)
     })();
     lease.release()?;

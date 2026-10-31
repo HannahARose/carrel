@@ -109,6 +109,10 @@ pub enum EntryError {
     NotPending(usize),
     /// Combining needs at least two entries.
     TooFew,
+    /// Edited text with nothing in it: dropping an entry is its own operation.
+    Empty,
+    /// Edited text that would read as more than one entry, or break the history section.
+    Unreadable(String),
 }
 
 impl std::fmt::Display for EntryError {
@@ -117,6 +121,11 @@ impl std::fmt::Display for EntryError {
             Self::NoEntry(i) => write!(f, "there's no history entry {}", i + 1),
             Self::NotPending(i) => write!(f, "history entry {} is already approved", i + 1),
             Self::TooFew => f.write_str("combining needs at least two pending entries"),
+            Self::Empty => f.write_str("the entry has no text left; drop it instead"),
+            Self::Unreadable(line) => write!(
+                f,
+                "the line “{line}” would break the history section; change or remove it"
+            ),
         }
     }
 }
@@ -233,6 +242,34 @@ impl HistoryLog {
         Ok(self.entries.remove(i))
     }
 
+    /// Replaces the text of the pending entry at `i` with `text`, one line per line, keeping
+    /// it pending. Trailing blank lines are left out. Returns whether anything changed.
+    ///
+    /// # Errors
+    ///
+    /// [`EntryError`] if there's no pending entry there, `text` is empty, or a line of it
+    /// would read as a new entry or a section marker, whether pending or once approved.
+    pub fn edit(&mut self, i: usize, text: &str) -> Result<bool, EntryError> {
+        let entry = self.pending_at(i)?;
+        let mut lines: Vec<String> = text.lines().map(str::to_owned).collect();
+        while lines.last().is_some_and(|l| l.trim().is_empty()) {
+            lines.pop();
+        }
+        if lines.iter().all(|l| l.trim().is_empty()) {
+            return Err(EntryError::Empty);
+        }
+        if lines == entry.lines {
+            return Ok(false);
+        }
+        let edited = HistoryEntry {
+            lines,
+            ..entry.clone()
+        };
+        check_readable(&edited)?;
+        self.entries[i] = edited;
+        Ok(true)
+    }
+
     /// Combines the pending entries at `positions` into one, still pending, where the newest
     /// was: its date, the durations added up, and every line of text, the owner's notes last.
     ///
@@ -292,6 +329,39 @@ impl HistoryLog {
         self.entries.insert(first, combined);
         Ok(())
     }
+}
+
+/// Checks that `entry` reads back as itself, both pending and once approved, and keeps the
+/// section's markers where they are.
+fn check_readable(entry: &HistoryEntry) -> Result<(), EntryError> {
+    for pending in [true, false] {
+        let entry = HistoryEntry {
+            pending,
+            ..entry.clone()
+        };
+        let mut text = String::new();
+        entry.render(&mut text);
+        let back = HistoryLog::parse(&text);
+        if back.entries.len() == 1
+            && back.entries[0].lines == entry.lines
+            && crate::sections::safe_inside(&text)
+        {
+            continue;
+        }
+        let bad = entry
+            .lines
+            .iter()
+            .find(|line| {
+                line.starts_with("### ")
+                    || line.starts_with(PENDING)
+                    || !crate::sections::safe_inside(line)
+            })
+            .or_else(|| entry.lines.first())
+            .cloned()
+            .unwrap_or_default();
+        return Err(EntryError::Unreadable(bad));
+    }
+    Ok(())
 }
 
 /// An entry with nothing but its heading, `date · duration · tags`.
@@ -429,6 +499,63 @@ mod tests {
             "{text}"
         );
         assert_eq!(HistoryLog::parse(&text), log, "it reads back the same");
+    }
+
+    #[test]
+    fn editing_an_entry_keeps_it_pending() {
+        let mut log = HistoryLog::parse(SECTION);
+        assert_eq!(
+            log.edit(0, "Changed 3 files.\nCommits: \"fix units\"\n\n"),
+            Ok(false),
+            "the same text, give or take trailing blank lines"
+        );
+        assert_eq!(
+            log.edit(
+                0,
+                "Fixed the units in the damping model.\n\nMy notes: check fig 2.\n"
+            ),
+            Ok(true)
+        );
+        let entry = &log.entries[0];
+        assert!(entry.pending);
+        assert_eq!(entry.duration.as_deref(), Some("45m"));
+        assert_eq!(
+            entry.lines,
+            [
+                "Fixed the units in the damping model.",
+                "",
+                "My notes: check fig 2."
+            ]
+        );
+        assert_eq!(
+            HistoryLog::parse(&log.render()),
+            log,
+            "it reads back the same"
+        );
+        assert_eq!(log.edit(1, "Mine."), Err(EntryError::NotPending(1)));
+        assert_eq!(log.edit(0, " \n\n"), Err(EntryError::Empty));
+    }
+
+    #[test]
+    fn edited_text_cant_break_the_section() {
+        let mut log = HistoryLog::parse(SECTION);
+        for text in [
+            "Did a thing.\n### 2026-10-31\nAnother.",
+            "Did a thing.\n> [!pending] 2026-10-31",
+            "Did a thing.\n<!-- /carrel:history -->",
+            "Did a thing.\n```\nunclosed",
+        ] {
+            assert!(
+                matches!(log.edit(0, text), Err(EntryError::Unreadable(_))),
+                "{text}"
+            );
+        }
+        assert_eq!(log, HistoryLog::parse(SECTION), "nothing changed");
+        assert_eq!(
+            log.edit(0, "Wrote:\n```\nlet x = 1;\n```\n> a quote"),
+            Ok(true),
+            "a closed code block and a quote are fine"
+        );
     }
 
     #[test]
