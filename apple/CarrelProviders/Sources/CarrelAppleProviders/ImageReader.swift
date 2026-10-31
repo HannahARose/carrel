@@ -32,7 +32,14 @@ public struct ImageReader: TextExtractor {
     /// Whether to ask Apple's model for a description. Off in tests that check the rest.
     let describes: Bool
 
-    public init() { self.init(describes: true) }
+    /// Asks for descriptions unless `CARREL_IMAGE_DESCRIPTIONS` is `off`, which the benchmark
+    /// uses to measure what they add.
+    public init() { self.init(describes: Self.describes(ProcessInfo.processInfo.environment)) }
+
+    /// Whether `environment` leaves descriptions on.
+    static func describes(_ environment: [String: String]) -> Bool {
+        environment["CARREL_IMAGE_DESCRIPTIONS"]?.trimmingCharacters(in: .whitespaces).lowercased() != "off"
+    }
 
     init(describes: Bool) { self.describes = describes }
 

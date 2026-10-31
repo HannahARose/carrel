@@ -6,8 +6,8 @@ use std::time::Duration;
 
 use carrel_core::providers::process::{Found, ProcessProvider, discover};
 use carrel_core::providers::{
-    Capability, CompletionRequest, ExtractionRequest, PlainText, Provider, ProviderError, Registry,
-    priority,
+    Capability, CompletionRequest, EmbeddingRequest, ExtractionRequest, PlainText, Provider,
+    ProviderError, Purpose, Registry, priority,
 };
 
 /// The built example provider, building it first if this test run didn't.
@@ -101,7 +101,8 @@ fn a_provider_reports_its_offers_and_answers_requests() {
         offers,
         [
             (Capability::TextModel, "echo"),
-            (Capability::ExtractText, "echo-text")
+            (Capability::ExtractText, "echo-text"),
+            (Capability::Embed, "echo-embed")
         ]
     );
     assert_eq!(
@@ -149,6 +150,63 @@ fn a_provider_reports_its_offers_and_answers_requests() {
         .unwrap();
     assert_eq!(extracted.text, "Some notes.\n");
     assert_eq!(extracted.method, "embedded");
+}
+
+#[test]
+fn embedding_models_answer_over_the_protocol() {
+    let dir = tempfile::tempdir().unwrap();
+    let echo = start(dir.path(), "echo");
+    let texts = vec!["A lease for a flat".to_owned(), "receipt".to_owned()];
+    let documents = echo
+        .embed(
+            "echo-embed",
+            &EmbeddingRequest {
+                texts: texts.clone(),
+                purpose: Purpose::Document,
+            },
+        )
+        .unwrap();
+    assert_eq!(documents.model, "echo-embed");
+    assert_eq!(documents.dimensions, 3);
+    assert_eq!(documents.vectors.len(), 2);
+    for vector in &documents.vectors {
+        let length: f32 = vector.iter().map(|n| n * n).sum::<f32>().sqrt();
+        assert!((length - 1.0).abs() < 1e-4, "{vector:?}");
+    }
+    let queries = echo
+        .embed(
+            "echo-embed",
+            &EmbeddingRequest {
+                texts,
+                purpose: Purpose::Query,
+            },
+        )
+        .unwrap();
+    assert_ne!(
+        queries.vectors, documents.vectors,
+        "the purpose reaches the provider"
+    );
+
+    let mut registry = Registry::new();
+    registry.add(Box::new(echo));
+    let (embeddings, source, _) = registry
+        .embed(
+            "echo-embed",
+            &EmbeddingRequest {
+                texts: vec!["x".into()],
+                purpose: Purpose::Document,
+            },
+        )
+        .unwrap();
+    assert_eq!(embeddings.vectors.len(), 1);
+    assert_eq!(
+        (source.provider.as_str(), source.offer.as_str()),
+        ("echo", "echo-embed")
+    );
+    assert!(matches!(
+        registry.embed("embeddinggemma-300m", &EmbeddingRequest::default()),
+        Err(ProviderError::Unavailable(_))
+    ));
 }
 
 #[test]
@@ -364,6 +422,8 @@ fn serve_offers_a_rust_provider_over_the_protocol() {
         r#"{"jsonrpc":"2.0","method":"initialize"}"#.to_owned(),
         "not json".to_owned(),
         r#"{"jsonrpc":"2.0","id":6,"method":"shutdown"}"#.to_owned(),
+        r#"{"jsonrpc":"2.0","id":7,"method":"text/embed","params":{"offer":"x","texts":["hi"]}}"#
+            .to_owned(),
     ];
     let input = requests.join("\n") + "\n";
     let mut output = Vec::new();
@@ -379,7 +439,7 @@ fn serve_offers_a_rust_provider_over_the_protocol() {
         .collect();
     assert_eq!(
         replies.len(),
-        6,
+        7,
         "no replies to the notification or non-JSON"
     );
     assert_eq!(replies[0]["result"]["protocol"], 1);
@@ -394,6 +454,10 @@ fn serve_offers_a_rust_provider_over_the_protocol() {
     assert_eq!(replies[4]["error"]["code"], -32601);
     assert_eq!(replies[5]["id"], 6);
     assert_eq!(replies[5]["result"], serde_json::Value::Null);
+    assert_eq!(
+        replies[6]["error"]["code"], 2,
+        "the built-in has no embedding models"
+    );
 }
 
 #[test]

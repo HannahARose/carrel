@@ -63,6 +63,9 @@ enum Command {
         /// Create it even if the folder already has files; they become uncataloged.
         #[arg(long)]
         allow_existing_files: bool,
+        /// The model every device uses to search it by meaning, from `carrel models`.
+        #[arg(long, value_name = "NAME", default_value = carrel_core::models::DEFAULT_EMBEDDING_MODEL)]
+        embedding_model: String,
     },
     /// Choose the archive commands use when run outside one, or show the current choice.
     Open {
@@ -195,7 +198,7 @@ enum Command {
         action: Option<DeskAction>,
     },
     /// Work sessions on checked-out items: finds finished ones and lists the pending history
-    /// entries; approve, combine or drop them.
+    /// entries; approve, edit, combine or drop them.
     Sessions {
         #[command(subcommand)]
         action: Option<SessionsAction>,
@@ -263,6 +266,13 @@ enum SessionsAction {
         /// Which entries; all when none are given.
         numbers: Vec<usize>,
     },
+    /// Edit one of an item's pending entries in your editor; it stays pending.
+    Edit {
+        /// The item.
+        item: String,
+        /// Which entry: the number `carrel sessions` shows.
+        number: usize,
+    },
     /// Combine an item's pending entries into one, still pending.
     Combine {
         /// The item.
@@ -294,6 +304,16 @@ enum ModelsAction {
         /// Download without asking.
         #[arg(long)]
         yes: bool,
+    },
+    /// Embed texts with the archive's embedding model, as search will, and show the vectors.
+    /// An archive with no model yet asks for one first.
+    Embed {
+        /// The texts, each embedded on its own.
+        #[arg(required = true)]
+        texts: Vec<String>,
+        /// Embed them as search queries rather than as text to be found.
+        #[arg(long)]
+        query: bool,
     },
     /// Delete a downloaded model, after asking.
     Remove {
@@ -586,6 +606,7 @@ fn sessions_command(
         SessionsAction::Approve { item, numbers } => {
             sessions::decide(archive, &item, &numbers, Decision::Approve)
         }
+        SessionsAction::Edit { item, number } => sessions::edit(archive, &item, number),
         SessionsAction::Combine { item, numbers } => {
             sessions::decide(archive, &item, &numbers, Decision::Combine)
         }
@@ -702,10 +723,12 @@ fn main() -> ExitCode {
             path,
             name,
             allow_existing_files,
+            embedding_model,
         } => commands::init(
             path.as_deref().or(cli.archive.as_deref()),
             name,
             allow_existing_files,
+            &embedding_model,
         ),
         Command::Open { path } => commands::open(path.as_deref().or(cli.archive.as_deref())),
         Command::Status => commands::status(cli.archive.as_deref()),
@@ -765,15 +788,27 @@ fn main() -> ExitCode {
         Command::Backup { action } => backup_command(cli.archive.as_deref(), action),
         Command::Questions { action } => questions_command(cli.archive.as_deref(), action),
         Command::Bench(args) => bench::bench(&args, cli.json),
-        Command::Models { action } => match action.unwrap_or(ModelsAction::List) {
-            ModelsAction::List => models::list(),
-            ModelsAction::Download { name, format, yes } => {
-                models::download(&name, format, yes, cli.json)
-            }
-            ModelsAction::Remove { name, format, yes } => models::remove(&name, format, yes),
-        },
+        Command::Models { action } => models_command(
+            action.unwrap_or(ModelsAction::List),
+            cli.archive.as_deref(),
+            cli.json,
+        ),
     };
     finish(result, cli.json)
+}
+
+/// `carrel models` and its subcommands.
+fn models_command(
+    action: ModelsAction,
+    archive: Option<&std::path::Path>,
+    json: bool,
+) -> Result<Report, Failure> {
+    match action {
+        ModelsAction::List => models::list(),
+        ModelsAction::Download { name, format, yes } => models::download(&name, format, yes, json),
+        ModelsAction::Embed { texts, query } => models::embed(archive, &texts, query),
+        ModelsAction::Remove { name, format, yes } => models::remove(&name, format, yes),
+    }
 }
 
 /// Whether `command` takes the writer lease to change the archive, so finished work sessions

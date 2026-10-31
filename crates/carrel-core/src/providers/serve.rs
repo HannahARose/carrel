@@ -6,7 +6,10 @@ use std::io::{BufRead, Write};
 use serde::Serialize;
 use serde_json::{Value, json};
 
-use super::{CompletionRequest, ExtractionRequest, PROTOCOL_VERSION, Provider, ProviderError};
+use super::{
+    CompletionRequest, EmbeddingRequest, ExtractionRequest, PROTOCOL_VERSION, Provider,
+    ProviderError,
+};
 
 /// Information `initialize` reports besides the offers.
 #[derive(Debug, Clone, Copy)]
@@ -77,6 +80,10 @@ fn answer(
         "text/extract" => {
             let (offer, request) = parse::<ExtractionRequest>(params)?;
             to_result(provider.extract(&offer, &request))
+        }
+        "text/embed" => {
+            let (offer, request) = parse::<EmbeddingRequest>(params)?;
+            to_result(provider.embed(&offer, &request))
         }
         "text/count-tokens" => {
             let (offer, counted) = parse::<CountRequest>(params)?;

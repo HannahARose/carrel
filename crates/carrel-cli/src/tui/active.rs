@@ -192,12 +192,14 @@ impl App {
         }
         keys.push(("o", "open"));
         if !item.pending.is_empty() {
-            keys.extend([
-                ("a", "approve"),
-                ("c", "combine"),
-                ("d", "drop"),
-                ("Space", "mark"),
-            ]);
+            keys.push(("a", "approve"));
+            if matches!(
+                self.active_rows().get(self.active_chosen),
+                Some(Row::Entry(..))
+            ) {
+                keys.push(("e", "edit"));
+            }
+            keys.extend([("c", "combine"), ("d", "drop"), ("Space", "mark")]);
         }
         if item.kind == Kind::CheckedOut {
             keys.push(("x", "cancel"));
@@ -217,7 +219,7 @@ impl App {
 
     /// Handles a key on the Active screen.
     pub(super) fn active_key(&mut self, key: KeyEvent) -> Handled {
-        let KeyCode::Char(c @ ('r' | 'o' | 'a' | 'c' | 'd' | ' ' | 'x')) = key.code else {
+        let KeyCode::Char(c @ ('r' | 'o' | 'a' | 'e' | 'c' | 'd' | ' ' | 'x')) = key.code else {
             return Handled::No;
         };
         if key.modifiers.contains(KeyModifiers::CONTROL) {
@@ -250,6 +252,24 @@ impl App {
             _ if item.pending.is_empty() => {
                 self.message = Some(format!("“{}” has no pending history entries", item.title));
                 None
+            }
+            'e' => {
+                let row = self.active_rows().get(self.active_chosen).copied();
+                match (row, item.pending.len()) {
+                    (Some(Row::Entry(_, number)), _) => Some(Effect::EditEntry {
+                        item: item.query(),
+                        number,
+                    }),
+                    // With only one, there's no doubt which.
+                    (_, 1) => Some(Effect::EditEntry {
+                        item: item.query(),
+                        number: 1,
+                    }),
+                    _ => {
+                        self.message = Some("Choose an entry to edit it".into());
+                        None
+                    }
+                }
             }
             ' ' => {
                 if let Some(Row::Entry(_, n)) = self.active_rows().get(self.active_chosen) {

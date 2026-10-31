@@ -15,10 +15,10 @@ Exit status is `0` on success, `1` when the command failed, and `2` for a usage 
 
 | Command | What it does |
 | --- | --- |
-| `carrel init [PATH] [--name NAME] [--allow-existing-files]` | Creates an archive in `PATH` (or the current folder) and starts its history. With `--allow-existing-files`, files already there become uncataloged items to ingest. Inside an archive that has no history yet, it starts the history. |
+| `carrel init [PATH] [--name NAME] [--allow-existing-files] [--embedding-model NAME]` | Creates an archive in `PATH` (or the current folder) and starts its history. With `--allow-existing-files`, files already there become uncataloged items to ingest. `--embedding-model` chooses the model every device uses to search the archive by meaning: `embeddinggemma-300m` (the default) or `qwen3-embedding-0.6b`. Inside an archive that has no history yet, it starts the history. |
 | `carrel open [PATH]` | Chooses the archive commands use outside one; with no path, shows the choice. |
-| `carrel status` | Summarizes the archive: items by kind, cards with problems, names that won't work everywhere, **Structure** signals, the last change and backup, and who is writing. |
-| `carrel show ITEM` | Shows an item's card. `ITEM` is its identifier, or the path of the item or its card. |
+| `carrel status` | Summarizes the archive: items by kind, cards with problems, names that won't work everywhere, **Structure** signals, the last change and backup, who is writing, and **Recent**: the latest changes and work sessions, archive-wide. |
+| `carrel show ITEM` | Shows an item's card, its links, and every change that touched it, newest first (undo one with `carrel undo CHANGE`). `ITEM` is its identifier, or the path of the item or its card. |
 | `carrel log [-n COUNT]` | Lists recorded changes, newest first. |
 | `carrel undo CHANGE` | Undoes a change with a new change that reverses it. `CHANGE` is its identifier from `carrel log`, or its start. The change that created the history can't be undone. |
 | `carrel checkout ITEM [--to FOLDER] [--due DATE]` | Checks an item out to work on: copies it to `FOLDER` (the Desktop by default), checked against what it held, and makes the archive copy read-only until it's returned. On macOS the working copy gets a “Checked Out” Finder tag, removed again on return or cancel. Records it on the card, with the commit a Git repository was at, in one history change. |
@@ -28,8 +28,9 @@ Exit status is `0` on success, `1` when the command failed, and `2` for a usage 
 | `carrel desk` | Lists this device's desk items: files and folders being worked on where they are, tracked without being archived. |
 | `carrel desk add PATH [--title T] [--summary S]` | Puts a file or folder on the desk: a card goes beside it (its name with `.md` added), and nothing is written inside it or moved. Not for things inside the archive. |
 | `carrel desk remove PATH [--delete-card]` | Takes it off the desk; its card stays unless `--delete-card`. |
-| `carrel sessions` | Finds finished work sessions on items checked out to this device and on its desk (changes closer together than `sessions.idle_minutes`, 45 by default, are one session, and Git commits count too) and adds a pending history entry for each, then lists every pending entry, numbered. A session still going isn't written until it's over. With backups set up, it snapshots the working copy of each item it found sessions on, unless the card says `snapshots: return-only`. Commands that change the archive, and the interactive mode, do the same every five minutes at most, unless another program is writing. |
+| `carrel sessions` | Finds finished work sessions on items checked out to this device and on its desk (changes closer together than `sessions.idle_minutes`, 45 by default, are one session, and Git commits count too) and adds a pending history entry for each, then lists every pending entry, numbered. A session still going isn't written until it's over. With backups set up, it snapshots the working copy of each item it found sessions on, unless the card says `snapshots: return-only`. It also notices entries you approved by hand in Obsidian (a callout turned into a `###` heading, or into another callout type), records the approval as a history change without touching the entry, and brings `Active/` and the Journal up to date. Commands that change the archive, and the interactive mode, do the same every five minutes at most, unless another program is writing. |
 | `carrel sessions approve\|combine\|drop ITEM [N...]` | Approves, combines into one, or drops an item's pending entries (a desk item by its path), by the numbers `carrel sessions` shows; all of them when none are given. Each is a history change. |
+| `carrel sessions edit ITEM N` | Opens pending entry `N`'s text in your editor (`$VISUAL` or `$EDITOR`) and saves what you write as its text, still pending, in one history change. The card is read again when the editor closes, so changes made meanwhile are kept. Text that would read as another entry or break the history section isn't saved; the message says where your text is. |
 | `carrel edit ITEM` | Opens a filed item's card in your editor (`e` in Browse). It's checked as proposals are: a title, real dates, tags that apply in its collection, and no sensitivity below what a rule found. The body below the fields is kept exactly. Delete a line to clear it, such as a wrong date. One change, which `carrel undo` reverses. |
 | `carrel correct ITEM [WORDS…] [--yes] [--learn]` | Corrects a filed item's card the same way, and refiles it when the collection changes. One change, which `carrel undo` reverses. |
 | `carrel expand ITEM [--anyway]` | Unpacks a filed zip or other compressed file in place: what it held becomes the item, unwrapped as at filing, its card follows (with `expanded_from`), and the compressed file goes to the Trash. Software and very large archives need `--anyway`; encrypted, split and unsafe ones are refused. One change, which `carrel undo` reverses; then put the compressed file back from the Trash. |
@@ -90,18 +91,19 @@ Backups need [Kopia](https://kopia.io), beside `carrel` or on `PATH`.
 
 | Command | What it does |
 | --- | --- |
-| `carrel providers` | Lists the providers on this device (text models, text extraction) and which Carrel uses for each. |
+| `carrel providers` | Lists the providers on this device (text models, text extraction, embedding models) and which Carrel uses for each. |
 | `carrel formats` | Lists the file types this device reads and which provider reads each, then the types it couldn't read so far, most frequent first, with what would read them when Carrel knows. |
-| `carrel models` | Lists the models Carrel can download, with size, memory needed and license, and the models already downloaded. |
+| `carrel models` | Lists the models Carrel can download, with size, memory needed and license, and the models already downloaded. Text models come first, then the embedding models for search. |
 | `carrel models download NAME [--format mlx] [--yes]` | Downloads a model after showing its size and license and asking; `--yes` skips the question. Every file is checked against the checksum Carrel ships with. `--format mlx` downloads the MLX build, a folder, for the MLX provider. |
 | `carrel models remove NAME [--format mlx] [--yes]` | Deletes a downloaded model, or its MLX build, after asking. |
+| `carrel models embed TEXT... [--query] [--json]` | Embeds texts with the archive's embedding model, as search will, and shows the start of each vector (all of it with `--json`); `--query` embeds them as search queries. Only the archive's model is used, never another. An archive with no model yet asks which to use first. |
 
 ## Settings
 
 | Command | What it does |
 | --- | --- |
 | `carrel settings` | Lists this device's preferences and the archive's shared settings. |
-| `carrel settings set KEY VALUE` | Changes one. `picker`, `editor`, `model` and `second_model` are this device's (an empty value, or `default`, clears them); `model` takes `provider/offer`, the offer alone, or a provider such as `apple`, and must be one that's available; `second_model` also takes `off`. `ingest.originals`, `compressed_files`, `signals.crowded_items` and `outside_edits` are shared by every device, and each change can be undone from History. |
+| `carrel settings set KEY VALUE` | Changes one. `picker`, `editor`, `model` and `second_model` are this device's (an empty value, or `default`, clears them); `model` takes `provider/offer`, the offer alone, or a provider such as `apple`, and must be one that's available; `second_model` also takes `off`. `ingest.originals`, `compressed_files`, `signals.crowded_items`, `outside_edits` and `embedding.model` are shared by every device, and each change can be undone from History. `embedding.model` can only be chosen once, as switching models re-embeds the archive. |
 
 ## The interactive mode
 
@@ -109,11 +111,11 @@ Backups need [Kopia](https://kopia.io), beside `carrel` or on `PATH`.
 
 | Key | Screen |
 | --- | --- |
-| `1` | **Status**: what `carrel status` shows, and what's waiting for you |
+| `1` | **Status**: what `carrel status` shows, including Recent, and what's waiting for you |
 | `2` | **Review**: `a` approve, `h` hold, `m` move, `e` edit, `x` reject, `z` unpack a zip or keep it compressed, `Space` mark, `A` approve all high-confidence |
 | `3` | **Active**: what's checked out and on this device's desk, with their pending history entries; `r` return the chosen checkout, `x` cancel it, `o` open the working copy, `a` approve, `c` combine, `d` drop pending entries (all, or those marked with `Space`) |
 | `4` | **Questions**: `Enter` to answer, `d` to dismiss |
-| `5` | **Browse**: collections and items; `/` to search |
+| `5` | **Browse**: collections and items; `/` to search; `Enter` on an item for its changes and links, then `u` to undo the chosen change, `Enter` to go to a linked item |
 | `6` | **History**: `u` to undo the chosen change |
 | `7` | **Ingest**: the queue; `x` remove, `t` to the front, `r` retry |
 | `8` | **Settings**: `Enter` to change the chosen setting |
@@ -130,6 +132,7 @@ Backups need [Kopia](https://kopia.io), beside `carrel` or on `PATH`.
 | `CARREL_WORKER=off` | Never start a worker in the background |
 | `CARREL_TRASH_DIR` | Put files Carrel trashes (such as a zip after it's unpacked) in this folder instead of the system Trash |
 | `CARREL_OCR_LANGUAGES` | Tesseract's languages for OCR, such as `eng+deu` |
+| `CARREL_IMAGE_DESCRIPTIONS=off` | Read images on a Mac without asking Apple's model to describe them, to measure what the descriptions add |
 | `VISUAL`, `EDITOR` | The editor for cards, unless the `editor` setting is set |
 | `NO_COLOR` | Draw the interactive mode without color |
 | `KOPIA_PASSWORD` | The backup password, for scripts; Kopia then doesn't store it |

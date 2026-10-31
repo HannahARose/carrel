@@ -292,11 +292,25 @@ pub struct RecordedItem {
     pub snapshot: bool,
 }
 
-/// What recording found: the items that got entries, and the commit.
+/// An item whose pending entries the owner approved by hand.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ApprovedByHand {
+    /// Its card's identifier.
+    pub id: Id,
+    /// Its title.
+    pub title: String,
+    /// How many entries.
+    pub entries: usize,
+}
+
+/// What recording found: the items that got entries, entries approved by hand, and the
+/// commit.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Recorded {
     /// Each item with new entries.
     pub items: Vec<RecordedItem>,
+    /// The items with pending entries the owner approved by hand, noticed and recorded.
+    pub approved_by_hand: Vec<ApprovedByHand>,
     /// The history commit, when anything in the archive was written. Desk items' cards are
     /// beside them, outside the history, so recording only those commits nothing.
     pub commit: Option<String>,
@@ -428,28 +442,119 @@ pub fn record(archive: &Archive, lease: &WriterLease) -> Result<Recorded, Sessio
             .unwrap_or_default()
             .as_secs(),
     );
-    if recorded.items.is_empty() {
-        if let Some(path) = state_path {
-            scanned.save(&path).map_err(|e| fail(&e))?;
-        }
-        return Ok(recorded);
-    }
-    crate::active::regenerate(archive).map_err(|e| fail(&e))?;
-    let mut change = Change::new(
-        Operation::Session,
-        format!("Record {} work session(s)", recorded.sessions()),
-        lease.info().person,
-        device,
-    );
-    change.items = recorded.items.iter().map(|i| i.id).collect();
-    recorded.commit = History::open(archive)
-        .map_err(SessionError::History)?
-        .commit(archive, &change, lease)
-        .map_err(SessionError::History)?;
+    commit_what_was_found(archive, lease, &mut recorded)?;
     if let Some(path) = state_path {
         scanned.save(&path).map_err(|e| fail(&e))?;
     }
     Ok(recorded)
+}
+
+/// Notices entries approved by hand, brings `Active/` and the Journal up to date, and commits
+/// that with the sessions `recorded` found, as one `session` change. Without history, only
+/// sessions found regenerate `Active/`, and nothing is committed.
+fn commit_what_was_found(
+    archive: &Archive,
+    lease: &WriterLease,
+    recorded: &mut Recorded,
+) -> Result<(), SessionError> {
+    let fail = |e: &dyn std::fmt::Display| SessionError::Archive(e.to_string());
+    let history = match History::open(archive) {
+        Ok(history) => history,
+        Err(HistoryError::NotInitialized) if recorded.items.is_empty() => return Ok(()),
+        Err(e) => return Err(SessionError::History(e)),
+    };
+    recorded.approved_by_hand = approved_by_hand(archive, &history)?;
+    // Always, so the Journal catches up even when another change took in an approval first.
+    let regenerated = crate::active::regenerate(archive).map_err(|e| fail(&e))?;
+    let approved: usize = recorded.approved_by_hand.iter().map(|a| a.entries).sum();
+    let mut said = Vec::new();
+    if !recorded.items.is_empty() {
+        said.push(format!("Record {} work session(s)", recorded.sessions()));
+    }
+    if approved > 0 {
+        let entries = if approved == 1 { "entry" } else { "entries" };
+        said.push(format!(
+            "{} {approved} history {entries} approved by hand",
+            if said.is_empty() { "Note" } else { "note" }
+        ));
+    }
+    if said.is_empty() {
+        if regenerated.changed.is_empty() {
+            return Ok(());
+        }
+        said.push("Bring Active/ and the Journal up to date".to_owned());
+    }
+    let mut change = Change::new(
+        Operation::Session,
+        said.join("; "),
+        lease.info().person,
+        lease.info().device,
+    );
+    change.items = recorded.items.iter().map(|i| i.id).collect();
+    for a in &recorded.approved_by_hand {
+        if !change.items.contains(&a.id) {
+            change.items.push(a.id);
+        }
+    }
+    recorded.commit = history
+        .commit(archive, &change, lease)
+        .map_err(SessionError::History)?;
+    Ok(())
+}
+
+/// The archive's cards whose pending entries were approved by hand since history last
+/// recorded them (FORMAT.md §5.5): the callout turned into a normal entry, in Obsidian say.
+/// The cards are left exactly as the owner wrote them.
+///
+/// # Errors
+///
+/// [`SessionError`] if the archive can't be listed or history read.
+pub fn approved_by_hand(
+    archive: &Archive,
+    history: &History,
+) -> Result<Vec<ApprovedByHand>, SessionError> {
+    let fail = |e: &dyn std::fmt::Display| SessionError::Archive(e.to_string());
+    let counts = |text: &str| {
+        let log = CardFile::parse(text).ok()?.history().ok()?;
+        let pending = log.pending().len();
+        Some((pending, log.entries.len() - pending))
+    };
+    let mut found = Vec::new();
+    for item in archive.items().map_err(|e| fail(&e))? {
+        let Some(before) = history
+            .committed(&item.card)
+            .map_err(SessionError::History)?
+        else {
+            continue;
+        };
+        let Ok(now) = std::fs::read_to_string(archive.root().join(&item.card)) else {
+            continue;
+        };
+        if now == before {
+            continue;
+        }
+        let (Some((pending_before, approved_before)), Some((pending_now, approved_now))) =
+            (counts(&before), counts(&now))
+        else {
+            continue;
+        };
+        // Each approval takes a pending entry away and adds an approved one; editing or
+        // removing entries by hand changes one count without the other.
+        let entries = pending_before
+            .saturating_sub(pending_now)
+            .min(approved_now.saturating_sub(approved_before));
+        if entries > 0 {
+            let title = CardFile::parse(&now)
+                .map(|f| f.card().title.clone())
+                .unwrap_or_default();
+            found.push(ApprovedByHand {
+                id: item.id,
+                title,
+                entries,
+            });
+        }
+    }
+    Ok(found)
 }
 
 /// The description of a session snapshot of item `id`'s working copy, which
@@ -656,7 +761,7 @@ mod tests {
         };
         let recorded = Recorded {
             items: vec![item(&project, true), item(&dataset, false)],
-            commit: None,
+            ..Recorded::default()
         };
         let backups = Remembered::default();
         let taken = snapshot(&recorded, &backups);
