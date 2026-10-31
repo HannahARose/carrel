@@ -10,7 +10,8 @@ import Testing
     let start = Date(timeIntervalSince1970: 1_800_000_000)
 
     @Test func changedPathsAreSortedByWhatTheyMean() {
-        let plan = AgentPlan(root: "/Archive/", workingCopies: ["/Work/Lamp", "/Archive/Desk/Notes"])
+        let plan = AgentPlan(
+            root: "/Archive/", workingCopies: ["/Work/Lamp", "/Archive/Desk/Notes"])
         #expect(plan.classify("/Archive/_System/queue/intake/0193.json") == .queue)
         #expect(plan.classify("/Archive/Projects/Hardware/lamp.md") == .filed)
         #expect(plan.classify("/Archive/_System/devices/d1/desk.json") == .active)
@@ -228,33 +229,46 @@ func realPath(_ path: String) -> String {
     }
 
     #if os(macOS)
-        @Test func theFileWatcherSeesFilesChange() async throws {
-            let folder = FileManager.default.temporaryDirectory
-                .appending(path: "carrelkit-watch-\(UUID().uuidString)")
-            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            let (stream, continuation) = AsyncStream<[String]>.makeStream()
-            let watcher = try #require(
-                FileWatcher(folders: [folder], latency: 0.1) { continuation.yield($0) })
-            defer { watcher.stop() }
-            try await Task.sleep(for: .milliseconds(300))
-            try "hello\n".write(
-                to: folder.appending(path: "new.txt"), atomically: false, encoding: .utf8)
-            let seen = await withTaskGroup(of: [String]?.self) { group in
-                group.addTask {
-                    for await paths in stream where paths.contains(where: { $0.hasSuffix("/new.txt") }) {
-                        return paths
-                    }
-                    return nil
+    @Test func theFileWatcherSeesFilesChange() async throws {
+        let folder = FileManager.default.temporaryDirectory
+            .appending(path: "carrelkit-watch-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let (stream, continuation) = AsyncStream<[String]>.makeStream()
+        let watcher = try #require(
+            FileWatcher(folders: [folder], latency: 0.1) { continuation.yield($0) })
+        defer { watcher.stop() }
+        try await Task.sleep(for: .milliseconds(300))
+        try "hello\n".write(
+            to: folder.appending(path: "new.txt"), atomically: false, encoding: .utf8)
+        let seen = await withTaskGroup(of: [String]?.self) { group in
+            group.addTask {
+                for await paths in stream where paths.contains(where: { $0.hasSuffix("/new.txt") })
+                {
+                    return paths
                 }
-                group.addTask {
-                    try? await Task.sleep(for: .seconds(10))
-                    return nil
-                }
-                let first = await group.next() ?? nil
-                group.cancelAll()
-                return first
+                return nil
             }
-            #expect(seen != nil, "the new file was noticed")
+            group.addTask {
+                try? await Task.sleep(for: .seconds(10))
+                return nil
+            }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first
         }
+        #expect(seen != nil, "the new file was noticed")
+    }
     #endif
+}
+
+@Suite struct Links {
+    @Test func aLinkToAnItemRoundTrips() throws {
+        let link = AgentLink(archive: URL(filePath: "/Users/me/My Archive"), item: "0193abcd")
+        let url = link.url
+        #expect(url.scheme == "carrel")
+        #expect(AgentLink(url) == link)
+        #expect(AgentLink(AgentLink(archive: link.archive).url)?.item == nil)
+        #expect(AgentLink(URL(string: "carrel://open")!) == nil)
+        #expect(AgentLink(URL(string: "https://open?archive=/a")!) == nil)
+    }
 }

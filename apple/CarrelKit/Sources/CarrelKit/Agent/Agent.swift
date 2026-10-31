@@ -112,7 +112,9 @@ public final class Agent {
     private func open(_ root: URL) async throws {
         let options = options
         let handle = try await Task.detached {
-            if let options { try ArchiveHandle.open(root, options: options) } else {
+            if let options {
+                try ArchiveHandle.open(root, options: options)
+            } else {
                 try ArchiveHandle.open(root)
             }
         }.value
@@ -181,21 +183,21 @@ public final class Agent {
 
     private func watch(_ root: URL) {
         #if os(macOS)
-            guard watching, let plan = followed[root]?.plan else { return }
-            stopWatching(root)
-            let outside = plan.workingCopies.filter {
-                !($0 == plan.root || $0.hasPrefix(plan.root + "/"))
-            }
-            let folders = ([plan.root] + outside).map { URL(filePath: $0) }
-            followed[root]?.watcher = FileWatcher(folders: folders) { [weak self] paths in
-                Task { @MainActor in self?.noticed(paths, in: root) }
-            }
+        guard watching, let plan = followed[root]?.plan else { return }
+        stopWatching(root)
+        let outside = plan.workingCopies.filter {
+            !($0 == plan.root || $0.hasPrefix(plan.root + "/"))
+        }
+        let folders = ([plan.root] + outside).map { URL(filePath: $0) }
+        followed[root]?.watcher = FileWatcher(folders: folders) { [weak self] paths in
+            Task { @MainActor in self?.noticed(paths, in: root) }
+        }
         #endif
     }
 
     private func stopWatching(_ root: URL) {
         #if os(macOS)
-            (followed[root]?.watcher as? FileWatcher)?.stop()
+        (followed[root]?.watcher as? FileWatcher)?.stop()
         #endif
         followed[root]?.watcher = nil
     }
