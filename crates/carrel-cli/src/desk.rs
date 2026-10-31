@@ -97,7 +97,7 @@ pub fn add_item(
             generated.model.as_deref().unwrap_or("a model")
         )
         .unwrap(),
-        Some((None, problems)) if !problems.is_empty() => {
+        Some((None, problems)) if title.is_none() && !problems.is_empty() => {
             writeln!(text, "Its title is its name: {}", problems.join("; ")).unwrap();
         }
         _ => {}
