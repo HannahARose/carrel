@@ -221,6 +221,33 @@ jobs:
           cargo build -p carrel-provider-llama -p carrel-cli --locked
           CARREL_MODELS_DIR="$RUNNER_TEMP/models" PATH="$PWD/target/debug:$PATH" cargo run --locked --bin carrel -- providers
 
+  cad:
+    # The CAD provider with OpenCascade from each platform's package manager, so STEP and IGES
+    # drawing is tested rather than skipped.
+    name: CAD provider (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      CARREL_REQUIRE_OPENCASCADE: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: Install OpenCascade
+        run: |
+          if [ "$RUNNER_OS" = macOS ]; then
+            brew install opencascade
+          else
+            sudo apt-get update -q
+            sudo apt-get install -yq libocct-data-exchange-dev libocct-modeling-algorithms-dev
+          fi
+      - run: cargo clippy -p carrel-provider-cad --all-targets --locked -- -D warnings
+      - run: cargo test -p carrel-provider-cad --locked
+
   extract:
     # The portable extraction provider with Tesseract and Poppler installed, so OCR of images
     # and scanned PDFs is tested rather than skipped.
@@ -294,7 +321,7 @@ jobs:
     # The single required check for branch protection. It passes only if every job above passed.
     name: CI passed
     if: always()
-    needs: [fmt, clippy, test, docs, swift, mlx, llama, extract, kopia, deny, zizmor, hygiene]
+    needs: [fmt, clippy, test, docs, swift, mlx, llama, cad, extract, kopia, deny, zizmor, hygiene]
     runs-on: ubuntu-latest
     steps:
       - name: Check job results

@@ -26,6 +26,12 @@ On a Mac, also build the Apple provider, which gives Carrel Apple's on-device mo
 cd ~/Code/carrel-dev && swift build -c release --package-path apple/CarrelProviders && cp "$(swift build -c release --package-path apple/CarrelProviders --show-bin-path)/carrel-provider-apple" ~/.cargo/bin/
 ```
 
+To have Carrel draw STEP and IGES models and describe them, install [OpenCascade](https://dev.opencascade.org) (`brew install opencascade`, or on Debian and Ubuntu `apt install libocct-data-exchange-dev libocct-modeling-algorithms-dev`), then build the CAD provider. Without it, Carrel still reads those files' headers and part names:
+
+```bash
+cd ~/Code/carrel-dev && cargo install --locked --path crates/carrel-provider-cad
+```
+
 On an Apple-silicon Mac you can also build the MLX provider, for open models through MLX. It needs Xcode and its Metal Toolchain (`xcodebuild -downloadComponent MetalToolchain`), and takes a few minutes:
 
 ```bash

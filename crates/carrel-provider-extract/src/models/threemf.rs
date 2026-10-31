@@ -4,10 +4,10 @@
 
 use std::fmt::Write as _;
 use std::fs::File;
-use std::io::Read;
+use std::io::{Read, Write as _};
 use std::path::Path;
 
-use carrel_core::providers::ProviderError;
+use carrel_core::providers::{Picture, ProviderError};
 use zip::ZipArchive;
 
 use super::{Details, date, duration, push_unique};
@@ -42,6 +42,7 @@ pub(super) fn read(path: &Path) -> Result<Details, ProviderError> {
         metadata(&head, &mut details);
     }
     settings(&mut archive, &mut details);
+    details.pictures.extend(thumbnail(&mut archive));
 
     let mut objects = Vec::new();
     let mut triangles = 0u64;
@@ -88,6 +89,52 @@ pub(super) fn read(path: &Path) -> Result<Details, ProviderError> {
         details.add("Triangles", grouped(triangles));
     }
     Ok(details)
+}
+
+/// The largest thumbnail kept, in bytes.
+const MAX_THUMBNAIL: u64 = 8 * 1024 * 1024;
+
+/// The project's thumbnail, as its slicer drew it, copied to a temporary file for an image
+/// reader to describe: the one the package's relationships name, or the first plate's.
+fn thumbnail(archive: &mut ZipArchive<File>) -> Option<Picture> {
+    let rels = text_of(archive, "_rels/.rels").unwrap_or_default();
+    let named = rels
+        .split('<')
+        .filter(|t| t.starts_with("Relationship "))
+        .find(|t| attribute(t, "Type").is_some_and(|k| k.ends_with("/thumbnail")))
+        .and_then(|t| attribute(t, "Target"))
+        .map(|target| target.trim_start_matches('/').to_owned());
+    let candidates = named
+        .into_iter()
+        .chain(["Metadata/plate_1.png", "Metadata/thumbnail.png"].map(str::to_owned));
+    for name in candidates {
+        let Ok(entry) = archive.by_name(&name) else {
+            continue;
+        };
+        let mut bytes = Vec::new();
+        if entry.take(MAX_THUMBNAIL).read_to_end(&mut bytes).is_err() {
+            continue;
+        }
+        let suffix = if bytes.starts_with(b"\x89PNG") {
+            ".png"
+        } else if bytes.starts_with(b"\xff\xd8\xff") {
+            ".jpg"
+        } else {
+            continue;
+        };
+        let mut file = tempfile::Builder::new()
+            .prefix("carrel-picture-")
+            .suffix(suffix)
+            .tempfile()
+            .ok()?;
+        file.write_all(&bytes).ok()?;
+        let path = file.into_temp_path().keep().ok()?;
+        return Some(Picture {
+            path,
+            context: "the thumbnail a slicer drew of a 3D print project".into(),
+        });
+    }
+    None
 }
 
 /// The main model's path, from the package's relationships, or where it usually is.
@@ -424,9 +471,20 @@ pub(crate) mod tests {
                 ("Metadata/project_settings.config", settings),
                 ("Metadata/slice_info.config", SLICE_INFO.as_bytes()),
                 ("Metadata/plate_1.gcode", b"G28\n"),
+                ("Metadata/plate_1.png", b"\x89PNG\r\n\x1a\n...."),
             ],
         );
         let details = read(&path).unwrap();
+        let [picture] = details.pictures.as_slice() else {
+            panic!("one thumbnail: {:?}", details.pictures);
+        };
+        assert_eq!(
+            std::fs::read(&picture.path).unwrap(),
+            b"\x89PNG\r\n\x1a\n...."
+        );
+        assert!(picture.path.starts_with(std::env::temp_dir()));
+        assert!(picture.context.contains("thumbnail"));
+        std::fs::remove_file(&picture.path).unwrap();
         assert_eq!(
             details.text(),
             "3D print project (3MF), from BambuStudio-01.09.00.70
