@@ -66,6 +66,9 @@ public final class ArchiveModel {
     public private(set) var settings: [Setting] = []
     /// The last search's results.
     public private(set) var searchResults: SearchResults?
+    /// The embedding index, once read with `refreshIndex()`; it reads every card, so
+    /// `refreshAll()` leaves it.
+    public private(set) var index: IndexStatus?
 
     /// The long operation under way, if any.
     public private(set) var progress: OperationProgress?
@@ -455,6 +458,12 @@ public final class ArchiveModel {
         try await call { try $0.chooseModels(model: drafting, secondModel: secondOpinion) }
     }
 
+    /// Sets this device's `picker` or `editor`; `nil` lets Carrel choose.
+    @discardableResult
+    public func setDevice(_ key: String, to value: String?) async throws -> DeviceSettings {
+        try await call { try $0.setDeviceSetting(key: key, value: value) }
+    }
+
     /// Downloads the catalog model `name`. Only once the owner has confirmed, having seen
     /// its size.
     @discardableResult
@@ -462,6 +471,49 @@ public final class ArchiveModel {
         try await call(reporting: "Downloading \(name)") { handle, relay in
             try handle.downloadModel(name: name, progress: relay)
         }
+    }
+
+    /// Deletes the downloaded model `name`. Only once the owner has confirmed.
+    @discardableResult
+    public func remove(model name: String) async throws -> [String] {
+        try await call { try $0.removeModel(name: name) }
+    }
+
+    // MARK: - The embedding index
+
+    /// Reads the embedding index's status again.
+    public func refreshIndex() async throws {
+        index = try await call { try $0.indexStatus() }
+    }
+
+    /// Embeds every item again with the archive's embedding model.
+    @discardableResult
+    public func rebuildIndex() async throws -> IndexBuilt {
+        let model = index?.model ?? "the archive’s model"
+        let built = try await call(reporting: "Embedding with \(model)") { handle, relay in
+            try handle.rebuildIndex(progress: relay)
+        }
+        try await refreshIndex()
+        return built
+    }
+
+    /// Switches the archive to the embedding model `model`, building its index while search
+    /// keeps using the current one; the archive's own model stops a switch under way.
+    @discardableResult
+    public func switchIndex(to model: String) async throws -> IndexSwitched {
+        let switched: IndexSwitched
+        do {
+            switched = try await call(reporting: "Embedding with \(model)") { handle, relay in
+                try handle.switchIndex(model: model, progress: relay)
+            }
+        } catch {
+            // A switch that stopped part way is recorded, so show where it got to.
+            try? await refreshIndex()
+            throw error
+        }
+        try await refreshIndex()
+        try await changed { try await $0.refreshSettings() }
+        return switched
     }
 
     // MARK: - The intake queue

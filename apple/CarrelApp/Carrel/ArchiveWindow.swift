@@ -28,6 +28,7 @@ struct ArchiveWindow: View {
         } detail: {
             Inspector(model: model)
         }
+        .activeAndHistorySheets(model)
         .navigationTitle(model.name)
         .navigationSubtitle(
             model.isReadOnly ? "\(model.screenTitle) · Read only" : model.screenTitle
@@ -83,7 +84,9 @@ private struct Sidebar: View {
                     .badge(model.archive?.reviewCount ?? 0)
                 Label("Questions", systemImage: "questionmark.bubble").tag(Screen.questions)
                     .badge(model.archive?.questions.count ?? 0)
-                Label("Active", systemImage: "arrow.up.forward.square").tag(Screen.active)
+                Label("Active", systemImage: "arrow.up.forward.square")
+                    .badge(model.activeScreen?.pendingCount ?? 0)
+                    .tag(Screen.active)
             }
             Section("Collections") {
                 OutlineGroup(model.tree, children: \.children) { node in
@@ -113,6 +116,9 @@ private struct ScreenContent: View {
             List(model.listedItems, selection: $model.selectedItemID) { item in
                 Label(item.title, systemImage: item.kind.symbol)
             }
+            .contextMenu(forSelectionType: ItemSummary.ID.self) { ids in
+                BrowseActions(model: model, ids: ids)
+            }
             .overlay {
                 if model.listedItems.isEmpty, !model.isLoading {
                     ContentUnavailableView("No Items", systemImage: "folder")
@@ -125,29 +131,9 @@ private struct ScreenContent: View {
         case .questions:
             if let questions = model.questions { QuestionsView(questions: questions) }
         case .active:
-            ComingScreen(
-                title: "Active", systemImage: "arrow.up.forward.square",
-                text: "Checked-out and desk items with their pending entries, to return or cancel.")
+            if let active = model.activeScreen { ActiveView(model: active) }
         case .history:
-            ComingScreen(
-                title: "History", systemImage: "clock.arrow.circlepath",
-                text: "Every change to the archive, with undo.")
-        }
-    }
-}
-
-/// A screen that arrives with CarrelKit's operations (#233) and the app's later steps.
-private struct ComingScreen: View {
-    let title: String
-    let systemImage: String
-    let text: String
-
-    var body: some View {
-        ContentUnavailableView {
-            Label(title, systemImage: systemImage)
-        } description: {
-            Text(text)
-            Text("Coming in a later build. Until then, run `carrel` for the interactive mode.")
+            if let history = model.historyScreen { HistoryView(model: history) }
         }
     }
 }
@@ -165,6 +151,10 @@ private struct Inspector: View {
             QuestionInspector(
                 question: question, questions: questions,
                 collections: model.collections.map(\.path))
+        } else if model.screen == .active, let active = model.activeScreen {
+            ActiveInspector(model: active)
+        } else if model.screen == .history, let history = model.historyScreen {
+            ChangeInspector(model: history) { id in model.items.first { $0.id == id }?.title }
         } else if let item = model.selectedItem {
             if let edit = model.editing, edit.target == .item(item.id) {
                 ItemEditor(item: item, edit: edit) { model.editing = nil }

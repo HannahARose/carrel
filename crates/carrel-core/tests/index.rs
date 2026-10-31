@@ -547,3 +547,86 @@ fn switching_models_builds_the_new_index_beside_the_old_then_switches() {
     assert_eq!(archive.settings().embedding_model(), Some(NEW));
     lease.release().unwrap();
 }
+
+#[test]
+fn the_index_is_looked_after_by_hand_with_progress() {
+    use carrel_core::coordinator::{Coordinator as _, DEFAULT_LEASE, DiskLock, Holder};
+    use carrel_core::history::History;
+    use carrel_core::index::manage::{self, ManageError, Stage, Switched};
+
+    const NEW: &str = "another/model:v2";
+    let s = setup();
+    let holder = Holder {
+        person: Id::new_v7(),
+        device: Id::new_v7(),
+    };
+    let take = || DiskLock::for_archive(&s.archive).acquire(holder, "test", DEFAULT_LEASE);
+    let lease = take().unwrap();
+    History::start(&s.archive, &lease).unwrap();
+    lease.release().unwrap();
+
+    let status = manage::status(&s.archive).unwrap();
+    assert_eq!(status.model.as_deref(), Some(MODEL));
+    assert!(!status.exists);
+    assert_eq!(status.behind, status.items);
+
+    // Rebuilding with the archive's model reports each item it embeds.
+    let (words, _) = registry(MODEL);
+    let mut stages = Vec::new();
+    let built = manage::rebuild(&s.archive, &words, MODEL, &mut |stage, _, total, _| {
+        stages.push((stage, total));
+    })
+    .unwrap();
+    assert!(!built.resumed);
+    assert_eq!(built.embedded, status.items);
+    assert!(stages.contains(&(Stage::Embedding, status.items)));
+    let status = manage::status(&s.archive).unwrap();
+    assert!(status.exists);
+    assert_eq!((status.embedded, status.behind), (status.items, 0));
+    assert_eq!(
+        manage::offered_models(&words)
+            .into_iter()
+            .map(|m| (m.model, m.dimensions))
+            .collect::<Vec<_>>(),
+        [(MODEL.to_owned(), Some(512))]
+    );
+
+    // A model no provider here offers can't be switched to, and nothing is recorded.
+    assert!(matches!(
+        manage::switch_to(&s.archive, &words, NEW, &mut || take(), &mut |_, _, _, _| {}),
+        Err(ManageError::NotOffered { here, .. }) if here == [MODEL]
+    ));
+    assert!(manage::switch_status(&s.archive).unwrap().is_none());
+
+    // Switching builds the new model's index, then makes it the archive's.
+    let (switching, _) = registry(NEW);
+    let switched = manage::switch_to(
+        &s.archive,
+        &switching,
+        NEW,
+        &mut || take(),
+        &mut |_, _, _, _| {},
+    )
+    .unwrap();
+    let Switched::Done { from, built, .. } = switched else {
+        panic!("{switched:?}");
+    };
+    assert_eq!(from.as_deref(), Some(MODEL));
+    assert_eq!(built.embedded, status.items);
+    let archive = Archive::open(s.archive.root()).unwrap();
+    assert_eq!(
+        manage::status(&archive).unwrap().model.as_deref(),
+        Some(NEW)
+    );
+    assert_eq!(
+        manage::switch_to(
+            &archive,
+            &switching,
+            NEW,
+            &mut || take(),
+            &mut |_, _, _, _| {}
+        )
+        .unwrap(),
+        Switched::Already
+    );
+}

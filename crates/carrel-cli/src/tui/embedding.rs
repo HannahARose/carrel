@@ -5,7 +5,8 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use carrel_core::coordinator::Holder;
+use carrel_core::coordinator::{Coordinator as _, DEFAULT_LEASE, DiskLock, Holder};
+use carrel_core::index::manage::Stage;
 use carrel_core::index::switch;
 use carrel_core::providers::Registry;
 
@@ -323,11 +324,14 @@ pub(super) fn index_work(
             Embedding::Rebuild => crate::models::archive_model(&archive)?,
             Embedding::Switch(model) => model.clone(),
         };
-        let what = format!("Embedding with {model}");
-        let mut report = |done: usize, total: usize, item: Option<&str>| {
+        let embedding = format!("Embedding with {model}");
+        let mut report = |stage: Stage, done: usize, total: usize, item: Option<&str>| {
             if let Ok(mut shown) = progress.lock() {
                 *shown = Some(Progress {
-                    what: what.clone(),
+                    what: match stage {
+                        Stage::Reading => "Reading text".to_owned(),
+                        Stage::Embedding => embedding.clone(),
+                    },
                     done,
                     total,
                     item: item.map(str::to_owned),
@@ -339,7 +343,20 @@ pub(super) fn index_work(
                 crate::index::rebuild_with(&archive, &registry, &model, &mut report)
             }
             Embedding::Switch(model) => {
-                crate::index::switch_with(&archive, &registry, holder()?, &model, &mut report)
+                let holder = holder()?;
+                crate::index::switch_with(
+                    &archive,
+                    &registry,
+                    &model,
+                    &mut || {
+                        DiskLock::for_archive(&archive).acquire(
+                            holder,
+                            "index model",
+                            DEFAULT_LEASE,
+                        )
+                    },
+                    &mut report,
+                )
             }
         };
         if let Ok(mut shown) = progress.lock() {
