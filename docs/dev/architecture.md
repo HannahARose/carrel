@@ -39,11 +39,12 @@ flowchart TB
 
 Later (v0.5), the SwiftUI app reaches the same core through CarrelKit (Swift) and `carrel-ffi` (UniFFI), without the CLI in between.
 
-Three ideas run through it:
+Four ideas run through it:
 
 1. **One core, thin interfaces.** Everything about archives (the format, cards, history, ingest, review, filing, backups) is in the `carrel-core` library. The CLI, the interactive mode and later the Mac app present it; they hold no archive logic of their own.
 2. **Separate programs for anything platform-specific, network-facing or heavy.** Models and text extraction come from provider programs, downloads from a network helper, backups from Kopia. Each can be native to its platform, swapped, or audited on its own.
 3. **The archive is the source of truth, in plain files.** Queues, proposals, questions, settings and locks are files in the archive or the configuration folder, so any process, or a person, can read them, and a crash never loses more than the item in progress.
+4. **Every interface is fully capable.** Anything Carrel can do is available from the command line, the interactive mode and the app, on every platform each one runs on, wherever the interface and the platform make it possible. The interfaces differ in how they do it: the command line suits scripts and one-off commands, the interactive mode working through queues at the keyboard, the app pointing, dragging and previews. They never differ in what can be done. When a capability can't exist somewhere, such as a picture preview in a terminal that can't draw images, or Apple's model off Apple devices, the closest equivalent stands in and the gap is written down. Because the logic is all in the core (idea 1), keeping the interfaces level is a matter of presenting it, not reimplementing it.
 
 ## The parts
 
