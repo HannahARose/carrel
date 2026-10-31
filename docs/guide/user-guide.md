@@ -178,7 +178,8 @@ Items waiting on a question aren't approved in bulk until it's answered or dismi
 ## Finding things
 
 - **Browse** (`5`) lists collections and their items, with each card in full. `/` searches titles, tags and summaries across the archive.
-- `carrel show ITEM` prints a card.
+- **An item's view:** below its card, Browse lists every change that touched the item, newest first, from its filing to its latest correction or return, and the items its card links to (`version-of`, `related`, `part-of`). `Enter` on an item moves into its view: `u` undoes the chosen change (after asking, as History does), `Enter` on a linked item goes to it, and `←` or `Esc` go back.
+- `carrel show ITEM` prints a card, its links, and the changes that touched it, each with the identifier `carrel undo` takes.
 - `ARCHIVE.md` and each collection's design document end with a generated list of its contents, so the archive is browsable in Finder or Obsidian too.
 
 ## Working on items

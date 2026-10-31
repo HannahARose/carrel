@@ -130,7 +130,7 @@ If several items share a term Carrel doesn't know, such as a project's code name
 
 ## 6. Look around, and undo
 
-- **Browse** (`5`) lists collections and their items; `/` searches titles, tags and summaries.
+- **Browse** (`5`) lists collections and their items; `/` searches titles, tags and summaries. Below each card are the changes that touched the item and the items it links to; `Enter` moves among them, and `u` undoes the chosen change.
 - **History** (`6`) lists every change. Choose one and press `u` to undo it: files it moved go back.
 - **Status** (`1`) summarizes the archive, including **Structure**: signs that a collection is getting crowded or that something's missing.
 - Your archive is a normal folder: open it in Finder, or as an Obsidian vault.
