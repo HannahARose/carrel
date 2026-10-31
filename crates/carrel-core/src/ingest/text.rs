@@ -4,7 +4,7 @@ use std::fmt::Write as _;
 use std::io::Read as _;
 use std::path::Path;
 
-use crate::card::Kind;
+use crate::card::{DateOrTime, Kind};
 use crate::detect::{Rules, is_ignored};
 use crate::providers::{ExtractionRequest, ProviderError, Registry};
 use crate::review::Attempt;
@@ -41,6 +41,11 @@ pub struct ItemText {
     pub method: String,
     /// Pages, when an extractor reported them.
     pub pages: Option<u32>,
+    /// When it was made, when the extractor read it from the file, such as a photo's date
+    /// taken.
+    pub created: Option<DateOrTime>,
+    /// Whether the file records where it was made, such as a photo's location.
+    pub located: bool,
     /// Every extractor tried.
     pub attempts: Vec<Attempt>,
     /// Why there's no text, when there isn't.
@@ -142,6 +147,8 @@ pub fn read(registry: &Registry, rules: &Rules, candidate: &Candidate) -> ItemTe
             media_type: None,
             method: "listing".into(),
             pages: None,
+            created: None,
+            located: false,
             attempts: Vec::new(),
             note: None,
         }
@@ -177,6 +184,11 @@ fn read_file(registry: &Registry, path: &Path) -> ItemText {
                 media_type: Some(media_type),
                 method: extraction.method,
                 pages: extraction.pages,
+                created: extraction
+                    .created
+                    .map(DateOrTime)
+                    .filter(DateOrTime::is_valid),
+                located: extraction.located,
                 attempts,
                 note: None,
             }
@@ -186,6 +198,8 @@ fn read_file(registry: &Registry, path: &Path) -> ItemText {
             media_type: Some(media_type.clone()),
             method: "none".into(),
             pages: None,
+            created: None,
+            located: false,
             attempts: Vec::new(),
             note: Some(match error {
                 ProviderError::NoProvider(_) => {

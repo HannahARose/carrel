@@ -381,7 +381,8 @@ fn check(
 
 /// Drafts a card for `candidate`, trying each available text model in turn, best first. Each
 /// gets one retry with its answer's problems stated. If none succeeds, the draft falls back
-/// to the file name as its title and lists what's left for the owner.
+/// to the file name as its title and lists what's left for the owner. A date the file records,
+/// such as a photo's date taken, is used when the model gives none.
 #[must_use]
 pub fn draft(
     registry: &Registry,
@@ -399,7 +400,7 @@ pub fn draft(
         summary: None,
         tags: Vec::new(),
         new_tag: None,
-        created: None,
+        created: text.created.clone(),
         generated: None,
         attempts: Vec::new(),
         problems: Vec::new(),
@@ -434,6 +435,10 @@ pub fn draft(
                     context.device,
                     offer.priority < best_priority,
                 ));
+                // After the provenance: a date read from the file isn't the model's.
+                if draft.created.is_none() {
+                    draft.created.clone_from(&text.created);
+                }
                 return draft;
             }
             Err(problems) => last_problems = problems,
@@ -444,7 +449,7 @@ pub fn draft(
     draft.summary = None;
     draft.tags.clear();
     draft.new_tag = None;
-    draft.created = None;
+    draft.created.clone_from(&text.created);
     let declined: Vec<String> = draft
         .attempts
         .iter()

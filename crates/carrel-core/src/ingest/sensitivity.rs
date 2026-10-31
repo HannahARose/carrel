@@ -247,6 +247,21 @@ pub fn floor(name: &str, text: &str, default: Sensitivity) -> Assessment {
     }
 }
 
+/// The reason given for an item that records where it was made.
+pub const LOCATION_REASON: &str = "has the place it was taken";
+
+impl Assessment {
+    /// Notes that the item records where it was made, such as a photo's location: at least
+    /// `personal`, but no higher, since most phone photos have one and raising them all would
+    /// bury the ones that are sensitive.
+    pub fn located(&mut self) {
+        self.level = self.level.max(Sensitivity::Personal);
+        if !self.reasons.iter().any(|r| r == LOCATION_REASON) {
+            self.reasons.push(LOCATION_REASON.to_owned());
+        }
+    }
+}
+
 fn level_name(level: Sensitivity) -> &'static str {
     match level {
         Sensitivity::Public => "public",

@@ -1,7 +1,7 @@
 //! Ingest's sensitivity stage: the floor rules, and a model that may only raise the level.
 
 use carrel_core::card::Sensitivity;
-use carrel_core::ingest::sensitivity::{assess, floor, restricted_matches};
+use carrel_core::ingest::sensitivity::{LOCATION_REASON, assess, floor, restricted_matches};
 use carrel_core::providers::{ProviderError, Registry};
 use serde_json::json;
 
@@ -169,4 +169,22 @@ fn a_model_that_declines_passes_the_rating_to_the_next() {
         .map(|a| (a.provider.as_str(), a.result.as_str()))
         .collect();
     assert_eq!(results, [("fast", "declined"), ("careful", "ok")]);
+}
+
+#[test]
+fn a_located_photo_is_personal_but_no_higher() {
+    let mut public = floor(
+        "IMG_0550.jpeg",
+        "Image: photo, with a location",
+        Sensitivity::Public,
+    );
+    public.located();
+    assert_eq!(public.level, Sensitivity::Personal);
+    assert_eq!(public.reasons, vec![LOCATION_REASON.to_owned()]);
+    public.located();
+    assert_eq!(public.reasons.len(), 1, "the reason is given once");
+
+    let mut sensitive = floor("medical-scan.jpeg", "", Sensitivity::Sensitive);
+    sensitive.located();
+    assert_eq!(sensitive.level, Sensitivity::Sensitive);
 }
