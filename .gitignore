@@ -22,3 +22,8 @@ xcuserdata/
 
 # Python bytecode, from running the scripts
 __pycache__/
+
+# Neovim help tags, made from editors/nvim/doc by plugin managers or :helptags
+/editors/nvim/doc/tags
+# Emacs byte-compiled files
+*.elc

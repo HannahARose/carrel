@@ -50,6 +50,12 @@ fn access_name(access: Access) -> &'static str {
     }
 }
 
+/// The archive's root as an absolute path, for `--json` output whose paths are relative to it,
+/// so an editor can open them.
+pub(crate) fn root_of(archive: &Archive) -> PathBuf {
+    std::fs::canonicalize(archive.root()).unwrap_or_else(|_| archive.root().to_path_buf())
+}
+
 fn archive_json(archive: &Archive) -> Value {
     json!({
         "name": archive.doc().name,
@@ -665,6 +671,7 @@ pub(crate) fn describe(archive: &Archive, query: &str) -> Result<Shown, Failure>
         .collect();
 
     let json = json!({
+        "root": root_of(archive),
         "card": item.card,
         "item": item.item,
         "collection": collection,

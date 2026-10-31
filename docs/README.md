@@ -7,6 +7,7 @@
 | [Getting started](guide/getting-started.md) | Installing Carrel and filing your first items |
 | [User guide](guide/user-guide.md) | How each part works: collections, ingest, review, questions, history, backups, models, settings |
 | [Commands](guide/commands.md) | Every command, option, key and environment variable |
+| [Neovim and Emacs](guide/editors.md) | Searching the archive and reading cards from your editor |
 
 ## Working on Carrel
 

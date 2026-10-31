@@ -1,0 +1,70 @@
+*carrel.txt*  Search a Carrel archive and show its cards
+
+Carrel for Neovim runs the `carrel` program with --json and reads what it
+prints, so it searches exactly as `carrel search` does. It needs Neovim 0.9
+or later and no other plugins; Telescope is used for results if installed.
+The archive is the one the current folder is in, else the one chosen with
+`carrel open`, unless |carrel-setup| sets one.
+
+==============================================================================
+COMMANDS                                                     *carrel-commands*
+
+                                                               *:CarrelSearch*
+:CarrelSearch {query}	Search the archive for {query}: words, filters such
+			as tag:receipts, collection:Finances, kind:folder,
+			after:2025-01, before:2026 or checked-out, or both,
+			given to `carrel search` as typed. Results are listed
+			with the passage that matched, in Telescope if it's
+			installed, else in the |quickfix| list (see "ui" in
+			|carrel-setup|). Choosing one opens its file; a
+			card-only item opens its card, a collection its
+			design document, a glossary fact the glossary.
+
+:CarrelSearch! {query}	The same, but choosing a result opens its card.
+
+In Telescope, <CR> opens the item and <C-e> its card; the preview shows the
+card. In the float, <CR> opens the item, c its card, q or <Esc> close it.
+
+                                                                 *:CarrelShow*
+:CarrelShow [path]	Show the card of the item or card in the current
+			buffer, or of [path], in a split: its fields,
+			summary, problems and history. In it:
+			  o	open the item beside it
+			  c	open the card file beside it
+			  q	close it
+
+                                                                *:CarrelIndex*
+:CarrelIndex		Say how much of the archive the meaning index
+			covers, from `carrel index status`.
+
+==============================================================================
+SETUP                                                           *carrel-setup*
+
+All of these are optional; the defaults are shown. >lua
+
+    require("carrel").setup({
+      cmd = { "carrel" },  -- the program, or a path, with any arguments
+      archive = nil,       -- an archive's folder; nil finds it as carrel does
+      ui = "auto",         -- "auto", "telescope", "quickfix" or "float"
+      split = "vsplit",    -- how :CarrelShow opens its window
+      open = function(path) vim.cmd.edit(vim.fn.fnameescape(path)) end,
+    })
+<
+On Neovim 0.10, `open = vim.ui.open` opens items such as PDFs in their own
+application.
+
+==============================================================================
+LUA                                                               *carrel-lua*
+
+require("carrel").search({words}, {card})            *carrel.search()*
+    Search with the list {words}, as |:CarrelSearch| does; with {card} true,
+    choosing a result opens its card.
+
+require("carrel").show({path})                       *carrel.show()*
+    Show the card of {path}, or of the current buffer's file when nil.
+
+require("carrel").run({args}, {cwd}, {done})          *carrel.run()*
+    Run `carrel --json {args}` in {cwd} and call {done}(result) with the
+    decoded JSON, or {done}(nil, message) if it failed.
+
+ vim:tw=78:ts=8:noet:ft=help:norl:
