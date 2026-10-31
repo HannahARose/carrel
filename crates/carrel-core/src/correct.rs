@@ -278,7 +278,7 @@ pub fn work_out(
                 feedback = Some("answer with a JSON object following the schema".into());
                 continue;
             };
-            match check(&answer, subject).map(|c| grounded(c, words)) {
+            match check(&answer, subject).map(|c| grounded(c, words, subject)) {
                 Ok(changes) => {
                     worked.attempts.push(attempt("ok", None));
                     worked.changes = changes;
@@ -423,10 +423,10 @@ fn said(words: &str, value: &str) -> bool {
 /// Holds the model's answer to what the owner actually said. A field counts as dictated only
 /// when its value is in the owner's words (a date, when its year is); models mark inferred
 /// fields as dictated too readily, and dictated fields stop being model-written for good. A
-/// tag is added only when the owner talks about tags and names it, and removed only then or by
-/// a broad correction (one that changes what the item is). A lasting fact must be about
-/// something the owner named.
-fn grounded(mut changes: Changes, words: &str) -> Changes {
+/// date the model worked out must appear in the item's text, and only a level the owner states
+/// can lower the sensitivity. Tags change only when the owner talks about tags and names them.
+/// A lasting fact must be about something the owner named.
+fn grounded(mut changes: Changes, words: &str, subject: &Subject<'_>) -> Changes {
     if let Some(f) = &mut changes.title {
         f.dictated &= said(words, &f.value);
     }
@@ -436,8 +436,23 @@ fn grounded(mut changes: Changes, words: &str) -> Changes {
     if let Some(f) = &mut changes.created {
         f.dictated &= said(words, &f.value.0[..4.min(f.value.0.len())]);
     }
+    // A date the owner didn't give must come from the item: models invent plausible ones.
+    if changes.created.as_ref().is_some_and(|f| {
+        let day = &f.value.0[..10.min(f.value.0.len())];
+        !f.dictated && !subject.text.contains(day)
+    }) {
+        changes.created = None;
+    }
     if let Some(f) = &mut changes.sensitivity {
         f.dictated &= said(words, level(f.value));
+    }
+    // Only the owner's stated level can lower it; a model may still raise it.
+    if changes
+        .sensitivity
+        .as_ref()
+        .is_some_and(|f| !f.dictated && f.value < subject.card.sensitivity)
+    {
+        changes.sensitivity = None;
     }
     if let Some(f) = &mut changes.collection {
         let last = f.value.rsplit('/').next().unwrap_or(&f.value);
