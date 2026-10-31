@@ -1,6 +1,6 @@
 # Design: reading images
 
-Status: proposed 2026-10-30.
+Status: accepted 2026-10-30, with the five recommendations below. Issue #179.
 
 ## What this adds
 
@@ -54,7 +54,7 @@ This design reads all three in the Apple provider, so every image gets real text
 5. A benchmark addition: a handful of invented images (a receipt photo, a screenshot, a whiteboard, a pet photo) with known answers, measured with and without the description.
 6. The user guide and `docs/providers.md`.
 
-## Decisions to accept
+## Decisions (accepted 2026-10-30)
 
 1. **One `image` offer in the Apple provider that returns metadata, labels, OCR and a description as one text,** rather than passing images to the card, routing and rating calls. Recommended: nothing downstream changes, it's one model call per image, and every model, including a second opinion that can't see images, benefits.
 2. **The date taken becomes `created`** when the model gives none, carried as a new optional `created` field on extraction results. Recommended.
