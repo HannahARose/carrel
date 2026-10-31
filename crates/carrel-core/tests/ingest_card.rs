@@ -31,6 +31,7 @@ fn candidate(name: &str) -> Candidate {
         duplicate_of: None,
         likely: Vec::new(),
         same_as: None,
+        inside: None,
     }
 }
 

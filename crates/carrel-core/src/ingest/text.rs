@@ -7,7 +7,8 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::card::{DateOrTime, Kind};
-use crate::detect::{Rules, is_ignored};
+use crate::compressed::{self, EntryKind, Inside, Shape};
+use crate::detect::{Compressed, Rules, is_ignored};
 use crate::providers::{ExtractionRequest, ProviderError, Registry};
 use crate::review::Attempt;
 
@@ -97,8 +98,9 @@ pub fn media_type(path: &Path) -> String {
         .map(str::to_ascii_lowercase)
         .and_then(|e| from_extension(&e));
     if let Some(sniffed) = sniff(head) {
-        // A ZIP is often a document format with its own type, which the extension says.
-        if sniffed == "application/zip" && by_extension.is_some() {
+        // A zip is often a document format with its own type, and a compressor often wraps a
+        // tar, which the extension says.
+        if Compressed::sniff(head).is_some() && by_extension.is_some() {
             return by_extension.unwrap_or_default().to_owned();
         }
         return sniffed.to_owned();
@@ -132,10 +134,8 @@ fn sniff(head: &[u8]) -> Option<&'static str> {
         }
     } else if starts(b"RIFF") && head.len() >= 12 && &head[8..12] == b"WEBP" {
         Some("image/webp")
-    } else if starts(b"PK\x03\x04") {
-        Some("application/zip")
     } else {
-        None
+        Compressed::sniff(head).map(Compressed::media_type)
     }
 }
 
@@ -160,7 +160,22 @@ fn from_extension(extension: &str) -> Option<&'static str> {
         "docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         "pptx" => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "odt" => "application/vnd.oasis.opendocument.text",
+        "ods" => "application/vnd.oasis.opendocument.spreadsheet",
+        "odp" => "application/vnd.oasis.opendocument.presentation",
+        "epub" => "application/epub+zip",
+        "jar" => "application/java-archive",
+        "apk" => "application/vnd.android.package-archive",
+        "ipa" => "application/x-ios-app",
+        "whl" => "application/x-wheel+zip",
         "zip" => "application/zip",
+        "tar" => "application/x-tar",
+        "gz" | "tgz" => "application/gzip",
+        "bz2" | "tbz2" | "tbz" => "application/x-bzip2",
+        "xz" | "txz" => "application/x-xz",
+        "zst" | "tzst" => "application/zstd",
+        "7z" => "application/x-7z-compressed",
+        "rar" => "application/vnd.rar",
         // 3D models, and the CAD and slicer files around them (`docs/design/models-3d.md`).
         "stl" => "model/stl",
         "obj" => "model/obj",
@@ -176,10 +191,14 @@ fn from_extension(extension: &str) -> Option<&'static str> {
 }
 
 /// Reads an item's text: a file through the registry's extractors, a folder or bundle as a
-/// description built from its README, project files and listing.
+/// description built from its README, project files and listing, and a compressed file from
+/// what's inside, without expanding it: its one file's text, or a description like a
+/// folder's.
 #[must_use]
 pub fn read(registry: &Registry, rules: &Rules, candidate: &Candidate) -> ItemText {
-    if candidate.kind == Kind::File {
+    if let Some(inside) = &candidate.inside {
+        read_compressed(registry, rules, &candidate.path, inside)
+    } else if candidate.kind == Kind::File {
         read_file(registry, &candidate.path)
     } else {
         ItemText {
@@ -257,6 +276,179 @@ fn read_file(registry: &Registry, path: &Path) -> ItemText {
             }),
         },
     }
+}
+
+/// The most of a compressed file's one file that's read for its text, in bytes.
+const INNER_FILE_LIMIT: u64 = 64 << 20;
+
+/// A compressed file's text: the text of the one file inside, or a description of what's
+/// inside like a folder's. One that can't be read is described by its name, and noted as
+/// unread, so it's logged with the other types this device can't read.
+fn read_compressed(registry: &Registry, rules: &Rules, path: &Path, inside: &Inside) -> ItemText {
+    let mut text = ItemText {
+        text: String::new(),
+        media_type: Some(inside.format.media_type().to_owned()),
+        method: "listing".into(),
+        pages: None,
+        created: None,
+        located: false,
+        attempts: Vec::new(),
+        note: None,
+        unread: None,
+    };
+    let Some(listing) = &inside.listing else {
+        text.method = "none".into();
+        text.note.clone_from(&inside.unread);
+        text.unread = Some(if inside.no_reader {
+            Unread::NoReader
+        } else {
+            Unread::Failed
+        });
+        return text;
+    };
+    if let Shape::OneFile(name) = listing.shape()
+        && let Some(entry) = listing
+            .entries
+            .iter()
+            .find(|e| e.path.trim_start_matches("./") == name)
+        && let Some(inner) = read_inner(registry, path, inside.format, &entry.path, &name)
+    {
+        return inner;
+    }
+    text.text = describe_listing(registry, rules, path, inside, listing);
+    text
+}
+
+/// The text of one file inside, read by extracting it to a temporary folder.
+fn read_inner(
+    registry: &Registry,
+    path: &Path,
+    format: crate::detect::Compressed,
+    inner: &str,
+    name: &str,
+) -> Option<ItemText> {
+    let bytes = compressed::read_entry(path, format, inner, INNER_FILE_LIMIT).ok()?;
+    let folder = std::env::temp_dir().join(format!("carrel-read-{}", crate::card::Id::new_v7()));
+    std::fs::create_dir_all(&folder).ok()?;
+    let file_name = Path::new(name).file_name()?;
+    let file = folder.join(file_name);
+    let text = std::fs::write(&file, bytes)
+        .ok()
+        .map(|()| read_file(registry, &file));
+    let _ = std::fs::remove_dir_all(&folder);
+    text.filter(|t| t.unread.is_none())
+}
+
+/// A compressed file described for a model, like a folder: its README, project files, and a
+/// listing, all read from inside it.
+fn describe_listing(
+    registry: &Registry,
+    rules: &Rules,
+    path: &Path,
+    inside: &Inside,
+    listing: &compressed::Listing,
+) -> String {
+    let mut text = String::new();
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    writeln!(
+        text,
+        "Compressed file: {name} ({}, holding {}, {} expanded)",
+        inside.format.name(),
+        inside.describe(),
+        crate::human_size(listing.total_size())
+    )
+    .unwrap();
+    let root = listing.root();
+    let top = listing.top_level();
+    if let Some(readme) = top
+        .iter()
+        .find(|n| n.to_ascii_lowercase().starts_with("readme"))
+        .filter(|n| listing.find(n).is_some_and(|e| e.kind == EntryKind::File))
+        && let Some(readme_text) = read_inner(
+            registry,
+            path,
+            inside.format,
+            &format!("{root}{readme}"),
+            readme,
+        )
+    {
+        writeln!(
+            text,
+            "\nREADME:\n{}",
+            excerpt(&readme_text.text, FILE_EXCERPT)
+        )
+        .unwrap();
+    }
+    for project in PROJECT_FILES {
+        if top.iter().any(|n| n == project)
+            && let Ok(bytes) = compressed::read_entry(
+                path,
+                inside.format,
+                &format!("{root}{project}"),
+                FILE_EXCERPT as u64,
+            )
+        {
+            let contents = String::from_utf8_lossy(&bytes);
+            writeln!(text, "\n{project}:\n{}", excerpt(&contents, FILE_EXCERPT)).unwrap();
+        }
+    }
+    let markers = inside.markers(rules);
+    if !markers.is_empty() {
+        writeln!(text, "\nProject markers: {}", markers.join(", ")).unwrap();
+    }
+    let lines = list_entries(listing, rules);
+    writeln!(text, "\nContents:").unwrap();
+    for line in lines.iter().take(LISTING_ENTRIES) {
+        writeln!(text, "{line}").unwrap();
+    }
+    if lines.len() > LISTING_ENTRIES {
+        writeln!(text, "… and {} more", lines.len() - LISTING_ENTRIES).unwrap();
+    }
+    text
+}
+
+/// Two levels of a compressed file's contents, inside any wrapping folder, indented like a
+/// folder's listing.
+fn list_entries(listing: &compressed::Listing, rules: &Rules) -> Vec<String> {
+    let root = listing.root();
+    let mut paths: Vec<(String, bool)> = Vec::new();
+    for entry in &listing.entries {
+        let path = entry.path.trim_start_matches("./");
+        let Some(rest) = path.strip_prefix(root.as_str()) else {
+            continue;
+        };
+        let is_folder = entry.kind == EntryKind::Folder;
+        let names: Vec<&str> = rest.split('/').filter(|n| !n.is_empty()).collect();
+        // Every folder along the way, implied or not, then the entry itself.
+        for depth in 1..=names.len().min(2) {
+            let folder = depth < names.len() || is_folder;
+            paths.push((names[..depth].join("/"), folder));
+        }
+    }
+    paths.sort();
+    paths.dedup();
+    let mut lines = Vec::new();
+    let mut skipped: Vec<String> = Vec::new();
+    for (path, folder) in paths {
+        let names: Vec<&str> = path.split('/').collect();
+        let name = names[names.len() - 1];
+        if name.starts_with('.') || skipped.iter().any(|s| path.starts_with(s.as_str())) {
+            continue;
+        }
+        let indent = "  ".repeat(names.len() - 1);
+        if !folder {
+            lines.push(format!("{indent}{name}"));
+        } else if rules.is_regenerable(name) {
+            lines.push(format!("{indent}{name}/ (regenerable)"));
+            skipped.push(format!("{path}/"));
+        } else {
+            lines.push(format!("{indent}{name}/"));
+        }
+    }
+    lines
 }
 
 /// A folder described for a model: its README, project files, and a listing of what's in it.
