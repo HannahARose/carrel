@@ -988,6 +988,25 @@ fn desk_items_get_a_card_beside_them_and_stay_where_they_are() {
         1
     );
 
+    let mirror = root.join("Active/On desk/Budget app.md");
+    let mirrored = std::fs::read_to_string(&mirror).unwrap();
+    std::fs::write(
+        &mirror,
+        mirrored.replace(
+            "<!-- /carrel:mirror -->\n",
+            "<!-- /carrel:mirror -->\nTry the new chart crate.\n",
+        ),
+    )
+    .unwrap();
+    let listed = sandbox.json(&root, &["desk"]);
+    assert_eq!(listed["copied"].as_array().unwrap().len(), 1, "{listed}");
+    assert!(
+        std::fs::read_to_string(&card)
+            .unwrap()
+            .contains("Try the new chart crate."),
+        "notes written in the mirror go to the card"
+    );
+
     let again = sandbox.run_in(&root, &["desk", "add", project.to_str().unwrap()]);
     assert!(String::from_utf8_lossy(&again.stderr).contains("already on the desk"));
     let inside = sandbox.run_in(
@@ -998,8 +1017,113 @@ fn desk_items_get_a_card_beside_them_and_stay_where_they_are() {
 
     sandbox.ok(&root, &["desk", "remove", project.to_str().unwrap()]);
     assert!(card.exists(), "the card stays unless asked");
+    assert!(!mirror.exists(), "the mirror goes with it");
     assert_eq!(sandbox.json(&root, &["desk"])["items"], json!([]));
     assert!(project.join("src/main.rs").exists());
+}
+
+#[test]
+fn a_desk_items_card_is_drafted_and_archiving_it_keeps_the_card() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    let bin = sandbox.path("bin");
+    std::fs::create_dir(&bin).unwrap();
+    std::fs::copy(
+        echo_provider(),
+        bin.join(format!(
+            "carrel-provider-echo-card{}",
+            std::env::consts::EXE_SUFFIX
+        )),
+    )
+    .unwrap();
+    let with_model = |args: &[&str]| {
+        let out = std::process::Command::new(env!("CARGO_BIN_EXE_carrel"))
+            .args(args)
+            .arg("--json")
+            .current_dir(&root)
+            .env("PATH", &bin)
+            .env("CARREL_CONFIG_DIR", sandbox.path("config"))
+            .env("CARREL_WORKER", "off")
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "carrel {args:?} failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        serde_json::from_slice::<Value>(&out.stdout).unwrap()
+    };
+    let notes = sandbox.path("Desktop/lamp notes.txt");
+    std::fs::create_dir_all(notes.parent().unwrap()).unwrap();
+    std::fs::write(&notes, "Wiring the desk lamp: a 5 V supply and two LEDs.\n").unwrap();
+
+    let added = with_model(&["desk", "add", notes.to_str().unwrap()]);
+    let card = PathBuf::from(added["card"].as_str().unwrap());
+    let text = std::fs::read_to_string(&card).unwrap();
+    assert!(text.contains("title: Echoed card"), "{text}");
+    assert!(text.contains("- draft"), "{text}");
+    assert!(text.contains("model: echo/1"), "{text}");
+    // The owner renames it; archiving keeps their title, not a new draft's.
+    std::fs::write(
+        &card,
+        text.replace("title: Echoed card", "title: Lamp wiring notes"),
+    )
+    .unwrap();
+
+    let archived = sandbox.json(&root, &["desk", "archive", notes.to_str().unwrap()]);
+    assert_eq!(archived["worker_started"], false, "{archived}");
+    assert_eq!(sandbox.json(&root, &["desk"])["items"], json!([]));
+    assert!(card.exists(), "the card waits beside it until it's filed");
+    sandbox.ok(&root, &["worker"]);
+    let proposals = sandbox.json(&root, &["review"]);
+    let proposal = proposals["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["card"]["title"] == "Lamp wiring notes")
+        .unwrap_or_else(|| panic!("no proposal with the desk card's title: {proposals}"));
+    sandbox.ok(&root, &["review", "hold", proposal["id"].as_str().unwrap()]);
+    let filed = std::fs::read_to_string(root.join("Holding/lamp notes.txt.md")).unwrap();
+    assert!(filed.contains("title: Lamp wiring notes"), "{filed}");
+    assert!(
+        filed.contains(&format!("id: {}", added["id"].as_str().unwrap())),
+        "the desk card's identifier is kept: {filed}"
+    );
+    assert!(!card.exists(), "the card moved into the archive with it");
+}
+
+#[test]
+fn status_suggests_folders_to_put_on_the_desk() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    let home = sandbox.path("home");
+    std::fs::create_dir_all(home.join("Code/budget-app/.git")).unwrap();
+    std::fs::write(home.join("Code/budget-app/main.rs"), "fn main() {}\n").unwrap();
+    std::fs::create_dir_all(home.join("Desktop")).unwrap();
+    let status = |args: &[&str]| {
+        let out = std::process::Command::new(env!("CARGO_BIN_EXE_carrel"))
+            .args(args)
+            .current_dir(&root)
+            .env("HOME", &home)
+            .env("CARREL_CONFIG_DIR", sandbox.path("config"))
+            .env("CARREL_WORKER", "off")
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8(out.stdout).unwrap()
+    };
+    let text = status(&["status"]);
+    assert!(text.contains("Looks like active work"), "{text}");
+    assert!(text.contains("budget-app  (a Git repository"), "{text}");
+    let json: Value = serde_json::from_str(&status(&["status", "--json"])).unwrap();
+    assert_eq!(json["desk"]["to_track"][0]["git"], true, "{json}");
+    assert_eq!(json["desk"]["to_archive"], json!([]));
 }
 
 #[test]

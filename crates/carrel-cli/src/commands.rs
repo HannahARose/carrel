@@ -400,6 +400,8 @@ pub fn status(archive: Option<&Path>) -> Result<Report, Failure> {
     text.push_str(&names_section(&names));
     let signals = carrel_core::signals::signals(&archive)?;
     text.push_str(&signals_section(&signals));
+    let (desk_text, desk) = crate::desk::suggestions_section(&archive, this_device)?;
+    text.push_str(&desk_text);
     let mut warnings = Vec::new();
     if synced {
         warnings.push(SYNCED_WARNING);
@@ -421,6 +423,7 @@ pub fn status(archive: Option<&Path>) -> Result<Report, Failure> {
         "writer": writer_json(lock.as_ref()),
         "recent": recent.iter().map(|r| &r.json).collect::<Vec<_>>(),
         "signals": signals,
+        "desk": desk,
         "names": names.iter().map(|f| json!({
             "path": f.path,
             "problems": f.problems,

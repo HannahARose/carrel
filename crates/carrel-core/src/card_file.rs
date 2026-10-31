@@ -125,6 +125,18 @@ impl CardFile {
         })
     }
 
+    /// A card file for `card` with `body` exactly as given, such as a desk card's body when
+    /// the item is archived, history and all.
+    #[must_use]
+    pub fn with_body(card: Card, body: &str) -> Self {
+        Self {
+            original_card: card.clone(),
+            original_yaml: String::new(),
+            card,
+            body: body.to_owned(),
+        }
+    }
+
     /// The card's fields.
     #[must_use]
     pub fn card(&self) -> &Card {

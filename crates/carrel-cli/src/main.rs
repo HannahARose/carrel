@@ -253,6 +253,12 @@ enum DeskAction {
         #[arg(long)]
         delete_card: bool,
     },
+    /// Archive a desk item: queue it for ingest with its card and history, and take it off
+    /// the desk. It's filed when you approve its proposal.
+    Archive {
+        /// The file or folder.
+        path: PathBuf,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -577,6 +583,7 @@ fn desk_command(archive: Option<&Path>, action: Option<DeskAction>) -> Result<Re
             summary,
         } => desk::add_item(archive, &path, title.as_deref(), summary.as_deref()),
         DeskAction::Remove { path, delete_card } => desk::remove_item(archive, &path, delete_card),
+        DeskAction::Archive { path } => desk::archive_desk_item(archive, &path),
     }
 }
 

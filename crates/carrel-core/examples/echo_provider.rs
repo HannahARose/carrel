@@ -8,7 +8,8 @@
 //! For tests, a copy named `carrel-provider-echo-<mode>` behaves differently:
 //! `unavailable` (the model is unavailable), `fail` (requests fail), `exit` (it exits when
 //! asked anything after `initialize`), `garbage` (it answers with something that isn't JSON),
-//! `silent` (it answers only `initialize`) and `old` (it speaks another protocol version).
+//! `silent` (it answers only `initialize`), `old` (it speaks another protocol version) and
+//! `card` (it answers every request for structured output with the same card draft).
 
 use std::io::{BufRead, Write};
 
@@ -84,10 +85,17 @@ fn answer(method: &str, params: &Value, mode: &str) -> Result<Value, (i64, Strin
         "text/complete" => {
             let prompt = params["prompt"].as_str().unwrap_or_default();
             let text = format!("echo: {prompt}");
-            let json = params
-                .get("schema")
-                .filter(|s| !s.is_null())
-                .map(|_| json!({ "echo": prompt }));
+            let json = params.get("schema").filter(|s| !s.is_null()).map(|_| {
+                if mode == "card" {
+                    json!({
+                        "title": "Echoed card",
+                        "summary": "A card the echo provider drafted.",
+                        "tags": ["draft"]
+                    })
+                } else {
+                    json!({ "echo": prompt })
+                }
+            });
             Ok(
                 json!({"text": text, "json": json, "model": "echo/1", "usage": {"input_tokens": 1, "output_tokens": 1}}),
             )
