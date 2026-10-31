@@ -189,6 +189,7 @@ pub fn search(
     Ok(Report::new(
         text,
         json!({
+            "root": crate::commands::root_of(&archive),
             "query": typed,
             "total": results.total,
             "meaning": results.meaning,

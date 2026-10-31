@@ -1,0 +1,102 @@
+{
+  "root": "@ROOT@",
+  "query": "furniture bill",
+  "total": 5,
+  "meaning": {
+    "state": "behind",
+    "items": 2
+  },
+  "words_only": null,
+  "results": [
+    {
+      "found": {
+        "type": "item",
+        "id": "01a18701-0500-776a-9867-080c8c427e79",
+        "title": "Furniture shop bill",
+        "card": "Holding/furniture-bill.txt.md",
+        "item": "Holding/furniture-bill.txt",
+        "collection": "Holding",
+        "kind": "file",
+        "sensitivity": "sensitive",
+        "date": "2025-03-02",
+        "tags": [
+          "receipts"
+        ],
+        "checked_out": false
+      },
+      "score": 10.5,
+      "why": [
+        "text",
+        "title"
+      ],
+      "passage": {
+        "text": "Café chair — please pay invoice 2057-4038 by Friday.",
+        "highlights": [
+          {
+            "start": 27,
+            "end": 34
+          },
+          {
+            "start": 35,
+            "end": 44
+          }
+        ]
+      },
+      "passage_from": "text"
+    },
+    {
+      "found": {
+        "type": "item",
+        "id": "01a18701-0500-776a-9867-0807eff2807e",
+        "title": "RFC 9562: Universally Unique Identifiers",
+        "card": "Reading/RFC 9562 UUIDs.md",
+        "item": null,
+        "collection": "Reading",
+        "kind": "url",
+        "sensitivity": "public",
+        "date": "2024-05-01T09:00:00Z",
+        "tags": [],
+        "checked_out": true
+      },
+      "score": 4.25,
+      "why": [
+        "meaning"
+      ],
+      "passage": null,
+      "passage_from": null
+    },
+    {
+      "found": {
+        "type": "collection",
+        "path": "Holding",
+        "title": "Holding"
+      },
+      "score": 2.0,
+      "why": [
+        "summary"
+      ],
+      "passage": {
+        "text": "Bills and receipts waiting to be filed.",
+        "highlights": [
+          {
+            "start": 0,
+            "end": 5
+          }
+        ]
+      },
+      "passage_from": "summary"
+    },
+    {
+      "found": {
+        "type": "glossary",
+        "term": "Cowley Road"
+      },
+      "score": 1.0,
+      "why": [
+        "title"
+      ],
+      "passage": null,
+      "passage_from": null
+    }
+  ]
+}

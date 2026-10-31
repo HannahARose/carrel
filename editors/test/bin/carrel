@@ -1,0 +1,53 @@
+#!/bin/sh
+# A stand-in for `carrel` in the editor plugins' tests. It writes its arguments to
+# $CARREL_FAKE_LOG, one call a line with each argument in brackets, and prints fixture JSON
+# as `carrel --json` would, with @ROOT@ replaced by the fixture archive's folder. It reads
+# and writes nothing else.
+here=$(cd "$(dirname "$0")/.." && pwd)
+root=${CARREL_FAKE_ROOT:-$here/archive}
+if [ -n "$CARREL_FAKE_LOG" ]; then
+  for arg in "$@"; do printf '[%s]' "$arg"; done >> "$CARREL_FAKE_LOG"
+  printf '\n' >> "$CARREL_FAKE_LOG"
+fi
+
+fail() {
+  printf '{"error":"%s"}\n' "$1" >&2
+  exit 1
+}
+
+fixture() {
+  sed "s|@ROOT@|$root|g" "$here/fixtures/$1.json"
+}
+
+command=
+target=
+while [ $# -gt 0 ]; do
+  case $1 in
+    --archive) shift ;;
+    --json) ;;
+    *)
+      if [ -z "$command" ]; then command=$1; else target="$target $1"; fi
+      ;;
+  esac
+  shift
+done
+
+case $command in
+  search)
+    # Search reads text first, reporting progress on standard error as the real one does.
+    printf '{"event":"progress","step":"items","done":0,"total":1,"item":"Holding/furniture-bill.txt"}\n' >&2
+    case $target in
+      *broken*) fail "the filter broken: isn't one search knows" ;;
+      *nothing*) fixture search-empty ;;
+      *) fixture search ;;
+    esac
+    ;;
+  show)
+    case $target in
+      *furniture-bill*) fixture show ;;
+      *) fail "${target# } isn't an item or card in this archive" ;;
+    esac
+    ;;
+  index) fixture index-status ;;
+  *) fail "the fake carrel doesn't know $command" ;;
+esac

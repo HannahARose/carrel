@@ -1,0 +1,13 @@
+{
+  "model": "embeddinggemma-300m",
+  "switch": null,
+  "exists": true,
+  "items": 4,
+  "embedded": 2,
+  "behind": 2,
+  "gone": 0,
+  "vectors": 12,
+  "dimensions": 768,
+  "rebuilding": false,
+  "worker": false
+}
