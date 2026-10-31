@@ -12,7 +12,7 @@ import Testing
 
 struct EmbeddingTests {
     /// A Gemma 3 small enough to run with random weights: two sliding layers, then a global one.
-    static func tinyGemma(slidingWindow: Int = 4) throws -> EmbeddingGemma {
+    static func tinyGemma(slidingWindow: Int = 4) throws -> GemmaEncoder {
         let json = """
             {"model_type": "gemma3_text", "hidden_size": 32, "num_hidden_layers": 3,
              "intermediate_size": 64, "num_attention_heads": 2, "head_dim": 16,
@@ -20,21 +20,21 @@ struct EmbeddingTests {
              "sliding_window": \(slidingWindow), "sliding_window_pattern": 3}
             """
         let config = try JSONDecoder().decode(Gemma3Configuration.self, from: Data(json.utf8))
-        let model = EmbeddingGemma(config)
+        let model = GemmaEncoder(config)
         eval(model)
         return model
     }
 
-    static func hidden(_ model: EmbeddingGemma, _ tokens: [Int32]) -> MLXArray {
+    static func hidden(_ model: GemmaEncoder, _ tokens: [Int32]) -> MLXArray {
         model.backbone(MLXArray(tokens).reshaped(1, -1))
     }
 
     @Test func slidingLayersSeeHalfTheWindowEitherSide() throws {
-        guard case .none = EmbeddingGemma.slidingMask(length: 3, window: 4) else {
+        guard case .none = GemmaEncoder.slidingMask(length: 3, window: 4) else {
             Issue.record("a text within the window needs no mask")
             return
         }
-        guard case .array(let mask) = EmbeddingGemma.slidingMask(length: 6, window: 4) else {
+        guard case .array(let mask) = GemmaEncoder.slidingMask(length: 6, window: 4) else {
             Issue.record("a text longer than the window needs a mask")
             return
         }

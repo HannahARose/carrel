@@ -32,7 +32,7 @@ final class LoadedEncoder {
         self.tokenizer = tokenizer
     }
 
-    /// The model in `folder`: EmbeddingGemma through `EmbeddingGemma.swift`, read in both
+    /// The model in `folder`: EmbeddingGemma through `GemmaEncoder.swift`, read in both
     /// directions, and Qwen3 through MLXEmbedders.
     static func load(_ folder: ModelFolder) async throws -> sending LoadedEncoder {
         let data = try Data(contentsOf: folder.url.appending(path: "config.json"))
@@ -40,7 +40,7 @@ final class LoadedEncoder {
         let model: any TextEncoder
         switch base.modelType {
         case "gemma3_text", "gemma3":
-            model = EmbeddingGemma(try JSONDecoder().decode(Gemma3Configuration.self, from: data))
+            model = GemmaEncoder(try JSONDecoder().decode(Gemma3Configuration.self, from: data))
         case "qwen3":
             model = Qwen3Model(try JSONDecoder().decode(Qwen3Configuration.self, from: data))
         default:

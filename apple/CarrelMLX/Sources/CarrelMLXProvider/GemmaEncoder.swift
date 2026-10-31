@@ -119,7 +119,7 @@ final class GemmaEncoderBackbone: Module {
         var h = embedTokens(inputs)
         h = h * MLXArray(Float(config.hiddenSize).squareRoot(), dtype: .bfloat16).asType(h.dtype)
         let length = inputs.dim(1)
-        let window = EmbeddingGemma.slidingMask(length: length, window: config.slidingWindow)
+        let window = GemmaEncoder.slidingMask(length: length, window: config.slidingWindow)
         for layer in layers {
             h = layer(h, mask: layer.sliding ? window : .none)
         }
@@ -128,7 +128,7 @@ final class GemmaEncoderBackbone: Module {
 }
 
 /// EmbeddingGemma, in place of MLXEmbedders' causal port.
-final class EmbeddingGemma: Module, TextEncoder {
+final class GemmaEncoder: Module, TextEncoder {
     let config: Gemma3Configuration
 
     @ModuleInfo(key: "model") var backbone: GemmaEncoderBackbone
