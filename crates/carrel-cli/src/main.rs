@@ -11,6 +11,7 @@ mod commands;
 mod config;
 mod correct;
 mod desk;
+mod edit;
 mod formats;
 mod ingest;
 mod models;
@@ -111,6 +112,12 @@ enum Command {
     Undo {
         /// The change's identifier, or its start.
         change: String,
+    },
+    /// Edit a filed item's card in your editor (the `editor` setting, $VISUAL or $EDITOR):
+    /// checked as proposals are, the body kept exactly, and one change undo can reverse.
+    Edit {
+        /// The item: its identifier, or its card's or contents' path.
+        item: String,
     },
     /// Correct a filed item's card in plain words, narrowly ("it's from 2019") or broadly
     /// ("it's a picture of A, not B"), or with `field: value` lines. The changes are shown
@@ -654,6 +661,7 @@ fn main() -> ExitCode {
             _ => settings::list(cli.archive.as_deref()),
         },
         Command::Review { all, action } => review_command(cli.archive.as_deref(), all, action),
+        Command::Edit { item } => edit::edit(cli.archive.as_deref(), &item),
         Command::Correct {
             item,
             words,

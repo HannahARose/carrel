@@ -445,7 +445,7 @@ pub(crate) fn editor() -> (String, &'static str) {
 }
 
 /// Opens `path` in the editor and waits for it to close.
-fn run_editor(path: &Path) -> Result<(), Failure> {
+pub(crate) fn run_editor(path: &Path) -> Result<(), Failure> {
     let words = crate::paths::split_words(&editor().0);
     let (program, args) = words
         .split_first()
