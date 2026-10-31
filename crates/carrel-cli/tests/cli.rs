@@ -1088,3 +1088,86 @@ fn types_nothing_reads_are_logged_without_names_and_listed() {
     );
     assert!(text.contains(".f3d"), "{text}");
 }
+
+/// Writes a zip of `(name, contents)` files at `path`.
+fn write_zip(path: &Path, files: &[(&str, &[u8])]) {
+    use std::io::Write as _;
+    let mut zip = zip::ZipWriter::new(std::fs::File::create(path).unwrap());
+    for (name, bytes) in files {
+        zip.start_file(*name, zip::write::SimpleFileOptions::default())
+            .unwrap();
+        zip.write_all(bytes).unwrap();
+    }
+    zip.finish().unwrap();
+}
+
+#[test]
+fn compressed_files_are_drafted_from_what_is_inside() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    let downloads = sandbox.path("Downloads");
+    std::fs::create_dir(&downloads).unwrap();
+    write_zip(
+        &downloads.join("lamp-firmware-main.zip"),
+        &[
+            (
+                "lamp-firmware-main/README.md",
+                b"Firmware for the desk lamp's dimmer.\n",
+            ),
+            (
+                "lamp-firmware-main/Cargo.toml",
+                b"[package]\nname = \"lamp-firmware\"\n",
+            ),
+            ("lamp-firmware-main/src/main.rs", b"fn main() {}\n"),
+            ("__MACOSX/lamp-firmware-main/._README.md", b"junk"),
+        ],
+    );
+    std::fs::write(
+        downloads.join("Holiday photos.7z"),
+        b"7z\xbc\xaf\x27\x1c\0\x04",
+    )
+    .unwrap();
+    let downloads_arg = downloads.to_str().unwrap();
+
+    let report = sandbox.json(&root, &["ingest", "--wait", "--each", downloads_arg]);
+    let items = report["items"].as_array().unwrap();
+    let firmware = items
+        .iter()
+        .find(|i| i["path"].as_str().unwrap().ends_with("main.zip"))
+        .unwrap();
+    assert_eq!(firmware["kind"], "file");
+    assert_eq!(firmware["compressed"]["format"], "zip");
+    assert_eq!(
+        firmware["compressed"]["holds"],
+        "a folder, lamp-firmware-main, with 3 files"
+    );
+    assert_eq!(firmware["text"]["method"], "listing");
+    assert!(firmware["text"]["characters"].as_u64().unwrap() > 50);
+    assert!(
+        downloads.join("lamp-firmware-main.zip").exists(),
+        "nothing is expanded before approval"
+    );
+    assert!(
+        !downloads.join("lamp-firmware-main").exists(),
+        "nothing is expanded before approval"
+    );
+
+    let seven = items
+        .iter()
+        .find(|i| i["path"].as_str().unwrap().ends_with("photos.7z"))
+        .unwrap();
+    assert_eq!(seven["compressed"]["format"], "7z");
+    if which("7z").is_none() && which("7zz").is_none() && which("unar").is_none() {
+        assert_eq!(seven["text"]["method"], "none");
+        let log = std::fs::read_to_string(sandbox.path("config/unreadable.json")).unwrap();
+        assert!(log.contains("\"extension\": \"7z\""), "{log}");
+        assert!(!log.contains("Holiday"), "no file names: {log}");
+    }
+}
+
+/// Where `program` is on `PATH`, if it's there.
+fn which(program: &str) -> Option<PathBuf> {
+    std::env::split_paths(&std::env::var_os("PATH")?)
+        .map(|dir| dir.join(program))
+        .find(|path| path.is_file())
+}

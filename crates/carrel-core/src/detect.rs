@@ -306,6 +306,7 @@ pub enum Compressed {
     /// `.zst` around one file.
     Zst,
     /// `.7z`, read with an installed `7z` or `unar`.
+    #[serde(rename = "7z")]
     SevenZ,
     /// `.rar`, read with an installed `7z` or `unar`.
     Rar,
@@ -443,6 +444,25 @@ impl Compressed {
                 || name.to_owned(),
                 |(ending, _)| name[..name.len() - ending.len()].to_owned(),
             )
+    }
+
+    /// Its name for people, such as `zip` or `tar.gz`.
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Zip => "zip",
+            Self::Tar => "tar",
+            Self::TarGz => "tar.gz",
+            Self::TarBz2 => "tar.bz2",
+            Self::TarXz => "tar.xz",
+            Self::TarZst => "tar.zst",
+            Self::Gz => "gzip",
+            Self::Bz2 => "bzip2",
+            Self::Xz => "xz",
+            Self::Zst => "zstd",
+            Self::SevenZ => "7z",
+            Self::Rar => "RAR",
+        }
     }
 
     /// Its media type.

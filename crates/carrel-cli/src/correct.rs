@@ -574,6 +574,7 @@ fn item_text(
         duplicate_of: None,
         likely: Vec::new(),
         same_as: None,
+        inside: None,
     };
     carrel_core::ingest::text::read(registry, &rules, &candidate).text
 }
@@ -745,6 +746,7 @@ fn reroute(
         duplicate_of: None,
         likely: Vec::new(),
         same_as: None,
+        inside: None,
     };
     let draft = carrel_core::ingest::card::Draft {
         title: fields.title.clone(),

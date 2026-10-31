@@ -50,6 +50,7 @@ fn candidate(path: PathBuf, kind: Kind) -> Candidate {
         duplicate_of: None,
         likely: Vec::new(),
         same_as: None,
+        inside: None,
     }
 }
 
@@ -125,6 +126,20 @@ fn owner_rules_decide_first() {
     );
     assert_eq!(route.rule.as_deref(), Some("Standards and RFCs"));
     assert!(route.auto_file);
+
+    // A zipped KiCad project routes by what's inside it.
+    let zipped = dir.path().join("lamp-pcb.zip");
+    common::archives::zip(
+        &zipped,
+        &[
+            common::archives::Item::Dir("lamp-pcb/"),
+            common::archives::Item::File("lamp-pcb/lamp.kicad_pro", b"{}"),
+        ],
+    );
+    let mut archived = candidate(zipped, Kind::File);
+    archived.inside = carrel_core::compressed::inspect(&archived.path);
+    let route = router.route(&registry, &archived, dir.path(), &draft("Lamp PCB", &[]));
+    assert_eq!(route.rule.as_deref(), Some("KiCad projects"));
 }
 
 #[test]
