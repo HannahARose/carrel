@@ -30,6 +30,7 @@ mod worker;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use carrel_core::compressed::plan::Choice;
 use clap::{Parser, Subcommand};
 
 /// A private, on-device archivist for your files.
@@ -184,6 +185,10 @@ enum Command {
         /// working copy's changes.
         #[arg(long, conflicts_with = "from")]
         discard: bool,
+        /// With backups: forget the checkout's session snapshots without asking, once the
+        /// returned version is snapshotted. Otherwise they're kept unless you say so.
+        #[arg(long, conflicts_with = "discard")]
+        trim_snapshots: bool,
     },
     /// Desk items: files and folders being worked on where they are, tracked without being
     /// archived.
@@ -511,6 +516,19 @@ enum ReviewAction {
         /// The collection's path, such as `Projects/Hardware`.
         collection: String,
     },
+    /// Expand compressed files (zip, tar, gzip and the like) when they're approved, so what
+    /// they hold can be browsed. This is the default unless something says otherwise.
+    Expand {
+        /// The proposals' identifiers, or their starts or ends.
+        #[arg(required = true)]
+        ids: Vec<String>,
+    },
+    /// Keep compressed files as they are when they're approved, rather than expanding them.
+    KeepCompressed {
+        /// The proposals' identifiers, or their starts or ends.
+        #[arg(required = true)]
+        ids: Vec<String>,
+    },
     /// Reject proposals; their items stay where they are.
     Reject {
         /// The proposals' identifiers, or their starts or ends.
@@ -597,6 +615,10 @@ fn review_command(
             learn,
         } => correct::review(archive, &id, &words, yes, learn),
         ReviewAction::MoveTo { id, collection } => review::move_to(archive, &id, &collection),
+        ReviewAction::Expand { ids } => review::choose_compressed(archive, &ids, Choice::Expand),
+        ReviewAction::KeepCompressed { ids } => {
+            review::choose_compressed(archive, &ids, Choice::Keep)
+        }
     }
 }
 
@@ -644,6 +666,18 @@ impl<E: std::error::Error> From<E> for Failure {
     }
 }
 
+/// `carrel questions` and its subcommands.
+fn questions_command(
+    archive: Option<&Path>,
+    action: Option<QuestionsAction>,
+) -> Result<Report, Failure> {
+    match action.unwrap_or(QuestionsAction::List) {
+        QuestionsAction::List => questions::list(archive),
+        QuestionsAction::Answer { id, answer } => questions::answer(archive, &id, &answer),
+        QuestionsAction::Dismiss { id } => questions::dismiss(archive, &id),
+    }
+}
+
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let Some(command) = cli.command else {
@@ -659,6 +693,9 @@ fn main() -> ExitCode {
             )
             .exit();
     };
+    if changes_archive(&command) {
+        sessions::record_before_command(cli.archive.as_deref(), cli.json);
+    }
     let result = match command {
         Command::Tui => tui::run(cli.archive.as_deref()),
         Command::Undo { change } => commands::undo(cli.archive.as_deref(), &change),
@@ -712,7 +749,15 @@ fn main() -> ExitCode {
             from,
             yes,
             discard,
-        } => checkout::return_item(cli.archive.as_deref(), &item, from.as_deref(), yes, discard),
+            trim_snapshots,
+        } => checkout::return_item(
+            cli.archive.as_deref(),
+            &item,
+            from.as_deref(),
+            yes,
+            discard,
+            trim_snapshots,
+        ),
         Command::Collection { action } => match action {
             CollectionAction::New {
                 path,
@@ -721,13 +766,7 @@ fn main() -> ExitCode {
             } => commands::collection_new(cli.archive.as_deref(), &path, description, &tags),
         },
         Command::Backup { action } => backup_command(cli.archive.as_deref(), action),
-        Command::Questions { action } => match action.unwrap_or(QuestionsAction::List) {
-            QuestionsAction::List => questions::list(cli.archive.as_deref()),
-            QuestionsAction::Answer { id, answer } => {
-                questions::answer(cli.archive.as_deref(), &id, &answer)
-            }
-            QuestionsAction::Dismiss { id } => questions::dismiss(cli.archive.as_deref(), &id),
-        },
+        Command::Questions { action } => questions_command(cli.archive.as_deref(), action),
         Command::Bench(args) => bench::bench(&args, cli.json),
         Command::Models { action } => match action.unwrap_or(ModelsAction::List) {
             ModelsAction::List => models::list(),
@@ -738,6 +777,31 @@ fn main() -> ExitCode {
         },
     };
     finish(result, cli.json)
+}
+
+/// Whether `command` takes the writer lease to change the archive, so finished work sessions
+/// are recorded first (`carrel sessions` records them itself).
+fn changes_archive(command: &Command) -> bool {
+    match command {
+        Command::Undo { .. }
+        | Command::Correct { .. }
+        | Command::Edit { .. }
+        | Command::Rename { .. }
+        | Command::Checkout { .. }
+        | Command::Return { .. }
+        | Command::Collection { .. } => true,
+        Command::Settings { action } => matches!(action, Some(SettingsAction::Set { .. })),
+        Command::Review { action, .. } => !matches!(
+            action,
+            None | Some(ReviewAction::List { .. } | ReviewAction::Show { .. })
+        ),
+        Command::Desk { action } => !matches!(action, None | Some(DeskAction::List)),
+        Command::Backup { action } => {
+            matches!(action, BackupAction::Setup { .. } | BackupAction::Now)
+        }
+        Command::Questions { action } => !matches!(action, None | Some(QuestionsAction::List)),
+        _ => false,
+    }
 }
 
 /// Prints a command's result and gives its exit status.

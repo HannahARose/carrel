@@ -49,6 +49,7 @@ impl Sandbox {
             .args(args)
             .current_dir(cwd)
             .env("CARREL_CONFIG_DIR", self.path("config"))
+            .env("CARREL_TRASH_DIR", self.path("Trash"))
             .env("CARREL_WORKER", "off")
             .output()
             .unwrap()
@@ -846,6 +847,47 @@ fn returns_and_cancels(sandbox: &Sandbox, root: &Path, desk: &Path, working: &Pa
     std::fs::write(&archived, "and again\n").unwrap();
 }
 
+#[cfg(target_os = "macos")]
+#[test]
+fn a_checked_out_working_copy_is_tagged_in_finder_until_it_comes_back() {
+    use carrel_core::finder::{CHECKED_OUT, add_tag, tags};
+
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    let item = "Projects/Hardware/parts-list.csv";
+    let archived = root.join(item);
+    add_tag(&archived, "Red\n6").unwrap();
+    let desk = sandbox.path("desk");
+    let out = sandbox.json(&root, &["checkout", item, "--to", desk.to_str().unwrap()]);
+    let working = PathBuf::from(out["working"].as_str().unwrap());
+    assert_eq!(tags(&working).unwrap(), ["Red\n6", CHECKED_OUT]);
+    assert_eq!(
+        tags(&archived).unwrap(),
+        ["Red\n6"],
+        "only the working copy"
+    );
+
+    std::fs::write(&working, "changed,on,the,desk\n").unwrap();
+    sandbox.ok(&root, &["return", item, "--yes"]);
+    assert_eq!(tags(&working).unwrap(), ["Red\n6"], "the owner's tag stays");
+    assert_eq!(
+        tags(&archived).unwrap(),
+        ["Red\n6"],
+        "the tag doesn't come back into the archive"
+    );
+
+    let out = sandbox.json(&root, &["checkout", item, "--to", desk.to_str().unwrap()]);
+    let working = PathBuf::from(out["working"].as_str().unwrap());
+    assert!(tags(&working).unwrap().contains(&CHECKED_OUT.to_owned()));
+    sandbox.ok(&root, &["return", item, "--discard", "--yes"]);
+    assert_eq!(
+        tags(&working).unwrap(),
+        ["Red\n6"],
+        "cancelling removes it too"
+    );
+}
+
 #[test]
 fn desk_items_get_a_card_beside_them_and_stay_where_they_are() {
     let sandbox = Sandbox::new();
@@ -1121,6 +1163,186 @@ fn types_nothing_reads_are_logged_without_names_and_listed() {
     assert!(text.contains(".f3d"), "{text}");
 }
 
+/// Sets `path`'s modification time to `hours` ago.
+fn backdate(path: &Path, hours: u64) {
+    std::fs::File::options()
+        .write(true)
+        .open(path)
+        .unwrap()
+        .set_modified(std::time::SystemTime::now() - std::time::Duration::from_hours(hours))
+        .unwrap();
+}
+
+/// Makes the next command that changes the archive look for sessions, as if the last look
+/// were long ago.
+fn forget_last_look(sandbox: &Sandbox) {
+    for entry in std::fs::read_dir(sandbox.path("config/sessions")).unwrap() {
+        let path = entry.unwrap().path();
+        let mut state: Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        state.as_object_mut().unwrap().remove("looked");
+        std::fs::write(&path, state.to_string()).unwrap();
+    }
+}
+
+/// Rewrites a YAML or JSON line that starts with `key` (after spaces) to `replacement`.
+fn rewrite_line(path: &Path, key: &str, replacement: &str) {
+    let text = std::fs::read_to_string(path).unwrap();
+    let text = text
+        .lines()
+        .map(|l| {
+            if l.trim_start().starts_with(key) {
+                replacement.to_owned()
+            } else {
+                l.to_owned()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n";
+    std::fs::write(path, text).unwrap();
+}
+
+#[test]
+fn commands_that_change_the_archive_record_desk_sessions_every_few_minutes() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    let project = sandbox.path("Code/budget-app");
+    std::fs::create_dir_all(&project).unwrap();
+    std::fs::write(project.join("notes.md"), "plans\n").unwrap();
+    sandbox.ok(&root, &["desk", "add", project.to_str().unwrap()]);
+
+    // Put on the desk three hours ago, worked on two hours ago.
+    let three_hours_ago = jiff::Timestamp::now() - jiff::SignedDuration::from_hours(3);
+    // This device's desk: the sample archive has another device's, and folders come in no
+    // particular order.
+    let desk = std::fs::read_dir(root.join("_System/devices"))
+        .unwrap()
+        .map(|d| d.unwrap().path().join("desk.json"))
+        .find(|d| std::fs::read_to_string(d).is_ok_and(|t| t.contains("budget-app")))
+        .unwrap();
+    rewrite_line(
+        &desk,
+        "\"added\"",
+        &format!("      \"added\": \"{three_hours_ago}\""),
+    );
+    backdate(&project.join("notes.md"), 2);
+
+    // `desk add` just looked, so the next command doesn't look again yet.
+    let quiet = sandbox.run_in(&root, &["collection", "new", "Projects/Garden"]);
+    assert!(quiet.status.success());
+    let card = sandbox.path("Code/budget-app.md");
+    assert!(
+        !std::fs::read_to_string(&card)
+            .unwrap()
+            .contains("[!pending]")
+    );
+
+    forget_last_look(&sandbox);
+    let found = sandbox.run_in(&root, &["collection", "new", "Projects/Orchard"]);
+    assert!(found.status.success());
+    assert!(
+        String::from_utf8_lossy(&found.stderr).contains("Found 1 new session(s) on “budget-app”"),
+        "{}",
+        String::from_utf8_lossy(&found.stderr)
+    );
+    let text = std::fs::read_to_string(&card).unwrap();
+    assert!(text.contains("[!pending]"), "{text}");
+    assert!(text.contains("Changed 1 file(s): notes.md"), "{text}");
+    assert!(
+        !String::from_utf8_lossy(&sandbox.run_in(&root, &["status"]).stderr).contains("Found"),
+        "commands that only read don't look"
+    );
+
+    let listed = sandbox.json(&root, &["sessions"]);
+    let ours = listed["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["title"] == "budget-app")
+        .expect("the desk item has pending entries");
+    assert_eq!(ours["desk"], true, "{listed}");
+    assert_eq!(ours["pending"].as_array().unwrap().len(), 1);
+    sandbox.ok(&root, &["sessions", "approve", project.to_str().unwrap()]);
+    assert!(
+        !std::fs::read_to_string(&card)
+            .unwrap()
+            .contains("[!pending]")
+    );
+}
+
+#[test]
+fn session_snapshots_are_taken_and_can_be_forgotten_on_return() {
+    if std::process::Command::new("kopia")
+        .arg("--version")
+        .output()
+        .is_err()
+    {
+        assert!(
+            std::env::var_os("CARREL_REQUIRE_KOPIA").is_none(),
+            "Kopia is required here but isn't installed"
+        );
+        eprintln!("skipped: kopia isn't installed");
+        return;
+    }
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    let password = format!("test-{}", std::process::id());
+    let run = |args: &[&str]| {
+        std::process::Command::new(env!("CARGO_BIN_EXE_carrel"))
+            .args(args)
+            .current_dir(&root)
+            .env("CARREL_CONFIG_DIR", sandbox.path("config"))
+            .env("CARREL_WORKER", "off")
+            .env("KOPIA_PASSWORD", &password)
+            .env("KOPIA_CHECK_FOR_UPDATES", "false")
+            .output()
+            .unwrap()
+    };
+    let repository = sandbox.path("backups");
+    let setup = run(&["backup", "setup", repository.to_str().unwrap()]);
+    assert!(
+        setup.status.success(),
+        "{}",
+        String::from_utf8_lossy(&setup.stderr)
+    );
+    let desk = sandbox.path("desk");
+    let item = "Projects/Hardware/parts-list.csv";
+    assert!(
+        run(&["checkout", item, "--to", desk.to_str().unwrap()])
+            .status
+            .success()
+    );
+    let three_hours_ago = jiff::Timestamp::now() - jiff::SignedDuration::from_hours(3);
+    rewrite_line(
+        &root.join(format!("{item}.md")),
+        "since:",
+        &format!("  since: \"{three_hours_ago}\""),
+    );
+    let working = desk.join("parts-list.csv");
+    std::fs::write(&working, "edited,at,the,desk\n").unwrap();
+    backdate(&working, 2);
+
+    let listed = run(&["sessions", "--json"]);
+    let listed: Value = serde_json::from_slice(&listed.stdout).unwrap();
+    assert_eq!(listed["sessions"], 1, "{listed}");
+    assert!(listed["snapshots"][0]["snapshot"].is_string(), "{listed}");
+
+    let returned = run(&["return", item, "--yes", "--trim-snapshots", "--json"]);
+    assert!(
+        String::from_utf8_lossy(&returned.stderr).contains("1 session snapshot(s)"),
+        "the proposal says so: {}",
+        String::from_utf8_lossy(&returned.stderr)
+    );
+    let returned: Value = serde_json::from_slice(&returned.stdout).unwrap();
+    let trimmed = &returned["session_snapshots"];
+    assert!(trimmed["returned"].is_string(), "{returned}");
+    assert_eq!(trimmed["forgotten"], 1, "{returned}");
+    assert_eq!(trimmed["kept"], 0);
+}
+
 /// Writes a zip of `(name, contents)` files at `path`.
 fn write_zip(path: &Path, files: &[(&str, &[u8])]) {
     use std::io::Write as _;
@@ -1365,4 +1587,96 @@ fn search_finds_items_by_their_words_with_filters_and_reasons() {
     assert_eq!(bad.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&bad.stderr).contains("kind:box isn't a kind"));
     assert_eq!(sandbox.run_in(&root, &["search"]).status.code(), Some(2));
+}
+
+#[test]
+fn approved_zips_are_expanded_unless_kept_compressed() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(&root, &["init", root.to_str().unwrap()]);
+    let downloads = sandbox.path("Downloads");
+    std::fs::create_dir(&downloads).unwrap();
+    let zipped = downloads.join("lamp-firmware-main.zip");
+    write_zip(
+        &zipped,
+        &[
+            ("lamp-firmware-main/README.md", b"Dimmer firmware.\n"),
+            ("lamp-firmware-main/Cargo.toml", b"[package]\n"),
+            ("lamp-firmware-main/src/main.rs", b"fn main() {}\n"),
+        ],
+    );
+    let installer = downloads.join("Lamp Utility.zip");
+    write_zip(&installer, &[("Lamp Utility/Setup.exe", b"MZ")]);
+    let gzipped = downloads.join("notes.zip");
+    write_zip(&gzipped, &[("a.txt", b"a"), ("b.txt", b"b")]);
+    sandbox.ok(
+        &root,
+        &["ingest", "--wait", "--each", downloads.to_str().unwrap()],
+    );
+    let entries = sandbox.json(&root, &["review"])["entries"]
+        .as_array()
+        .unwrap()
+        .clone();
+    let id_of = |name: &str| {
+        entries
+            .iter()
+            .find(|e| e["source"]["path"].as_str().unwrap().ends_with(name))
+            .map(|e| e["id"].as_str().unwrap().to_owned())
+            .unwrap()
+    };
+    let (firmware, utility, notes) = (id_of("main.zip"), id_of("Utility.zip"), id_of("notes.zip"));
+
+    let shown = sandbox.ok(&root, &["review", "show", &firmware]);
+    assert!(
+        shown.contains("compressed   will be expanded: 3 files"),
+        "{shown}"
+    );
+    assert!(shown.contains("/lamp-firmware-main"), "{shown}");
+    let shown = sandbox.ok(&root, &["review", "show", &utility]);
+    assert!(
+        shown.contains("kept compressed: it holds an installer (Setup.exe)"),
+        "{shown}"
+    );
+    let kept = sandbox.ok(&root, &["review", "keep-compressed", &notes]);
+    assert!(
+        kept.contains("kept compressed: the owner chose to keep it"),
+        "{kept}"
+    );
+    let refused = sandbox.run_in(&root, &["review", "expand", &utility]);
+    assert!(
+        refused.status.success(),
+        "software can still be expanded on request"
+    );
+
+    let approved = sandbox.json(&root, &["review", "approve", &firmware, &notes]);
+    let filed = approved["filed"].as_array().unwrap();
+    assert_eq!(filed.len(), 2, "{approved}");
+    let firmware_path = filed
+        .iter()
+        .find_map(|f| {
+            f["path"]
+                .as_str()
+                .filter(|p| p.ends_with("lamp-firmware-main"))
+        })
+        .unwrap();
+    assert!(root.join(firmware_path).join("src/main.rs").is_file());
+    assert!(!zipped.exists());
+    assert!(sandbox.path("Trash/lamp-firmware-main.zip").is_file());
+    let card = std::fs::read_to_string(root.join(format!("{firmware_path}.md"))).unwrap();
+    assert!(card.contains("kind: bundle"), "{card}");
+    assert!(card.contains("expanded_from:"), "{card}");
+    assert!(card.contains("name: lamp-firmware-main.zip"), "{card}");
+    assert!(
+        filed
+            .iter()
+            .any(|f| f["path"].as_str().unwrap().ends_with("notes.zip")),
+        "kept compressed: {approved}"
+    );
+
+    sandbox.ok(&root, &["settings", "set", "compressed_files", "keep"]);
+    let settings = std::fs::read_to_string(root.join("_System/settings.json")).unwrap();
+    assert!(
+        settings.contains("\"compressed_files\": \"keep\""),
+        "{settings}"
+    );
 }

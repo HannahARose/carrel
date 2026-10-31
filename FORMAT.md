@@ -183,9 +183,11 @@ Fields are owned by programs unless marked as owner fields. Optional fields are 
 | `location` | string | for `physical`, `external` | Where the item is, in words or as a path or URI |
 | `url` | string | for `url` | The resource's address |
 | `checked_out` | map | no | Present while checked out (§9.1) |
+| `snapshots` | `return-only` | no | Snapshot the working copy only at checkout and return, not after each work session (§9.1), as for large data (owner may set) |
 | `generated` | map | no | Provenance of program-written fields (§5.6) |
 | `placement` | map | no | How sure filing was of the item's collection, when it wasn't (§5.8) |
 | `removed` | map | for `tombstone` | §10 |
+| `expanded_from` | map | no | The compressed file the item was expanded from when it was filed or with `carrel expand`: its `name`, `size` and `checksum` (§2.6) |
 
 Programs **must** preserve fields they don't recognize when rewriting a card.
 
@@ -355,6 +357,7 @@ id: 01928f3a-bbbb-7ccc-8ddd-000000000002
 title: "Projects"
 description: "Things being made: code, notes and data"   # one line, used in listings
 item_template: project          # optional: a card template name for this collection's items
+compressed_files: keep          # optional: expand, keep or ask; overrides settings.json (§7.2)
 tags:                           # this collection's tag vocabulary
   - name: simulation
     description: "Numerical models and simulation code"
@@ -479,6 +482,7 @@ Archive-level settings that every device follows. Version 1.0 defines:
 | `backups` | map describing the backup repository: `type` (`kopia`), `repository` (the backup system's identifier for it) and `description`. Never its path, which differs between devices, and never the password | none |
 | `ingest.originals` | `move` (the original is moved into the archive on approval) or `keep` (it's copied, and the original is left for the owner to delete) | `move` |
 | `signals.crowded_items` | integer: how many loose items make a collection with no subcollections crowded, as a restructure signal | `30` |
+| `compressed_files` | `expand` (a compressed file, such as a zip, is expanded when its proposal is approved, so what it holds can be browsed), `keep` (it's filed as it is) or `ask` (the owner decides for each one in Review). A collection's own `compressed_files` (§6.3) and a routing rule's `keep_compressed` (§7.4) take precedence; software, encrypted, split and unreadable archives are kept, and unsafe or very large expansions ask, whatever the setting | `expand` |
 
 Programs **must** preserve unknown keys.
 
@@ -509,7 +513,7 @@ rules:
     auto_file: false
 ```
 
-`match` keys: `extension`, `name` (a regular expression on the item's name), `marker` (a file present in a folder's top level, or at the top level of what a compressed file would expand to), `source` (the folder the item came from). All keys in one `match` must hold. `auto_file: true` files matches without review.
+`match` keys: `extension`, `name` (a regular expression on the item's name), `marker` (a file present in a folder's top level, or at the top level of what a compressed file would expand to), `source` (the folder the item came from). All keys in one `match` must hold. `auto_file: true` files matches without review. `keep_compressed: true` keeps matching compressed files compressed rather than expanding them (§7.2).
 
 ### 7.5 `rules/markers.yaml` and `rules/regenerable.yaml`
 
@@ -626,6 +630,7 @@ A device only ever writes to its own inbox folder. The writer applies inbox file
 | `problems` | What validation or the owner needs to settle, as `{"stage", "message"}` objects |
 | `attempts` | Every provider call made for the entry: `stage`, `provider`, `offer`, `result` (`ok`, `unsupported`, `unavailable`, `declined` (a model's safety refusal) or `failed`) and an optional `message` |
 | `sensitivity_reasons` | Why `card.sensitivity` is `sensitive` or `restricted`, in words that never quote what was found; absent otherwise |
+| `compressed` | Optional, for a compressed file. `format` (`zip`, `tar`, `tar-gz`, `tar-bz2`, `tar-xz`, `tar-zst`, `gz`, `bz2`, `xz`, `zst`, `7z` or `rar`); `action`: `expand` (on approval, what it holds is filed in its place, with `expanded_from` on the card, and the compressed file goes to the system Trash), `keep` or `ask` (the entry needs the owner); `reason` for keeping or asking; `by_owner` when the owner chose the action, which lifts the size limits; and when known, what expanding makes: `files`, `size`, `kind`, `sealed` and `name` |
 
 When an approved or held entry has been archived, programs remove the entry; the history commit (§8.2) records what was filed. A rejected entry is removed once the owner has seen the batch summary. Entries whose `source.device` is another device can't be archived there; they wait for that device.
 
@@ -791,6 +796,8 @@ checked_out:
 ```
 
 The archive copy **must not** be modified while `checked_out` is present, except by the return that removes it.
+
+Where backups are set up (`backups`, §7.2), programs **may** snapshot the working copy of a checked-out or desk item (§9.4) after each work session. They **must not** when its card has `snapshots: return-only`.
 
 ### 9.2 `Active/`
 

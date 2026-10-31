@@ -15,11 +15,18 @@ pub enum Key {
     CrowdedItems,
     /// How changes made outside Carrel are handled.
     OutsideEdits,
+    /// What happens to compressed files at ingest.
+    CompressedFiles,
 }
 
 impl Key {
     /// Every setting, in the order they're shown.
-    pub const ALL: [Self; 3] = [Self::Originals, Self::CrowdedItems, Self::OutsideEdits];
+    pub const ALL: [Self; 4] = [
+        Self::Originals,
+        Self::CompressedFiles,
+        Self::CrowdedItems,
+        Self::OutsideEdits,
+    ];
 
     /// Its key in `settings.json`, as FORMAT.md §7.2 writes it.
     #[must_use]
@@ -28,6 +35,7 @@ impl Key {
             Self::Originals => "ingest.originals",
             Self::CrowdedItems => "signals.crowded_items",
             Self::OutsideEdits => "outside_edits",
+            Self::CompressedFiles => "compressed_files",
         }
     }
 
@@ -50,6 +58,9 @@ impl Key {
             Self::OutsideEdits => {
                 "What to do with changes made outside Carrel: flag them for review, record them as edits, or offer to undo them"
             }
+            Self::CompressedFiles => {
+                "What happens to zip and other compressed files when they're approved: expanded so what's inside can be browsed, kept compressed, or asked about each time"
+            }
         }
     }
 
@@ -59,6 +70,7 @@ impl Key {
         match self {
             Self::Originals => Some(&["move", "keep"]),
             Self::OutsideEdits => Some(&["flag", "reconcile", "drift"]),
+            Self::CompressedFiles => Some(&["expand", "keep", "ask"]),
             Self::CrowdedItems => None,
         }
     }
@@ -77,6 +89,7 @@ impl Key {
                 OutsideEdits::Reconcile => "reconcile".into(),
                 OutsideEdits::Drift => "drift".into(),
             },
+            Self::CompressedFiles => settings.compressed_files.as_str().into(),
         }
     }
 
@@ -110,6 +123,10 @@ impl Key {
                     "drift" => OutsideEdits::Drift,
                     _ => return Err(wrong()),
                 };
+            }
+            Self::CompressedFiles => {
+                settings.compressed_files =
+                    crate::compressed::plan::Choice::parse(value).ok_or_else(wrong)?;
             }
         }
         Ok(())
