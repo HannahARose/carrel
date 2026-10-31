@@ -63,6 +63,7 @@ The code documentation is built from `dev` on every merge, private items include
 | The network helper | [`carrel_fetch`](https://hrose.me/carrel/carrel_fetch/) | `crates/carrel-fetch` |
 | Backups | [`Backups`](https://hrose.me/carrel/carrel_core/backup/trait.Backups.html), [`Kopia`](https://hrose.me/carrel/carrel_core/backup/struct.Kopia.html) | `backup.rs` |
 | The model benchmark | [`bench::score`](https://hrose.me/carrel/carrel_core/bench/fn.score.html), [`bench::check`](https://hrose.me/carrel/carrel_core/bench/fn.check.html), and `fixtures/bench` | `bench.rs` |
+| The findability test | [`bench::findability`](https://hrose.me/carrel/carrel_core/bench/findability/index.html) and `fixtures/bench/descriptions.yaml` | `bench/findability.rs` |
 
 ## The command-line tool
 

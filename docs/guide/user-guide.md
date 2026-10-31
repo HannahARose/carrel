@@ -246,7 +246,21 @@ After that it keeps itself current: filing, corrections, edits, renames, returns
 
 The index is kept in `_System/index/`, a folder for each model. Like the text cache it's regenerable, so it's left out of history and backups, and `carrel index rebuild` makes it again; interrupted, the rebuild carries on where it stopped.
 
+The meaning index has three commands:
+
+| Command | What it does |
+| --- | --- |
+| `carrel index status` (or `carrel index`) | The archive's model, how many items are embedded, how many are behind, and whether the worker is catching up |
+| `carrel index rebuild` | Embeds every item again, with a progress bar; interrupted, it carries on where it stopped |
+| `carrel index model NAME` | Switches the archive to another embedding model, building the new index while the old one keeps serving (below) |
+
 To switch the archive to another model, run `carrel index model NAME` (`carrel index model` alone lists the models this device can embed with). A provider on this device must offer the model. The new model's index is built beside the old one, with a progress bar, and search keeps using the old one until the new one is complete. Then the archive switches, on every device: `embedding.model` changes and the old index is removed. The switch is recorded in the archive's settings as soon as it starts, so every device's `carrel index status` shows how far it's got. If it's interrupted, running the same command again carries on. To give up a switch part way, run `carrel index model` with the archive's current model. A device without a provider for the new model searches by words once the switch is done, and says why.
+
+Switching re-embeds the whole archive, on every device that searches it, so it's worth doing only for a reason: a model that finds your things better, or one that every device you search from can run. The benchmark's findability test ([docs/bench](../bench/README.md)) compares the models on offer.
+
+### What sensitive and restricted items show
+
+Search is for you alone, so sensitive and restricted items come back like any other, marked **[sensitive]** or **[restricted]**. A sensitive item is found by its card, its text and its meaning, and its passage is shown. A **restricted** item is found only by its card: its title, summary, tags, collection and dates, by words and, from its card alone, by meaning. Its passage is from its card (its summary, or your notes on it), never its text, since its text isn't kept for search or embedded. So a restricted bank statement is found by "bank statement March", but not by the account number printed in it.
 
 **In Browse,** `/` runs the same search: type words, filters or both, and press `Enter`. The items found are listed best first, with their collection and a mark for sensitive and restricted ones, and above the chosen item's card is what matched and the passage, your words underlined. Collections and glossary facts that match are counted in the list's title; `carrel search` lists them. Browse doesn't stop to read text that hasn't been read yet: items filed before search arrived are found by their cards until a `carrel search` has read them (anything drafted since kept its text when it was drafted). `Esc` clears the search.
 

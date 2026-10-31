@@ -13,6 +13,7 @@ mod correct;
 mod desk;
 mod edit;
 mod expand;
+mod findability;
 mod formats;
 mod index;
 mod ingest;
