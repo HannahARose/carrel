@@ -28,6 +28,8 @@ Exit status is `0` on success, `1` when the command failed, and `2` for a usage 
 | `carrel desk` | Lists this device's desk items: files and folders being worked on where they are, tracked without being archived. |
 | `carrel desk add PATH [--title T] [--summary S]` | Puts a file or folder on the desk: a card goes beside it (its name with `.md` added), and nothing is written inside it or moved. Not for things inside the archive. |
 | `carrel desk remove PATH [--delete-card]` | Takes it off the desk; its card stays unless `--delete-card`. |
+| `carrel sessions` | Finds finished work sessions on items checked out on this device (changes closer together than 45 minutes are one session, and Git commits count too) and adds a pending history entry for each, then lists every pending entry, numbered. A session still going isn't written until it's over. |
+| `carrel sessions approve\|combine\|drop ITEM [N...]` | Approves, combines into one, or drops an item's pending entries, by the numbers `carrel sessions` shows; all of them when none are given. Each is a history change. |
 | `carrel rename ITEM [NEW_NAME]` | Renames an item and its card together, and updates links to it. Without a new name, uses the portable name `carrel status` suggests. Can be undone. |
 | `carrel collection new PATH [--description TEXT] [--tag NAME=MEANING]...` | Creates a collection with a design document to fill in. `PATH` is a name, or `Parent/Name` inside an existing collection. |
 
