@@ -287,6 +287,13 @@ fn describe(candidate: &Candidate, text: &ItemText) -> String {
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
     let kind = match candidate.kind {
+        _ if let Some(inside) = &candidate.inside => {
+            format!(
+                "a compressed {} file holding {}",
+                inside.format.name(),
+                inside.describe()
+            )
+        }
         Kind::Bundle => "a project folder, kept whole".to_owned(),
         Kind::Folder => "a folder".to_owned(),
         _ => match (&text.media_type, text.pages) {
