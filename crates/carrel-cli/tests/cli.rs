@@ -757,6 +757,11 @@ fn checkout_copies_an_item_out_and_locks_the_archive_copy() {
     let shown = sandbox.json(&root, &["show", "Projects/Hardware/parts-list.csv"]);
     assert_eq!(shown["fields"]["checked_out"]["due"], "2026-12-01");
 
+    let active = std::fs::read_to_string(root.join("Active/_index.md")).unwrap();
+    assert!(
+        active.contains("Desk lamp parts list"),
+        "Active/ lists it: {active}"
+    );
     let listed = sandbox.json(&root, &["checkouts"]);
     assert_eq!(listed["checked_out"][0]["state"], "unchanged");
     std::fs::write(&working, "changed,on,the,desk\n").unwrap();
@@ -771,9 +776,14 @@ fn checkout_copies_an_item_out_and_locks_the_archive_copy() {
     let log = sandbox.json(&root, &["log"]);
     assert_eq!(log[0]["operation"], "checkout");
 
+    returns_and_cancels(&sandbox, &root, &desk, &working);
+}
+
+/// The rest of the checkout test: returning the item, then a checkout cancelled.
+fn returns_and_cancels(sandbox: &Sandbox, root: &Path, desk: &Path, working: &Path) {
     // Returning brings the working copy back, unlocked, with an approved history entry.
     let back = sandbox.json(
-        &root,
+        root,
         &["return", "Projects/Hardware/parts-list.csv", "--yes"],
     );
     assert_eq!(back["changed"], json!(["parts-list.csv"]));
@@ -783,7 +793,7 @@ fn checkout_copies_an_item_out_and_locks_the_archive_copy() {
         "changed,on,the,desk\n"
     );
     std::fs::write(&archived, "writable again\n").unwrap();
-    let shown = sandbox.json(&root, &["show", "Projects/Hardware/parts-list.csv"]);
+    let shown = sandbox.json(root, &["show", "Projects/Hardware/parts-list.csv"]);
     assert!(shown["fields"]["checked_out"].is_null());
     let card = std::fs::read_to_string(root.join("Projects/Hardware/parts-list.csv.md")).unwrap();
     assert!(card.contains("Returned: 1 changed file(s)."), "{card}");
@@ -791,17 +801,28 @@ fn checkout_copies_an_item_out_and_locks_the_archive_copy() {
         !card.contains("[!pending]"),
         "the entry is approved with the return"
     );
-    assert_eq!(sandbox.json(&root, &["log"])[0]["operation"], "return");
+    assert_eq!(sandbox.json(root, &["log"])[0]["operation"], "return");
+    let active = std::fs::read_to_string(root.join("Active/_index.md")).unwrap();
+    assert!(
+        !active.contains("Desk lamp parts list"),
+        "it's off Active/: {active}"
+    );
+    let month = jiff::Zoned::now().strftime("%Y/%Y-%m").to_string();
+    let journal = std::fs::read_to_string(root.join(format!("Journal/{month}.md"))).unwrap();
+    assert!(
+        journal.contains("Returned: 1 changed file(s)."),
+        "the journal lists it: {journal}"
+    );
     assert!(working.exists(), "the working copy is left for the owner");
     let again = sandbox.run_in(
-        &root,
+        root,
         &["return", "Projects/Hardware/parts-list.csv", "--yes"],
     );
     assert!(String::from_utf8_lossy(&again.stderr).contains("isn't checked out"));
 
     // Cancelling unlocks the archive copy as it was.
     sandbox.ok(
-        &root,
+        root,
         &[
             "checkout",
             "Projects/Hardware/parts-list.csv",
@@ -810,7 +831,7 @@ fn checkout_copies_an_item_out_and_locks_the_archive_copy() {
         ],
     );
     sandbox.ok(
-        &root,
+        root,
         &[
             "return",
             "Projects/Hardware/parts-list.csv",

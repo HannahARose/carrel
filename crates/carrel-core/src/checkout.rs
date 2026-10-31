@@ -192,6 +192,7 @@ pub fn check_out(
             lease.info().device,
         );
         change.items = vec![item.id];
+        refresh_active(archive)?;
         Ok(History::open(archive)?.commit(archive, &change, lease)?)
     })();
     match result {
@@ -449,6 +450,7 @@ pub fn finish_return(
     );
     change.items = vec![plan.item];
     change.snapshot.clone_from(&backup);
+    refresh_active(archive)?;
     let commit = History::open(archive)?.commit(archive, &change, lease)?;
     Ok(Returned {
         commit,
@@ -492,7 +494,15 @@ pub fn cancel_checkout(
         lease.info().device,
     );
     change.items = vec![item.id];
+    refresh_active(archive)?;
     Ok(History::open(archive)?.commit(archive, &change, lease)?)
+}
+
+/// Rebuilds `Active/` and the Journal, so the change that follows records them too.
+fn refresh_active(archive: &Archive) -> Result<(), CheckoutError> {
+    crate::active::regenerate(archive)
+        .map(|_| ())
+        .map_err(|e| CheckoutError::Card(e.to_string()))
 }
 
 fn remove_any(path: &Path) {
