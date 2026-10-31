@@ -35,7 +35,7 @@ Folders like `node_modules` or `target` inside a bundle are **regenerable**: not
 
 ### Collections and design documents
 
-A **collection** is a folder with a **design document**, `_collection.md`, saying what belongs in it. Collections can hold subcollections (`Finances/Tax`). Create one with `carrel collection new NAME --description "…"`, then edit its document:
+A **collection** is a folder with a **design document**, `_collection.md`, saying what belongs in it. Collections can hold subcollections (`Finances/Tax`). Create one with `carrel collection new NAME --description "…"`, or `n` in Browse (`5`), which asks for its path, what belongs there and its tags; then edit its document:
 
 - **Purpose and scope:** what belongs here.
 - **Not here:** what looks as if it belongs but doesn't, and where it goes instead.
@@ -151,7 +151,7 @@ A zip is usually a folder someone packed up to send. Carrel unpacks it, so you c
   - for a collection: `compressed_files: keep` in its `_collection.md`
   - for a routing rule: `keep_compressed: true`
   - for the whole archive: the `compressed_files` setting
-- **Already filed?** `carrel expand ITEM` unpacks a compressed item with the same checks, as one change. `carrel undo` reverses it; then put the zip back from the Trash.
+- **Already filed?** `carrel expand ITEM`, or `z` on the item in Browse, unpacks a compressed item with the same checks, as one change; Browse says first if it's kept compressed for a reason and asks whether to expand it all the same (`--anyway`). `carrel undo` reverses it; then put the zip back from the Trash.
 
 Documents that are zip files inside, such as `.docx`, `.xlsx`, `.epub` or `.jar`, are never unpacked.
 
@@ -277,7 +277,7 @@ Search is for you alone, so sensitive and restricted items come back like any ot
 
 Most items are filed and left alone, but some are still being worked on: a project, a thesis, a manuscript. Carrel keeps track of the work without getting in its way.
 
-- **Checking out** copies an item out of the archive to work on, to the Desktop unless you say where: `carrel checkout ITEM [--to FOLDER] [--due DATE]`. The archive copy is read-only until it comes back, and the card records where it went and when. On a Mac, the working copy has a “Checked Out” tag in Finder while it's out; returning or cancelling takes it off and leaves your own tags alone.
+- **Checking out** copies an item out of the archive to work on, to the Desktop unless you say where: `carrel checkout ITEM [--to FOLDER] [--due DATE]`, or `o` on the item in Browse, which asks for the folder (with your file picker or the built-in browser) and an optional due date. The archive copy is read-only until it comes back, and the card records where it went and when. On a Mac, the working copy has a “Checked Out” tag in Finder while it's out; returning or cancelling takes it off and leaves your own tags alone.
 - **Returning** brings the working copy back: `carrel return ITEM` shows what changed and the history entry it adds, and asks first. A backup snapshot is taken, and the change can be undone from History. `--discard` cancels the checkout instead, leaving the archive copy as it was.
 - **The desk** is for things you work on where they are, without archiving them yet: `carrel desk add PATH` writes a card beside the file or folder, drafted by your text model as ingest would, and nothing inside it is changed or moved. When it's done, `carrel desk archive PATH` queues it for ingest: you review its proposal as usual, and the card it had on the desk, history and all, goes into the archive with it. `carrel status` suggests folders on your Desktop or in `~/Code` that look like work in progress, and desk items you haven't touched for 60 days.
 - **Work sessions:** Carrel notices work on checked-out and desk items and adds a pending history entry for each finished stretch of it; see [Work sessions](#work-sessions). Approve, edit, combine or drop them with `carrel sessions`, or on the Active screen.
@@ -288,6 +288,7 @@ The **Active** screen (`3`) lists what's checked out and what's on this device's
 - `o` opens the working copy (or the desk item) in Finder, or in the app its type opens with, and leaves the interactive mode as it is.
 - `a`, `c` and `d` approve, combine or drop the chosen item's pending entries: all of them, or the ones marked with `Space`.
 - `e` opens the chosen pending entry's text in your editor (`$VISUAL` or `$EDITOR`), as `e` in Review does. It stays pending until you approve it.
+- `n` puts a file or folder on the desk, chosen with your file picker or the built-in browser, as `carrel desk add` does. On a desk item, `x` takes it off the desk (`y` keeps its card beside it, `d` deletes the card too, as `--delete-card` does), and `f` archives it, as `carrel desk archive` does. Each asks first.
 
 Active/ in the archive, and the Journal, show the same in Obsidian, and are kept current with every checkout, return and approved entry. `Active/On desk/` has a copy of each desk item's card, so you can read and annotate it with the rest of the archive: notes you write there, outside the box at the top and the history, are copied to the card beside the item the next time you run `carrel desk` or change the desk.
 
@@ -317,7 +318,7 @@ Only one program changes an archive at a time: it holds the **writer lock** (`_S
 
 ### Names that work everywhere
 
-`carrel status` lists names that won't work on every system: characters Windows forbids (`: ? * |`), reserved names like `CON`, trailing dots or spaces, or two names that differ only in case. `carrel rename ITEM` renames an item and its card to the suggested portable name, and updates links to it. Ingest files new items under portable names automatically.
+`carrel status` lists names that won't work on every system: characters Windows forbids (`: ? * |`), reserved names like `CON`, trailing dots or spaces, or two names that differ only in case. `carrel rename ITEM` renames an item and its card to the suggested portable name, and updates links to it; give a name after it to choose your own. In Browse, `r` on an item does the same, starting from the suggested name, and asks first. Ingest files new items under portable names automatically.
 
 ## Backups
 

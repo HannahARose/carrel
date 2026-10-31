@@ -61,14 +61,23 @@ impl App {
     }
 
     /// The Active screen's keys, for what's chosen: returning and cancelling are for
-    /// checkouts, and deciding for items with pending entries. They need the room; the screen
-    /// keys are in ? help.
+    /// checkouts, taking off and archiving for desk items, and deciding for items with pending
+    /// entries. They need the room; the screen keys are in ? help.
     pub(super) fn active_keys(&self) -> Vec<(&'static str, &'static str)> {
         let mut keys = vec![("↑↓", "choose")];
         let Some(item) = self.active_item() else {
-            keys.extend([("1-9", "screens"), ("?", "help"), ("q", "quit")]);
+            keys.extend([
+                ("n", "add to desk"),
+                ("1-9", "screens"),
+                ("?", "help"),
+                ("q", "quit"),
+            ]);
             return keys;
         };
+        if item.kind == Kind::Desk {
+            // With a checkout chosen there's no room; it's in ? help.
+            keys.push(("n", "add to desk"));
+        }
         if item.kind == Kind::CheckedOut {
             keys.push(("r", "return"));
         }
@@ -83,8 +92,9 @@ impl App {
             }
             keys.extend([("c", "combine"), ("d", "drop"), ("Space", "mark")]);
         }
-        if item.kind == Kind::CheckedOut {
-            keys.push(("x", "cancel"));
+        match item.kind {
+            Kind::CheckedOut => keys.push(("x", "cancel")),
+            Kind::Desk => keys.extend([("x", "take off"), ("f", "archive")]),
         }
         keys.extend([("?", "help"), ("q", "quit")]);
         keys
@@ -101,12 +111,20 @@ impl App {
 
     /// Handles a key on the Active screen.
     pub(super) fn active_key(&mut self, key: KeyEvent) -> Handled {
-        let KeyCode::Char(c @ ('r' | 'o' | 'a' | 'e' | 'c' | 'd' | ' ' | 'x')) = key.code else {
+        let KeyCode::Char(c @ ('r' | 'o' | 'a' | 'e' | 'c' | 'd' | ' ' | 'x' | 'n' | 'f')) =
+            key.code
+        else {
             return Handled::No;
         };
         if key.modifiers.contains(KeyModifiers::CONTROL) {
             // Ctrl-R refreshes, as on every screen.
             return Handled::No;
+        }
+        if c == 'n' {
+            self.picking = super::app::Picking::DeskItem;
+            self.message =
+                Some("Choose a file or folder to put on the desk; it stays where it is".into());
+            return Handled::Yes(self.start_picker());
         }
         let Some(item) = self.active_item().cloned() else {
             self.message = Some("Nothing is checked out or on the desk".into());
@@ -114,9 +132,29 @@ impl App {
         };
         Handled::Yes(match c {
             'o' => Some(Effect::Open(item.working)),
-            'r' | 'x' if item.kind == Kind::Desk => {
+            'r' if item.kind == Kind::Desk => {
+                self.message =
+                    Some("A desk item isn't checked out, so there's nothing to return".into());
+                None
+            }
+            'x' if item.kind == Kind::Desk => {
+                self.confirm = Some(Confirm::DeskRemove {
+                    path: item.working,
+                    title: item.title,
+                });
+                None
+            }
+            'f' if item.kind == Kind::Desk => {
+                self.confirm = Some(Confirm::DeskArchive {
+                    path: item.working,
+                    title: item.title,
+                });
+                None
+            }
+            'f' => {
                 self.message = Some(
-                    "A desk item isn't checked out, so there's nothing to return or cancel".into(),
+                    "A checkout is already in the archive; return it to bring its changes back"
+                        .into(),
                 );
                 None
             }

@@ -283,6 +283,10 @@ fn draw_help(frame: &mut Frame, theme: Theme, area: Rect) {
         ),
         ("r  o  x", "return, open, cancel checkout (Active)"),
         (
+            "n  x  f",
+            "put a file or folder on the desk; take off, archive a desk item (Active)",
+        ),
+        (
             "a  e  c  d  Space",
             "approve, edit, combine, drop; mark (Active)",
         ),
@@ -294,6 +298,10 @@ fn draw_help(frame: &mut Frame, theme: Theme, area: Rect) {
         (
             "u  Enter",
             "undo the item's chosen change; go to a related item (Browse)",
+        ),
+        (
+            "o  r  z  n",
+            "check out, rename, expand an item; new collection (Browse)",
         ),
         ("u", "undo the chosen change (History)"),
         (
@@ -416,18 +424,19 @@ fn draw_confirm(frame: &mut Frame, confirm: &Confirm, theme: Theme, area: Rect) 
                 .to_owned(),
             " cancel it   ",
         ),
+        other => super::actions::confirm_text(other),
     };
     let mut lines = vec![Line::from(question), Line::from("")];
     lines.extend(explanation.lines().map(|l| Line::from(l.to_owned())));
-    lines.extend([
-        Line::from(""),
-        Line::from(vec![
-            Span::styled("y", theme.key()),
-            Span::raw(yes),
-            Span::styled("n", theme.key()),
-            Span::raw(" keep it"),
-        ]),
-    ]);
+    let mut answers = vec![Span::styled("y", theme.key()), Span::raw(yes)];
+    if matches!(confirm, Confirm::DeskRemove { .. }) {
+        answers.extend([
+            Span::styled("d", theme.key()),
+            Span::raw(" delete its card too   "),
+        ]);
+    }
+    answers.extend([Span::styled("n", theme.key()), Span::raw(" keep it")]);
+    lines.extend([Line::from(""), Line::from(answers)]);
     let width = if matches!(confirm, Confirm::Return { .. }) {
         area.width.saturating_sub(8).clamp(64, 100)
     } else {
@@ -877,6 +886,7 @@ fn draw_input(frame: &mut Frame, input: &Input, theme: Theme, area: Rect) {
              archive changes:"
                 .to_owned(),
         ),
+        purpose => super::actions::input_text(purpose).unwrap_or((" ", String::new())),
     };
     let shown = if input.masked() {
         "•".repeat(input.text.chars().count())
