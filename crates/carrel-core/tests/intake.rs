@@ -6,7 +6,9 @@ use carrel_core::archive::Archive;
 use carrel_core::card::Id;
 use carrel_core::coordinator::Holder;
 use carrel_core::ingest::IntakeOptions;
-use carrel_core::intake::{add, move_to_front, preview, process, retry, waiting};
+use carrel_core::intake::{
+    add, listing, move_to_front, preview, process, remaining, remove, retry, waiting,
+};
 use carrel_core::providers::Registry;
 use carrel_core::questions::QuestionQueue;
 use carrel_core::review::{REVIEW_DIR, ReviewQueue, State};
@@ -200,6 +202,65 @@ fn a_failing_item_stays_until_it_has_failed_twice_then_waits_for_a_retry() {
         waiting(&s.archive, s.holder.device, false).unwrap().len(),
         1
     );
+}
+
+#[test]
+fn the_listing_splits_what_waits_from_what_failed_and_remove_takes_one_off() {
+    let s = Setup::new();
+    let a = s.file("a.txt", "first\n");
+    let gone = s.file("gone.txt", "soon gone\n");
+    let queued = add(
+        &s.archive,
+        &[a.clone(), gone.clone()],
+        IntakeOptions::default(),
+        s.holder.device,
+    )
+    .unwrap();
+    let ids: Vec<Id> = queued.added.iter().map(|e| e.id).collect();
+    assert_eq!(remaining(&s.archive, &ids).unwrap(), 2);
+    std::fs::remove_file(&gone).unwrap();
+    let gone_id = queued.added.iter().find(|e| e.path == gone).unwrap().id;
+    for _ in 0..2 {
+        let entry = waiting(&s.archive, s.holder.device, false)
+            .unwrap()
+            .into_iter()
+            .find(|e| e.id == gone_id)
+            .unwrap();
+        process(
+            &s.archive,
+            &Registry::with_built_ins(),
+            entry,
+            s.holder,
+            None,
+            &mut |_| {},
+        )
+        .unwrap();
+    }
+
+    let listed = listing(&s.archive, s.holder.device).unwrap();
+    assert_eq!(
+        listed.waiting.iter().map(|e| &e.path).collect::<Vec<_>>(),
+        [&a]
+    );
+    assert_eq!(
+        listed.failed.iter().map(|e| &e.path).collect::<Vec<_>>(),
+        [&gone]
+    );
+    assert_eq!(
+        remaining(&s.archive, &ids).unwrap(),
+        1,
+        "a failed entry counts as done"
+    );
+    assert_eq!(
+        listing(&s.archive, Id::new_v7()).unwrap(),
+        carrel_core::intake::Listing::default(),
+        "another device's queue is its own"
+    );
+
+    let removed = remove(&s.archive, &listed.waiting[0].id.to_string()).unwrap();
+    assert_eq!(removed.path, a);
+    assert_eq!(remaining(&s.archive, &ids).unwrap(), 0);
+    assert!(remove(&s.archive, &removed.id.to_string()).is_err());
 }
 
 #[test]

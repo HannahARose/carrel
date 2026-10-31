@@ -174,22 +174,7 @@ pub fn archive_desk_item(archive: Option<&Path>, path: &Path) -> Result<Report, 
 /// The part of `carrel status` about the desk: folders on the Desktop or in `~/Code` that look
 /// like active work, to put on the desk, and desk items unchanged for 60 days, to archive. With
 /// it, what `--json` shows as `desk`.
-///
-/// # Errors
-///
-/// [`Failure`] if the desk or the archive's rules can't be read.
-pub fn suggestions_section(
-    archive: &carrel_core::archive::Archive,
-    device: Option<carrel_core::card::Id>,
-) -> Result<(String, serde_json::Value), Failure> {
-    let desk = match device {
-        Some(device) => Desk::load(archive, device)?,
-        None => Desk::default(),
-    };
-    let places: Vec<std::path::PathBuf> = carrel_core::local::home_dir()
-        .map(|home| vec![home.join("Desktop"), home.join("Code")])
-        .unwrap_or_default();
-    let found = carrel_core::desk::suggest(archive, &desk, &places, std::time::SystemTime::now())?;
+pub fn suggestions_section(found: &carrel_core::desk::Suggestions) -> (String, serde_json::Value) {
     let mut text = String::new();
     if !found.to_track.is_empty() {
         text.push_str(
@@ -222,5 +207,5 @@ pub fn suggestions_section(
             .unwrap();
         }
     }
-    Ok((text, json!(found)))
+    (text, json!(found))
 }

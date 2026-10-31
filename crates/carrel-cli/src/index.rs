@@ -61,10 +61,7 @@ pub fn offered_models(registry: &Registry) -> Vec<(String, String, Option<u64>)>
 
 /// Whether a provider on this device offers the embedding model `model`.
 pub fn offered(registry: &Registry, model: &str) -> bool {
-    registry
-        .ranked(Capability::Embed)
-        .iter()
-        .any(|(_, offer)| offer.id == model)
+    carrel_core::worker::offered(registry, model)
 }
 
 /// `carrel index status`: the archive's embedding model, how many items are embedded, and how

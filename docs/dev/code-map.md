@@ -16,6 +16,7 @@ The code documentation is built from `dev` on every merge, private items include
 | What kind of item something is | [`detect`](https://hrose.me/carrel/carrel_core/detect/), with the `Rules` from `_System/rules/` | `detect.rs` |
 | Checksums and folder manifests | [`Manifest`](https://hrose.me/carrel/carrel_core/manifest/struct.Manifest.html) | `manifest.rs` |
 | Names that work on every system | [`names::check`](https://hrose.me/carrel/carrel_core/names/fn.check.html), [`names::portable`](https://hrose.me/carrel/carrel_core/names/fn.portable.html) | `names.rs` |
+| What the Status screen shows: counts, problems, Recent, suggestions | [`status::summary`](https://hrose.me/carrel/carrel_core/status/fn.summary.html), [`Summary`](https://hrose.me/carrel/carrel_core/status/struct.Summary.html) | `status.rs` |
 | The generated contents lists and changelogs | [`listing::refresh`](https://hrose.me/carrel/carrel_core/listing/fn.refresh.html) | `listing.rs` |
 | The format itself | [FORMAT.md](../../FORMAT.md), and the JSON Schema in `schemas/card.schema.json` | |
 
@@ -34,7 +35,8 @@ The code documentation is built from `dev` on every merge, private items include
 | To work on | Read | Where |
 | --- | --- | --- |
 | Planning paths: intake, kinds, duplicates | [`ingest::plan`](https://hrose.me/carrel/carrel_core/ingest/fn.plan.html), [`Candidate`](https://hrose.me/carrel/carrel_core/ingest/struct.Candidate.html), [`IntakeOptions`](https://hrose.me/carrel/carrel_core/ingest/struct.IntakeOptions.html) | `ingest.rs` |
-| The intake queue | [`intake::add`](https://hrose.me/carrel/carrel_core/intake/fn.add.html), [`intake::process`](https://hrose.me/carrel/carrel_core/intake/fn.process.html), [`IntakeEntry`](https://hrose.me/carrel/carrel_core/intake/struct.IntakeEntry.html) | `intake.rs` |
+| The intake queue | [`intake::add`](https://hrose.me/carrel/carrel_core/intake/fn.add.html), [`intake::listing`](https://hrose.me/carrel/carrel_core/intake/fn.listing.html), [`intake::remove`](https://hrose.me/carrel/carrel_core/intake/fn.remove.html), [`intake::process`](https://hrose.me/carrel/carrel_core/intake/fn.process.html), [`IntakeEntry`](https://hrose.me/carrel/carrel_core/intake/struct.IntakeEntry.html) | `intake.rs` |
+| The worker loop: drafting the queue, then catching up the index | [`Worker`](https://hrose.me/carrel/carrel_core/worker/struct.Worker.html), [`Progress`](https://hrose.me/carrel/carrel_core/worker/trait.Progress.html), [`DeviceLock`](https://hrose.me/carrel/carrel_core/worker/trait.DeviceLock.html), [`Status`](https://hrose.me/carrel/carrel_core/worker/struct.Status.html) | `worker.rs` |
 | One item through every stage, with progress | [`run_with_progress`](https://hrose.me/carrel/carrel_core/ingest/run/fn.run_with_progress.html), [`Run`](https://hrose.me/carrel/carrel_core/ingest/run/struct.Run.html) | `ingest/run.rs` |
 | Reading text, and fitting it to a model | [`ingest::text::read`](https://hrose.me/carrel/carrel_core/ingest/text/fn.read.html), [`fit`](https://hrose.me/carrel/carrel_core/ingest/text/fn.fit.html) | `ingest/text.rs` |
 | Drafting and checking cards | [`ingest::card::draft`](https://hrose.me/carrel/carrel_core/ingest/card/fn.draft.html), [`Draft`](https://hrose.me/carrel/carrel_core/ingest/card/struct.Draft.html), [`machine_made`](https://hrose.me/carrel/carrel_core/ingest/card/fn.machine_made.html) | `ingest/card.rs` |
@@ -45,6 +47,7 @@ The code documentation is built from `dev` on every merge, private items include
 | The review queue and proposals | [`ReviewEntry`](https://hrose.me/carrel/carrel_core/review/struct.ReviewEntry.html), and [`Queue`](https://hrose.me/carrel/carrel_core/review/struct.Queue.html), the file-per-entry queue every queue uses | `review.rs` |
 | The question queue and glossary | [`QuestionEntry`](https://hrose.me/carrel/carrel_core/questions/struct.QuestionEntry.html), [`questions::add_fact`](https://hrose.me/carrel/carrel_core/questions/fn.add_fact.html) | `questions.rs` |
 | The owner's decisions, for every interface | [`actions`](https://hrose.me/carrel/carrel_core/actions/): `decide`, `move_to`, `reject`, `teach`, `apply_draft` | `actions.rs` |
+| Typed corrections: working them out, preparing and saving them | [`correct::work_out`](https://hrose.me/carrel/carrel_core/correct/fn.work_out.html), [`correct::prepare`](https://hrose.me/carrel/carrel_core/correct/prepare/) | `correct.rs`, `correct/prepare.rs` |
 | Restructure signals | [`signals::signals`](https://hrose.me/carrel/carrel_core/signals/fn.signals.html), [`Signal`](https://hrose.me/carrel/carrel_core/signals/enum.Signal.html) | `signals.rs` |
 
 ## Providers, models and backups
@@ -72,7 +75,7 @@ The code documentation is built from `dev` on every merge, private items include
 | How a command reports | [`Report`](https://hrose.me/carrel/carrel/struct.Report.html), [`Failure`](https://hrose.me/carrel/carrel/struct.Failure.html), and the `Command` enum in `main.rs` | `crates/carrel-cli/src/main.rs` |
 | The archive commands | [`commands`](https://hrose.me/carrel/carrel/commands/) | `commands.rs` |
 | Ingest and the queue | [`ingest`](https://hrose.me/carrel/carrel/ingest/) | `ingest.rs` |
-| The worker | [`worker::work`](https://hrose.me/carrel/carrel/worker/fn.work.html), [`worker::start`](https://hrose.me/carrel/carrel/worker/fn.start.html), [`Status`](https://hrose.me/carrel/carrel/worker/struct.Status.html) | `worker.rs` |
+| Starting the worker detached, its lock and its log | [`worker::start`](https://hrose.me/carrel/carrel/worker/fn.start.html), [`worker::try_lock`](https://hrose.me/carrel/carrel/worker/fn.try_lock.html), [`worker::work`](https://hrose.me/carrel/carrel/worker/fn.work.html); the loop itself is the core's | `worker.rs` |
 | Review, questions, backups, models, settings | [`review`](https://hrose.me/carrel/carrel/review/), [`questions`](https://hrose.me/carrel/carrel/questions/), [`backup`](https://hrose.me/carrel/carrel/backup/), [`models`](https://hrose.me/carrel/carrel/models/), [`settings`](https://hrose.me/carrel/carrel/settings/) | one file each |
 | File pickers | [`picker::KNOWN`](https://hrose.me/carrel/carrel/picker/constant.KNOWN.html), [`picker::run`](https://hrose.me/carrel/carrel/picker/fn.run.html) | `picker.rs` |
 | Progress bars | [`progress::Display`](https://hrose.me/carrel/carrel/progress/struct.Display.html) | `progress.rs` |
