@@ -68,6 +68,15 @@ impl Tab {
     }
 }
 
+/// What the file picker is choosing for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Picking {
+    /// Files and folders to ingest.
+    Ingest,
+    /// The folder for a backup repository.
+    BackupFolder,
+}
+
 /// Something that waits for the owner to say yes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Confirm {
@@ -254,6 +263,8 @@ pub struct App {
     pub picker_preference: Option<String>,
     /// Where picking files starts: the folder last picked from, or the home folder.
     pub start_folder: std::path::PathBuf,
+    /// What the file picker is choosing for.
+    pub picking: Picking,
     /// Whether every key is shown.
     pub help: bool,
     /// Whether to leave.
@@ -313,6 +324,7 @@ impl App {
             browser: None,
             picker_preference: None,
             start_folder: std::path::PathBuf::from("."),
+            picking: Picking::Ingest,
             help: false,
             quit: false,
         };
@@ -418,7 +430,14 @@ impl App {
                 ("↑↓", "choose"),
                 ("Enter ←", "open, up"),
                 ("Space", "mark"),
-                ("i", "add"),
+                (
+                    "i",
+                    if self.picking == Picking::BackupFolder {
+                        "choose the folder"
+                    } else {
+                        "add"
+                    },
+                ),
                 (".", "hidden"),
                 ("/", "type a path"),
                 ("Esc", "cancel"),
@@ -519,13 +538,21 @@ impl App {
                 super::browser::Outcome::Browsing => {}
                 super::browser::Outcome::Add(paths) => {
                     self.browser = None;
-                    self.plan(paths, carrel_core::ingest::IntakeOptions::default());
+                    self.picked(paths);
                 }
                 super::browser::Outcome::Type => {
                     self.browser = None;
-                    self.ask_for_paths();
+                    if self.picking == Picking::BackupFolder {
+                        self.picking = Picking::Ingest;
+                        self.ask_for_backup_folder();
+                    } else {
+                        self.ask_for_paths();
+                    }
                 }
-                super::browser::Outcome::Cancel => self.browser = None,
+                super::browser::Outcome::Cancel => {
+                    self.browser = None;
+                    self.picking = Picking::Ingest;
+                }
             }
             return None;
         }

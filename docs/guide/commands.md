@@ -109,7 +109,7 @@ Backups need [Kopia](https://kopia.io), beside `carrel` or on `PATH`.
 | `5` | **History**: `u` to undo the chosen change |
 | `6` | **Ingest**: the queue; `x` remove, `t` to the front, `r` retry |
 | `7` | **Settings**: `Enter` to change the chosen setting |
-| `8` | **Backups**: the snapshots, each with its change; `n` snapshot now, `v` verify, `r` restore an item as of the chosen snapshot, `s` set up or connect a repository |
+| `8` | **Backups**: the snapshots, each with its change; `n` snapshot now, `v` verify, `r` restore an item as of the chosen snapshot, `s` set up or connect a repository, choosing its folder with the file picker |
 
 `i` on any screen chooses files to ingest. `Ctrl-R` reads everything again, and `q` quits; the worker keeps going.
 
