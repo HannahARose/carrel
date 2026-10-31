@@ -29,6 +29,7 @@ struct ArchiveWindow: View {
             Inspector(model: model)
         }
         .activeAndHistorySheets(model)
+        .browseSheets(model.browse)
         .navigationTitle(model.name)
         .navigationSubtitle(
             model.isReadOnly ? "\(model.screenTitle) · Read only" : model.screenTitle
@@ -159,8 +160,10 @@ private struct Inspector: View {
             if let edit = model.editing, edit.target == .item(item.id) {
                 ItemEditor(item: item, edit: edit) { model.editing = nil }
             } else {
-                ItemCardView(item: item, card: model.card(for: item), root: model.root)
-                    .id(item.id)
+                ItemCardView(item: item, card: model.card(for: item), root: model.root) {
+                    ItemActions(model: model, item: item)
+                }
+                .id(item.id)
             }
         } else if case .collection = model.screen {
             ContentUnavailableView(

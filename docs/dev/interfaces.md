@@ -26,9 +26,9 @@ The command line and the interactive mode run on macOS, Linux and Windows. The M
 | The embedding index: status, rebuild, switch models | `index` | #263 | #267 |
 | Correct a filed item | `correct` | ✓ `c` | ✓ ⌘K (#234) |
 | Edit a filed item's card | `edit` | ✓ `e` | ✓ ⌘E (#234) |
-| Create collections | `collection` | ✓ `n` in Browse | #268 |
-| Rename an item | `rename` | ✓ `r` in Browse | #268 |
-| Expand a filed compressed file | `expand` | ✓ `z` in Browse | #268 |
+| Create collections | `collection` | ✓ `n` in Browse | ✓ ⌥⌘N (#268) |
+| Rename an item | `rename` | ✓ `r` in Browse | ✓ ⇧⌘R (#268) |
+| Expand a filed compressed file | `expand` | ✓ `z` in Browse | ✓ ⇧⌘E (#268) |
 | Check out an item | `checkout` | ✓ `o` in Browse | ✓ (#235) |
 | Return or cancel a checkout | `return` | ✓ Active | ✓ (#235) |
 | List checkouts | `checkouts` | ✓ Active | ✓ (#235) |

@@ -96,6 +96,9 @@ final class ArchiveWindowModel {
     private(set) var activeScreen: ActiveScreenModel?
     private(set) var historyScreen: HistoryScreenModel?
 
+    // Browse's actions: new collections, renaming and expanding (#268).
+    private(set) var browse: BrowseActionsModel?
+
     var screen: Screen? = .status {
         didSet { if screen != oldValue { selectedItemID = nil } }
     }
@@ -145,6 +148,11 @@ final class ArchiveWindowModel {
             historyScreen = HistoryScreenModel(archive: archive) { [weak self] in
                 await self?.refreshItems()
             }
+            let browse = BrowseActionsModel(archive: archive) { [weak self] in
+                await self?.refreshItems()
+            }
+            browse.created = { [weak self] path in self?.screen = .collection(path) }
+            self.browse = browse
             try? await archive.refreshAll()
         } catch {
             problem = message(for: error)
