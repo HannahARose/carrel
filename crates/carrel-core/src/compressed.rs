@@ -5,6 +5,7 @@
 //! the odd file without writing anything ([`list`], [`read_entry`]); filing expands an
 //! approved archive into a temporary folder, checking every entry as it goes ([`expand`]).
 
+pub mod plan;
 pub mod tools;
 
 use std::collections::HashSet;
@@ -97,6 +98,8 @@ pub struct Inside {
     pub unread: Option<String>,
     /// Whether nothing on this device reads its format.
     pub no_reader: bool,
+    /// Whether it's one part of an archive split into several.
+    pub split: bool,
 }
 
 impl Inside {
@@ -140,9 +143,18 @@ impl Inside {
 }
 
 /// What the compressed file at `path` holds, read without expanding it; `None` for anything
-/// that isn't a compressed file ([`Compressed::of`]).
+/// that isn't a compressed file ([`Compressed::of`]) or a part of a split one.
 #[must_use]
 pub fn inspect(path: &Path) -> Option<Inside> {
+    if let Some(format) = split_format(path) {
+        return Some(Inside {
+            format,
+            listing: None,
+            unread: None,
+            no_reader: false,
+            split: true,
+        });
+    }
     let format = Compressed::of(path)?;
     Some(match list(path, format, &Limits::DEFAULT) {
         Ok(listing) => Inside {
@@ -150,14 +162,33 @@ pub fn inspect(path: &Path) -> Option<Inside> {
             listing: Some(listing),
             unread: None,
             no_reader: false,
+            split: false,
         },
         Err(error) => Inside {
             format,
             listing: None,
             no_reader: matches!(error, Error::NoReader(_)),
             unread: Some(error.to_string()),
+            split: false,
         },
     })
+}
+
+/// For a part of a split archive (`backup.z01`, `backup.7z.001`, `film.part2.rar`, or a
+/// `backup.zip` with a `backup.z01` beside it), the archive's format.
+fn split_format(path: &Path) -> Option<Compressed> {
+    let name = path.file_name()?.to_string_lossy().to_lowercase();
+    if crate::detect::split_part(&name).is_some() {
+        let (rest, last) = name.rsplit_once('.')?;
+        return Some(match last.as_bytes()[0] {
+            b'z' => Compressed::Zip,
+            b'0'..=b'9' => Compressed::from_name(rest).unwrap_or(Compressed::Rar),
+            _ => Compressed::Rar,
+        });
+    }
+    name.strip_suffix(".zip")?;
+    let sibling = path.with_extension("z01");
+    sibling.exists().then_some(Compressed::Zip)
 }
 
 /// What a compressed file holds, without the files Carrel drops (`__MACOSX/`, `.DS_Store`,

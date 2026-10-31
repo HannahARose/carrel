@@ -49,6 +49,7 @@ impl Sandbox {
             .args(args)
             .current_dir(cwd)
             .env("CARREL_CONFIG_DIR", self.path("config"))
+            .env("CARREL_TRASH_DIR", self.path("Trash"))
             .env("CARREL_WORKER", "off")
             .output()
             .unwrap()
@@ -1236,5 +1237,97 @@ fn edit_opens_a_filed_card_keeps_its_body_and_undo_reverses_it() {
         std::fs::read_to_string(&card).unwrap(),
         before,
         "undo restores the card"
+    );
+}
+
+#[test]
+fn approved_zips_are_expanded_unless_kept_compressed() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(&root, &["init", root.to_str().unwrap()]);
+    let downloads = sandbox.path("Downloads");
+    std::fs::create_dir(&downloads).unwrap();
+    let zipped = downloads.join("lamp-firmware-main.zip");
+    write_zip(
+        &zipped,
+        &[
+            ("lamp-firmware-main/README.md", b"Dimmer firmware.\n"),
+            ("lamp-firmware-main/Cargo.toml", b"[package]\n"),
+            ("lamp-firmware-main/src/main.rs", b"fn main() {}\n"),
+        ],
+    );
+    let installer = downloads.join("Lamp Utility.zip");
+    write_zip(&installer, &[("Lamp Utility/Setup.exe", b"MZ")]);
+    let gzipped = downloads.join("notes.zip");
+    write_zip(&gzipped, &[("a.txt", b"a"), ("b.txt", b"b")]);
+    sandbox.ok(
+        &root,
+        &["ingest", "--wait", "--each", downloads.to_str().unwrap()],
+    );
+    let entries = sandbox.json(&root, &["review"])["entries"]
+        .as_array()
+        .unwrap()
+        .clone();
+    let id_of = |name: &str| {
+        entries
+            .iter()
+            .find(|e| e["source"]["path"].as_str().unwrap().ends_with(name))
+            .map(|e| e["id"].as_str().unwrap().to_owned())
+            .unwrap()
+    };
+    let (firmware, utility, notes) = (id_of("main.zip"), id_of("Utility.zip"), id_of("notes.zip"));
+
+    let shown = sandbox.ok(&root, &["review", "show", &firmware]);
+    assert!(
+        shown.contains("compressed   will be expanded: 3 files"),
+        "{shown}"
+    );
+    assert!(shown.contains("/lamp-firmware-main"), "{shown}");
+    let shown = sandbox.ok(&root, &["review", "show", &utility]);
+    assert!(
+        shown.contains("kept compressed: it holds an installer (Setup.exe)"),
+        "{shown}"
+    );
+    let kept = sandbox.ok(&root, &["review", "keep-compressed", &notes]);
+    assert!(
+        kept.contains("kept compressed: the owner chose to keep it"),
+        "{kept}"
+    );
+    let refused = sandbox.run_in(&root, &["review", "expand", &utility]);
+    assert!(
+        refused.status.success(),
+        "software can still be expanded on request"
+    );
+
+    let approved = sandbox.json(&root, &["review", "approve", &firmware, &notes]);
+    let filed = approved["filed"].as_array().unwrap();
+    assert_eq!(filed.len(), 2, "{approved}");
+    let firmware_path = filed
+        .iter()
+        .find_map(|f| {
+            f["path"]
+                .as_str()
+                .filter(|p| p.ends_with("lamp-firmware-main"))
+        })
+        .unwrap();
+    assert!(root.join(firmware_path).join("src/main.rs").is_file());
+    assert!(!zipped.exists());
+    assert!(sandbox.path("Trash/lamp-firmware-main.zip").is_file());
+    let card = std::fs::read_to_string(root.join(format!("{firmware_path}.md"))).unwrap();
+    assert!(card.contains("kind: bundle"), "{card}");
+    assert!(card.contains("expanded_from:"), "{card}");
+    assert!(card.contains("name: lamp-firmware-main.zip"), "{card}");
+    assert!(
+        filed
+            .iter()
+            .any(|f| f["path"].as_str().unwrap().ends_with("notes.zip")),
+        "kept compressed: {approved}"
+    );
+
+    sandbox.ok(&root, &["settings", "set", "compressed_files", "keep"]);
+    let settings = std::fs::read_to_string(root.join("_System/settings.json")).unwrap();
+    assert!(
+        settings.contains("\"compressed_files\": \"keep\""),
+        "{settings}"
     );
 }
