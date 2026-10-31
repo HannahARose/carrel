@@ -57,6 +57,7 @@ pub mod collections;
 pub mod coordinator;
 pub mod detect;
 pub mod documents;
+pub mod entries;
 pub mod frontmatter;
 pub mod history;
 pub mod ingest;
