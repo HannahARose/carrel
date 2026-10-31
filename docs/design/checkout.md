@@ -60,7 +60,7 @@ The design spec has a background agent watch tracked items and close a session a
 
 - **At the end of each session** found, when backups are set up, Carrel takes a Kopia snapshot of the working copy, so work in progress is backed up even before it's returned. Without a watcher, that's the state when Carrel noticed the session, not the moment it ended; for most work that's the same.
 - **Large data:** a new optional card field, `snapshots: return-only`, skips session snapshots for items like a 60 GB dataset, keeping only checkout and return.
-- **Trimming on return:** the return proposal lists the item's session snapshots, with their total new size, and offers to keep only the checkout and return snapshots, or all of them. The default is to keep all (deleting backups is the owner's call).
+- **Trimming on return:** the return proposal says how many session snapshots the item has (Kopia doesn't say how much each one adds). Once the item is back, Carrel snapshots the returned version and offers to forget the session snapshots, keeping the return's, or to keep all of them. The default is to keep all (deleting backups is the owner's call); `carrel return --trim-snapshots` forgets them without asking.
 
 ## Active and the Journal
 

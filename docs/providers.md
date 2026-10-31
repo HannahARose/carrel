@@ -48,7 +48,7 @@ Response:
     {"capability": "extract-text", "id": "pdfkit", "label": "PDFKit", "priority": 100,
      "available": true, "media_types": ["application/pdf"]},
     {"capability": "extract-text", "id": "image", "label": "Image reader", "priority": 100,
-     "available": true, "media_types": ["image/png", "image/jpeg", "image/heic"]},
+     "available": true, "describes": true, "media_types": ["image/png", "image/jpeg", "image/heic"]},
     {"capability": "extract-text", "id": "vision", "label": "Vision OCR", "priority": 100,
      "available": false, "reason": "OCR languages aren't installed",
      "media_types": ["image/png", "image/jpeg", "image/heic", "application/pdf"]},
@@ -70,6 +70,7 @@ Each **offer** is one thing the provider can do:
 | `priority` | Which offer Carrel prefers when several can do the same thing; higher wins. Native tools use 100, portable providers 50, built-in fallbacks 10. A choice in settings overrides it. Offers of equal priority from one provider are tried in the order it lists them, so list the most exact first (a PDF's text layer before OCR). |
 | `available` | Whether it can be used now. An offer that's unavailable says why in `reason`, such as "Apple Intelligence is turned off", so Carrel can tell the owner. |
 | `media_types` | For `extract-text`: the media types it reads. Missing means any. |
+| `describes` | For `extract-text`: `true` when it describes what images show, in a `Shows:` line of its text. Carrel gives such offers pictures to describe (see "Pictures to describe"). Say it only when a description can be written now. |
 | `context_tokens`, `structured_output` | For `text-model`: the context size, and whether it can return JSON that follows a schema |
 
 Other fields are allowed and kept.
@@ -139,6 +140,22 @@ Two more fields are optional, for what a file records about itself:
 
 - `created`: when it was made, such as a photo's date taken, as `YYYY-MM-DD` or a time with its offset (`2026-06-24T16:28:05+02:00`). Carrel uses it for the card's created date when the model gives none. Leave it out when the file doesn't say; for a local time with no offset, give only the date.
 - `located`: `true` when the file records where it was made, such as a photo's location. Carrel rates the item at least `personal`. Never put the place itself in `text`.
+
+### Pictures to describe
+
+A provider that finds or draws pictures it can't describe itself, such as a 3MF's thumbnail or drawings of a CAD model, may return them in `pictures`:
+
+```json
+{"jsonrpc": "2.0", "id": 5, "result": {"text": "3D print project (3MF)\nTitle: Keychain", "method": "embedded",
+  "pictures": [{"path": "/var/folders/…/T/carrel-picture-a1b2.png",
+                "context": "the thumbnail a slicer drew of a 3D print project"}]}}
+```
+
+- Write each picture as a PNG or JPEG in the system's temporary folder (`TMPDIR`). Carrel ignores pictures anywhere else, and never deletes them.
+- `context` says what the picture is. It's all the image reader is told: Carrel doesn't pass the original file's name, since a reader given the name tends to repeat it instead of looking.
+- Carrel sends each picture to the best offer that `describes`, with the context in `text/extract`'s `context` parameter, adds the `Shows:` line of its answer to the text, and deletes the picture. With no such offer, the pictures are deleted unread.
+
+`context` is optional in any `text/extract` request; offers that don't describe images ignore it.
 
 ## Errors
 
