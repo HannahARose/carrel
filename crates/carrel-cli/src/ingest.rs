@@ -535,6 +535,7 @@ fn items_json(
                 "duplicate_of": c.duplicate_of.as_ref().map(|d| json!({"id": d.id, "card": d.card})),
                 "likely_duplicates": c.likely,
                 "same_as": c.same_as.map(|i| &candidates[i].path),
+                "compressed": c.inside.as_ref().map(inside_json),
                 "text": t.as_ref().map(text_json),
                 "card": d.as_ref().map(draft_json),
             })
@@ -720,7 +721,25 @@ fn text_json(text: &ItemText) -> Value {
     })
 }
 
+/// What a compressed file holds, for `--json`.
+fn inside_json(inside: &carrel_core::compressed::Inside) -> Value {
+    json!({
+        "format": inside.format,
+        "holds": inside.describe(),
+        "files": inside.listing.as_ref().map(carrel_core::compressed::Listing::file_count),
+        "size": inside.listing.as_ref().map(carrel_core::compressed::Listing::total_size),
+        "unread": inside.unread,
+    })
+}
+
 fn describe_kind(candidate: &Candidate) -> String {
+    if let Some(inside) = &candidate.inside {
+        return format!(
+            "compressed {} file holding {}",
+            inside.format.name(),
+            inside.describe()
+        );
+    }
     match candidate.kind {
         Kind::Bundle if !candidate.markers.is_empty() => {
             format!("bundle (sealed by {})", candidate.markers.join(", "))
