@@ -1268,3 +1268,70 @@ fn session_snapshots_are_taken_and_can_be_forgotten_on_return() {
     assert_eq!(trimmed["forgotten"], 1, "{returned}");
     assert_eq!(trimmed["kept"], 0);
 }
+
+#[cfg(unix)]
+#[test]
+fn edit_opens_a_filed_card_keeps_its_body_and_undo_reverses_it() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    let init = std::process::Command::new(env!("CARGO_BIN_EXE_carrel"))
+        .args(["init", root.to_str().unwrap()])
+        .env("CARREL_CONFIG_DIR", sandbox.path("config"))
+        .output()
+        .unwrap();
+    assert!(
+        init.status.success(),
+        "{}",
+        String::from_utf8_lossy(&init.stderr)
+    );
+    let card = root.join("Projects/Hardware/parts-list.csv.md");
+    let before = std::fs::read_to_string(&card).unwrap();
+    let body = before.splitn(3, "---").nth(2).unwrap().to_owned();
+    let editor = sandbox.path("editor.sh");
+    std::fs::write(
+        &editor,
+        "#!/bin/sh\nawk '{sub(/^title: .*/, \"title: Parts for the lamp\"); sub(/^sensitivity: .*/, \"sensitivity: public\")}1' \"$1\" > \"$1.new\" && mv \"$1.new\" \"$1\"\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&editor, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_carrel"))
+        .args(["edit", "Projects/Hardware/parts-list.csv", "--json"])
+        .current_dir(&root)
+        .env("CARREL_CONFIG_DIR", sandbox.path("config"))
+        .env("CARREL_WORKER", "off")
+        .env_remove("VISUAL")
+        .env("EDITOR", &editor)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert!(
+        report["changed"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("title"))
+    );
+    let after = std::fs::read_to_string(&card).unwrap();
+    assert!(after.contains("title: Parts for the lamp"), "{after}");
+    assert!(
+        after.contains("sensitivity: public"),
+        "the owner may lower it"
+    );
+    assert!(after.ends_with(&body), "the body is kept exactly");
+
+    let change = sandbox.json(&root, &["log"])[0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    sandbox.ok(&root, &["undo", &change[..8]]);
+    assert_eq!(
+        std::fs::read_to_string(&card).unwrap(),
+        before,
+        "undo restores the card"
+    );
+}
