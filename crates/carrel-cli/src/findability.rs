@@ -230,12 +230,7 @@ fn measure(
     let current = plan(archive, Some(&index))
         .map_err(|e| crate::index::failure(e, model))?
         .current();
-    let mut display = crate::progress::Display::new(format!("Embedding with {model}"), json);
-    let embedded =
-        crate::index::catch_up(archive, registry, &mut index, &mut |done, total, item| {
-            display.count("items", done, total, item);
-        })?;
-    display.finish();
+    let embedded = crate::index::catch_up(archive, registry, &mut index, json)?;
     let place = Index::dir_of(archive, model);
     let note = if reused {
         format!(

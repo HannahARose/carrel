@@ -23,7 +23,7 @@ The command line and the interactive mode run on macOS, Linux and Windows. The M
 | Previews of items | the item's path in `show` | #258 | #256 |
 | An item's history and related items | `show` | ✓ | ✓ |
 | Search, with filters and reasons | `search` | ✓ `/` | ✓ ⌘F (#236) |
-| The embedding index: status, rebuild, switch models | `index` | #263 | #267 |
+| The embedding index: status, rebuild, switch models | `index` | #263 | ✓ Settings → Search (#267) |
 | Correct a filed item | `correct` | ✓ `c` | ✓ ⌘K (#234) |
 | Edit a filed item's card | `edit` | ✓ `e` | ✓ ⌘E (#234) |
 | Create collections | `collection` | ✓ `n` in Browse | #268 |
@@ -36,9 +36,9 @@ The command line and the interactive mode run on macOS, Linux and Windows. The M
 | Work-session entries: approve, edit, combine, drop | `sessions` | ✓ Active | ✓ (#235) |
 | History and undo | `log`, `undo` | ✓ History | ✓ (#235) |
 | Backups: set up, snapshot, list, verify, restore | `backup` | ✓ Backups | #266 |
-| Settings, this device's and the archive's | `settings` | ✓ Settings | #267 |
-| Models: list, download, remove | `models` | ✓ Settings | #267 |
-| Providers in use, and file types not read | `providers`, `formats` | #265 | #267 |
+| Settings, this device's and the archive's | `settings` | ✓ Settings | ✓ Settings → General (#267) |
+| Models: list, download, remove | `models` | ✓ Settings | ✓ Settings → Models (#267) |
+| Providers in use, and file types not read | `providers`, `formats` | #265 | ✓ Settings → Providers (#267) |
 | Background work: sessions as they happen, the queue, the index | #269 | #269 | ✓ agent (#237) |
 | What's checked out, at a glance | `checkouts` | ✓ Active | ✓ menu bar (#237) |
 
