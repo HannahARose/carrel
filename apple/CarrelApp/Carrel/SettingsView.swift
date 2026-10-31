@@ -1,7 +1,8 @@
-// Settings (⌘,): what's set today, read only. Choosing models, downloads, backups and the
-// agent become editable as CarrelKit gains those operations (#233) and the agent arrives (#237).
+// Settings (⌘,): what's set today, read only, and the agent's switch. Choosing models,
+// downloads and backups become editable as CarrelKit gains those operations (#233).
 
 import AppKit
+import ServiceManagement
 import SwiftUI
 
 struct SettingsView: View {
@@ -107,18 +108,39 @@ private struct BackupsTab: View {
 }
 
 private struct AgentTab: View {
+    @State private var loginItem = AgentLoginItem()
+
     var body: some View {
         Form {
             Section {
-                Toggle("Run the Carrel agent at login", isOn: .constant(false))
-                    .disabled(true)
+                Toggle(
+                    "Run the Carrel agent at login",
+                    isOn: Binding(get: { loginItem.isOn }, set: { loginItem.set($0) }))
                 Text(
-                    "The agent drafts new items, notices work sessions as they happen and keeps search current while the app is closed. It arrives in a later build."
+                    "The agent drafts new items, notices work sessions as they happen, keeps search current and takes scheduled backups, while the app is closed too. Its menu bar list shows what’s checked out and on the desk."
                 )
                 .foregroundStyle(.secondary)
+                if !loginItem.isOn {
+                    Text(
+                        "With it off, Carrel drafts new items while the app is open, as the command line does, and work sessions are noticed when the app or the command line runs."
+                    )
+                    .foregroundStyle(.secondary)
+                }
+            }
+            if loginItem.needsApproval {
+                Section {
+                    Text("Allow the Carrel agent in System Settings → General → Login Items.")
+                    Button("Open Login Items Settings") {
+                        SMAppService.openSystemSettingsLoginItems()
+                    }
+                }
+            }
+            if let problem = loginItem.problem {
+                Section { Text(problem).foregroundStyle(.red) }
             }
         }
         .formStyle(.grouped)
+        .onAppear { loginItem.refresh() }
     }
 }
 

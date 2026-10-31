@@ -71,6 +71,8 @@ struct ArchiveSummary: Equatable {
 @Observable
 final class ArchiveWindowModel {
     let url: URL
+    /// How the archive is opened; `nil` for the device's own configuration.
+    let options: OpenOptions?
     private(set) var handle: ArchiveHandle?
     private(set) var name: String
     private(set) var isReadOnly = false
@@ -79,19 +81,31 @@ final class ArchiveWindowModel {
     private(set) var items: [ItemSummary] = []
     private(set) var isLoading = false
     private(set) var problem: String?
-    /// The archive as CarrelKit's observable model, once it's open.
+    /// The archive's queues and operations, through the core, once it's open.
     private(set) var archive: ArchiveModel?
-    /// Active and History, on `archive`.
+
+    // Review, Questions, corrections and editing (#234).
+    private(set) var review: ReviewModel?
+    private(set) var questions: QuestionsModel?
+    /// The correction sheet's, while it's open.
+    var correction: CorrectionModel?
+    /// The filed item whose card the inspector is editing (⌘E).
+    var editing: CardEditModel?
+
+    // Active and History (#235).
     private(set) var activeScreen: ActiveScreenModel?
     private(set) var historyScreen: HistoryScreenModel?
 
     var screen: Screen? = .status {
         didSet { if screen != oldValue { selectedItemID = nil } }
     }
-    var selectedItemID: ItemSummary.ID?
+    var selectedItemID: ItemSummary.ID? {
+        didSet { if selectedItemID != oldValue { editing = nil } }
+    }
 
-    init(url: URL) {
+    init(url: URL, options: OpenOptions? = nil) {
         self.url = url
+        self.options = options
         name = url.lastPathComponent
     }
 
@@ -102,9 +116,15 @@ final class ArchiveWindowModel {
         isLoading = true
         defer { isLoading = false }
         let url = url
+        let options = options
         do {
             let loaded = try await Task.detached {
-                let handle = try ArchiveHandle.open(url)
+                let handle =
+                    if let options {
+                        try ArchiveHandle.open(url, options: options)
+                    } else {
+                        try ArchiveHandle.open(url)
+                    }
                 return (handle, try handle.collections(), try handle.items())
             }.value
             handle = loaded.0
@@ -116,21 +136,23 @@ final class ArchiveWindowModel {
             problem = nil
             let archive = ArchiveModel(handle: loaded.0)
             self.archive = archive
+            review = ReviewModel(archive: archive)
+            review?.filed = { [weak self] in await self?.refreshItems() }
+            questions = QuestionsModel(archive: archive)
             activeScreen = ActiveScreenModel(archive: archive) { [weak self] in
-                await self?.reloadItems()
+                await self?.refreshItems()
             }
             historyScreen = HistoryScreenModel(archive: archive) { [weak self] in
-                await self?.reloadItems()
+                await self?.refreshItems()
             }
-            await activeScreen?.refresh()
-            await historyScreen?.refresh()
+            try? await archive.refreshAll()
         } catch {
             problem = message(for: error)
         }
     }
 
-    /// Reads the collections and items again, after a change from another screen.
-    func reloadItems() async {
+    /// Reads the collections and items again, after a change that files or refiles items.
+    func refreshItems() async {
         guard let handle else { return }
         guard
             let loaded = try? await Task.detached(operation: {

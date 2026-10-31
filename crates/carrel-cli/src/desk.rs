@@ -161,6 +161,8 @@ pub fn archive_desk_item(archive: Option<&Path>, path: &Path) -> Result<Report, 
             "A worker is drafting it in the background"
         } else if crate::worker::running(&archive)? {
             "The running worker will draft it"
+        } else if crate::worker::agent(&archive) {
+            "The Carrel agent will draft it"
         } else {
             "No worker is started (CARREL_WORKER is off); run `carrel worker` to draft it"
         }

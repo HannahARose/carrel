@@ -237,6 +237,24 @@ impl FileLock {
     }
 }
 
+/// The lock the Mac app's agent holds for as long as it looks after `archive` on this device
+/// (`<archive id>.agent` in the workers' folder `folder`). While it's held, the CLI's
+/// background worker steps aside and leaves the queue and the index to the agent, which
+/// notices changes as they happen. Like the worker lock, it goes with the process.
+#[must_use]
+pub fn agent_lock(folder: &Path, archive: &Archive) -> FileLock {
+    FileLock {
+        path: file_in(folder, archive, "agent"),
+    }
+}
+
+/// Whether the Mac app's agent looks after `archive` on this device, so the CLI's background
+/// worker steps aside. A lock that can't be checked counts as no agent.
+#[must_use]
+pub fn agent_running(folder: &Path, archive: &Archive) -> bool {
+    agent_lock(folder, archive).is_held().unwrap_or(false)
+}
+
 impl DeviceLock for FileLock {
     type Held = Held;
 
@@ -603,6 +621,33 @@ mod tests {
             file_in(folder, &archive, "log"),
             folder.join(format!("{}.log", archive.info().id))
         );
+    }
+
+    #[test]
+    fn the_agent_is_running_while_it_holds_its_lock_and_apart_from_the_workers() {
+        let (dir, archive) = sample();
+        let folder = dir.path().join("workers");
+        assert!(!agent_running(&folder, &archive), "no lock file yet");
+        assert!(!folder.exists(), "looking creates nothing");
+
+        let held = agent_lock(&folder, &archive).take().unwrap().unwrap();
+        assert!(agent_running(&folder, &archive));
+        assert!(
+            agent_lock(&folder, &archive).take().unwrap().is_none(),
+            "one agent per archive and device"
+        );
+        let worker = FileLock::new(&folder, &archive);
+        assert!(
+            !worker.is_held().unwrap(),
+            "the worker lock is a lock of its own"
+        );
+        assert!(
+            worker.take().unwrap().is_some(),
+            "the agent's own worker takes it"
+        );
+
+        drop(held);
+        assert!(!agent_running(&folder, &archive), "it goes with the agent");
     }
 
     #[test]

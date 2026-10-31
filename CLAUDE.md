@@ -44,3 +44,12 @@ npx markdownlint-cli2
 ## Designs
 
 A large feature starts as a design in `docs/design/`, ending in five decisions the owner accepts before anything is built. Read the feature's design before starting, and follow its "Building it" steps and issue numbers.
+
+## Every interface is fully capable
+
+Anything Carrel can do should be available from the command line (`carrel`), the interactive mode and the app, on every platform each runs on, wherever the interface and platform make it possible (`docs/dev/architecture.md`, idea 4). Each interface does it in its own way; none is a lesser version of another.
+
+- **A design says how each interface offers the feature,** in a short "In each interface" section, and names any deviation with its reason.
+- **A PR that adds a capability to one interface** either adds it to the others too, or opens an issue for each one left, linked from the PR, in the same milestone unless the owner says otherwise.
+- **Put the logic in `carrel-core`,** never in an interface, so that the others only have to present it.
+- **Deviations are for real limits,** such as a terminal that can't draw images or a model that exists only on Apple devices, with the closest equivalent standing in. "It's easier in this interface" isn't one.

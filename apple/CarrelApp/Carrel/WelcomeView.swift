@@ -53,6 +53,7 @@ struct WelcomeView: View {
             .frame(width: 280)
         }
         .frame(height: 360)
+        .onOpenURL { app.open(link: $0, then: show) }
     }
 
     private func show(_ root: URL) {
