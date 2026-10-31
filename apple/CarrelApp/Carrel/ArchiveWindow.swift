@@ -27,6 +27,7 @@ struct ArchiveWindow: View {
         } detail: {
             Inspector(model: model)
         }
+        .activeAndHistorySheets(model)
         .navigationTitle(model.name)
         .navigationSubtitle(
             model.isReadOnly ? "\(model.screenTitle) · Read only" : model.screenTitle
@@ -62,7 +63,9 @@ private struct Sidebar: View {
                 Label("Status", systemImage: "gauge.with.dots.needle.33percent").tag(Screen.status)
                 Label("Review", systemImage: "tray.full").tag(Screen.review)
                 Label("Questions", systemImage: "questionmark.bubble").tag(Screen.questions)
-                Label("Active", systemImage: "arrow.up.forward.square").tag(Screen.active)
+                Label("Active", systemImage: "arrow.up.forward.square")
+                    .badge(model.activeScreen?.pendingCount ?? 0)
+                    .tag(Screen.active)
             }
             Section("Collections") {
                 OutlineGroup(model.tree, children: \.children) { node in
@@ -92,6 +95,9 @@ private struct ScreenContent: View {
             List(model.listedItems, selection: $model.selectedItemID) { item in
                 Label(item.title, systemImage: item.kind.symbol)
             }
+            .contextMenu(forSelectionType: ItemSummary.ID.self) { ids in
+                BrowseActions(model: model, ids: ids)
+            }
             .overlay {
                 if model.listedItems.isEmpty, !model.isLoading {
                     ContentUnavailableView("No Items", systemImage: "folder")
@@ -107,13 +113,9 @@ private struct ScreenContent: View {
                 title: "Questions", systemImage: "questionmark.bubble",
                 text: "Questions about terms and collections, by rank, to answer or dismiss.")
         case .active:
-            ComingScreen(
-                title: "Active", systemImage: "arrow.up.forward.square",
-                text: "Checked-out and desk items with their pending entries, to return or cancel.")
+            if let active = model.activeScreen { ActiveView(model: active) }
         case .history:
-            ComingScreen(
-                title: "History", systemImage: "clock.arrow.circlepath",
-                text: "Every change to the archive, with undo.")
+            if let history = model.historyScreen { HistoryView(model: history) }
         }
     }
 }
@@ -139,7 +141,11 @@ private struct Inspector: View {
     let model: ArchiveWindowModel
 
     var body: some View {
-        if let item = model.selectedItem {
+        if model.screen == .active, let active = model.activeScreen {
+            ActiveInspector(model: active)
+        } else if model.screen == .history, let history = model.historyScreen {
+            ChangeInspector(model: history) { id in model.items.first { $0.id == id }?.title }
+        } else if let item = model.selectedItem {
             ItemCardView(item: item, card: model.card(for: item), root: model.root)
                 .id(item.id)
         } else if case .collection = model.screen {

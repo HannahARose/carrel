@@ -79,6 +79,11 @@ final class ArchiveWindowModel {
     private(set) var items: [ItemSummary] = []
     private(set) var isLoading = false
     private(set) var problem: String?
+    /// The archive as CarrelKit's observable model, once it's open.
+    private(set) var archive: ArchiveModel?
+    /// Active and History, on `archive`.
+    private(set) var activeScreen: ActiveScreenModel?
+    private(set) var historyScreen: HistoryScreenModel?
 
     var screen: Screen? = .status {
         didSet { if screen != oldValue { selectedItemID = nil } }
@@ -109,9 +114,32 @@ final class ArchiveWindowModel {
             tree = CollectionNode.tree(loaded.1)
             items = loaded.2
             problem = nil
+            let archive = ArchiveModel(handle: loaded.0)
+            self.archive = archive
+            activeScreen = ActiveScreenModel(archive: archive) { [weak self] in
+                await self?.reloadItems()
+            }
+            historyScreen = HistoryScreenModel(archive: archive) { [weak self] in
+                await self?.reloadItems()
+            }
+            await activeScreen?.refresh()
+            await historyScreen?.refresh()
         } catch {
             problem = message(for: error)
         }
+    }
+
+    /// Reads the collections and items again, after a change from another screen.
+    func reloadItems() async {
+        guard let handle else { return }
+        guard
+            let loaded = try? await Task.detached(operation: {
+                (try handle.collections(), try handle.items())
+            }).value
+        else { return }
+        collections = loaded.0
+        tree = CollectionNode.tree(loaded.0)
+        items = loaded.1
     }
 
     /// The collection an item's card is filed in: the deepest collection folder holding it.

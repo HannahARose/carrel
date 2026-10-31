@@ -22,6 +22,7 @@ struct CarrelApp: App {
         }
         .commands {
             ArchiveCommands(app: app)
+            ActiveCommands()
         }
 
         Settings {
