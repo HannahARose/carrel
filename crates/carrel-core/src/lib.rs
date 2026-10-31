@@ -73,6 +73,7 @@ pub mod questions;
 pub mod rename;
 pub mod review;
 pub mod sections;
+pub mod sessions;
 pub mod settings;
 pub mod signals;
 

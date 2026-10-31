@@ -17,6 +17,7 @@ mod progress;
 mod providers;
 mod questions;
 mod review;
+mod sessions;
 mod settings;
 mod tui;
 mod worker;
@@ -144,6 +145,12 @@ enum Command {
         #[arg(long, conflicts_with = "from")]
         discard: bool,
     },
+    /// Work sessions on checked-out items: finds finished ones and lists the pending history
+    /// entries; approve, combine or drop them.
+    Sessions {
+        #[command(subcommand)]
+        action: Option<SessionsAction>,
+    },
     /// Create collections: folders with a design document saying what belongs in them.
     Collection {
         #[command(subcommand)]
@@ -168,6 +175,33 @@ enum Command {
     Models {
         #[command(subcommand)]
         action: Option<ModelsAction>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum SessionsAction {
+    /// Find finished sessions, and list every pending history entry.
+    List,
+    /// Approve an item's pending entries: the numbers `carrel sessions` shows, or all.
+    Approve {
+        /// The item: its identifier, or its card's or contents' path.
+        item: String,
+        /// Which entries; all when none are given.
+        numbers: Vec<usize>,
+    },
+    /// Combine an item's pending entries into one, still pending.
+    Combine {
+        /// The item.
+        item: String,
+        /// Which entries; all when none are given.
+        numbers: Vec<usize>,
+    },
+    /// Drop an item's pending entries.
+    Drop {
+        /// The item.
+        item: String,
+        /// Which entries; all when none are given.
+        numbers: Vec<usize>,
     },
 }
 
@@ -399,6 +433,26 @@ enum ReviewAction {
     },
 }
 
+/// `carrel sessions` and its subcommands.
+fn sessions_command(
+    archive: Option<&Path>,
+    action: Option<SessionsAction>,
+) -> Result<Report, Failure> {
+    use sessions::Decision;
+    match action.unwrap_or(SessionsAction::List) {
+        SessionsAction::List => sessions::list(archive),
+        SessionsAction::Approve { item, numbers } => {
+            sessions::decide(archive, &item, &numbers, Decision::Approve)
+        }
+        SessionsAction::Combine { item, numbers } => {
+            sessions::decide(archive, &item, &numbers, Decision::Combine)
+        }
+        SessionsAction::Drop { item, numbers } => {
+            sessions::decide(archive, &item, &numbers, Decision::Drop)
+        }
+    }
+}
+
 /// `carrel review` and its subcommands.
 fn review_command(
     archive: Option<&Path>,
@@ -521,6 +575,7 @@ fn main() -> ExitCode {
             checkout::checkout(cli.archive.as_deref(), &item, to.as_deref(), due.as_deref())
         }
         Command::Checkouts => checkout::list(cli.archive.as_deref()),
+        Command::Sessions { action } => sessions_command(cli.archive.as_deref(), action),
         Command::Return {
             item,
             from,

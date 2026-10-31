@@ -824,3 +824,65 @@ fn checkout_copies_an_item_out_and_locks_the_archive_copy() {
     );
     std::fs::write(&archived, "and again\n").unwrap();
 }
+
+#[test]
+fn sessions_on_a_checked_out_item_become_pending_entries_to_approve() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    let desk = sandbox.path("desk");
+    let item = "Projects/Hardware/parts-list.csv";
+    sandbox.ok(&root, &["checkout", item, "--to", desk.to_str().unwrap()]);
+
+    // Checked out three hours ago, edited two hours ago: one finished session.
+    let card_path = root.join(format!("{item}.md"));
+    let card = std::fs::read_to_string(&card_path).unwrap();
+    let three_hours_ago = jiff::Timestamp::now() - jiff::SignedDuration::from_hours(3);
+    let card = card
+        .lines()
+        .map(|l| {
+            if l.trim_start().starts_with("since:") {
+                format!("  since: \"{three_hours_ago}\"")
+            } else {
+                l.to_owned()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n";
+    std::fs::write(&card_path, card).unwrap();
+    let working = desk.join("parts-list.csv");
+    std::fs::write(&working, "edited,at,the,desk\n").unwrap();
+    std::fs::File::options()
+        .write(true)
+        .open(&working)
+        .unwrap()
+        .set_modified(std::time::SystemTime::now() - std::time::Duration::from_hours(2))
+        .unwrap();
+
+    let listed = sandbox.json(&root, &["sessions"]);
+    assert!(listed["recorded"].is_string(), "{listed}");
+    let ours = |listed: &Value| {
+        listed["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|i| i["title"] == "Desk lamp parts list")
+            .cloned()
+    };
+    let pending = &ours(&listed).expect("the item has pending entries")["pending"];
+    assert_eq!(pending.as_array().unwrap().len(), 1);
+    assert_eq!(pending[0]["lines"][0], "Changed 1 file(s): parts-list.csv");
+    assert_eq!(
+        sandbox.json(&root, &["sessions"])["recorded"],
+        Value::Null,
+        "a session is recorded once"
+    );
+
+    sandbox.ok(&root, &["sessions", "approve", item]);
+    assert_eq!(ours(&sandbox.json(&root, &["sessions"])), None, "approved");
+    let card = std::fs::read_to_string(&card_path).unwrap();
+    assert!(card.contains("Changed 1 file(s): parts-list.csv"), "{card}");
+    assert!(!card.contains("[!pending]"));
+    assert_eq!(sandbox.json(&root, &["log"])[0]["operation"], "session");
+}
