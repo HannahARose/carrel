@@ -57,18 +57,13 @@ struct ArchiveWindowActions: ViewModifier {
             .task(id: model.intake.map(ObjectIdentifier.init)) {
                 await model.intake?.watch()
             }
-            .focusedSceneValue(\.archiveWindow, model)
+            .focusedSceneValue(model)
     }
-}
-
-extension FocusedValues {
-    /// The archive window in front, for the menus.
-    @Entry var archiveWindow: ArchiveWindowModel?
 }
 
 /// The commands for the archive window in front: Add to Archive… and Search.
 struct ArchiveWindowCommands: Commands {
-    @FocusedValue(\.archiveWindow) private var window
+    @FocusedValue(ArchiveWindowModel.self) private var window
 
     var body: some Commands {
         CommandGroup(after: .newItem) {
