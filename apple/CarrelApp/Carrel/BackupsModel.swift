@@ -131,7 +131,9 @@ final class BackupsModel {
     /// Takes a snapshot of the whole archive now.
     func snapshotNow() async {
         let password = password
-        guard let taken = await run("Taking a snapshot…", { try await $0.snapshotNow(password: password) })
+        guard
+            let taken = await run(
+                "Taking a snapshot…", { try await $0.snapshotNow(password: password) })
         else { return }
         report = Self.describe(taken)
         if taken.commit != nil { selection = snapshots.first?.id }
@@ -200,7 +202,8 @@ final class BackupsModel {
         }
         text += "."
         if taken.commit == nil {
-            text += " Nothing had changed since the last change, so history doesn’t list it separately."
+            text +=
+                " Nothing had changed since the last change, so history doesn’t list it separately."
         }
         return text
     }
