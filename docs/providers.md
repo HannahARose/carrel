@@ -51,7 +51,9 @@ Response:
      "available": true, "media_types": ["image/png", "image/jpeg", "image/heic"]},
     {"capability": "extract-text", "id": "vision", "label": "Vision OCR", "priority": 100,
      "available": false, "reason": "OCR languages aren't installed",
-     "media_types": ["image/png", "image/jpeg", "image/heic", "application/pdf"]}
+     "media_types": ["image/png", "image/jpeg", "image/heic", "application/pdf"]},
+    {"capability": "extract-text", "id": "model3d", "label": "3D model reader", "priority": 100,
+     "available": true, "media_types": ["model/stl", "model/obj", "model/ply"]}
   ]
 }}
 ```
@@ -131,7 +133,7 @@ A provider that can't count answers with code 2 or `-32601`, and Carrel estimate
 {"jsonrpc": "2.0", "id": 3, "result": {"text": "...", "method": "embedded", "pages": 12}}
 ```
 
-`method` is `embedded` for text stored in the file, `ocr` for recognized text, or `described` when a model also described an image. `pages` is optional.
+`method` is `embedded` for text stored in the file, `ocr` for recognized text, `described` when a model also described an image, `geometry` for a 3D model's size and shape, or `rendered` when a model also described drawings of it. `pages` is optional.
 
 Two more fields are optional, for what a file records about itself:
 

@@ -94,24 +94,39 @@ public struct ImageReader: TextExtractor {
     /// One or two sentences from Apple's model on what the image shows, or nil when the model
     /// can't see images (before macOS 27, or Apple Intelligence off) or declines.
     static func describe(_ source: CGImageSource, labels: [String]) async -> String? {
+        guard canSee, let image = scaled(source) else { return nil }
+        let hint = labels.isEmpty ? "" : " Vision's labels for it: \(labels.joined(separator: ", "))."
+        return await describe(
+            image,
+            instructions: """
+                You describe images for a personal archive's catalog. Say plainly what the \
+                image shows in one or two sentences. Don't guess names of people or places.
+                """,
+            prompt: "Describe this image." + hint)
+    }
+
+    /// Whether Apple's model can see images here: macOS 27 or later, with Apple Intelligence on.
+    static var canSee: Bool {
         #if canImport(FoundationModels) && compiler(>=6.4)
         if #available(macOS 27.0, *) {
             let model = SystemLanguageModel.default
-            guard model.isAvailable, model.capabilities.contains(.vision),
-                let image = scaled(source)
-            else { return nil }
-            let session = LanguageModelSession(
-                model: model,
-                instructions: """
-                    You describe images for a personal archive's catalog. Say plainly what the \
-                    image shows in one or two sentences. Don't guess names of people or places.
-                    """)
-            let hint = labels.isEmpty ? "" : " Vision's labels for it: \(labels.joined(separator: ", "))."
+            return model.isAvailable && model.capabilities.contains(.vision)
+        }
+        #endif
+        return false
+    }
+
+    /// What Apple's model says of `image`, given `instructions` and `prompt`, or nil when it
+    /// can't see images or declines. Shared with the 3D model reader.
+    static func describe(_ image: CGImage, instructions: String, prompt: String) async -> String? {
+        #if canImport(FoundationModels) && compiler(>=6.4)
+        if #available(macOS 27.0, *), canSee {
+            let session = LanguageModelSession(model: .default, instructions: instructions)
             do {
                 let response = try await session.respond(
                     options: GenerationOptions(maximumResponseTokens: 120)
                 ) {
-                    "Describe this image." + hint
+                    prompt
                     Attachment(image)
                 }
                 let text = response.content.trimmingCharacters(in: .whitespacesAndNewlines)
