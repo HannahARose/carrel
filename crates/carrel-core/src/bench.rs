@@ -111,7 +111,7 @@ pub fn check(answers: &Answers, archive: &Archive, items: &Path) -> Result<Vec<S
         {
             problems.push(format!("{file}: {date} isn't a date"));
         }
-        // Binary items, such as images, are checked by whatever text they hold.
+        // Binary items, such as images and 3D models, are checked by whatever text they hold.
         let bytes = std::fs::read(path).map_err(|e| format!("{file}: {e}"))?;
         let text = String::from_utf8_lossy(&bytes);
         let ruled = floor(file, &text, default).level;

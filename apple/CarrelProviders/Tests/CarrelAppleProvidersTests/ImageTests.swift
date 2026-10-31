@@ -112,3 +112,7 @@ var phonePhoto: [CFString: Any] { [
         #expect(!result.text.contains("Shows:"))
     }
 }
+
+@Test func theImageReaderSaysItDescribesOnlyWhenAppleModelCanSee() {
+    #expect(ImageReader().offer.describes == (ImageReader.canSee ? true : nil))
+}

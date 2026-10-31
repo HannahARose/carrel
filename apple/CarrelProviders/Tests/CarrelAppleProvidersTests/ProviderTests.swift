@@ -110,3 +110,30 @@ let server = Server(name: "Apple", version: "0.2.0", extractors: [PDFText()])
     let extraction = try await PDFText().extract(pdf, mediaType: "application/pdf")
     #expect(!extraction.text.isEmpty)
 }
+
+/// An extractor that answers with the context it was given.
+struct ContextEcho: TextExtractor {
+    var offer: Offer { Offer(capability: .extractText, id: "echo", mediaTypes: ["image/png"], describes: true) }
+
+    func extract(_ url: URL, mediaType: String) async throws(ProviderError) -> Extraction {
+        Extraction(text: "no context", method: "described")
+    }
+
+    func extract(_ url: URL, mediaType: String, context: String?) async throws(ProviderError) -> Extraction {
+        Extraction(text: context ?? "no context", method: "described")
+    }
+}
+
+@Test func picturesToDescribeComeWithTheirContext() async throws {
+    let server = Server(name: "Apple", version: "0.2.0", extractors: [ContextEcho(), PDFText()])
+    let start = try await send(server, ["jsonrpc": "2.0", "id": 1, "method": "initialize", "params": ["protocol": 1]])
+    let offers = try #require((start["result"] as? [String: Any])?["offers"] as? [[String: Any]])
+    #expect(offers[0]["describes"] as? Bool == true)
+    #expect(offers[1]["describes"] == nil, "only readers that describe say so")
+    let reply = try await send(server, ["jsonrpc": "2.0", "id": 2, "method": "text/extract", "params": [
+        "offer": "echo", "path": "/tmp/carrel-picture-1.png", "media_type": "image/png",
+        "context": "the thumbnail a slicer drew of a 3D print project",
+    ]])
+    let result = try #require(reply["result"] as? [String: Any])
+    #expect(result["text"] as? String == "the thumbnail a slicer drew of a 3D print project")
+}

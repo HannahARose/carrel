@@ -133,6 +133,28 @@ impl App {
         None
     }
 
+    /// `z`: keeps the chosen compressed file compressed if it was to be expanded, or expands
+    /// it otherwise, along with the other marked ones.
+    fn compressed_choice(&mut self, targets: Vec<carrel_core::card::Id>) -> Option<Effect> {
+        use carrel_core::compressed::plan::Choice;
+        let Some(plan) = self
+            .queue
+            .get(self.chosen)
+            .and_then(|e| e.compressed.as_ref())
+        else {
+            self.message = Some("Not a compressed file".into());
+            return None;
+        };
+        Some(Effect::Compressed {
+            ids: targets,
+            choice: if plan.action == Choice::Expand {
+                Choice::Keep
+            } else {
+                Choice::Expand
+            },
+        })
+    }
+
     /// Handles a key on the Review screen.
     pub(super) fn review_key(&mut self, key: KeyEvent) -> Handled {
         if matches!(key.code, KeyCode::Char('[' | ']')) && !self.comparisons.is_empty() {
@@ -146,7 +168,7 @@ impl App {
         }
         let decision = matches!(
             key.code,
-            KeyCode::Char('a' | 'h' | 'm' | 'x' | 'e' | 'c' | 'A' | ' ' | 'v' | 'b' | 's')
+            KeyCode::Char('a' | 'h' | 'm' | 'x' | 'e' | 'c' | 'A' | ' ' | 'v' | 'b' | 's' | 'z')
         );
         if !decision {
             return Handled::No;
@@ -208,6 +230,7 @@ impl App {
                 self.confirm = Some(Confirm::Reject(targets));
                 None
             }
+            KeyCode::Char('z') => self.compressed_choice(targets),
             KeyCode::Char('e') => self.queue.get(self.chosen).map(|e| Effect::Edit(e.id)),
             KeyCode::Char('c') => self.start_correction(),
             KeyCode::Char('m') => {

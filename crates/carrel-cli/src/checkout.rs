@@ -2,9 +2,12 @@
 //! what's out (`docs/design/checkout.md`).
 
 use std::fmt::Write as _;
+use std::io::IsTerminal as _;
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 use carrel_core::archive::{Archive, ItemRef};
+use carrel_core::backup::{Backups as _, Kopia, Snapshot};
 use carrel_core::card::{DateOrTime, Id};
 use carrel_core::card_file::CardFile;
 use carrel_core::checkout::{
@@ -14,7 +17,7 @@ use carrel_core::checkout::{
 use carrel_core::coordinator::{Coordinator as _, DEFAULT_LEASE, DiskLock};
 use carrel_core::detect::Rules;
 use carrel_core::manifest::{Diff, Manifest};
-use serde_json::json;
+use serde_json::{Value, json};
 
 use crate::commands::{find_item, holder, locate};
 use crate::config::Identity;
@@ -148,8 +151,9 @@ pub fn compared(
     }
 }
 
-/// `carrel return ITEM [--from PATH] [--yes]`, or `--discard` to cancel: shows what changed
-/// and the history entry it adds, asks, then brings the working copy back.
+/// `carrel return ITEM [--from PATH] [--yes] [--trim-snapshots]`, or `--discard` to cancel:
+/// shows what changed and the history entry it adds, asks, then brings the working copy back.
+/// With backups, it then offers to forget the checkout's session snapshots.
 ///
 /// # Errors
 ///
@@ -160,6 +164,7 @@ pub fn return_item(
     from: Option<&Path>,
     yes: bool,
     discard: bool,
+    trim: bool,
 ) -> Result<Report, Failure> {
     let archive = locate(archive)?;
     let items = archive.items()?;
@@ -175,16 +180,36 @@ pub fn return_item(
     }
     let from = from.map(|p| crate::paths::expand(&p.to_string_lossy()));
     let plan = plan_return(&archive, item, from.as_deref())?;
-    eprint!(
+    let (backups, _) = crate::backup::for_batch(&archive);
+    let sessions = backups
+        .as_ref()
+        .map(|kopia| session_snapshots(&archive, item, kopia))
+        .unwrap_or_default();
+    let mut text = format!(
         "Returning “{}” from {}\n{}",
         plan.title,
         plan.working.display(),
         describe_return(&plan)
     );
+    if !sessions.is_empty() {
+        writeln!(
+            text,
+            "\n{} session snapshot(s) of the working copy, which can be forgotten once it's returned",
+            sessions.len()
+        )
+        .unwrap();
+    }
+    eprint!("{text}");
     if !crate::models::confirm("\nReturn it, replacing the archive copy?", yes)? {
         return Err(Failure::new("nothing returned"));
     }
-    finish(&archive, &plan)
+    let mut report = finish(&archive, &plan)?;
+    if let Some(kopia) = backups.as_ref().filter(|_| !sessions.is_empty()) {
+        let (trimmed, trimming) = trim_sessions(kopia, &plan, &sessions, trim, yes)?;
+        report.text.push_str(&trimmed);
+        report.json["session_snapshots"] = trimming;
+    }
+    Ok(report)
 }
 
 /// What returning by `plan` changes, and the history entry it adds, as `carrel return` shows
@@ -291,6 +316,95 @@ fn finish(archive: &Archive, plan: &ReturnPlan) -> Result<Report, Failure> {
             "changed": d.changed, "added": d.added, "removed": d.removed,
             "renamed": d.renamed,
             "commits": plan.commits,
+        }),
+    ))
+}
+
+/// The session snapshots taken of `item`'s working copy, where it was checked out to, since
+/// then; none when they can't be listed.
+fn session_snapshots(archive: &Archive, item: &ItemRef, kopia: &Kopia) -> Vec<Snapshot> {
+    let Some(out) = std::fs::read_to_string(archive.root().join(&item.card))
+        .ok()
+        .and_then(|t| CardFile::parse(&t).ok())
+        .and_then(|f| f.card().checked_out.clone())
+    else {
+        return Vec::new();
+    };
+    let since = out
+        .since
+        .0
+        .parse::<jiff::Timestamp>()
+        .map_or(SystemTime::UNIX_EPOCH, SystemTime::from);
+    carrel_core::sessions::snapshots_since(kopia, Path::new(&out.to), item.id, since)
+        .unwrap_or_default()
+}
+
+/// After a return: snapshots the working copy, which is now the returned version, then
+/// forgets the checkout's session `snapshots` if the owner says so: `trim`, or asked on a
+/// terminal. Without either, as with only `--yes`, they're kept; deleting backups is the
+/// owner's call. What happened, as lines and JSON.
+fn trim_sessions(
+    kopia: &Kopia,
+    plan: &ReturnPlan,
+    snapshots: &[Snapshot],
+    trim: bool,
+    yes: bool,
+) -> Result<(String, Value), Failure> {
+    let returned = match kopia.snapshot(
+        &plan.working,
+        &format!("Returned “{}” ({})", plan.title, plan.item),
+    ) {
+        Ok(snapshot) => snapshot,
+        Err(e) => {
+            return Ok((
+                format!(
+                    "The {} session snapshot(s) are kept: the returned version couldn't be snapshotted ({e}).\n",
+                    snapshots.len()
+                ),
+                json!({ "kept": snapshots.len(), "error": e.to_string() }),
+            ));
+        }
+    };
+    let forget = trim
+        || (!yes
+            && std::io::stdin().is_terminal()
+            && crate::models::confirm(
+                &format!(
+                    "Forget the {} session snapshot(s) of the working copy, keeping the return's?",
+                    snapshots.len()
+                ),
+                false,
+            )?);
+    let mut forgotten = 0;
+    let mut text = String::new();
+    if forget {
+        for snapshot in snapshots {
+            match kopia.forget(&snapshot.id) {
+                Ok(()) => forgotten += 1,
+                Err(e) => writeln!(text, "Couldn't forget snapshot {}: {e}", snapshot.id).unwrap(),
+            }
+        }
+    }
+    writeln!(
+        text,
+        "Snapshot {} holds the returned version; {}.",
+        returned.trailer(),
+        if forget {
+            format!("{forgotten} session snapshot(s) forgotten")
+        } else {
+            format!(
+                "the {} session snapshot(s) are kept (`--trim-snapshots` forgets them)",
+                snapshots.len()
+            )
+        }
+    )
+    .unwrap();
+    Ok((
+        text,
+        json!({
+            "returned": returned.id,
+            "forgotten": forgotten,
+            "kept": snapshots.len() - forgotten,
         }),
     ))
 }

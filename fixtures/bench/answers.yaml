@@ -395,3 +395,27 @@ items:
     date: null
     tags: [electronics]
     may: [code]
+  # 3D models (docs/design/models-3d.md), named as files often are: their names say little.
+  # Only a reader that draws and describes them can tell a bracket from a tray.
+  "part_v3_final.stl":
+    destinations: [Projects, Home]
+    ambiguous: true
+    sensitivity: personal
+    date: null
+    tags: [3d-printing]
+    may: [repairs]
+  "print_0412.stl":
+    destinations: [Projects]
+    sensitivity: personal
+    date: null
+    tags: [3d-printing]
+  "ring_v2.stl":
+    destinations: [Projects]
+    sensitivity: personal
+    date: null
+    tags: [3d-printing]
+  "scan_0007.stl":
+    destinations: [Projects]
+    sensitivity: personal
+    date: null
+    tags: [3d-printing]

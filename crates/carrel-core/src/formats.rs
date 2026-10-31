@@ -137,6 +137,16 @@ pub fn hint(media_type: &str) -> Option<&'static str> {
     if MODELS.contains(&media_type) && cfg!(target_os = "macos") {
         return Some("the Apple provider (carrel-provider-apple) reads it");
     }
+    if ["model/step", "model/iges"].contains(&media_type) {
+        return Some(
+            "the portable extraction provider (carrel-provider-extract) reads its details; to draw it, install OpenCascade and build carrel-provider-cad",
+        );
+    }
+    if ["model/3mf", "text/x-gcode"].contains(&media_type) {
+        return Some(
+            "the portable extraction provider (carrel-provider-extract) reads its details",
+        );
+    }
     None
 }
 
@@ -190,6 +200,11 @@ mod tests {
             cfg!(target_os = "macos"),
             "{:?}",
             hint("model/stl")
+        );
+        assert!(
+            hint("model/step")
+                .unwrap()
+                .contains("carrel-provider-extract")
         );
         assert_eq!(hint("application/x-unknown"), None);
     }

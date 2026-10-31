@@ -30,11 +30,14 @@ public struct Offer: Codable, Equatable, Sendable {
     public var contextTokens: Int?
     /// For text models: whether answers can follow a JSON Schema.
     public var structuredOutput: Bool?
+    /// For extractors: whether it describes what images show, so Carrel gives it pictures to
+    /// describe, such as a 3MF's thumbnail.
+    public var describes: Bool?
 
     public init(
         capability: Capability, id: String, label: String? = nil, priority: Int = Priority.native,
         available: Bool = true, reason: String? = nil, mediaTypes: [String]? = nil,
-        contextTokens: Int? = nil, structuredOutput: Bool? = nil
+        contextTokens: Int? = nil, structuredOutput: Bool? = nil, describes: Bool? = nil
     ) {
         self.capability = capability
         self.id = id
@@ -45,10 +48,11 @@ public struct Offer: Codable, Equatable, Sendable {
         self.mediaTypes = mediaTypes
         self.contextTokens = contextTokens
         self.structuredOutput = structuredOutput
+        self.describes = describes
     }
 
     enum CodingKeys: String, CodingKey {
-        case capability, id, label, priority, available, reason
+        case capability, id, label, priority, available, reason, describes
         case mediaTypes = "media_types"
         case contextTokens = "context_tokens"
         case structuredOutput = "structured_output"
@@ -120,6 +124,18 @@ public protocol TextExtractor: Sendable {
 
     /// Reads the text of the file at `url`, of media type `mediaType`. Never changes the file.
     func extract(_ url: URL, mediaType: String) async throws(ProviderError) -> Extraction
+
+    /// The same, for a picture Carrel was given to describe: `context` says what it is, since
+    /// its file's name says nothing. Extractors that don't describe images ignore it.
+    func extract(_ url: URL, mediaType: String, context: String?) async throws(ProviderError) -> Extraction
+}
+
+extension TextExtractor {
+    public func extract(_ url: URL, mediaType: String, context: String?) async throws(ProviderError)
+        -> Extraction
+    {
+        try await extract(url, mediaType: mediaType)
+    }
 }
 
 /// A JSON value, so requests and answers can cross concurrency boundaries.
@@ -304,7 +320,8 @@ public struct Server: Sendable {
             guard extractor.offer.available else {
                 throw .unavailable(extractor.offer.reason ?? "\(offerID) is unavailable")
             }
-            let result = try await extractor.extract(URL(filePath: path), mediaType: mediaType)
+            let result = try await extractor.extract(
+                URL(filePath: path), mediaType: mediaType, context: params["context"] as? String)
             var json: [String: Any] = ["text": result.text, "method": result.method]
             if let pages = result.pages {
                 json["pages"] = pages

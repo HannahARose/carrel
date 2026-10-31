@@ -134,6 +134,13 @@ pub trait Backups {
     ///
     /// [`BackupError`].
     fn restore(&self, snapshot: &str, path: &str, to: &Path) -> Result<(), BackupError>;
+    /// Deletes the snapshot `snapshot`, pinned or not. Its space is freed by the backup
+    /// system's own maintenance, later.
+    ///
+    /// # Errors
+    ///
+    /// [`BackupError`].
+    fn forget(&self, snapshot: &str) -> Result<(), BackupError>;
 }
 
 /// What the archive's snapshots leave out, as Kopia ignore patterns: regenerable folders
@@ -558,6 +565,12 @@ impl Backups for Kopia {
             None,
         )
         .map(|_| ())
+    }
+
+    fn forget(&self, snapshot: &str) -> Result<(), BackupError> {
+        self.reachable()?;
+        self.run(&["snapshot", "delete", snapshot, "--delete"], None)
+            .map(|_| ())
     }
 }
 
