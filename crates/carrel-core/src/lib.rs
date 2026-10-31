@@ -68,6 +68,7 @@ pub mod finder;
 pub mod formats;
 pub mod frontmatter;
 pub mod history;
+pub mod index;
 pub mod ingest;
 pub mod intake;
 pub mod listing;

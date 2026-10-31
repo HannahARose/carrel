@@ -193,6 +193,7 @@ fn event_loop(
                 leave();
                 let result = crate::edit::edit(Some(app.archive.root()), &card);
                 *terminal = enter();
+                changed(app.archive.root(), &result);
                 finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
             }
             Some(Effect::EditEntry { item, number }) => {
@@ -271,6 +272,9 @@ fn correction(app: &mut App, step: Step, preparing: &mut Option<Preparing>) {
                 let fact = prepared.fact.clone();
                 let result = crate::correct::save(&app.archive, prepared);
                 let saved = result.is_ok();
+                if saved {
+                    crate::worker::after_change(Some(app.archive.root()));
+                }
                 finished(app, result.map(|s| s.message).map_err(|Failure(e)| e));
                 if let (true, Some(fact)) = (saved, fact) {
                     app.confirm = Some(Confirm::Learn {
@@ -339,6 +343,7 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
     let (busy, work): (String, Work) = match effect {
         Effect::Undo(id) => {
             let result = crate::commands::undo(Some(&root), &id);
+            changed(&root, &result);
             finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
             return None;
         }
@@ -408,7 +413,11 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
         | Effect::BackupSetup { .. }) => backup_work(root, effect),
         Effect::ApproveAllHigh => (
             "Filing every high-confidence proposal…".into(),
-            Box::new(move || crate::review::approve(Some(&root), &[], true, None, None)),
+            Box::new(move || {
+                let result = crate::review::approve(Some(&root), &[], true, None, None);
+                changed(&root, &result);
+                result
+            }),
         ),
         Effect::Keep { id, kept, target } => keep(root, id, kept, target),
     };
@@ -559,9 +568,21 @@ fn decide(root: PathBuf, chosen: Vec<String>, holding: bool) -> (String, Work) {
     let work: Work = if holding {
         Box::new(move || crate::review::hold(Some(&root), &chosen))
     } else {
-        Box::new(move || crate::review::approve(Some(&root), &chosen, false, None, None))
+        Box::new(move || {
+            let result = crate::review::approve(Some(&root), &chosen, false, None, None);
+            changed(&root, &result);
+            result
+        })
     };
     (busy, work)
+}
+
+/// Starts a worker to embed what changed for search, when `result` says filed items changed
+/// in the archive at `root`.
+fn changed<T>(root: &Path, result: &Result<T, Failure>) {
+    if result.is_ok() {
+        crate::worker::after_change(Some(root));
+    }
 }
 
 /// The work for [`Effect::Keep`]: filing a proposal linked to the archived item it duplicates.
@@ -576,7 +597,10 @@ fn keep(root: PathBuf, id: Id, kept: Kept, target: Id) -> (String, Work) {
             Kept::AsVersion => (Some(target.as_str()), None),
             Kept::Both => (None, Some(target.as_str())),
         };
-        crate::review::approve(Some(&root), &[id.to_string()], false, version, related)
+        let result =
+            crate::review::approve(Some(&root), &[id.to_string()], false, version, related);
+        changed(&root, &result);
+        result
     });
     (busy.into(), work)
 }
