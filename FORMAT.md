@@ -239,7 +239,7 @@ An entry written by a program and not yet approved is a pending callout, so it s
 > Added a phase-response analysis and regenerated figure 4.
 ```
 
-Approving an entry turns the callout into a normal entry. Text the owner adds to an entry is preserved when entries are combined.
+Approving an entry turns the callout into a normal entry. The owner may approve one by hand, by turning it into a level-3 heading or into a callout of another type whose title starts with the date (`> [!done] 2026-10-29 · 2h 10m`); programs **should** notice such approvals and **must** keep the entry as the owner wrote it. Text the owner adds to an entry is preserved when entries are combined.
 
 ### 5.6 Provenance
 

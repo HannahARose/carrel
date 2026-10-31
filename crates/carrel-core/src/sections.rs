@@ -136,6 +136,19 @@ impl Fences {
     }
 }
 
+/// Whether `text` can sit inside a managed section without changing where sections start and
+/// end: no line of it is a marker, and every fenced code block it opens is closed.
+#[must_use]
+pub fn safe_inside(text: &str) -> bool {
+    let mut fences = Fences::default();
+    for line in text.lines() {
+        if !fences.in_code(line) && marker(line).is_some() {
+            return false;
+        }
+    }
+    fences.open.is_none()
+}
+
 /// Finds every managed section in `body`, in order.
 ///
 /// # Errors

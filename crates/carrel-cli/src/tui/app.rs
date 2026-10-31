@@ -199,6 +199,14 @@ pub enum Effect {
     Edit(Id),
     /// Edit this filed item's card, by its card's path, in the owner's editor.
     EditItem(String),
+    /// Edit an active item's pending history entry in the owner's editor, as
+    /// `carrel sessions edit` does.
+    EditEntry {
+        /// The item, as `carrel sessions` names it.
+        item: String,
+        /// The entry's number.
+        number: usize,
+    },
     /// A step of correcting a card in words.
     Correction(Step),
     /// Answer this question.

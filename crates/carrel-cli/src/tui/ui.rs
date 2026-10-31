@@ -277,7 +277,10 @@ fn draw_help(frame: &mut Frame, theme: Theme, area: Rect) {
             "mark several; approve all high-confidence (Review)",
         ),
         ("r  o  x", "return, open, cancel checkout (Active)"),
-        ("a  c  d  Space", "approve, combine, drop; mark (Active)"),
+        (
+            "a  e  c  d  Space",
+            "approve, edit, combine, drop; mark (Active)",
+        ),
         ("Enter  d", "answer or dismiss a question (Questions)"),
         (
             "←→  e  c  /  Esc",

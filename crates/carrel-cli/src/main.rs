@@ -184,7 +184,7 @@ enum Command {
         action: Option<DeskAction>,
     },
     /// Work sessions on checked-out items: finds finished ones and lists the pending history
-    /// entries; approve, combine or drop them.
+    /// entries; approve, edit, combine or drop them.
     Sessions {
         #[command(subcommand)]
         action: Option<SessionsAction>,
@@ -251,6 +251,13 @@ enum SessionsAction {
         item: String,
         /// Which entries; all when none are given.
         numbers: Vec<usize>,
+    },
+    /// Edit one of an item's pending entries in your editor; it stays pending.
+    Edit {
+        /// The item.
+        item: String,
+        /// Which entry: the number `carrel sessions` shows.
+        number: usize,
     },
     /// Combine an item's pending entries into one, still pending.
     Combine {
@@ -563,6 +570,7 @@ fn sessions_command(
         SessionsAction::Approve { item, numbers } => {
             sessions::decide(archive, &item, &numbers, Decision::Approve)
         }
+        SessionsAction::Edit { item, number } => sessions::edit(archive, &item, number),
         SessionsAction::Combine { item, numbers } => {
             sessions::decide(archive, &item, &numbers, Decision::Combine)
         }
