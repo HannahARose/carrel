@@ -9,6 +9,7 @@ mod bench;
 mod checkout;
 mod commands;
 mod config;
+mod desk;
 mod ingest;
 mod models;
 mod paths;
@@ -145,6 +146,12 @@ enum Command {
         #[arg(long, conflicts_with = "from")]
         discard: bool,
     },
+    /// Desk items: files and folders being worked on where they are, tracked without being
+    /// archived.
+    Desk {
+        #[command(subcommand)]
+        action: Option<DeskAction>,
+    },
     /// Work sessions on checked-out items: finds finished ones and lists the pending history
     /// entries; approve, combine or drop them.
     Sessions {
@@ -175,6 +182,31 @@ enum Command {
     Models {
         #[command(subcommand)]
         action: Option<ModelsAction>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum DeskAction {
+    /// List this device's desk items.
+    List,
+    /// Track a file or folder where it is: a card goes beside it, and nothing is moved.
+    Add {
+        /// The file or folder.
+        path: PathBuf,
+        /// Its title; its name by default.
+        #[arg(long)]
+        title: Option<String>,
+        /// A short summary.
+        #[arg(long)]
+        summary: Option<String>,
+    },
+    /// Stop tracking a desk item. Its card stays beside it unless --delete-card.
+    Remove {
+        /// The file or folder.
+        path: PathBuf,
+        /// Delete its card too.
+        #[arg(long)]
+        delete_card: bool,
     },
 }
 
@@ -433,6 +465,19 @@ enum ReviewAction {
     },
 }
 
+/// `carrel desk` and its subcommands.
+fn desk_command(archive: Option<&Path>, action: Option<DeskAction>) -> Result<Report, Failure> {
+    match action.unwrap_or(DeskAction::List) {
+        DeskAction::List => desk::list(archive),
+        DeskAction::Add {
+            path,
+            title,
+            summary,
+        } => desk::add_item(archive, &path, title.as_deref(), summary.as_deref()),
+        DeskAction::Remove { path, delete_card } => desk::remove_item(archive, &path, delete_card),
+    }
+}
+
 /// `carrel sessions` and its subcommands.
 fn sessions_command(
     archive: Option<&Path>,
@@ -575,6 +620,7 @@ fn main() -> ExitCode {
             checkout::checkout(cli.archive.as_deref(), &item, to.as_deref(), due.as_deref())
         }
         Command::Checkouts => checkout::list(cli.archive.as_deref()),
+        Command::Desk { action } => desk_command(cli.archive.as_deref(), action),
         Command::Sessions { action } => sessions_command(cli.archive.as_deref(), action),
         Command::Return {
             item,
