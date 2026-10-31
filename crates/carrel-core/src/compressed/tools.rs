@@ -23,13 +23,37 @@ pub enum Tool {
     },
 }
 
-/// The installed tool, if there is one: 7-Zip first, then `unar`.
+/// The installed tool, if there is one: 7-Zip first, then `unar`. Never on iOS and the other
+/// platforms where apps can't run other programs.
 #[must_use]
 pub fn find() -> Option<Tool> {
-    find_in(&crate::providers::process::default_folders())
+    #[cfg(not(any(
+        target_os = "ios",
+        target_os = "tvos",
+        target_os = "watchos",
+        target_os = "visionos"
+    )))]
+    {
+        find_in(&crate::providers::process::default_folders())
+    }
+    #[cfg(any(
+        target_os = "ios",
+        target_os = "tvos",
+        target_os = "watchos",
+        target_os = "visionos"
+    ))]
+    {
+        None
+    }
 }
 
 /// The tool in `folders`, if there is one.
+#[cfg(not(any(
+    target_os = "ios",
+    target_os = "tvos",
+    target_os = "watchos",
+    target_os = "visionos"
+)))]
 #[must_use]
 pub fn find_in(folders: &[PathBuf]) -> Option<Tool> {
     use crate::providers::process::find_program;
