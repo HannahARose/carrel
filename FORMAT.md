@@ -479,6 +479,7 @@ Archive-level settings that every device follows. Version 1.0 defines:
 | `sessions.idle_minutes` | integer | `45` |
 | `reminders` | list of `idle`, `weekly`, `menu-bar`, `due-date` | `["idle", "weekly", "menu-bar"]` |
 | `embedding.model` | model identifier | chosen at creation |
+| `embedding.switching_to` | model identifier: the model the archive is switching to, while its index (§7.11) is built. Programs keep searching with `embedding.model` until the switch finishes, then set `embedding.model` to it and remove this key | none |
 | `backups` | map describing the backup repository: `type` (`kopia`), `repository` (the backup system's identifier for it) and `description`. Never its path, which differs between devices, and never the password | none |
 | `ingest.originals` | `move` (the original is moved into the archive on approval) or `keep` (it's copied, and the original is left for the owner to delete) | `move` |
 | `signals.crowded_items` | integer: how many loose items make a collection with no subcollections crowded, as a restructure signal | `30` |
@@ -708,10 +709,12 @@ Once a question is answered or dismissed, programs remove it and clear the probl
 
 Each model's index is a folder named for its identifier, with characters other than ASCII letters, digits, `-`, `_` and `.` replaced by `_` (`_System/index/embeddinggemma-300m/`). It holds:
 
-- `index.json`: `format` (`1`), `model` (the identifier), `dimensions` (the numbers in each vector), and `rebuilding: true` while a rebuild hasn't finished.
+- `index.json`: `format` (`1`), `model` (the identifier), `dimensions` (the numbers in each vector), and `rebuilding: true` while a rebuild, or the build of a model the archive is switching to, hasn't finished.
 - Up to 256 shards, `00.shard` to `ff.shard`, each holding the items whose identifier's last byte is its name. A shard is one line of JSON, `{"items": [...]}`, then a newline, then the vectors. Each item is `id`; `card`, the SHA-256 checksum of the card text that was embedded; `text`, the content checksum (§4.3) of the contents whose text was cut into passages, if any; and `parts`, what each of its vectors is of, in order: `{"of": "card"}` first, then `{"of": "passage", "start", "end"}` for each passage, in bytes of the item's text as drafting read it. The vectors follow in the same order, each `dimensions` little-endian IEEE 754 16-bit floats, of unit length.
 
 The card text is the card's title, summary, tags (`Tags: a, b`), collection (`Collection: Parent / Child`), document, created and added dates (`Dates: document 2025-03-02, added 2026-10-29`) and kind (`Kind: file`), one line each, leaving out lines with nothing in them. An item is behind when it has no entry, its card text's checksum differs, or its passages are from other contents. Restricted items have only their card embedded. A shard whose vectors don't match its entries is ignored, and its items embedded again.
+
+While the archive switches models (`embedding.switching_to`, §7.2), the new model's folder is built beside the current model's, which search keeps using. Once the new index is complete (no `rebuilding`), `embedding.model` changes to the new model and the old model's folder is removed. A switch that's given up removes the new model's folder. Folders for models that are neither `embedding.model` nor `embedding.switching_to` may be removed.
 
 ### 7.12 `cache.nosync/`
 

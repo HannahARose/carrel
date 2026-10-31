@@ -300,12 +300,24 @@ fn embed(archive: &Archive, done: usize) -> Result<usize, Failure> {
         waiting: 0,
         updated: now(),
     };
-    crate::index::catch_up(archive, &registry, &mut index, &mut |n, total, item| {
-        status.item = item.map(str::to_owned);
-        status.waiting = total - n;
-        status.updated = now();
-        write_status(archive, &status);
-    })
+    let embedded =
+        crate::index::catch_up(archive, &registry, &mut index, &mut |n, total, item| {
+            status.item = item.map(str::to_owned);
+            status.waiting = total - n;
+            status.updated = now();
+            write_status(archive, &status);
+        })?;
+    // If the archive switched models meanwhile (`carrel index model`), what was saved here
+    // is of the old model's index, which the switch removed; remove it again.
+    if let Ok(now) = Archive::open(archive.root()) {
+        let settings = now.settings();
+        if settings.embedding_model() != Some(model.as_str())
+            && settings.embedding_switch() != Some(model.as_str())
+        {
+            let _ = carrel_core::index::switch::remove_index(&now, &model);
+        }
+    }
+    Ok(embedded)
 }
 
 /// `carrel worker`: drafts the queue for this device until it's empty, then embeds what's
