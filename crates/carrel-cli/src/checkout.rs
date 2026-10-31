@@ -8,14 +8,15 @@ use std::time::SystemTime;
 
 use carrel_core::archive::{Archive, ItemRef};
 use carrel_core::backup::{Backups as _, Kopia, Snapshot};
-use carrel_core::card::DateOrTime;
+use carrel_core::card::{DateOrTime, Id};
 use carrel_core::card_file::CardFile;
 use carrel_core::checkout::{
     CheckoutError, ReturnPlan, cancel_checkout, check_out, compare, finish_return, manifest_path,
     plan_return,
 };
 use carrel_core::coordinator::{Coordinator as _, DEFAULT_LEASE, DiskLock};
-use carrel_core::manifest::Manifest;
+use carrel_core::detect::Rules;
+use carrel_core::manifest::{Diff, Manifest};
 use serde_json::{Value, json};
 
 use crate::commands::{find_item, holder, locate};
@@ -97,18 +98,7 @@ pub fn list(archive: Option<&Path>) -> Result<Report, Failure> {
         let Some(checked) = &card.checked_out else {
             continue;
         };
-        let working = PathBuf::from(&checked.to);
-        let state = std::fs::read_to_string(manifest_path(&archive, item.id))
-            .ok()
-            .and_then(|t| Manifest::parse(&t).ok())
-            .map_or("not compared (no saved manifest)", |then| {
-                match compare(&then, &working, &rules) {
-                    Ok(diff) if diff.is_empty() => "unchanged",
-                    Ok(_) => "changed",
-                    Err(CheckoutError::Missing(_)) => "missing",
-                    Err(_) => "not compared",
-                }
-            });
+        let (state, _) = compared(&archive, &rules, item.id, Path::new(&checked.to));
         writeln!(
             text,
             "{}  {}\n  at {} since {}{}  ({state})",
@@ -139,6 +129,28 @@ pub fn list(archive: Option<&Path>) -> Result<Report, Failure> {
     Ok(Report::new(text, json!({ "checked_out": out })))
 }
 
+/// How the working copy at `working` compares with `item` as it went out: `unchanged`,
+/// `changed`, `missing` or not compared, with what changed when it could tell.
+pub fn compared(
+    archive: &Archive,
+    rules: &Rules,
+    item: Id,
+    working: &Path,
+) -> (&'static str, Option<Diff>) {
+    let Some(then) = std::fs::read_to_string(manifest_path(archive, item))
+        .ok()
+        .and_then(|t| Manifest::parse(&t).ok())
+    else {
+        return ("not compared (no saved manifest)", None);
+    };
+    match compare(&then, working, rules) {
+        Ok(diff) if diff.is_empty() => ("unchanged", Some(diff)),
+        Ok(diff) => ("changed", Some(diff)),
+        Err(CheckoutError::Missing(_)) => ("missing", None),
+        Err(_) => ("not compared", None),
+    }
+}
+
 /// `carrel return ITEM [--from PATH] [--yes] [--trim-snapshots]`, or `--discard` to cancel:
 /// shows what changed and the history entry it adds, asks, then brings the working copy back.
 /// With backups, it then offers to forget the checkout's session snapshots.
@@ -157,7 +169,6 @@ pub fn return_item(
     let archive = locate(archive)?;
     let items = archive.items()?;
     let item = find_item(&archive, &items, query)?;
-    let identity = Identity::load_or_create()?;
     if discard {
         if !crate::models::confirm(
             "Cancel the checkout? The archive copy is unlocked as it was, and the working copy's changes aren't brought back.",
@@ -165,24 +176,21 @@ pub fn return_item(
         )? {
             return Err(Failure::new("nothing changed"));
         }
-        let lease =
-            DiskLock::for_archive(&archive).acquire(holder(&identity), "return", DEFAULT_LEASE)?;
-        let result = cancel_checkout(&archive, item, &lease);
-        lease.release()?;
-        let commit = result?;
-        return Ok(Report::new(
-            "Cancelled the checkout; the archive copy is as it was, and the working copy is still where it was.\n",
-            json!({ "item": item.id, "cancelled": true, "commit": commit }),
-        ));
+        return cancel(&archive, item);
     }
     let from = from.map(|p| crate::paths::expand(&p.to_string_lossy()));
     let plan = plan_return(&archive, item, from.as_deref())?;
-    let mut text = describe_plan(&plan);
     let (backups, _) = crate::backup::for_batch(&archive);
     let sessions = backups
         .as_ref()
         .map(|kopia| session_snapshots(&archive, item, kopia))
         .unwrap_or_default();
+    let mut text = format!(
+        "Returning “{}” from {}\n{}",
+        plan.title,
+        plan.working.display(),
+        describe_return(&plan)
+    );
     if !sessions.is_empty() {
         writeln!(
             text,
@@ -195,11 +203,97 @@ pub fn return_item(
     if !crate::models::confirm("\nReturn it, replacing the archive copy?", yes)? {
         return Err(Failure::new("nothing returned"));
     }
+    let mut report = finish(&archive, &plan)?;
+    if let Some(kopia) = backups.as_ref().filter(|_| !sessions.is_empty()) {
+        let (trimmed, trimming) = trim_sessions(kopia, &plan, &sessions, trim, yes)?;
+        report.text.push_str(&trimmed);
+        report.json["session_snapshots"] = trimming;
+    }
+    Ok(report)
+}
+
+/// What returning by `plan` changes, and the history entry it adds, as `carrel return` shows
+/// them before asking.
+pub fn describe_return(plan: &ReturnPlan) -> String {
+    let mut text = String::new();
+    let d = &plan.diff;
+    if d.is_empty() {
+        text.push_str("  nothing changed\n");
+    }
+    for (label, list) in [
+        ("changed", &d.changed),
+        ("added", &d.added),
+        ("removed", &d.removed),
+    ] {
+        for path in list.iter().take(20) {
+            writeln!(text, "  {label:8} {path}").unwrap();
+        }
+    }
+    for (from, to) in d.renamed.iter().take(20) {
+        writeln!(text, "  renamed  {from} → {to}").unwrap();
+    }
+    if !plan.commits.is_empty() {
+        writeln!(text, "  {} commit(s) since checkout", plan.commits.len()).unwrap();
+    }
+    if plan.uncommitted {
+        text.push_str("  warning: the repository has changes that aren't committed\n");
+    }
+    text.push_str("\nHistory entry:\n");
+    for line in &plan.entry.lines {
+        writeln!(text, "  {line}").unwrap();
+    }
+    text
+}
+
+/// Returns the item `query` names from where it was checked out to, without asking: what
+/// `carrel return --yes` does, and `r` on the Active screen once the owner has said yes.
+///
+/// # Errors
+///
+/// [`Failure`] if the item isn't checked out or can't be returned.
+pub fn return_now(archive: Option<&Path>, query: &str) -> Result<Report, Failure> {
+    let archive = locate(archive)?;
+    let items = archive.items()?;
+    let item = find_item(&archive, &items, query)?;
+    let plan = plan_return(&archive, item, None)?;
+    finish(&archive, &plan)
+}
+
+/// Cancels the checkout of the item `query` names, without asking: what
+/// `carrel return --discard --yes` does.
+///
+/// # Errors
+///
+/// [`Failure`] if the item isn't checked out or can't be written.
+pub fn cancel_now(archive: Option<&Path>, query: &str) -> Result<Report, Failure> {
+    let archive = locate(archive)?;
+    let items = archive.items()?;
+    let item = find_item(&archive, &items, query)?;
+    cancel(&archive, item)
+}
+
+fn cancel(archive: &Archive, item: &ItemRef) -> Result<Report, Failure> {
+    let identity = Identity::load_or_create()?;
     let lease =
-        DiskLock::for_archive(&archive).acquire(holder(&identity), "return", DEFAULT_LEASE)?;
+        DiskLock::for_archive(archive).acquire(holder(&identity), "return", DEFAULT_LEASE)?;
+    let result = cancel_checkout(archive, item, &lease);
+    lease.release()?;
+    let commit = result?;
+    Ok(Report::new(
+        "Cancelled the checkout; the archive copy is as it was, and the working copy is still where it was.\n",
+        json!({ "item": item.id, "cancelled": true, "commit": commit }),
+    ))
+}
+
+/// Brings the working copy back by `plan`, holding the writer lease.
+fn finish(archive: &Archive, plan: &ReturnPlan) -> Result<Report, Failure> {
+    let identity = Identity::load_or_create()?;
+    let (backups, _) = crate::backup::for_batch(archive);
+    let lease =
+        DiskLock::for_archive(archive).acquire(holder(&identity), "return", DEFAULT_LEASE)?;
     let result = finish_return(
-        &archive,
-        &plan,
+        archive,
+        plan,
         &lease,
         backups
             .as_ref()
@@ -207,24 +301,20 @@ pub fn return_item(
     );
     lease.release()?;
     let returned = result?;
-    let (trimmed, trim) = match &backups {
-        Some(kopia) if !sessions.is_empty() => trim_sessions(kopia, &plan, &sessions, trim, yes)?,
-        _ => (String::new(), Value::Null),
-    };
+    let d = &plan.diff;
     Ok(Report::new(
         format!(
-            "Returned “{}”. The working copy is still at {}; delete it when you're ready.\n{trimmed}",
+            "Returned “{}”. The working copy is still at {}; delete it when you're ready.\n",
             plan.title,
             plan.working.display()
         ),
         json!({
-            "session_snapshots": trim,
             "item": plan.item,
             "commit": returned.commit,
             "snapshot": returned.snapshot,
             "working": plan.working,
-            "changed": plan.diff.changed, "added": plan.diff.added,
-            "removed": plan.diff.removed, "renamed": plan.diff.renamed,
+            "changed": d.changed, "added": d.added, "removed": d.removed,
+            "renamed": d.renamed,
             "commits": plan.commits,
         }),
     ))
@@ -317,40 +407,4 @@ fn trim_sessions(
             "kept": snapshots.len() - forgotten,
         }),
     ))
-}
-
-/// What returning would do, for the owner to look at before saying yes.
-fn describe_plan(plan: &ReturnPlan) -> String {
-    let mut text = format!(
-        "Returning “{}” from {}\n",
-        plan.title,
-        plan.working.display()
-    );
-    let d = &plan.diff;
-    if d.is_empty() {
-        text.push_str("  nothing changed\n");
-    }
-    for (label, list) in [
-        ("changed", &d.changed),
-        ("added", &d.added),
-        ("removed", &d.removed),
-    ] {
-        for path in list.iter().take(20) {
-            writeln!(text, "  {label:8} {path}").unwrap();
-        }
-    }
-    for (from, to) in d.renamed.iter().take(20) {
-        writeln!(text, "  renamed  {from} → {to}").unwrap();
-    }
-    if !plan.commits.is_empty() {
-        writeln!(text, "  {} commit(s) since checkout", plan.commits.len()).unwrap();
-    }
-    if plan.uncommitted {
-        text.push_str("  warning: the repository has changes that aren't committed\n");
-    }
-    text.push_str("\nHistory entry:\n");
-    for line in &plan.entry.lines {
-        writeln!(text, "  {line}").unwrap();
-    }
-    text
 }

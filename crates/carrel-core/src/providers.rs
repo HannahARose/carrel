@@ -151,7 +151,8 @@ pub struct Extraction {
     /// The text.
     pub text: String,
     /// `embedded` for text stored in the file, `ocr` for recognized text, `described` when a
-    /// model also described an image.
+    /// model also described an image, `geometry` for a 3D model's size and shape, `rendered`
+    /// when a model also described drawings of it.
     pub method: String,
     /// The number of pages, when the provider reports it.
     #[serde(default, skip_serializing_if = "Option::is_none")]

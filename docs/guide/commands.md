@@ -108,12 +108,13 @@ Backups need [Kopia](https://kopia.io), beside `carrel` or on `PATH`.
 | --- | --- |
 | `1` | **Status**: what `carrel status` shows, and what's waiting for you |
 | `2` | **Review**: `a` approve, `h` hold, `m` move, `e` edit, `x` reject, `Space` mark, `A` approve all high-confidence |
-| `3` | **Questions**: `Enter` to answer, `d` to dismiss |
-| `4` | **Browse**: collections and items; `/` to search |
-| `5` | **History**: `u` to undo the chosen change |
-| `6` | **Ingest**: the queue; `x` remove, `t` to the front, `r` retry |
-| `7` | **Settings**: `Enter` to change the chosen setting |
-| `8` | **Backups**: the snapshots, each with its change; `n` snapshot now, `v` verify, `r` restore an item as of the chosen snapshot, `s` set up or connect a repository, choosing its folder with the file picker |
+| `3` | **Active**: what's checked out and on this device's desk, with their pending history entries; `r` return the chosen checkout, `x` cancel it, `o` open the working copy, `a` approve, `c` combine, `d` drop pending entries (all, or those marked with `Space`) |
+| `4` | **Questions**: `Enter` to answer, `d` to dismiss |
+| `5` | **Browse**: collections and items; `/` to search |
+| `6` | **History**: `u` to undo the chosen change |
+| `7` | **Ingest**: the queue; `x` remove, `t` to the front, `r` retry |
+| `8` | **Settings**: `Enter` to change the chosen setting |
+| `9` | **Backups**: the snapshots, each with its change; `n` snapshot now, `v` verify, `r` restore an item as of the chosen snapshot, `s` set up or connect a repository, choosing its folder with the file picker |
 
 `i` on any screen chooses files to ingest. `Ctrl-R` reads everything again, and `q` quits; the worker keeps going.
 

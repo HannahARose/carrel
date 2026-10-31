@@ -97,7 +97,7 @@ Press `i` to choose files. Carrel opens your terminal file manager if you have o
 
 You'll see the **plan**: what will be added, and what's left out and why (duplicates, things already waiting). For a folder like Downloads, press `e` to treat each file in it as its own item. Press `Enter` to add them to the queue.
 
-A **worker** now drafts each item in the background, one at a time. The bottom line shows what it's working on, and it keeps going if you close the terminal. On the **Ingest** screen (`6`) you can see what's waiting.
+A **worker** now drafts each item in the background, one at a time. The bottom line shows what it's working on, and it keeps going if you close the terminal. On the **Ingest** screen (`7`) you can see what's waiting.
 
 You can do the same from the shell, which returns at once:
 
@@ -120,12 +120,12 @@ Proposals appear on the **Review** screen (`2`) as they're ready. For each one y
 
 Anything sensitive (bank statements, medical letters, IDs) always waits for you; nothing is filed without your approval.
 
-If several items share a term Carrel doesn't know, such as a project's code name, it asks on the **Questions** screen (`3`) instead of guessing. Answer once and it drafts those items again with what you said, and remembers it for next time.
+If several items share a term Carrel doesn't know, such as a project's code name, it asks on the **Questions** screen (`4`) instead of guessing. Answer once and it drafts those items again with what you said, and remembers it for next time.
 
 ## 6. Look around, and undo
 
-- **Browse** (`4`) lists collections and their items; `/` searches titles, tags and summaries.
-- **History** (`5`) lists every change. Choose one and press `u` to undo it: files it moved go back.
+- **Browse** (`5`) lists collections and their items; `/` searches titles, tags and summaries.
+- **History** (`6`) lists every change. Choose one and press `u` to undo it: files it moved go back.
 - **Status** (`1`) summarizes the archive, including **Structure**: signs that a collection is getting crowded or that something's missing.
 - Your archive is a normal folder: open it in Finder, or as an Obsidian vault.
 

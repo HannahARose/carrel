@@ -258,7 +258,8 @@ fn find_card(archive: &Archive, query: &str) -> Result<Card, Failure> {
 }
 
 /// `carrel sessions approve|drop|combine ITEM [N...]`: `N` are the numbers `carrel sessions`
-/// shows; none means all of the item's pending entries.
+/// shows; none means all of the item's pending entries. `ITEM` is an archived item, or a desk
+/// item on this device: its path or its card's.
 ///
 /// # Errors
 ///
