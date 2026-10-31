@@ -80,7 +80,10 @@ fn it_claims_the_archive_catches_up_and_the_clis_worker_steps_aside() {
         agent_running(&s.workers, &s.archive),
         "the CLI's worker sees the agent's lock"
     );
-    assert_eq!(looked_after(&s.workers, &[root.clone()]), [(root, true)]);
+    assert_eq!(
+        looked_after(&s.workers, std::slice::from_ref(&root)),
+        [(root, true)]
+    );
     agent.release();
     assert!(!agent_running(&s.workers, &s.archive), "letting go ends it");
 }
@@ -139,7 +142,7 @@ fn a_queued_item_runs_the_worker_once_changes_settle() {
     let (_, wait) = tick(&mut agent, &mut jobs, at(1));
     assert_eq!(
         wait,
-        poll::POLL - Duration::from_secs(1),
+        poll::POLL.checked_sub(Duration::from_secs(1)).unwrap(),
         "until it looks again"
     );
 
@@ -240,7 +243,7 @@ fn an_archive_that_cannot_be_opened_is_reported_once() {
     let (events, _) = tick(&mut agent, &mut jobs, at(60));
     assert_eq!(events, []);
     assert_eq!(
-        looked_after(&s.workers, &[missing.clone()]),
+        looked_after(&s.workers, std::slice::from_ref(&missing)),
         [(missing, false)]
     );
 }

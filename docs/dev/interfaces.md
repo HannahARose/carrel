@@ -39,7 +39,7 @@ The command line and the interactive mode run on macOS, Linux and Windows. The M
 | Settings, this device's and the archive's | `settings` | ✓ Settings | #267 |
 | Models: list, download, remove | `models` | ✓ Settings | #267 |
 | Providers in use, and file types not read | `providers`, `formats` | #265 | #267 |
-| Background work: sessions as they happen, the queue, the index | #269 | #269 | ✓ agent (#237) |
+| Background work: sessions as they happen, the queue, the index, scheduled snapshots | `agent`, `agent install` (#269) | #279 | ✓ agent (#237) |
 | What's checked out, at a glance | `checkouts` | ✓ Active | ✓ menu bar (#237) |
 
 ## Allowed deviations
@@ -48,6 +48,7 @@ These stay in one interface, for the reason given:
 
 - **`carrel bench`** (the model benchmark) and **`carrel models embed`** (printing vectors) are tools for developing Carrel, not for using it, so they stay on the command line.
 - **`carrel worker`** is what the other interfaces start in the background; nobody needs a screen for it.
+- **`carrel agent` runs in the foreground** until stopped, because it's what the operating system's service manager starts at log-in (`carrel agent install`). The interactive mode shows and installs it (#279) rather than running it while open. The Mac app has its own agent, a login item, with the same schedule; one agent looks after an archive on each device, and the other steps aside.
 - **Previews in a terminal** need a terminal that can draw images (#258). Elsewhere the interactive mode shows the card. The command line's output is text, so `carrel show` gives the card and the item's path instead.
 - **Grid views, dragging and the menu bar** are ways of working in a graphical app. The command line and the interactive mode reach the same capabilities through their own commands and screens, as the table shows.
 - **Platform-only models and readers,** such as Apple's model or Vision's OCR, are available in every interface on the platforms that have them. Elsewhere, the open models and the extraction provider stand in.

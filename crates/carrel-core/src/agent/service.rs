@@ -16,6 +16,7 @@
 //! The definitions are plain text made here, so they're tested on any platform; running the
 //! service manager goes through [`Manager`], which tests replace.
 
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 /// The launchd label, after the Mac app's bundle identifier.
@@ -26,6 +27,9 @@ pub const SYSTEMD_UNIT: &str = "carrel-agent.service";
 pub const TASK_NAME: &str = "Carrel Agent";
 /// The task's definition, kept in Carrel's configuration folder.
 pub const TASK_FILE: &str = "carrel-agent.xml";
+
+/// The flag that has the agent look for changes instead of hearing file events.
+pub const POLL_FLAG: &str = "--poll";
 
 /// A service manager.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -121,6 +125,9 @@ pub struct Definition {
     pub program: PathBuf,
     /// The archives' root folders.
     pub archives: Vec<PathBuf>,
+    /// Whether the agent looks for changes every few seconds instead of through file
+    /// events (`--poll`), as for archives on network drives.
+    pub poll: bool,
     /// Environment variables to set, such as `PATH` (so Kopia and the providers are found,
     /// as in the terminal it was installed from) and `CARREL_CONFIG_DIR`.
     pub environment: Vec<(String, String)>,
@@ -129,9 +136,10 @@ pub struct Definition {
 }
 
 impl Definition {
-    /// The arguments after the program: `agent` and the archives.
+    /// The arguments after the program: `agent`, `--poll` if asked, and the archives.
     fn arguments(&self) -> Vec<String> {
         std::iter::once("agent".to_owned())
+            .chain(self.poll.then(|| POLL_FLAG.to_owned()))
             .chain(self.archives.iter().map(|a| a.display().to_string()))
             .collect()
     }
@@ -154,21 +162,22 @@ impl Definition {
             "<plist version=\"1.0\">\n<dict>\n",
         ));
         let string = |s: &str| format!("<string>{}</string>", xml(s));
-        text += &format!("  <key>Label</key>\n  {}\n", string(LAUNCHD_LABEL));
+        let _ = write!(text, "  <key>Label</key>\n  {}\n", string(LAUNCHD_LABEL));
         text += "  <key>ProgramArguments</key>\n  <array>\n";
         for arg in std::iter::once(self.program.display().to_string()).chain(self.arguments()) {
-            text += &format!("    {}\n", string(&arg));
+            let _ = writeln!(text, "    {}", string(&arg));
         }
         text += "  </array>\n";
         if !self.environment.is_empty() {
             text += "  <key>EnvironmentVariables</key>\n  <dict>\n";
             for (key, value) in &self.environment {
-                text += &format!("    <key>{}</key>\n    {}\n", xml(key), string(value));
+                let _ = write!(text, "    <key>{}</key>\n    {}\n", xml(key), string(value));
             }
             text += "  </dict>\n";
         }
         let log = string(&self.log.display().to_string());
-        text += &format!(
+        let _ = write!(
+            text,
             concat!(
                 "  <key>RunAtLoad</key>\n  <true/>\n",
                 "  <key>KeepAlive</key>\n",
@@ -196,9 +205,13 @@ impl Definition {
             "\n[Service]\n",
             "Type=simple\n",
         ));
-        text += &format!("ExecStart={}\n", exec.join(" "));
+        let _ = writeln!(text, "ExecStart={}", exec.join(" "));
         for (key, value) in &self.environment {
-            text += &format!("Environment={}\n", systemd_quote(&format!("{key}={value}")));
+            let _ = writeln!(
+                text,
+                "Environment={}",
+                systemd_quote(&format!("{key}={value}"))
+            );
         }
         text += concat!(
             "Restart=on-failure\n",
@@ -217,14 +230,18 @@ impl Definition {
             "&".into(),
             powershell_quote(&self.program.display().to_string()),
         ];
-        let mut arguments = self.arguments().into_iter();
-        words.extend(arguments.next());
-        words.extend(arguments.map(|a| powershell_quote(&a)));
+        words.push("agent".into());
+        words.extend(self.poll.then(|| POLL_FLAG.to_owned()));
+        words.extend(
+            self.archives
+                .iter()
+                .map(|a| powershell_quote(&a.display().to_string())),
+        );
         words.push("*>>".into());
         words.push(powershell_quote(&self.log.display().to_string()));
         let mut command = String::new();
         for (key, value) in &self.environment {
-            command += &format!("$env:{key} = {}; ", powershell_quote(value));
+            let _ = write!(command, "$env:{key} = {}; ", powershell_quote(value));
         }
         command + &words.join(" ")
     }
@@ -357,6 +374,7 @@ pub fn archives_in(platform: Platform, contents: &str) -> Vec<PathBuf> {
             .into_iter()
             .skip_while(|w| w != "agent")
             .skip(1)
+            .filter(|w| w != POLL_FLAG)
             .map(PathBuf::from)
             .collect()
     };
@@ -582,14 +600,16 @@ fn write(platform: Platform, path: &Path, text: &str) -> Result<(), ServiceError
     std::fs::write(path, bytes).map_err(io(path))
 }
 
-/// Reads a definition written by [`write`].
+/// Reads a definition as [`install`] writes it.
 #[must_use]
 pub fn read(platform: Platform, path: &Path) -> Option<String> {
     let bytes = std::fs::read(path).ok()?;
     if platform == Platform::TaskScheduler {
         let units: Vec<u16> = bytes
-            .chunks_exact(2)
-            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|c| u16::from_le_bytes(*c))
             .collect();
         let text = String::from_utf16_lossy(&units);
         Some(text.trim_start_matches('\u{feff}').to_owned())

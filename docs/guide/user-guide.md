@@ -297,11 +297,22 @@ Carrel notices work on checked-out and desk items from what's on disk: each file
 
 Carrel looks for sessions whenever it runs, at most every five minutes: before each command that changes the archive, and in the background while the interactive mode is open. It never waits for another program that's writing to the archive; it looks the next time. `carrel sessions` looks right away and lists the pending entries; `carrel sessions approve ITEM`, `edit`, `combine` or `drop` decide them. `carrel sessions edit ITEM N` opens entry `N`'s text in your editor; it stays pending, and anything you add is kept when entries are combined (a line starting `My notes:` goes last).
 
-You can also approve an entry in Obsidian: change `> [!pending] 2026-10-29 · 2h 10m · auto-generated` to a heading, `### 2026-10-29 · 2h 10m`, and take the `>` marks off its lines, or change `pending` to another callout type such as `done`. The next time Carrel looks, it notices, adds the entry to the Journal and records the approval in History, leaving the entry exactly as you wrote it. Until the Mac app watches items live, a file changed and then changed back isn't seen.
+You can also approve an entry in Obsidian: change `> [!pending] 2026-10-29 · 2h 10m · auto-generated` to a heading, `### 2026-10-29 · 2h 10m`, and take the `>` marks off its lines, or change `pending` to another callout type such as `done`. The next time Carrel looks, it notices, adds the entry to the Journal and records the approval in History, leaving the entry exactly as you wrote it. Unless an agent (the Mac app's, or [`carrel agent`](#keeping-work-noticed-without-the-app)) watches items live, a file changed and then changed back isn't seen.
 
 When backups are set up, each time Carrel finds finished sessions on an item it also takes a snapshot of the working copy, so work in progress is backed up before it's returned. That's the state when Carrel noticed, which for most work is the state when the session ended. For large data, such as a 60 GB dataset, add `snapshots: return-only` to the card to skip these and keep only the checkout and return snapshots.
 
 Returning an item lists its session snapshots. Once the item is back, Carrel snapshots the returned version and asks whether to forget the session snapshots, keeping the return's; `--trim-snapshots` forgets them without asking. Without an answer, as with only `--yes`, they're kept: deleting backups is your call.
+
+### Keeping work noticed without the app
+
+Without the Mac app, work is noticed when `carrel` runs, at most every five minutes. **`carrel agent`** does in the background what the Mac app's agent does, on macOS, Linux and Windows. It drafts the queue as soon as something is added, keeps the meaning index current when filed items change, records work sessions as soon as they finish (once a working copy has been idle for `sessions.idle_minutes` and a minute more), and takes a snapshot every day once backups are set up. A snapshot that fails, say because the drive isn't plugged in, is tried again within the hour. The agent hears changes as they happen through the operating system's file events. For archives on network drives, which may not send them, `--poll` has it look every few seconds instead.
+
+- `carrel agent [ARCHIVE...]` runs it in the terminal until you press Ctrl-C, writing a line for each thing it does. With no archives it uses the one found as for any command.
+- `carrel agent install [ARCHIVE...]` starts it at log-in, and now. It writes one file and says which: on macOS a launchd user agent, `~/Library/LaunchAgents/io.github.hannaharose.carrel.agent.plist`; on Linux a systemd user service, `~/.config/systemd/user/carrel-agent.service`; on Windows a Task Scheduler task, "Carrel Agent", made from `carrel-agent.xml` in Carrel's folder. It runs the `carrel` you installed it with, with the `PATH` you installed it from, so it finds Kopia and the providers as your terminal does. Run it again after moving `carrel`, or to change the archives.
+- `carrel agent status` says whether it's installed, for which archives, and whether an agent looks after each one now.
+- `carrel agent uninstall` stops it and removes exactly the file or task `install` made.
+
+There's one agent per archive on each device. While the Mac app's agent looks after an archive, `carrel agent` steps aside and says so, and takes over within a minute once the app's agent stops. While either one runs, `carrel ingest` and changes to filed items start no worker of their own, and `carrel ingest --status` says the agent drafts the queue. Its log is `workers/agent.log` in Carrel's folder on macOS and Windows; on Linux, `journalctl --user -u carrel-agent` shows it.
 
 ## History and undo
 

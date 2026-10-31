@@ -1,5 +1,5 @@
 //! Noticing changes: through the operating system's file events where it can (inotify on
-//! Linux, FSEvents on macOS, `ReadDirectoryChangesW` on Windows, by way of `notify`), and by
+//! Linux, `FSEvents` on macOS, `ReadDirectoryChangesW` on Windows, by way of `notify`), and by
 //! looking ([`Poller`]) where it can't, as on some network drives, or when asked to.
 
 use std::path::{Path, PathBuf};
@@ -69,7 +69,10 @@ impl Watcher {
         let (send, paths) = channel();
         let mut watcher =
             notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
-                if let Ok(event) = event {
+                // Reading a file is reported too, on Linux; the agent reads cards all the time.
+                if let Ok(event) = event
+                    && !matches!(event.kind, notify::EventKind::Access(_))
+                {
                     for path in event.paths {
                         let _ = send.send(path);
                     }

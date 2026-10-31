@@ -34,6 +34,7 @@ fn definition(places: &Places) -> Definition {
             PathBuf::from("/Users/me/Archive"),
             PathBuf::from("/Volumes/Drive/Owner's \"Papers\" & 100% $HOME"),
         ],
+        poll: true,
         environment: vec![("PATH".into(), "/opt/homebrew/bin:/usr/bin".into())],
         log: places.log(),
     }
@@ -100,7 +101,9 @@ fn the_definitions_say_what_each_service_manager_needs() {
     assert!(plist.contains("&amp; 100%"), "XML is escaped");
 
     let unit = definition.contents(Platform::Systemd);
-    assert!(unit.contains("ExecStart=\"/opt/carrel/bin/carrel\" \"agent\" \"/Users/me/Archive\""));
+    assert!(unit.contains(
+        "ExecStart=\"/opt/carrel/bin/carrel\" \"agent\" \"--poll\" \"/Users/me/Archive\""
+    ));
     assert!(
         unit.contains("100%% $$HOME"),
         "systemd's specials are escaped"
@@ -141,7 +144,7 @@ fn installing_writes_the_file_and_starts_it_and_uninstalling_removes_exactly_tha
         let removed = uninstall(platform, &places, &mut manager).unwrap();
         assert!(removed.was_installed);
         assert!(!done.file.exists());
-        assert!(!manager.ran.is_empty());
+        assert_ne!(manager.ran, Vec::<String>::new());
         assert_eq!(installed(platform, &places), None);
 
         manager.ran.clear();

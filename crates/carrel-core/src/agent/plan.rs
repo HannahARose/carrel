@@ -1,6 +1,6 @@
 //! When the agent does what for one archive: what a changed file means, and when each job is
 //! due. It's plain values and times, so the scheduling is tested without waiting. The Mac
-//! app's agent keeps the same schedule (`AgentPlan` in CarrelKit).
+//! app's agent keeps the same schedule (`AgentPlan` in `CarrelKit`).
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
