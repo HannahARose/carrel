@@ -6,12 +6,11 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use carrel_core::backup::{Backups, Kopia};
 use carrel_core::ingest::IntakeOptions;
 use carrel_core::intake::{IntakeEntry, Processed};
 use carrel_core::worker::{FileLock, Worker, file_in, read_status};
 
-use crate::{ArchiveHandle, CarrelError, Progress, text};
+use crate::{ArchiveHandle, CarrelError, ProgressReporter, text};
 
 /// An item waiting in the intake queue.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -97,7 +96,7 @@ pub struct Drafted {
 
 /// Tells Swift how the worker is getting on, and collects its failures.
 struct Reporting {
-    progress: Option<Arc<dyn Progress>>,
+    progress: Option<Arc<dyn ProgressReporter>>,
     failures: Vec<LeftOut>,
 }
 
@@ -237,7 +236,7 @@ impl ArchiveHandle {
     /// [`CarrelError::Failed`] if the queues can't be read or written.
     pub fn draft_queued(
         &self,
-        progress: Option<Arc<dyn Progress>>,
+        progress: Option<Arc<dyn ProgressReporter>>,
     ) -> Result<Drafted, CarrelError> {
         let archive = self.fresh()?;
         let folder = self.workers()?;
@@ -251,12 +250,12 @@ impl ArchiveHandle {
             });
         };
         let registry = self.registry();
-        let backups = Kopia::for_archive(&archive).ok();
+        let backups = crate::backups(&archive);
         let worker = Worker {
             archive: &archive,
             registry: &registry,
             holder: self.holder()?,
-            backups: backups.as_ref().map(|b| b as &dyn Backups),
+            backups: backups.as_deref(),
             status: Some(file_in(&folder, &archive, "json")),
         };
         let mut reporting = Reporting {

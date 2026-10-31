@@ -5,7 +5,6 @@
 use std::collections::BTreeMap;
 
 use carrel_core::actions::{self, Kept};
-use carrel_core::backup::{Backups, Kopia};
 use carrel_core::compressed::plan::Choice;
 use carrel_core::ingest::filing::{Outcome, Placement};
 use carrel_core::questions::{QuestionEntry, QuestionKind, QuestionQueue};
@@ -363,13 +362,13 @@ impl ArchiveHandle {
         entries: Vec<ReviewEntry>,
         placement: Placement,
     ) -> Result<FilingOutcome, CarrelError> {
-        let backups = Kopia::for_archive(archive).ok();
+        let backups = crate::backups(archive);
         Ok(actions::decide(
             archive,
             entries,
             placement,
             self.holder()?,
-            backups.as_ref().map(|b| b as &dyn Backups),
+            backups.as_deref(),
         )?
         .into())
     }

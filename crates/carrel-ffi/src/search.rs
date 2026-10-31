@@ -12,7 +12,7 @@ use carrel_core::search::{Found, Hit, Meaning};
 
 use crate::history::Change;
 use crate::records::{CardFields, CardHistoryEntry, Sensitivity};
-use crate::{ArchiveHandle, CarrelError, ItemKind, Progress};
+use crate::{ArchiveHandle, CarrelError, ItemKind, ProgressReporter};
 
 /// What a result is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
@@ -65,7 +65,7 @@ pub struct SearchHit {
     /// What it is.
     pub found: FoundKind,
     /// For an item, its identifier.
-    pub id: Option<String>,
+    pub item_id: Option<String>,
     /// Its title; for a glossary fact, the term.
     pub title: String,
     /// For an item, its card's path; for a collection, its folder.
@@ -100,7 +100,7 @@ impl From<&Hit> for SearchHit {
         let passage_from = hit.passage_from.map(|w| w.to_string());
         let empty = |found, title: String, path: String| Self {
             found,
-            id: None,
+            item_id: None,
             title,
             path,
             item: None,
@@ -117,7 +117,7 @@ impl From<&Hit> for SearchHit {
         let hit_record = match &hit.found {
             Found::Item(item) => Self {
                 found: FoundKind::Item,
-                id: Some(item.id.to_string()),
+                item_id: Some(item.id.to_string()),
                 title: item.title.clone(),
                 path: item.card.clone(),
                 item: item.item.clone(),
@@ -241,7 +241,7 @@ impl ArchiveHandle {
         &self,
         query: String,
         limit: u32,
-        progress: Option<Arc<dyn Progress>>,
+        progress: Option<Arc<dyn ProgressReporter>>,
     ) -> Result<SearchResults, CarrelError> {
         let query = Query::parse(&query).map_err(CarrelError::invalid)?;
         if query.text.trim().is_empty() && query.filters.is_empty() {

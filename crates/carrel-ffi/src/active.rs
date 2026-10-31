@@ -8,7 +8,6 @@ use std::path::PathBuf;
 
 use carrel_core::active::{ActiveItem as CoreItem, Kind};
 use carrel_core::archive::Archive;
-use carrel_core::backup::{Backups, Kopia};
 use carrel_core::card::DateOrTime;
 use carrel_core::checkout::{cancel_checkout, check_out, finish_return, plan_return};
 use carrel_core::coordinator::{Coordinator as _, DEFAULT_LEASE, DiskLock};
@@ -322,14 +321,9 @@ impl ArchiveHandle {
         let archive = self.fresh()?;
         let item = Self::item(&archive, &item)?;
         let plan = plan_return(&archive, &item, None)?;
-        let backups = Kopia::for_archive(&archive).ok();
+        let backups = crate::backups(&archive);
         let returned = self.with_lease(&archive, "return", |lease| {
-            Ok(finish_return(
-                &archive,
-                &plan,
-                lease,
-                backups.as_ref().map(|b| b as &dyn Backups),
-            )?)
+            Ok(finish_return(&archive, &plan, lease, backups.as_deref())?)
         })?;
         Ok(Returned {
             commit: returned.commit,

@@ -23,7 +23,7 @@
 //! | [`intake`] | The intake queue |
 //!
 //! [`TextModel`] and [`ModelProvider`] are implemented in Swift and called from Rust, as is
-//! [`Progress`], which long operations report to.
+//! [`ProgressReporter`], which long operations report to.
 
 // UniFFI passes arguments from Swift as owned values.
 #![allow(clippy::needless_pass_by_value)]
@@ -261,7 +261,7 @@ pub trait TextModel: Send + Sync {
 /// Told how far a long operation has got, implemented in Swift. Called from the thread doing
 /// the work, so the app hops to the main actor itself.
 #[uniffi::export(with_foreign)]
-pub trait Progress: Send + Sync {
+pub trait ProgressReporter: Send + Sync {
     /// `done` of `total` are done; `item` names the one being worked on, when there is one.
     fn update(&self, done: u64, total: u64, item: Option<String>);
 }
@@ -343,6 +343,31 @@ impl ArchiveHandle {
             .find(|i| i.id.to_string() == wanted)
             .ok_or_else(|| CarrelError::invalid(format!("no item has the identifier {id}")))
     }
+}
+
+/// The archive's backups, to snapshot before a change, when they're set up. Backups use the
+/// installed Kopia, so they're only on a Mac.
+#[cfg(not(any(
+    target_os = "ios",
+    target_os = "tvos",
+    target_os = "watchos",
+    target_os = "visionos"
+)))]
+fn backups(archive: &Archive) -> Option<Box<dyn carrel_core::backup::Backups>> {
+    carrel_core::backup::Kopia::for_archive(archive)
+        .ok()
+        .map(|kopia| Box::new(kopia) as Box<dyn carrel_core::backup::Backups>)
+}
+
+/// The archive's backups: none away from a Mac.
+#[cfg(any(
+    target_os = "ios",
+    target_os = "tvos",
+    target_os = "watchos",
+    target_os = "visionos"
+))]
+fn backups(_archive: &Archive) -> Option<Box<dyn carrel_core::backup::Backups>> {
+    None
 }
 
 /// A path from Swift.

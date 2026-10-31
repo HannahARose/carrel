@@ -1,12 +1,21 @@
 //! The providers on this device, as the CLI and the apps start them: the built-in ones, every
 //! provider program found beside the running program, in an app bundle's `Helpers` folder or
-//! on `PATH`, and the text models the owner chose in [`Prefs`].
+//! on `PATH`, and the text models the owner chose in [`Prefs`]. Provider programs run on
+//! computers; on iOS only the built-in providers and the app's own are there.
 
 use std::path::PathBuf;
 
-use super::process::{Found, ProcessProvider, default_folders, discover};
 use super::{Capability, ProviderError, Registry};
 use crate::local::Prefs;
+
+/// A provider program found on this device.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Found {
+    /// The provider's name: the program's name without `carrel-provider-` or `.exe`.
+    pub name: String,
+    /// Where the program is.
+    pub path: PathBuf,
+}
 
 /// A provider program that couldn't start, and why.
 #[derive(Debug)]
@@ -31,15 +40,7 @@ pub fn registry(folders: &[PathBuf]) -> (Registry, Vec<Failed>) {
 #[must_use]
 pub fn registry_with(folders: &[PathBuf], prefs: &Prefs) -> (Registry, Vec<Failed>) {
     let mut registry = Registry::with_built_ins();
-    let mut failed = Vec::new();
-    let mut all = folders.to_vec();
-    all.extend(default_folders());
-    for found in discover(&all) {
-        match ProcessProvider::start(&found) {
-            Ok(provider) => registry.add(Box::new(provider)),
-            Err(error) => failed.push(Failed { found, error }),
-        }
-    }
+    let failed = start_programs(&mut registry, folders);
     if let Some(Ok(model)) = prefs
         .model
         .as_ref()
@@ -55,6 +56,39 @@ pub fn registry_with(folders: &[PathBuf], prefs: &Prefs) -> (Registry, Vec<Faile
             .map(|m| (m.provider.as_str(), m.offer.as_str())),
     );
     (registry, failed)
+}
+
+/// Starts the provider programs in `folders` then the default folders, adding them to
+/// `registry`; returns those that couldn't start.
+#[cfg(not(any(
+    target_os = "ios",
+    target_os = "tvos",
+    target_os = "watchos",
+    target_os = "visionos"
+)))]
+fn start_programs(registry: &mut Registry, folders: &[PathBuf]) -> Vec<Failed> {
+    use super::process::{ProcessProvider, default_folders, discover};
+    let mut failed = Vec::new();
+    let mut all = folders.to_vec();
+    all.extend(default_folders());
+    for found in discover(&all) {
+        match ProcessProvider::start(&found) {
+            Ok(provider) => registry.add(Box::new(provider)),
+            Err(error) => failed.push(Failed { found, error }),
+        }
+    }
+    failed
+}
+
+/// There are no provider programs to start here.
+#[cfg(any(
+    target_os = "ios",
+    target_os = "tvos",
+    target_os = "watchos",
+    target_os = "visionos"
+))]
+fn start_programs(_registry: &mut Registry, _folders: &[PathBuf]) -> Vec<Failed> {
+    Vec::new()
 }
 
 /// The model asked for a second opinion: the one `setting` names, none for `off`, or, unset,

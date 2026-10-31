@@ -8,7 +8,7 @@ use std::sync::Arc;
 use carrel_core::models::{CATALOG, Model, installed, installed_mlx, part_path};
 use carrel_core::providers::Capability;
 
-use crate::{ArchiveHandle, CarrelError, Progress, text};
+use crate::{ArchiveHandle, CarrelError, ProgressReporter, text};
 
 /// A model in Carrel's catalog.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -216,7 +216,7 @@ impl ArchiveHandle {
     pub fn download_model(
         &self,
         name: String,
-        progress: Option<Arc<dyn Progress>>,
+        progress: Option<Arc<dyn ProgressReporter>>,
     ) -> Result<String, CarrelError> {
         download(&name, progress)
     }
@@ -228,7 +228,10 @@ impl ArchiveHandle {
     target_os = "watchos",
     target_os = "visionos"
 )))]
-fn download(name: &str, progress: Option<Arc<dyn Progress>>) -> Result<String, CarrelError> {
+fn download(
+    name: &str,
+    progress: Option<Arc<dyn ProgressReporter>>,
+) -> Result<String, CarrelError> {
     use carrel_core::models::{Helper, ModelError, download, find, network_log};
     let model = find(name)
         .ok_or_else(|| CarrelError::invalid(format!("no model called {name} in the catalog")))?;
@@ -261,6 +264,9 @@ fn download(name: &str, progress: Option<Arc<dyn Progress>>) -> Result<String, C
     target_os = "watchos",
     target_os = "visionos"
 ))]
-fn download(_name: &str, _progress: Option<Arc<dyn Progress>>) -> Result<String, CarrelError> {
+fn download(
+    _name: &str,
+    _progress: Option<Arc<dyn ProgressReporter>>,
+) -> Result<String, CarrelError> {
     Err(CarrelError::failed("models are downloaded on a Mac"))
 }

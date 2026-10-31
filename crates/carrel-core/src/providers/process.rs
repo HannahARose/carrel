@@ -29,14 +29,7 @@ pub const REQUEST_TIMEOUT: Duration = Duration::from_mins(10);
 /// How many of a provider's last log lines are kept for error messages.
 const LOG_LINES: usize = 20;
 
-/// A provider program found on this device.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Found {
-    /// The provider's name: the program's name without `carrel-provider-` or `.exe`.
-    pub name: String,
-    /// Where the program is.
-    pub path: PathBuf,
-}
+pub use super::device::Found;
 
 /// Finds provider programs in `folders`, in order. When the same name appears in several
 /// folders, the first is used.

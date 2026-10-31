@@ -2,7 +2,7 @@
 
 `carrel-core` for Swift. The Rust core is built into `CarrelFFI.xcframework` by [UniFFI](https://mozilla.github.io/uniffi-rs/), from `crates/carrel-ffi`, and the generated Swift bindings are compiled into the `CarrelKit` library.
 
-- **`CarrelKit`:** open archives, list collections and items, and give Rust a Swift-implemented `TextModel`. Model and text-extraction connectors will use the same callback pattern.
+- **`CarrelKit`:** the core's operations as the Mac app uses them (`docs/design/mac-app.md`): review and questions, corrections, editing cards, checkout and return, the desk and pending entries, search, an item's history and related items, history and undo, Status, settings and models, and the intake queue. `ArchiveModel` is the `@MainActor` observable archive the screens show: it runs each call off the main thread, publishes what each screen shows, and reports long operations' progress. Errors are `CarrelError`s carrying the core's messages; `CarrelError.Busy` says who holds the writer lease. Swift supplies models through `ModelProvider` (and `TextModel`) and progress through `ProgressReporter`, which Rust calls back.
 - **`CarrelPoC`:** a minimal SwiftUI app over `CarrelKit`, the proof of concept for #20.
 - **Tests:** `Tests/CarrelKitTests`, run against the sample archive in `fixtures/`.
 
