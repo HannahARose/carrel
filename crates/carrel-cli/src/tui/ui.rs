@@ -8,6 +8,7 @@ use ratatui::widgets::{Block, Clear, List, ListItem, ListState, Paragraph, Wrap}
 
 use carrel_core::card::Sensitivity;
 use carrel_core::review::{ReviewEntry, State};
+use carrel_core::search::{Found, Hit};
 
 use super::app::{App, Confirm, Input, Picker, Tab};
 use super::item::{Pane, Relation, Row};
@@ -700,10 +701,11 @@ fn draw_browse(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
         tree_area,
         &mut tree_state,
     );
-    let title = match &app.search {
-        Some(words) => format!(" Found for “{words}” (Esc clears) "),
-        None => String::new(),
-    };
+    let title = app
+        .search
+        .as_ref()
+        .map(|typed| app.search_title(typed))
+        .unwrap_or_default();
     let items: Vec<ListItem> = if app.browse_items.is_empty() {
         vec![ListItem::new(if app.search.is_some() {
             "Nothing found"
@@ -713,16 +715,17 @@ fn draw_browse(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
     } else {
         app.browse_items
             .iter()
-            .map(|(path, title)| {
-                if app.search.is_some() {
-                    ListItem::new(format!(
-                        "{title}  ({})",
-                        path.rsplit_once('/').map_or("", |p| p.0)
-                    ))
-                } else {
-                    ListItem::new(title.as_str())
-                }
-            })
+            .enumerate()
+            .map(
+                |(i, (_, title))| match app.searched.hit(i).map(|h| &h.found) {
+                    Some(Found::Item(item)) => ListItem::new(format!(
+                        "{title}{}  ({})",
+                        sensitivity_mark(item.sensitivity),
+                        item.collection
+                    )),
+                    _ => ListItem::new(title.as_str()),
+                },
+            )
             .collect()
     };
     let mut items_state = ListState::default().with_selected(Some(app.browse_item));
@@ -740,6 +743,40 @@ fn draw_browse(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
 
 /// The chosen item: its card, then its changes and related items, which the owner moves
 /// among in the item's own pane.
+/// How a search result is marked when the item is sensitive or restricted.
+fn sensitivity_mark(sensitivity: Sensitivity) -> &'static str {
+    match sensitivity {
+        Sensitivity::Restricted => "  [restricted]",
+        Sensitivity::Sensitive => "  [sensitive]",
+        _ => "",
+    }
+}
+
+/// Why a search result came back: where it matched, and the passage with the words marked.
+fn why_lines(hit: &Hit, theme: Theme) -> Vec<Line<'static>> {
+    let why: Vec<String> = hit.why.iter().map(ToString::to_string).collect();
+    let mut lines = vec![Line::styled(
+        format!("Matched: {}", why.join(", ")),
+        theme.dim(),
+    )];
+    if let Some(passage) = &hit.passage {
+        let marked = theme
+            .key()
+            .add_modifier(Modifier::BOLD | Modifier::UNDERLINED);
+        let mut spans = Vec::new();
+        let mut at = 0;
+        for range in &passage.highlights {
+            spans.push(Span::raw(passage.text[at..range.start].to_owned()));
+            spans.push(Span::styled(passage.text[range.clone()].to_owned(), marked));
+            at = range.end;
+        }
+        spans.push(Span::raw(passage.text[at..].to_owned()));
+        lines.push(Line::from(spans));
+    }
+    lines.push(Line::from(""));
+    lines
+}
+
 fn draw_item(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
     let view = &app.item;
     let block = Block::new().borders(ratatui::widgets::Borders::LEFT);
@@ -775,7 +812,13 @@ fn draw_item(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
         .min(inner.height / 2);
     let [card_area, list_area] =
         Layout::vertical([Constraint::Min(0), Constraint::Length(list_height)]).areas(inner);
-    let lines: Vec<Line> = view.text.iter().map(|l| Line::from(l.as_str())).collect();
+    let mut lines: Vec<Line> = Vec::new();
+    if app.search.is_some()
+        && let Some(hit) = app.searched.hit(app.browse_item)
+    {
+        lines.extend(why_lines(hit, theme));
+    }
+    lines.extend(view.text.iter().map(|l| Line::from(l.as_str())));
     frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), card_area);
     let highlight = if app.browse_pane == Pane::Item {
         theme.selected()
@@ -795,7 +838,7 @@ fn draw_input(frame: &mut Frame, input: &Input, theme: Theme, area: Rect) {
         InputPurpose::Answer { question, .. } => (" Answer ", question.clone()),
         InputPurpose::Search => (
             " Search ",
-            "Words to find in titles, tags and summaries:".to_owned(),
+            "Words to find, and filters such as tag:receipts, kind:file, after:2025-01:".to_owned(),
         ),
         InputPurpose::Setting(key) => (" Settings ", format!("New value for {key}:")),
         InputPurpose::Ingest => (
