@@ -344,3 +344,47 @@ fn the_models_answer_is_held_to_what_the_owner_said() {
     assert_eq!(edit.value.add, vec![Tag(tags[0].clone())]);
     assert!(edit.dictated);
 }
+
+#[test]
+fn invented_dates_and_inferred_lowering_are_dropped() {
+    let archive = sample();
+    let collections_list = collections();
+    let vocabulary = Vocabulary::of(&archive, &archive.collections().unwrap());
+    let card = photo_card();
+    // As a model answered "it's a logo from a hockey team": a date from nowhere, and public.
+    let mut answer = unchanged();
+    answer["summary"] = json!("The logo of a professional women's hockey team.");
+    answer["created"] = json!("2022-07-14");
+    answer["sensitivity"] = json!("public");
+    let subject = Subject {
+        card: &card,
+        collection: "Holding",
+        text: "Image: image, 400 × 400",
+        collections: &collections_list,
+        vocabulary: &vocabulary,
+    };
+    let words = "it's a logo from a hockey team";
+    let changes = work_out(&registry_of(vec![answer.clone()]), &subject, words, &[])
+        .unwrap()
+        .changes;
+    assert!(
+        changes.created.is_none(),
+        "the date is in neither the words nor the item"
+    );
+    assert!(changes.sensitivity.is_none(), "only the owner lowers it");
+    assert!(changes.summary.is_some());
+
+    // A date the item shows, and a level the owner states, stand.
+    let shown = Subject {
+        text: "Image: image, taken 2022-07-14 09:30",
+        ..subject.clone()
+    };
+    let words = "it's a logo from a hockey team, and it's public";
+    let mut stated = answer;
+    stated["sensitivity_dictated"] = json!(true);
+    let changes = work_out(&registry_of(vec![stated]), &shown, words, &[])
+        .unwrap()
+        .changes;
+    assert_eq!(changes.created.unwrap().value.0, "2022-07-14");
+    assert_eq!(changes.sensitivity.unwrap().value, Sensitivity::Public);
+}
