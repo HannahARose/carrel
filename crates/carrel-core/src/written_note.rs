@@ -14,11 +14,14 @@ use crate::ingest::IntakeOptions;
 use crate::intake::{self, Queued};
 use crate::{inbox, local};
 
-/// Where this device keeps written notes until they're filed: `notes` in the configuration
-/// folder. `None` if there's no configuration folder.
+/// The folder in the configuration folder where written notes are kept until they're filed.
+pub const WRITTEN_NOTES_FOLDER: &str = "notes";
+
+/// Where this device keeps written notes until they're filed: [`WRITTEN_NOTES_FOLDER`] in the
+/// configuration folder. `None` if there's no configuration folder.
 #[must_use]
 pub fn written_notes_dir() -> Option<PathBuf> {
-    local::config_dir().map(|dir| dir.join("notes"))
+    local::config_dir().map(|dir| dir.join(WRITTEN_NOTES_FOLDER))
 }
 
 /// What adding a written note did.

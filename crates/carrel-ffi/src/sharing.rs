@@ -129,7 +129,7 @@ impl ArchiveHandle {
 
     /// Adds `text` as a note item of its own, titled `title` (or named by its first words),
     /// with the owner's `note` for its draft and card: kept as a Markdown file in a folder of
-    /// its own in `folder` (this device's notes folder when `None`) and queued as any file is.
+    /// its own in `folder` (`notes` in this handle's configuration folder when `None`) and queued as any file is.
     /// While another device is the writer, it goes into this device's inbox instead.
     ///
     /// # Errors
@@ -145,12 +145,10 @@ impl ArchiveHandle {
     ) -> Result<Shared, CarrelError> {
         let archive = self.fresh()?;
         let holder = self.holder()?;
-        let folder = folder
-            .map(PathBuf::from)
-            .or_else(written_note::written_notes_dir)
-            .ok_or_else(|| CarrelError::Failed {
-                message: "There's no folder to keep the note in.".into(),
-            })?;
+        let folder = match folder {
+            Some(folder) => PathBuf::from(folder),
+            None => self.config_dir()?.join(written_note::WRITTEN_NOTES_FOLDER),
+        };
         let added = written_note::add_written_note(
             &archive,
             &folder,
@@ -246,5 +244,16 @@ mod tests {
                 .share_note(" ".into(), None, None, Some(text(&folder))),
             Err(CarrelError::Invalid { .. })
         ));
+        let kept = sample
+            .handle
+            .share_note("In the configuration".into(), None, None, None)
+            .unwrap();
+        assert!(
+            kept.added.added[0]
+                .path
+                .contains("/config/notes/"),
+            "{:?}",
+            kept.added.added[0].path
+        );
     }
 }

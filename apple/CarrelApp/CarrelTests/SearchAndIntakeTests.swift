@@ -151,7 +151,7 @@ final class IntakeModelTests: SampleCopyTestCase {
         let intake = IntakeModel(archive: archive)
         let list = try file("shopping list.txt", "LED strip, diffuser, screws")
         let notes = try file("notes.txt", "Print the diffuser in PETG.")
-        await intake.add([list, notes])
+        await intake.add([list, notes], as: .decide)
         XCTAssertEqual(intake.queue.waiting.count, 2)
         let report = try XCTUnwrap(intake.report)
         XCTAssertEqual(report.title, "Added 2 Items to the Intake Queue")
@@ -163,8 +163,8 @@ final class IntakeModelTests: SampleCopyTestCase {
     func testWhatsLeftOutSaysWhy() async throws {
         let intake = IntakeModel(archive: archive)
         let list = try file("shopping list.txt", "LED strip, diffuser, screws")
-        await intake.add([list])
-        await intake.add([list])
+        await intake.add([list], as: .decide)
+        await intake.add([list], as: .decide)
         let report = try XCTUnwrap(intake.report)
         XCTAssertEqual(report.title, "Nothing to Add")
         XCTAssertEqual(report.leftOut.map(\.name), ["shopping list.txt"])
@@ -174,7 +174,7 @@ final class IntakeModelTests: SampleCopyTestCase {
 
     func testAMissingFileIsAProblem() async throws {
         let intake = IntakeModel(archive: archive)
-        await intake.add([folder.appending(path: "Inbox/not here.txt")])
+        await intake.add([folder.appending(path: "Inbox/not here.txt")], as: .decide)
         let report = try XCTUnwrap(intake.report)
         XCTAssertEqual(report.title, "Couldn’t Add to the Archive")
         XCTAssertNotNil(report.problem)

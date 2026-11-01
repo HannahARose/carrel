@@ -23,11 +23,12 @@ final class IntakeQueueListTests: SampleCopyTestCase {
         let intake = IntakeModel(archive: archive)
         let inbox = try inbox(["one.txt", "two.txt"])
         await intake.add([inbox])
-        XCTAssertEqual(intake.choosingHow, [inbox], "asks first")
+        XCTAssertEqual(intake.adding?.urls, [inbox], "asks first")
+        XCTAssertEqual(intake.adding?.hasFolders, true)
         XCTAssertTrue(intake.queue.waiting.isEmpty)
 
         await intake.add([inbox], as: .each)
-        XCTAssertNil(intake.choosingHow)
+        XCTAssertNil(intake.adding)
         XCTAssertEqual(intake.queue.waiting.count, 2, "each entry as its own item")
     }
 
@@ -42,8 +43,10 @@ final class IntakeQueueListTests: SampleCopyTestCase {
     func testEntriesAreMovedToTheFrontAndRemoved() async throws {
         let intake = IntakeModel(archive: archive)
         let inbox = try inbox(["one.txt", "two.txt"])
-        await intake.add([inbox.appending(path: "one.txt"), inbox.appending(path: "two.txt")])
-        XCTAssertNil(intake.choosingHow, "files don't ask")
+        let files = [inbox.appending(path: "one.txt"), inbox.appending(path: "two.txt")]
+        await intake.add(files)
+        XCTAssertEqual(intake.adding?.hasFolders, false, "files ask only for a note")
+        await intake.add(files, as: .decide)
         let last = try XCTUnwrap(intake.queue.waiting.last)
         await intake.moveToFront(last)
         XCTAssertEqual(intake.queue.waiting.first?.id, last.id)
