@@ -172,6 +172,9 @@ final class ArchiveWindowModel {
             review = ReviewModel(archive: archive)
             review?.filed = { [weak self] in await self?.refreshItems() }
             questions = QuestionsModel(archive: archive)
+            questions?.answerItem = { [weak self] question, answer in
+                self?.answerItemQuestion(question, with: answer)
+            }
             backups = BackupsModel(archive: archive)
             activeScreen = ActiveScreenModel(archive: archive, checkoutFolder: checkoutFolder) {
                 [weak self] in

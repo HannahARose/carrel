@@ -187,7 +187,8 @@ private struct Inspector: View {
         {
             QuestionInspector(
                 question: question, questions: questions,
-                collections: model.collections.map(\.path))
+                collections: model.collections.map(\.path)
+            ) { id in model.items.first { $0.id == id }?.title }
         } else if model.screen == .active, let active = model.activeScreen {
             ActiveInspector(model: active)
         } else if model.screen == .history, let history = model.historyScreen {
@@ -206,6 +207,8 @@ private struct Inspector: View {
                     }
                     ItemCardView(item: item, card: model.card(for: item), root: model.root) {
                         ItemActions(model: model, item: item)
+                    } below: {
+                        ItemQuestionsSection(item: item, window: model)
                     }
                 }
                 .id(item.id)
