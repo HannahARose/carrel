@@ -9,6 +9,7 @@
 //! | Module | What it handles | FORMAT.md |
 //! | --- | --- | --- |
 //! | [`actions`] | The owner's decisions on proposals and questions, shared by every interface | §7.9 |
+//! | [`agent`] | The background agent: claiming archives, noticing changes, scheduling jobs, and starting at log-in | `docs/design/mac-app.md` |
 //! | [`archive`] | Creating, opening and finding archives; listing collections | §3, §7.1, §12 |
 //! | [`documents`] | `ARCHIVE.md`, `_collection.md`, `archive.json` and `settings.json` | §6.2, §6.3, §7.1, §7.2 |
 //! | [`card`] | Card frontmatter as typed fields, and checking it conforms | §5 |
@@ -29,6 +30,7 @@
 //! | [`search`] | Search: the word index, the text cache, filters and results | §7.11, §7.12, `docs/design/search.md` |
 //! | [`questions`] | Questions for the owner, and the glossary their answers teach | §7.3, §7.9 |
 //! | [`local`] | Where this device keeps its own data: configuration and models | none |
+//! | [`previews`] | Thumbnails and drawings of items, cached on this device | `docs/design/mac-app.md` |
 //! | [`providers`] | Text models and text extraction from providers, native or portable | `docs/providers.md` |
 //! | [`status`] | What the Status screen shows: counts, problems, Recent and suggestions | none |
 //! | [`worker`] | The worker loop: drafting the intake queue, then catching up the embedding index | `docs/design/tui-ingest.md` |
@@ -52,6 +54,7 @@
 
 pub mod actions;
 pub mod active;
+pub mod agent;
 pub mod archive;
 pub mod backup;
 pub mod bench;
@@ -80,6 +83,7 @@ pub mod manifest;
 pub mod mirrors;
 pub mod models;
 pub mod names;
+pub mod previews;
 pub mod providers;
 pub mod questions;
 pub mod rename;

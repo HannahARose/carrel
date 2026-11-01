@@ -8,7 +8,7 @@ use carrel_core::card_file::CardFile;
 use carrel_core::history::History;
 use carrel_core::search::passage::Passage;
 use carrel_core::search::query::Query;
-use carrel_core::search::{Found, Hit, Meaning};
+use carrel_core::search::{Found, Hit, Meaning, Results, Search};
 
 use crate::history::Change;
 use crate::records::{CardFields, CardHistoryEntry, Sensitivity};
@@ -226,6 +226,33 @@ pub struct Related {
     pub why_none: Option<String>,
 }
 
+/// `query`, parsed, as long as it has words or filters.
+fn parse(query: &str) -> Result<Query, CarrelError> {
+    let query = Query::parse(query).map_err(CarrelError::invalid)?;
+    if query.text.trim().is_empty() && query.filters.is_empty() {
+        return Err(CarrelError::invalid(
+            "search for some words, a filter such as tag:receipts, or both",
+        ));
+    }
+    Ok(query)
+}
+
+/// `found` for Swift, with why it was by words only.
+fn results(found: &Results, words_only: Option<String>) -> SearchResults {
+    let (by_meaning, behind) = match found.meaning {
+        Meaning::Off => (false, 0),
+        Meaning::Current => (true, 0),
+        Meaning::Behind { items } => (true, items as u64),
+    };
+    SearchResults {
+        hits: found.hits.iter().map(Into::into).collect(),
+        total: found.total as u64,
+        by_meaning,
+        behind,
+        words_only,
+    }
+}
+
 #[uniffi::export]
 impl ArchiveHandle {
     /// Searches for `query`: words, and filters such as `tag:receipts`, `collection:Finances`,
@@ -243,12 +270,7 @@ impl ArchiveHandle {
         limit: u32,
         progress: Option<Arc<dyn ProgressListener>>,
     ) -> Result<SearchResults, CarrelError> {
-        let query = Query::parse(&query).map_err(CarrelError::invalid)?;
-        if query.text.trim().is_empty() && query.filters.is_empty() {
-            return Err(CarrelError::invalid(
-                "search for some words, a filter such as tag:receipts, or both",
-            ));
-        }
+        let query = parse(&query)?;
         let archive = self.fresh()?;
         let searched = carrel_core::search::run::search(
             &archive,
@@ -261,19 +283,22 @@ impl ArchiveHandle {
                 }
             },
         )?;
-        let results = searched.results;
-        let (by_meaning, behind) = match results.meaning {
-            Meaning::Off => (false, 0),
-            Meaning::Current => (true, 0),
-            Meaning::Behind { items } => (true, items as u64),
-        };
-        Ok(SearchResults {
-            hits: results.hits.iter().map(Into::into).collect(),
-            total: results.total as u64,
-            by_meaning,
-            behind,
-            words_only: searched.words_only,
-        })
+        Ok(results(&searched.results, searched.words_only))
+    }
+
+    /// Searches for `query` as [`ArchiveHandle::search`] does, by words alone: over the text
+    /// already read, without starting a provider or a model, so it's quick enough to run as
+    /// someone types. Items whose text hasn't been read yet are found by their cards.
+    ///
+    /// # Errors
+    ///
+    /// [`CarrelError::Invalid`] for a filter that can't be used or a query with nothing in
+    /// it, or [`CarrelError::Failed`] if the archive can't be read.
+    pub fn search_words(&self, query: String, limit: u32) -> Result<SearchResults, CarrelError> {
+        let query = parse(&query)?;
+        let archive = self.fresh()?;
+        let found = Search::build(&archive)?.search(&query, limit as usize);
+        Ok(results(&found, None))
     }
 
     /// The filed item `id`: its card, links and history section.

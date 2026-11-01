@@ -28,6 +28,9 @@ struct ArchiveWindow: View {
         } detail: {
             Inspector(model: model)
         }
+        .activeAndHistorySheets(model)
+        .modifier(ArchiveWindowActions(model: model))
+        .browseSheets(model.browse)
         .navigationTitle(model.name)
         .navigationSubtitle(
             model.isReadOnly ? "\(model.screenTitle) · Read only" : model.screenTitle
@@ -83,7 +86,9 @@ private struct Sidebar: View {
                     .badge(model.archive?.reviewCount ?? 0)
                 Label("Questions", systemImage: "questionmark.bubble").tag(Screen.questions)
                     .badge(model.archive?.questions.count ?? 0)
-                Label("Active", systemImage: "arrow.up.forward.square").tag(Screen.active)
+                Label("Active", systemImage: "arrow.up.forward.square")
+                    .badge(model.activeScreen?.pendingCount ?? 0)
+                    .tag(Screen.active)
             }
             Section("Collections") {
                 OutlineGroup(model.tree, children: \.children) { node in
@@ -107,17 +112,42 @@ private struct ScreenContent: View {
     @Bindable var model: ArchiveWindowModel
 
     var body: some View {
+        if let search = model.search, search.isActive {
+            SearchResultsView(model: model, search: search)
+        } else {
+            screen
+        }
+    }
+
+    @ViewBuilder private var screen: some View {
         switch model.screen {
         case .status, nil:
             StatusView(model: model)
         case .collection:
-            List(model.listedItems, selection: $model.selectedItemID) { item in
-                Label(item.title, systemImage: item.kind.symbol)
+            Group {
+                if model.browseLayout == .grid {
+                    BrowseGrid(model: model)
+                } else {
+                    List(model.listedItems, selection: $model.selectedItemID) { item in
+                        Label(item.title, systemImage: item.kind.symbol)
+                    }
+                    .contextMenu(forSelectionType: ItemSummary.ID.self) { ids in
+                        BrowseActions(model: model, ids: ids)
+                    }
+                }
             }
             .overlay {
                 if model.listedItems.isEmpty, !model.isLoading {
                     ContentUnavailableView("No Items", systemImage: "folder")
                 }
+            }
+            .toolbar {
+                Picker("View", selection: $model.browseLayout) {
+                    Label("List", systemImage: "list.bullet").tag(BrowseLayout.list)
+                    Label("Grid", systemImage: "square.grid.2x2").tag(BrowseLayout.grid)
+                }
+                .pickerStyle(.segmented)
+                .help("Show the items as a list or a grid")
             }
         case .review:
             if let review = model.review {
@@ -126,36 +156,16 @@ private struct ScreenContent: View {
         case .questions:
             if let questions = model.questions { QuestionsView(questions: questions) }
         case .active:
-            ComingScreen(
-                title: "Active", systemImage: "arrow.up.forward.square",
-                text: "Checked-out and desk items with their pending entries, to return or cancel.")
+            if let active = model.activeScreen { ActiveView(model: active) }
         case .history:
-            ComingScreen(
-                title: "History", systemImage: "clock.arrow.circlepath",
-                text: "Every change to the archive, with undo.")
+            if let history = model.historyScreen { HistoryView(model: history) }
         case .backups:
             if let backups = model.backups { BackupsView(backups: backups) }
         }
     }
 }
 
-/// A screen that arrives with CarrelKit's operations (#233) and the app's later steps.
-private struct ComingScreen: View {
-    let title: String
-    let systemImage: String
-    let text: String
-
-    var body: some View {
-        ContentUnavailableView {
-            Label(title, systemImage: systemImage)
-        } description: {
-            Text(text)
-            Text("Coming in a later build. Until then, run `carrel` for the interactive mode.")
-        }
-    }
-}
-
-/// The inspector column: the chosen item's card.
+/// The inspector column: the chosen item's preview and card.
 private struct Inspector: View {
     let model: ArchiveWindowModel
 
@@ -168,6 +178,10 @@ private struct Inspector: View {
             QuestionInspector(
                 question: question, questions: questions,
                 collections: model.collections.map(\.path))
+        } else if model.screen == .active, let active = model.activeScreen {
+            ActiveInspector(model: active)
+        } else if model.screen == .history, let history = model.historyScreen {
+            ChangeInspector(model: history) { id in model.items.first { $0.id == id }?.title }
         } else if model.screen == .backups, let backups = model.backups,
             let change = backups.selected
         {
@@ -176,13 +190,20 @@ private struct Inspector: View {
             if let edit = model.editing, edit.target == .item(item.id) {
                 ItemEditor(item: item, edit: edit) { model.editing = nil }
             } else {
-                ItemCardView(item: item, card: model.card(for: item), root: model.root)
-                    .id(item.id)
+                VStack(spacing: 0) {
+                    if let previews = model.previews {
+                        ItemPreviewView(item: item, store: previews)
+                    }
+                    ItemCardView(item: item, card: model.card(for: item), root: model.root) {
+                        ItemActions(model: model, item: item)
+                    }
+                }
+                .id(item.id)
             }
         } else if case .collection = model.screen {
             ContentUnavailableView(
                 "Nothing Selected", systemImage: "sidebar.right",
-                description: Text("Choose an item to see its card."))
+                description: Text("Choose an item to see its preview and card."))
         } else {
             ContentUnavailableView("Nothing Selected", systemImage: "sidebar.right")
         }

@@ -48,11 +48,14 @@ use carrel_core::providers::Registry;
 pub mod active;
 pub mod agent;
 pub mod backups;
+pub mod browse;
 pub mod correct;
 pub mod edit;
 pub mod history;
+pub mod index;
 pub mod intake;
 pub mod models;
+pub mod previews;
 pub mod records;
 pub mod review;
 pub mod search;
@@ -988,6 +991,36 @@ mod tests {
         assert_ne!(filtered.hits.len(), 0);
         assert!(matches!(
             sample.handle.search("  ".into(), 10, None),
+            Err(CarrelError::Invalid { .. })
+        ));
+    }
+
+    #[test]
+    fn search_by_words_alone_finds_what_search_does_once_the_text_is_read() {
+        let sample = Sample::new();
+        let before = sample.handle.search_words("lamp".into(), 10).unwrap();
+        assert_ne!(
+            before.hits.len(),
+            0,
+            "found by their cards before the text is read"
+        );
+        let full = sample.handle.search("lamp".into(), 10, None).unwrap();
+        let words = sample.handle.search_words("lamp".into(), 10).unwrap();
+        assert_eq!(words.hits, full.hits);
+        assert!(!words.by_meaning);
+        assert_eq!(words.words_only, None);
+        let filtered = sample
+            .handle
+            .search_words("collection:Reading".into(), 10)
+            .unwrap();
+        assert!(
+            filtered
+                .hits
+                .iter()
+                .all(|h| h.collection.as_deref() == Some("Reading"))
+        );
+        assert!(matches!(
+            sample.handle.search_words("  ".into(), 10),
             Err(CarrelError::Invalid { .. })
         ));
     }

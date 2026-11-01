@@ -13,6 +13,20 @@ let sampleArchive = URL(filePath: #filePath)
 
 @MainActor
 final class ArchiveWindowModelTests: XCTestCase {
+    private var config: URL!
+
+    override func setUp() async throws {
+        // Opening a window reads what's active, which needs this device's identity: never the
+        // real configuration's.
+        config = FileManager.default.temporaryDirectory
+            .appending(path: "CarrelTests.\(UUID().uuidString)")
+        setenv("CARREL_CONFIG_DIR", config.path(percentEncoded: false), 1)
+    }
+
+    override func tearDown() async throws {
+        try? FileManager.default.removeItem(at: config)
+    }
+
     func testLoadsTheSampleArchive() async throws {
         let model = ArchiveWindowModel(url: sampleArchive.appending(path: "Reading"))
         await model.load()

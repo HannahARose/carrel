@@ -25,7 +25,10 @@ pub const EVERY: Duration = Duration::from_mins(5);
 
 /// Records finished sessions, holding a lease of its own, and takes their snapshots once it's
 /// released: the lines to show, and the JSON.
-fn record_and_snapshot(archive: &Archive, lease: WriterLease) -> Result<(String, Value), Failure> {
+pub fn record_and_snapshot(
+    archive: &Archive,
+    lease: WriterLease,
+) -> Result<(String, Value), Failure> {
     let recorded = carrel_core::sessions::record(archive, &lease);
     lease.release()?;
     let recorded = recorded?;
