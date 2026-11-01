@@ -300,7 +300,7 @@ impl Key {
                 if !self.choices().unwrap_or_default().contains(&value) {
                     return Err(wrong());
                 }
-                settings.checkout.after_return = value.to_owned();
+                value.clone_into(&mut settings.checkout.after_return);
             }
             Self::IdleMinutes => {
                 settings.sessions.idle_minutes =
@@ -568,7 +568,7 @@ mod tests {
             .unwrap();
         assert_eq!(settings.reminders, ["idle", "due-date"]);
         Key::Reminders.set(&mut settings, "none").unwrap();
-        assert!(settings.reminders.is_empty());
+        assert_eq!(settings.reminders, Vec::<String>::new());
         assert_eq!(Key::Reminders.get(&settings), "none");
         let unknown = Key::Reminders.set(&mut settings, "hourly").unwrap_err();
         assert!(unknown.contains("menu-bar, due-date"), "{unknown}");

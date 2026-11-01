@@ -514,6 +514,22 @@ public final class ArchiveModel {
         try await call { try $0.removeModel(name: name) }
     }
 
+    /// Downloads the catalog model `name` in `format`: a GGUF file, or a folder for MLX.
+    /// Only once the owner has confirmed, having seen its size.
+    @discardableResult
+    public func download(model name: String, in format: ModelFormat) async throws -> String {
+        try await call(reporting: "Downloading \(name)") { handle, relay in
+            try handle.downloadModelIn(name: name, format: format, progress: relay)
+        }
+    }
+
+    /// Deletes the downloaded model `name` in `format`, leaving the other. Only once the
+    /// owner has confirmed.
+    @discardableResult
+    public func remove(model name: String, in format: ModelFormat) async throws -> String {
+        try await call { try $0.removeModelIn(name: name, format: format) }
+    }
+
     // MARK: - The embedding index
 
     /// Reads the embedding index's status again.

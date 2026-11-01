@@ -46,11 +46,28 @@ The command line and the interactive mode run on macOS, Linux and Windows. The M
 | The librarian: ask, converse, save to the Journal | `ask` | ✓ the Librarian screen (`L`) | ✓ the Librarian panel (⌥⌘L), Ask About This (⇧⌘L) |
 | The librarian's changes: list and undo them together | `status`, `log --librarian`, `undo --librarian` | ✓ the Librarian screen, Status and History | ✓ the Librarian panel, Status and History |
 | Backups: set up, snapshot, list, verify, restore | `backup` | ✓ Backups | ✓ Backups (#266) |
-| Settings, this device's and the archive's | `settings` | ✓ Settings | ✓ Settings → General (#267) |
-| Models: list, download, remove | `models` | ✓ Settings | ✓ Settings → Models (#267) |
+| Settings, this device's and the archive's (each listed below) | `settings` | ✓ Settings | ✓ Settings → General (#267, #342) |
+| Models: list, download, remove, as GGUF or MLX | `models` | ✓ Settings (#342) | ✓ Settings → Models (#267, #342) |
 | Providers in use, and file types not read | `providers`, `formats` | ✓ Settings | ✓ Settings → Providers (#267) |
 | Background work: sessions as they happen, the queue, the index, scheduled snapshots | `agent`, `agent install` (#269) | ✓ Settings (#279) | ✓ agent (#237) |
 | What's checked out, at a glance | `checkouts` | ✓ Active | ✓ menu bar (#237) |
+
+## Settings
+
+Each setting, and where it's changed. `carrel settings set KEY VALUE` changes every one; the interactive mode's Settings screen and the app's Settings window build the archive's rows from the core's list of settings (`carrel_core::settings::Key`), so a new one reaches both.
+
+| Setting | Interactive mode | Mac app |
+| --- | --- | --- |
+| `picker`, the file picker, with the pickers Carrel knows and the one in use | Settings | Settings → General |
+| `editor`, the card editor, with the one in use | Settings | Settings → General |
+| `model` and `second_model`, the text models that draft cards | Settings | Settings → Models |
+| `librarian.model`, the librarian's model | Settings | Settings → Models |
+| `previews`, how Browse draws pictures | Settings, applied at once | (not used: the app draws previews itself) |
+| `ingest.originals`, `compressed_files`, `signals.crowded_items`, `questions.skip_days`, `outside_edits` | Settings | Settings → General |
+| `checkout.destination`, `checkout.after_return`, `sessions.idle_minutes`, `reminders` | Settings | Settings → General |
+| `librarian.changes`, `librarian.confidence` | Settings | Settings → General |
+| `embedding.model`, chosen once, then switched | Settings, the index's row | Settings → Search |
+| `backups` | Backups | Backups, and its status in Settings → Backups |
 
 ## Allowed deviations
 
@@ -59,6 +76,7 @@ These stay in one interface, for the reason given:
 - **`carrel bench`** (the model benchmark) and **`carrel models embed`** (printing vectors) are tools for developing Carrel, not for using it, so they stay on the command line.
 - **`carrel worker`** is what the other interfaces start in the background; nobody needs a screen for it.
 - **`carrel agent` runs in the foreground** until stopped, because it's what the operating system's service manager starts at log-in (`carrel agent install`). The interactive mode shows and installs it (#279) rather than running it while open. The Mac app has its own agent, a login item, with the same schedule; one agent looks after an archive on each device, and the other steps aside.
+- **The `previews` setting** chooses how a terminal draws pictures, so only the interactive mode has it.
 - **Previews in a terminal** need a terminal that can draw images (#258). Elsewhere the interactive mode shows the card. The command line's output is text, so `carrel show` gives the card and the item's path instead.
 - **Grid views, dragging and the menu bar** are ways of working in a graphical app. The command line and the interactive mode reach the same capabilities through their own commands and screens, as the table shows.
 - **Platform-only models and readers,** such as Apple's model or Vision's OCR, are available in every interface on the platforms that have them. Elsewhere, the open models and the extraction provider stand in.

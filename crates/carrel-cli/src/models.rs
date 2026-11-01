@@ -344,12 +344,15 @@ fn run(
 /// # Errors
 ///
 /// As [`download`].
-pub fn download_quietly(name: &str) -> Result<Report, Failure> {
+pub fn download_quietly(name: &str, format: Format) -> Result<Report, Failure> {
     let model = downloadable(name)?;
     let dir = folder()?;
     let helper = Helper::find()?;
     let log = network_log();
-    let path = fetch_model(model, &dir, &helper, log.as_deref(), &mut |_, _| {})?;
+    let path = match format {
+        Format::Gguf => fetch_model(model, &dir, &helper, log.as_deref(), &mut |_, _| {})?,
+        Format::Mlx => download_mlx(model, &dir, &helper, log.as_deref(), &mut |_, _| {})?,
+    };
     Ok(Report::new(
         format!("Downloaded {} to {}\n", model.name, path.display()),
         json!({ "name": model.name, "path": path }),

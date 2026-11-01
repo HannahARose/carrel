@@ -20,6 +20,10 @@ final class SettingsModel {
     private(set) var choices: ModelChoices?
     /// Carrel's model catalog, with what's downloaded here.
     private(set) var catalog: [CatalogModel] = []
+    /// The formats each downloadable catalog model comes in, and which are here, by name.
+    private(set) var modelFormats: [String: ModelFormats] = [:]
+    /// Where backups stand, for Settings → Backups.
+    private(set) var backups: BackupsState?
     /// The providers on this device.
     private(set) var providers: [ProviderInfo] = []
     /// The file types this device reads, and those it couldn't.
@@ -39,6 +43,8 @@ final class SettingsModel {
     var confirmingDownload: CatalogModel?
     /// A model waiting for the owner to confirm deleting it.
     var confirmingRemoval: CatalogModel?
+    /// The format of the model waiting to be downloaded or deleted.
+    var confirmingFormat: ModelFormat = .gguf
     /// An embedding model waiting for the owner to confirm switching to it.
     var confirmingSwitch: String?
 
@@ -95,6 +101,9 @@ final class SettingsModel {
             device = try await archive.call { try $0.deviceSettings() }
             choices = try await archive.call { try $0.modelChoices() }
             catalog = try await archive.call { $0.modelCatalog() }
+            let formats = try await archive.call { $0.modelFormats() }
+            modelFormats = Dictionary(formats.map { ($0.name, $0) }) { first, _ in first }
+            backups = try? await archive.backups()
             providers = try await archive.call { $0.providers() }
             formats = try await archive.call { $0.formats() }
             embedding = try await archive.call { $0.embeddingModels() }
@@ -109,11 +118,12 @@ final class SettingsModel {
     func set(_ key: String, to value: String) async {
         await perform {
             let changed = try await $0.set(key, to: value)
+            let title = archive?.settings.first { $0.key == key }?.title ?? key
             if changed.commit != nil {
                 lastChange = changed
-                note = "Set \(key) to \(changed.to) (was \(changed.from)) for every device."
+                note = "Set \(title) to \(changed.to) (was \(changed.from)) for every device."
             } else {
-                note = "\(key) is already \(changed.to)."
+                note = "\(title) is already \(changed.to)."
             }
         }
     }
@@ -153,9 +163,10 @@ final class SettingsModel {
     func downloadConfirmed() async {
         guard let model = confirmingDownload else { return }
         confirmingDownload = nil
+        let format = confirmingFormat
         await perform {
-            try await $0.download(model: model.name)
-            note = "Downloaded \(model.name)."
+            try await $0.download(model: model.name, in: format)
+            note = "Downloaded \(model.name) (\(format.title))."
         }
         await refreshDevice()
     }
@@ -164,9 +175,10 @@ final class SettingsModel {
     func removeConfirmed() async {
         guard let model = confirmingRemoval else { return }
         confirmingRemoval = nil
+        let format = confirmingFormat
         await perform {
-            try await $0.remove(model: model.name)
-            note = "Deleted \(model.name)."
+            try await $0.remove(model: model.name, in: format)
+            note = "Deleted \(model.name) (\(format.title))."
         }
         await refreshDevice()
     }

@@ -32,18 +32,18 @@ struct ModelsTab: View {
             }
         }
         .confirmationDialog(
-            "Download \(model?.confirmingDownload?.name ?? "")?",
+            "Download \(model?.confirmingDownload?.name ?? "") (\(model?.confirmingFormat.title ?? ""))?",
             isPresented: confirming(\.confirmingDownload),
             presenting: model?.confirmingDownload
         ) { entry in
-            Button("Download \(size(entry.size))") { Task { await model?.downloadConfirmed() } }
+            Button("Download \(downloadSize(entry))") { Task { await model?.downloadConfirmed() } }
         } message: { entry in
             Text(
-                "\(entry.title). \(size(entry.size)) from the internet, under the \(entry.license) license; it needs about \(entry.memoryGb) GB of memory."
+                "\(entry.title). \(downloadSize(entry)) from the internet, under the \(entry.license) license; it needs about \(entry.memoryGb) GB of memory."
             )
         }
         .confirmationDialog(
-            "Delete \(model?.confirmingRemoval?.name ?? "")?",
+            "Delete \(model?.confirmingRemoval?.name ?? "") (\(model?.confirmingFormat.title ?? ""))?",
             isPresented: confirming(\.confirmingRemoval),
             presenting: model?.confirmingRemoval
         ) { _ in
@@ -51,6 +51,10 @@ struct ModelsTab: View {
         } message: { entry in
             Text("It’s deleted from this Mac’s models folder; you can download it again later.")
         }
+    }
+
+    private func downloadSize(_ entry: CatalogModel) -> String {
+        size(model.map { $0.size(of: entry, in: $0.confirmingFormat) } ?? entry.size)
     }
 
     private func confirming(_ path: ReferenceWritableKeyPath<SettingsModel, CatalogModel?>)
@@ -166,18 +170,24 @@ private struct ModelRow: View {
         case .builtIn:
             Text("Comes with \(entry.comesWith ?? "a provider")").foregroundStyle(.secondary)
         case .downloaded:
-            Button("Delete…") { model.confirmingRemoval = entry }
+            ModelFormatActions(entry: entry, model: model)
         case .partial(let bytes):
             VStack(alignment: .trailing) {
                 Text("Stopped at \(size(bytes))").font(.caption).foregroundStyle(.secondary)
                 HStack {
-                    Button("Delete…") { model.confirmingRemoval = entry }
-                    Button("Carry On…") { model.confirmingDownload = entry }
-                        .disabled(!entry.downloadable)
+                    Button("Delete…") {
+                        model.confirmingFormat = .gguf
+                        model.confirmingRemoval = entry
+                    }
+                    Button("Carry On…") {
+                        model.confirmingFormat = .gguf
+                        model.confirmingDownload = entry
+                    }
+                    .disabled(!entry.downloadable)
                 }
             }
         case .notDownloaded:
-            Button("Download…") { model.confirmingDownload = entry }
+            ModelFormatActions(entry: entry, model: model)
                 .disabled(!entry.downloadable)
         }
     }

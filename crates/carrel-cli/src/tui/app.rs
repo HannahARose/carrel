@@ -84,7 +84,7 @@ impl Tab {
         }
     }
 
-    fn index(self) -> usize {
+    pub(super) fn index(self) -> usize {
         Self::ALL.iter().position(|t| *t == self).unwrap_or(0)
     }
 }
@@ -131,6 +131,13 @@ pub enum Confirm {
         /// The model's name.
         name: String,
         /// What it is, its size and license, and where it goes.
+        about: String,
+    },
+    /// Downloading or deleting a model in a format, from Settings.
+    ModelChange {
+        /// The model, its format, and whether to delete it.
+        change: super::model_changes::ModelChange,
+        /// What it is and where it is or goes.
         about: String,
     },
     /// Returning this checkout, replacing the archive copy.
@@ -334,6 +341,8 @@ pub enum Effect {
     },
     /// Download this catalog model.
     Download(String),
+    /// Download or delete a model in a format, as `carrel models download` or `remove` do.
+    ModelChange(super::model_changes::ModelChange),
     /// Return this checkout, as `carrel return --yes` does.
     Return(Id),
     /// Cancel this checkout, as `carrel return --discard --yes` does.
@@ -1078,6 +1087,7 @@ fn confirmed(confirm: Confirm, key: KeyCode) -> Option<Effect> {
         Confirm::Undo { id, .. } => Effect::Undo(id),
         Confirm::Reject(ids) => Effect::Reject(ids),
         Confirm::Download { name, .. } => Effect::Download(name),
+        Confirm::ModelChange { change, .. } => Effect::ModelChange(change),
         Confirm::Agent(change) => Effect::Agent(change),
         Confirm::Return { id, .. } => Effect::Return(id),
         Confirm::CancelCheckout { id, .. } => Effect::CancelCheckout(id),
