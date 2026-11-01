@@ -55,7 +55,14 @@ mod tests {
     fn a_model_the_crawler_benchmark_recommends_is_chosen_where_it_fits() {
         let available = [installed("qwen3.5-4b"), installed("qwen3.5-9b")];
         let mut catalog = crate::models::CATALOG.to_vec();
-        assert_eq!(recommended(&available, None, &catalog), None, "none yet");
+        for model in &mut catalog {
+            model.crawler = false;
+        }
+        assert_eq!(
+            recommended(&available, None, &catalog),
+            None,
+            "none recommended"
+        );
         for model in &mut catalog {
             model.crawler = model.name.starts_with("qwen3.5");
         }

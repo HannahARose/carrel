@@ -242,7 +242,7 @@ pub const CATALOG: &[Model] = &[
         memory_gb: 8,
         recommended: true,
         librarian: false,
-        crawler: false,
+        crawler: true,
         mlx: Some(MlxBuild {
             repository: "mlx-community/Qwen3.5-4B-MLX-4bit",
             revision: "32f3e8ecf65426fc3306969496342d504bfa13f3",
