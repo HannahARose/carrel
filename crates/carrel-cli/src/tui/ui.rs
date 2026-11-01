@@ -282,6 +282,10 @@ const HELP_ROWS: &[(&str, &str)] = &[
         "move, edit, correct in words, or reject (Review)",
     ),
     (
+        "p",
+        "pick another reading of what the item is, when the model gave several (Review)",
+    ),
+    (
         "v  b  s  [ ]",
         "a duplicate: file as a version, keep both, skip; other matches (Review)",
     ),

@@ -259,10 +259,13 @@ pub fn picked(words: &str) -> Option<usize> {
     rest.trim_start_matches([':', ' ']).trim().parse().ok()
 }
 
+/// How the words for picking a reading start; its number follows.
+pub const PICK: &str = "reading: ";
+
 /// The words for picking reading `n`: what [`picked`] reads.
 #[must_use]
 pub fn pick_words(n: usize) -> String {
-    format!("{READING_KEY}: {n}")
+    format!("{PICK}{n}")
 }
 
 /// The correction picking reading `n` (counting from 1) of `entry` makes: its title, summary
