@@ -2235,6 +2235,17 @@ public protocol ArchiveHandleProtocol: AnyObject, Sendable {
     func settings() throws  -> [Setting]
     
     /**
+     * Everything Spotlight should find in the archive, by its `spotlight.index` setting:
+     * cards, collections and glossary facts. Empty when the setting is `off`; restricted
+     * items are never included.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the archive's items or collections can't be listed.
+     */
+    func spotlightEntries() throws  -> [SpotlightEntry]
+    
+    /**
      * Notes that the item `id` was opened, so a search it came from records where it
      * ranked.
      */
@@ -4944,6 +4955,24 @@ open func settings()throws  -> [Setting]  {
     return try  FfiConverterSequenceTypeSetting.lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
         uniffiCallStatus in
     uniffi_carrel_ffi_fn_method_archivehandle_settings(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Everything Spotlight should find in the archive, by its `spotlight.index` setting:
+     * cards, collections and glossary facts. Empty when the setting is `off`; restricted
+     * items are never included.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the archive's items or collections can't be listed.
+     */
+open func spotlightEntries()throws  -> [SpotlightEntry]  {
+    return try  FfiConverterSequenceTypeSpotlightEntry.lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_spotlight_entries(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
@@ -18180,6 +18209,185 @@ public func FfiConverterTypeSnapshotTaken_lower(_ value: SnapshotTaken) -> RustB
 
 
 /**
+ * One thing Spotlight finds in an archive.
+ */
+public struct SpotlightEntry: Equatable, Hashable {
+    /**
+     * Its identifier within the archive: `item/<id>`, `collection/<path>` or `fact/<term>`.
+     */
+    public var id: String
+    /**
+     * What it is.
+     */
+    public var kind: SpotlightKind
+    /**
+     * Its title: an item's or collection's title, or a fact's term.
+     */
+    public var title: String
+    /**
+     * What it says: an item's summary, a collection's description, or a fact.
+     */
+    public var description: String?
+    /**
+     * An item's tags.
+     */
+    public var keywords: [String]
+    /**
+     * The collection it's in, or the collection's own path, as `Parent / Child`.
+     */
+    public var collection: String
+    /**
+     * An item's kind, such as `file`.
+     */
+    public var itemKind: String?
+    /**
+     * An item's own date, such as a publication date.
+     */
+    public var documentDate: String?
+    /**
+     * When an item was added.
+     */
+    public var added: String?
+    /**
+     * The item's identifier, to open it with.
+     */
+    public var item: String?
+    /**
+     * The collection's path relative to the archive root, to open it with.
+     */
+    public var collectionPath: String?
+    /**
+     * Whether only the title is found, for a sensitive item.
+     */
+    public var titleOnly: Bool
+    /**
+     * Changes whenever anything above does, so an entry is indexed again only then.
+     */
+    public var version: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Its identifier within the archive: `item/<id>`, `collection/<path>` or `fact/<term>`.
+         */id: String, 
+        /**
+         * What it is.
+         */kind: SpotlightKind, 
+        /**
+         * Its title: an item's or collection's title, or a fact's term.
+         */title: String, 
+        /**
+         * What it says: an item's summary, a collection's description, or a fact.
+         */description: String?, 
+        /**
+         * An item's tags.
+         */keywords: [String], 
+        /**
+         * The collection it's in, or the collection's own path, as `Parent / Child`.
+         */collection: String, 
+        /**
+         * An item's kind, such as `file`.
+         */itemKind: String?, 
+        /**
+         * An item's own date, such as a publication date.
+         */documentDate: String?, 
+        /**
+         * When an item was added.
+         */added: String?, 
+        /**
+         * The item's identifier, to open it with.
+         */item: String?, 
+        /**
+         * The collection's path relative to the archive root, to open it with.
+         */collectionPath: String?, 
+        /**
+         * Whether only the title is found, for a sensitive item.
+         */titleOnly: Bool, 
+        /**
+         * Changes whenever anything above does, so an entry is indexed again only then.
+         */version: String) {
+        self.id = id
+        self.kind = kind
+        self.title = title
+        self.description = description
+        self.keywords = keywords
+        self.collection = collection
+        self.itemKind = itemKind
+        self.documentDate = documentDate
+        self.added = added
+        self.item = item
+        self.collectionPath = collectionPath
+        self.titleOnly = titleOnly
+        self.version = version
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension SpotlightEntry: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSpotlightEntry: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SpotlightEntry {
+        return
+            try SpotlightEntry(
+                id: FfiConverterString.read(from: &buf), 
+                kind: FfiConverterTypeSpotlightKind.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                description: FfiConverterOptionString.read(from: &buf), 
+                keywords: FfiConverterSequenceString.read(from: &buf), 
+                collection: FfiConverterString.read(from: &buf), 
+                itemKind: FfiConverterOptionString.read(from: &buf), 
+                documentDate: FfiConverterOptionString.read(from: &buf), 
+                added: FfiConverterOptionString.read(from: &buf), 
+                item: FfiConverterOptionString.read(from: &buf), 
+                collectionPath: FfiConverterOptionString.read(from: &buf), 
+                titleOnly: FfiConverterBool.read(from: &buf), 
+                version: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SpotlightEntry, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterTypeSpotlightKind.write(value.kind, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterOptionString.write(value.description, into: &buf)
+        FfiConverterSequenceString.write(value.keywords, into: &buf)
+        FfiConverterString.write(value.collection, into: &buf)
+        FfiConverterOptionString.write(value.itemKind, into: &buf)
+        FfiConverterOptionString.write(value.documentDate, into: &buf)
+        FfiConverterOptionString.write(value.added, into: &buf)
+        FfiConverterOptionString.write(value.item, into: &buf)
+        FfiConverterOptionString.write(value.collectionPath, into: &buf)
+        FfiConverterBool.write(value.titleOnly, into: &buf)
+        FfiConverterString.write(value.version, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSpotlightEntry_lift(_ buf: RustBuffer) throws -> SpotlightEntry {
+    return try FfiConverterTypeSpotlightEntry.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSpotlightEntry_lower(_ value: SpotlightEntry) -> RustBuffer {
+    return FfiConverterTypeSpotlightEntry.lower(value)
+}
+
+
+/**
  * What the Status screen shows.
  */
 public struct StatusSummary: Equatable, Hashable {
@@ -20820,6 +21028,91 @@ public func FfiConverterTypeSensitivity_lift(_ buf: RustBuffer) throws -> Sensit
 #endif
 public func FfiConverterTypeSensitivity_lower(_ value: Sensitivity) -> RustBuffer {
     return FfiConverterTypeSensitivity.lower(value)
+}
+
+
+
+/**
+ * What a Spotlight entry is.
+ */
+
+public enum SpotlightKind: Equatable, Hashable {
+    
+    /**
+     * An item's card.
+     */
+    case item
+    /**
+     * A collection.
+     */
+    case collection
+    /**
+     * A glossary fact.
+     */
+    case fact
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension SpotlightKind: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSpotlightKind: FfiConverterRustBuffer {
+    typealias SwiftType = SpotlightKind
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SpotlightKind {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .item
+        
+        case 2: return .collection
+        
+        case 3: return .fact
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: SpotlightKind, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .item:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .collection:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .fact:
+            writeInt(&buf, Int32(3))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSpotlightKind_lift(_ buf: RustBuffer) throws -> SpotlightKind {
+    return try FfiConverterTypeSpotlightKind.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSpotlightKind_lower(_ value: SpotlightKind) -> RustBuffer {
+    return FfiConverterTypeSpotlightKind.lower(value)
 }
 
 
@@ -23511,6 +23804,31 @@ fileprivate struct FfiConverterSequenceTypeSetting: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeSpotlightEntry: FfiConverterRustBuffer {
+    typealias SwiftType = [SpotlightEntry]
+
+    public static func write(_ value: [SpotlightEntry], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeSpotlightEntry.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [SpotlightEntry] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [SpotlightEntry]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeSpotlightEntry.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeTimelineItem: FfiConverterRustBuffer {
     typealias SwiftType = [TimelineItem]
 
@@ -24191,6 +24509,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_settings() != 47688) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_spotlight_entries() != 62104) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_note_opened() != 42251) {
