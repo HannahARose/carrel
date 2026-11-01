@@ -1325,6 +1325,28 @@ public protocol ArchiveHandleProtocol: AnyObject, Sendable {
     func removeModel(name: String) throws  -> [String]
     
     /**
+     * Carrel's drawing of the item `id`, as a PNG: the one kept in the preview cache, or one
+     * drawn now by this device's providers (the CAD provider, or the 3MF reader's thumbnail).
+     * A restricted item's drawing isn't kept: it's a temporary file for the caller to delete.
+     * `None` when nothing here draws it.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if there's no such item, or [`CarrelError::Failed`] if its
+     * card can't be read.
+     */
+    func drawPreview(id: String) throws  -> String?
+    
+    /**
+     * How to preview each cataloged item, by card path.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the archive or a card can't be read.
+     */
+    func previews() throws  -> [ItemPreview]
+    
+    /**
      * Answers the question `id`: a term's answer is added to the glossary and the
      * proposals waiting on it are queued to be drafted again; a collection's answer is a
      * collection's path, where the waiting proposals then go.
@@ -1495,6 +1517,18 @@ public protocol ArchiveHandleProtocol: AnyObject, Sendable {
      * it, or [`CarrelError::Failed`] if the archive or its index can't be read.
      */
     func search(query: String, limit: UInt32, progress: ProgressListener?) throws  -> SearchResults
+    
+    /**
+     * Searches for `query` as [`ArchiveHandle::search`] does, by words alone: over the text
+     * already read, without starting a provider or a model, so it's quick enough to run as
+     * someone types. Items whose text hasn't been read yet are found by their cards.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] for a filter that can't be used or a query with nothing in
+     * it, or [`CarrelError::Failed`] if the archive can't be read.
+     */
+    func searchWords(query: String, limit: UInt32) throws  -> SearchResults
     
     /**
      * Chooses the text model that drafts cards on this device (`None` lets Carrel choose)
@@ -2675,6 +2709,43 @@ open func removeModel(name: String)throws  -> [String]  {
 }
     
     /**
+     * Carrel's drawing of the item `id`, as a PNG: the one kept in the preview cache, or one
+     * drawn now by this device's providers (the CAD provider, or the 3MF reader's thumbnail).
+     * A restricted item's drawing isn't kept: it's a temporary file for the caller to delete.
+     * `None` when nothing here draws it.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if there's no such item, or [`CarrelError::Failed`] if its
+     * card can't be read.
+     */
+open func drawPreview(id: String)throws  -> String?  {
+    return try  FfiConverterOptionString.lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_draw_preview(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(id),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * How to preview each cataloged item, by card path.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the archive or a card can't be read.
+     */
+open func previews()throws  -> [ItemPreview]  {
+    return try  FfiConverterSequenceTypeItemPreview.lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_previews(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
      * Answers the question `id`: a term's answer is added to the glossary and the
      * proposals waiting on it are queued to be drafted again; a collection's answer is a
      * collection's path, where the waiting proposals then go.
@@ -2981,6 +3052,27 @@ open func search(query: String, limit: UInt32, progress: ProgressListener?)throw
         FfiConverterString.lower(query),
         FfiConverterUInt32.lower(limit),
         FfiConverterOptionTypeProgressListener.lower(progress),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Searches for `query` as [`ArchiveHandle::search`] does, by words alone: over the text
+     * already read, without starting a provider or a model, so it's quick enough to run as
+     * someone types. Items whose text hasn't been read yet are found by their cards.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] for a filter that can't be used or a query with nothing in
+     * it, or [`CarrelError::Failed`] if the archive can't be read.
+     */
+open func searchWords(query: String, limit: UInt32)throws  -> SearchResults  {
+    return try  FfiConverterTypeSearchResults_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_search_words(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(query),
+        FfiConverterUInt32.lower(limit),uniffiCallStatus
     )
 })
 }
@@ -7534,6 +7626,111 @@ public func FfiConverterTypeItemDetail_lift(_ buf: RustBuffer) throws -> ItemDet
 #endif
 public func FfiConverterTypeItemDetail_lower(_ value: ItemDetail) -> RustBuffer {
     return FfiConverterTypeItemDetail.lower(value)
+}
+
+
+/**
+ * What an app needs to preview an item.
+ */
+public struct ItemPreview: Equatable, Hashable {
+    /**
+     * The item's identifier.
+     */
+    public var id: String
+    /**
+     * The item's file, folder or bundle, as an absolute path; `None` for card-only items, and
+     * when it isn't there.
+     */
+    public var file: String?
+    /**
+     * Where its thumbnail is kept, or goes once it's made; `None` when nothing is kept for it,
+     * for a restricted item or one with no file.
+     */
+    public var thumbnail: String?
+    /**
+     * Whether Carrel draws it ([`ArchiveHandle::draw_preview`]), because Quick Look can't
+     * show it: STEP, IGES and 3MF.
+     */
+    public var drawn: Bool
+    /**
+     * Whether it's restricted, so its preview waits until it's asked for.
+     */
+    public var restricted: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The item's identifier.
+         */id: String, 
+        /**
+         * The item's file, folder or bundle, as an absolute path; `None` for card-only items, and
+         * when it isn't there.
+         */file: String?, 
+        /**
+         * Where its thumbnail is kept, or goes once it's made; `None` when nothing is kept for it,
+         * for a restricted item or one with no file.
+         */thumbnail: String?, 
+        /**
+         * Whether Carrel draws it ([`ArchiveHandle::draw_preview`]), because Quick Look can't
+         * show it: STEP, IGES and 3MF.
+         */drawn: Bool, 
+        /**
+         * Whether it's restricted, so its preview waits until it's asked for.
+         */restricted: Bool) {
+        self.id = id
+        self.file = file
+        self.thumbnail = thumbnail
+        self.drawn = drawn
+        self.restricted = restricted
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension ItemPreview: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeItemPreview: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ItemPreview {
+        return
+            try ItemPreview(
+                id: FfiConverterString.read(from: &buf), 
+                file: FfiConverterOptionString.read(from: &buf), 
+                thumbnail: FfiConverterOptionString.read(from: &buf), 
+                drawn: FfiConverterBool.read(from: &buf), 
+                restricted: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ItemPreview, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterOptionString.write(value.file, into: &buf)
+        FfiConverterOptionString.write(value.thumbnail, into: &buf)
+        FfiConverterBool.write(value.drawn, into: &buf)
+        FfiConverterBool.write(value.restricted, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeItemPreview_lift(_ buf: RustBuffer) throws -> ItemPreview {
+    return try FfiConverterTypeItemPreview.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeItemPreview_lower(_ value: ItemPreview) -> RustBuffer {
+    return FfiConverterTypeItemPreview.lower(value)
 }
 
 
@@ -13376,6 +13573,31 @@ fileprivate struct FfiConverterSequenceTypeFiledItem: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeItemPreview: FfiConverterRustBuffer {
+    typealias SwiftType = [ItemPreview]
+
+    public static func write(_ value: [ItemPreview], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeItemPreview.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ItemPreview] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [ItemPreview]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeItemPreview.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeItemSummary: FfiConverterRustBuffer {
     typealias SwiftType = [ItemSummary]
 
@@ -13944,6 +14166,16 @@ public func looksCompressed(path: String) -> Bool  {
     )
 })
 }
+/**
+ * The longest side of a thumbnail in the preview cache, in pixels.
+ */
+public func thumbnailPixels() -> UInt32  {
+    return try!  FfiConverterUInt32.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_func_thumbnail_pixels(uniffiCallStatus
+    )
+})
+}
 
 private enum InitializationResult {
     case ok
@@ -13964,6 +14196,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_func_looks_compressed() != 40569) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_func_thumbnail_pixels() != 32344) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_collections() != 26221) {
@@ -14137,6 +14372,12 @@ private let initializationResult: InitializationResult = {
     if (uniffi_carrel_ffi_checksum_method_archivehandle_remove_model() != 48489) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_draw_preview() != 27478) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_previews() != 57952) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_answer_question() != 10632) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -14186,6 +14427,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_search() != 11699) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_search_words() != 565) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_choose_models() != 39343) {
