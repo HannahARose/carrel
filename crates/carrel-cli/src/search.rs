@@ -10,6 +10,7 @@ use carrel_core::archive::Archive;
 use carrel_core::card::Sensitivity;
 use carrel_core::providers::Registry;
 use carrel_core::search::query::Query;
+use carrel_core::search::run::ModelSource;
 use carrel_core::search::texts::{Unindexed, fill, tidy};
 use carrel_core::search::{Found, Hit, Meaning};
 use serde_json::json;
@@ -86,7 +87,12 @@ pub fn search(
     if let Some(mut display) = display {
         display.finish();
     }
-    let (results, words_only) = (searched.results, searched.words_only);
+    let (results, mut words_only) = (searched.results, searched.words_only);
+    if let (Some(why), Some(ModelSource::Download(model))) =
+        (&mut words_only, searched.missing_model)
+    {
+        why.push_str(&crate::index::download_command(model.name));
+    }
     let marks = if std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none() {
         ("\x1b[1m", "\x1b[0m")
     } else {

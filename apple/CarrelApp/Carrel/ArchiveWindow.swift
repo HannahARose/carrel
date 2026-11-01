@@ -20,10 +20,10 @@ struct ArchiveWindow: View {
     var body: some View {
         @Bindable var model = model
         NavigationSplitView {
-            Sidebar(model: model)
+            ArchiveSidebar(model: model)
                 .navigationSplitViewColumnWidth(min: 180, ideal: 220)
         } content: {
-            ScreenContent(model: model)
+            ArchiveScreenContent(model: model)
                 .navigationSplitViewColumnWidth(min: 260, ideal: 340)
         } detail: {
             Inspector(model: model)
@@ -76,17 +76,21 @@ extension ArchiveWindow {
     }
 }
 
-private struct Sidebar: View {
+struct ArchiveSidebar: View {
     @Bindable var model: ArchiveWindowModel
 
     var body: some View {
+        // A row's tag goes last, after its badge: a tag with a modifier after it isn't the
+        // row's, so the row can't be chosen (#334).
         List(selection: $model.screen) {
             Section {
                 Label("Status", systemImage: "gauge.with.dots.needle.33percent").tag(Screen.status)
-                Label("Review", systemImage: "tray.full").tag(Screen.review)
+                Label("Review", systemImage: "tray.full")
                     .badge(model.archive?.reviewCount ?? 0)
-                Label("Questions", systemImage: "questionmark.bubble").tag(Screen.questions)
+                    .tag(Screen.review)
+                Label("Questions", systemImage: "questionmark.bubble")
                     .badge(model.archive?.questions.count ?? 0)
+                    .tag(Screen.questions)
                 Label("Active", systemImage: "arrow.up.forward.square")
                     .badge(model.activeScreen?.pendingCount ?? 0)
                     .tag(Screen.active)
@@ -114,7 +118,7 @@ private struct Sidebar: View {
 }
 
 /// The content column for the chosen screen.
-private struct ScreenContent: View {
+struct ArchiveScreenContent: View {
     @Bindable var model: ArchiveWindowModel
 
     var body: some View {
