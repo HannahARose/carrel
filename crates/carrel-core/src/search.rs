@@ -490,7 +490,7 @@ fn collection_doc(archive: &Archive, collection: &crate::archive::Collection) ->
 }
 
 /// `filters` applied to `item`. Tombstones are left out unless `kind:tombstone` asks for them.
-fn passes(filters: &Filters, item: &FoundItem) -> bool {
+pub(crate) fn passes(filters: &Filters, item: &FoundItem) -> bool {
     let date = item.date.as_deref();
     let in_collection = |wanted: &String| {
         format!("/{}/", item.collection.to_lowercase())

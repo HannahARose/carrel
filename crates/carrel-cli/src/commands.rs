@@ -386,6 +386,8 @@ pub fn status(archive: Option<&Path>) -> Result<Report, Failure> {
     text.push_str(&signals_section(&summary.signals));
     let (desk_text, desk) = crate::desk::suggestions_section(&summary.desk);
     text.push_str(&desk_text);
+    let (resurfaced_text, resurfaced) = crate::discover::resurfaced(&archive);
+    text.push_str(&resurfaced_text);
     let mut warnings = Vec::new();
     if summary.synced {
         warnings.push(SYNCED_WARNING);
@@ -408,6 +410,7 @@ pub fn status(archive: Option<&Path>) -> Result<Report, Failure> {
         "recent": summary.recent.iter().map(|r| recent_line(r).1).collect::<Vec<_>>(),
         "signals": summary.signals,
         "desk": desk,
+        "resurfaced": resurfaced,
         "names": summary.names.iter().map(|f| json!({
             "path": f.path,
             "problems": f.problems,
@@ -670,6 +673,9 @@ pub(crate) fn describe(archive: &Archive, query: &str) -> Result<Shown, Failure>
 pub fn show(archive: Option<&Path>, query: &str) -> Result<Report, Failure> {
     let archive = locate(archive)?;
     let mut shown = describe(&archive, query)?;
+    if let Some((collection, _)) = shown.card_path.rsplit_once('/') {
+        crate::discover::opened(&archive, collection);
+    }
     let near = carrel_core::index::related::open(&archive)
         .and_then(|index| crate::related::nearest(&archive, &index, &shown));
     let mut text = std::mem::take(&mut shown.text);
