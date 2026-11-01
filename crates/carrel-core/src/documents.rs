@@ -163,6 +163,12 @@ pub struct Settings {
     /// What the librarian may do on its own (`docs/design/librarian.md`).
     #[serde(default, skip_serializing_if = "LibrarianSettings::is_default")]
     pub librarian: LibrarianSettings,
+    /// What the crawler may do on its own, and its pace (`docs/design/restructure.md`).
+    #[serde(
+        default,
+        skip_serializing_if = "crate::crawl::CrawlerSettings::is_default"
+    )]
+    pub crawler: crate::crawl::CrawlerSettings,
     /// Keys this version doesn't know.
     #[serde(flatten)]
     pub extra: Extra,
@@ -442,6 +448,7 @@ impl Default for Settings {
             questions: QuestionSettings::default(),
             compressed_files: crate::compressed::plan::Choice::default(),
             librarian: LibrarianSettings::default(),
+            crawler: crate::crawl::CrawlerSettings::default(),
             extra: Extra::new(),
         }
     }
