@@ -142,7 +142,9 @@ struct StatusCrawlerSection: View {
                                 Text(card).font(.callout).textSelection(.enabled)
                             }
                         }
-                        .help("Drafted by a weaker model or an older Carrel; the crawler redrafts them first")
+                        .help(
+                            "Drafted by a weaker model or an older Carrel; the crawler redrafts them first"
+                        )
                     }
                     if status.findings > 0 {
                         Button(

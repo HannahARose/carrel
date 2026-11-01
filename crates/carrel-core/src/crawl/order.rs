@@ -169,13 +169,13 @@ pub fn order_of<S: std::hash::BuildHasher, T: std::hash::BuildHasher>(
             // An item that moved since it was judged is judged again where it is now, and an
             // outdated draft once there's a stronger model or a newer drafting version.
             let moved = verdict.is_some_and(|v| v.collection != e.collection);
-            let stale = match (&e.outdated, verdict) {
+            let redue = match (&e.outdated, verdict) {
                 (Some(outdated), Some(v)) if stage == Stage::Outdated => {
                     super::drafts::stale(outdated, &v.model, v.drafting)
                 }
                 _ => false,
             };
-            let again = moved || stale;
+            let again = moved || redue;
             // One the crawler's model has judged at this drafting version waits as the sweep
             // does, until a stronger model or a newer version.
             let wait = if stage == Stage::Outdated && verdict.is_some() {

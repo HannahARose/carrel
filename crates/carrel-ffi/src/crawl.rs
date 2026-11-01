@@ -427,7 +427,10 @@ mod tests {
         let status = sample.handle.crawler_status().unwrap();
         assert_eq!(status.pace, "steady");
         assert!(
-            status.drafts.is_empty() || status.drafts.iter().all(|c| c.ends_with(".md")),
+            status
+                .drafts
+                .iter()
+                .all(|c| sample.root().join(c).is_file()),
             "outdated drafts are listed by card"
         );
         assert!(!status.changes);

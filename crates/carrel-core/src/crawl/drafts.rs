@@ -75,16 +75,16 @@ impl Outdated {
 /// and the current drafting version.
 #[must_use]
 pub fn outdated(drafted: &Drafted, crawler: Option<&str>) -> Option<Outdated> {
-    let drafter = drafted.model.as_deref().and_then(strength);
-    let weaker = match (drafter, crawler.and_then(strength)) {
-        (Some(drafter), Some(crawler)) => drafter < crawler,
+    let author = drafted.model.as_deref().and_then(strength);
+    let weaker = match (author, crawler.and_then(strength)) {
+        (Some(author), Some(judge)) => author < judge,
         _ => false,
     };
     (weaker || drafted.drafting < DRAFTING).then(|| Outdated {
         crawler: crawler.map(str::to_owned),
         weaker,
         drafting: drafted.drafting,
-        strength: drafter.unwrap_or((0, 0)),
+        strength: author.unwrap_or((0, 0)),
     })
 }
 
