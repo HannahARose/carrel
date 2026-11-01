@@ -55,19 +55,19 @@ Until then, build from source as [Getting started](docs/guide/getting-started.md
 
 ## Roadmap
 
-| Version | Contents |
-| --- | --- |
-| 0.1 | Archive format, Rust core and the `carrel` CLI |
-| 0.2 | Ingest from the CLI on macOS, Linux and Windows, with an interactive terminal mode |
-| 0.3 | Check out, desk items and edit cards, in the CLI |
-| 0.4 | Explorer and search, in the CLI |
-| 0.5 | The Mac app |
-| **1.0** | **First working release:** the Mac app plus the CLI, fully on-device |
-| 1.1 – 1.3 | Librarian and discovery, restructure proposals, macOS system integration |
-| **2.0** | **iCloud, iPad and iPhone** |
-| 2.1 | Optional remote models through a privacy filter |
-| **3.0** | **Offline collections and sharing between archives** |
-| 3.1 | Encryption, web snapshots |
+| Version | Contents | Status |
+| --- | --- | --- |
+| 0.1 | Archive format, Rust core and the `carrel` CLI | Done |
+| 0.2 | Ingest from the CLI on macOS, Linux and Windows, with an interactive terminal mode | Released |
+| 0.3 | Check out, desk items and edit cards, in the CLI | Released |
+| 0.4 | Explorer and search, in the CLI | Released |
+| 0.5 | The Mac app, with a background agent, and every interface fully capable | Released (0.5.1) |
+| 0.6 | The librarian and discovery, reminders, and restructure proposals with crawlers | Released |
+| 0.7 | macOS system integration: Finder, Share, Quick Look, Spotlight, App Intents | In progress |
+| 0.8 | iCloud, iPad and iPhone: one archive across devices | Next |
+| **1.0** | **First working release:** the Mac, iPad and iPhone apps and the CLI, fully on-device and signed | Planned |
+| 1.1 – 1.3 | Optional remote models through a privacy filter; offline collections and sharing; encryption and web snapshots | Planned |
+| **2.0** | **Linux and Windows apps** | Planned |
 
 Details are on the [wiki's Roadmap page](https://github.com/Horizon-Labs/carrel/wiki/Roadmap).
 
