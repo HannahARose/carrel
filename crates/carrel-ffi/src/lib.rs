@@ -52,6 +52,7 @@ pub mod agent;
 pub mod backups;
 pub mod browse;
 pub mod correct;
+pub mod crawl;
 pub mod discover;
 pub mod edit;
 pub mod graph;
