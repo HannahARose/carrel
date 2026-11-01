@@ -22,8 +22,11 @@
 //! items, creating, renaming, merging and splitting collections) and an arm in
 //! `apply_edit` for each, and reuse the rest.
 
+pub mod applying;
+pub mod eagerness;
 pub mod findability;
 pub mod grouping;
+pub mod section;
 pub mod tags;
 
 use std::collections::BTreeSet;
@@ -34,7 +37,7 @@ use crate::FormatVersion;
 use crate::archive::Archive;
 use crate::card::{DateOrTime, Extra, Id, Tag};
 use crate::coordinator::{Coordinator as _, CoordinatorError, DEFAULT_LEASE, DiskLock, Holder};
-use crate::history::{Change, History, HistoryError, Operation};
+use crate::history::{Change, History, HistoryError, Move, Operation};
 use crate::review::{Queue, QueueEntry, ReviewError};
 
 /// Where proposals wait, relative to the archive root (FORMAT.md §7.9).
@@ -151,6 +154,10 @@ pub struct Proposal {
     pub rationale: String,
     /// The changes, in the order they'd be applied.
     pub changes: Vec<ProposedChange>,
+    /// For a section proposal: its cost, benefit and findability result, and the eagerness it
+    /// was judged by.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assessment: Option<section::Assessment>,
     /// Keys this version doesn't know.
     #[serde(flatten)]
     pub extra: Extra,
@@ -202,6 +209,7 @@ impl Proposal {
             invasiveness: Invasiveness::Rewriting,
             rationale: String::new(),
             changes: Vec::new(),
+            assessment: None,
             extra: Extra::new(),
         }
     }
@@ -277,6 +285,47 @@ pub enum Edit {
         /// The tag.
         tag: Tag,
     },
+    /// Create a collection, with a design document saying what belongs in it.
+    CreateCollection {
+        /// Its folder, relative to the archive root.
+        path: String,
+        /// One line saying what belongs in it.
+        description: String,
+    },
+    /// Move the change's items, each with its card, into a collection.
+    MoveItems {
+        /// The collection's folder.
+        to: String,
+    },
+    /// Rename a collection: its folder and title change, its permanent ID doesn't, and links
+    /// follow.
+    RenameCollection {
+        /// Its folder now.
+        from: String,
+        /// Its folder after.
+        to: String,
+    },
+    /// Move everything in one collection (items and subcollections) into another, and retire
+    /// the first one's design document.
+    MergeCollection {
+        /// The collection merged.
+        from: String,
+        /// The collection it joins.
+        into: String,
+    },
+    /// Rewrite a collection's design document: its one-line description, or its Organization
+    /// section, which gets the text given.
+    RewriteDesign {
+        /// The collection's folder.
+        collection: String,
+        /// Its new description, if it changes.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        description: Option<String>,
+        /// Text for its Organization section, if it changes, such as the subcollections it now
+        /// has.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        organization: Option<String>,
+    },
 }
 
 impl Edit {
@@ -290,6 +339,13 @@ impl Edit {
                 format!("split “{}” into {}", tag.0, quoted(&parts))
             }
             Self::RetireTag { tag } => format!("retire “{}”", tag.0),
+            Self::CreateCollection { path, .. } => format!("create the collection {path}"),
+            Self::MoveItems { to } => format!("move items to {to}"),
+            Self::RenameCollection { from, to } => format!("rename {from} to {to}"),
+            Self::MergeCollection { from, into } => format!("merge {from} into {into}"),
+            Self::RewriteDesign { collection, .. } => {
+                format!("rewrite {collection}'s design document")
+            }
         }
     }
 }
@@ -361,6 +417,8 @@ pub enum RestructureError {
     History(HistoryError),
     /// The queue couldn't be read or written.
     Queue(ReviewError),
+    /// The backup snapshot taken before moving files couldn't be taken.
+    Snapshot(crate::backup::BackupError),
     /// A file couldn't be read or written.
     Io {
         /// The file.
@@ -377,6 +435,7 @@ impl std::fmt::Display for RestructureError {
             Self::Lease(e) => write!(f, "{e}"),
             Self::History(e) => write!(f, "{e}"),
             Self::Queue(e) => write!(f, "{e}"),
+            Self::Snapshot(e) => write!(f, "the snapshot before restructuring failed: {e}"),
             Self::Io { path, source } => write!(f, "{}: {source}", path.display()),
         }
     }
@@ -388,6 +447,7 @@ impl std::error::Error for RestructureError {
             Self::Lease(e) => Some(e),
             Self::History(e) => Some(e),
             Self::Queue(e) => Some(e),
+            Self::Snapshot(e) => Some(e),
             Self::Io { source, .. } => Some(source),
             Self::Invalid(_) => None,
         }
@@ -498,6 +558,14 @@ pub struct Outcome {
     pub documents: Vec<String>,
     /// Vocabulary entries it kept because items it left alone still use them.
     pub kept: Vec<String>,
+    /// Why the change as a whole was left alone, if it was, such as a collection that's no
+    /// longer there.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub not_applied: Option<String>,
+    /// What it moved, in order, so undo can move it back: items, and the folders of renamed
+    /// and merged collections.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub moves: Vec<Move>,
 }
 
 /// What approving a proposal did.
@@ -511,6 +579,9 @@ pub struct Approved {
     pub summary: String,
     /// The history commit, or `None` when nothing needed changing after all.
     pub commit: Option<String>,
+    /// The backup snapshot taken first, for a proposal that moves files.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snapshot: Option<String>,
 }
 
 /// Applies the changes of `proposal` that `only` names (all of them when `None`) as one
@@ -534,15 +605,56 @@ pub fn approve(
     only: Option<&[String]>,
     holder: Holder,
 ) -> Result<Approved, RestructureError> {
+    approve_with_snapshot(archive, proposal, only, holder, None)
+}
+
+/// As [`approve`], taking a backup snapshot with `backups` first when any approved change
+/// moves files, as a whole-section restructure does, so the change in history names it.
+///
+/// # Errors
+///
+/// As [`approve`], and [`RestructureError::Snapshot`] if the snapshot can't be taken; then
+/// nothing has changed.
+///
+/// # Panics
+///
+/// Never: every selected change is in the proposal.
+pub fn approve_with_snapshot(
+    archive: &Archive,
+    proposal: &Proposal,
+    only: Option<&[String]>,
+    holder: Holder,
+    backups: Option<&dyn crate::backup::Backups>,
+) -> Result<Approved, RestructureError> {
     let selection = select(proposal, only)?;
     let lease = DiskLock::for_archive(archive).acquire(holder, "restructure", DEFAULT_LEASE)?;
     let result = (|| -> Result<Approved, RestructureError> {
+        let moves_files = selection.approved.iter().any(|id| {
+            proposal
+                .change(id)
+                .is_some_and(|c| applying::moves_files(&c.change))
+        });
+        let snapshot = match backups.filter(|_| moves_files) {
+            Some(backups) => Some(
+                backups
+                    .snapshot(
+                        archive.root(),
+                        &format!("Before {}", summary(proposal, &selection).to_lowercase()),
+                    )
+                    .map_err(RestructureError::Snapshot)?
+                    .trailer(),
+            ),
+            None => None,
+        };
         let mut outcomes = Vec::new();
         for id in &selection.approved {
             let change = proposal
                 .change(id)
                 .expect("selected changes are in the proposal");
             outcomes.push(apply_edit(archive, change)?);
+        }
+        if moves_files {
+            applying::finish(archive)?;
         }
         // A proposal applied straight from where it was built was never queued.
         match ProposalQueue::of(archive).remove(proposal.id) {
@@ -557,6 +669,8 @@ pub fn approve(
             lease.info().device,
         );
         change.body = Some(body(proposal, &selection, &outcomes));
+        change.snapshot.clone_from(&snapshot);
+        change.moves = outcomes.iter().flat_map(|o| o.moves.clone()).collect();
         let mut seen = BTreeSet::new();
         change.items = outcomes
             .iter()
@@ -569,6 +683,7 @@ pub fn approve(
             outcomes,
             summary,
             commit,
+            snapshot,
         })
     })();
     lease.release()?;
@@ -581,6 +696,11 @@ fn apply_edit(archive: &Archive, change: &ProposedChange) -> Result<Outcome, Res
         Edit::MergeTags { .. } | Edit::SplitTag { .. } | Edit::RetireTag { .. } => {
             tags::apply(archive, change)
         }
+        Edit::CreateCollection { .. }
+        | Edit::MoveItems { .. }
+        | Edit::RenameCollection { .. }
+        | Edit::MergeCollection { .. }
+        | Edit::RewriteDesign { .. } => applying::apply(archive, change),
     }
 }
 
@@ -646,15 +766,41 @@ pub fn find(
     let mut found = waiting(archive, Some(kind))?;
     match found.len() {
         0 => Err(RestructureError::Invalid(format!(
-            "no {} proposal is waiting; make one with `carrel restructure {} propose`",
+            "no {} proposal is waiting; make one with `{}`",
             kind.as_str(),
-            kind.as_str()
+            match kind {
+                ProposalKind::Tags => "carrel restructure tags propose",
+                ProposalKind::Section => "carrel restructure propose [COLLECTION]",
+            }
         ))),
         1 => Ok(found.remove(0)),
         _ => Err(RestructureError::Invalid(format!(
             "{} {} proposals are waiting; name one",
             found.len(),
             kind.as_str()
+        ))),
+    }
+}
+
+/// The waiting proposal `id` names, of any kind, or the only one waiting when `id` is `None`.
+///
+/// # Errors
+///
+/// [`RestructureError::Invalid`] when there's none, or several and no `id`, or an error
+/// reading the queue.
+pub fn find_any(archive: &Archive, id: Option<&str>) -> Result<Proposal, RestructureError> {
+    if let Some(id) = id {
+        return Ok(ProposalQueue::of(archive).find(id)?);
+    }
+    let mut found = waiting(archive, None)?;
+    match found.len() {
+        0 => Err(RestructureError::Invalid(
+            "no restructure proposal is waiting; make one with `carrel restructure propose [COLLECTION]`"
+                .into(),
+        )),
+        1 => Ok(found.remove(0)),
+        n => Err(RestructureError::Invalid(format!(
+            "{n} restructure proposals are waiting; name one (`carrel restructure list` shows them)"
         ))),
     }
 }
