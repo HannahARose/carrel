@@ -14,6 +14,17 @@ use crate::sessions::Decision;
 
 pub use carrel_core::active::{ActiveItem, Kind};
 
+/// A checkout to return, as `carrel return ITEM [--from PATH] [--trim-snapshots]` does.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Returning {
+    /// The item.
+    pub id: Id,
+    /// Where the working copy is now, if it moved.
+    pub from: Option<std::path::PathBuf>,
+    /// Whether to forget the checkout's session snapshots once it's returned.
+    pub trim: bool,
+}
+
 /// A row of the Active list: an item, or one of its pending entries (numbered from 1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Row {
@@ -79,6 +90,7 @@ impl App {
             keys.push(("n", "add to desk"));
         }
         if item.kind == Kind::CheckedOut {
+            // `m`, for a working copy that moved, has no room; it's in ? help.
             keys.push(("r", "return"));
         }
         keys.push(("o", "open"));
@@ -111,7 +123,7 @@ impl App {
 
     /// Handles a key on the Active screen.
     pub(super) fn active_key(&mut self, key: KeyEvent) -> Handled {
-        let KeyCode::Char(c @ ('r' | 'o' | 'a' | 'e' | 'c' | 'd' | ' ' | 'x' | 'n' | 'f')) =
+        let KeyCode::Char(c @ ('r' | 'm' | 'o' | 'a' | 'e' | 'c' | 'd' | ' ' | 'x' | 'n' | 'f')) =
             key.code
         else {
             return Handled::No;
@@ -132,7 +144,7 @@ impl App {
         };
         Handled::Yes(match c {
             'o' => Some(Effect::Open(item.working)),
-            'r' if item.kind == Kind::Desk => {
+            'r' | 'm' if item.kind == Kind::Desk => {
                 self.message =
                     Some("A desk item isn't checked out, so there's nothing to return".into());
                 None
@@ -159,7 +171,11 @@ impl App {
                 None
             }
             'r' => {
-                self.ask_to_return(&item);
+                self.ask_to_return(item.id, None);
+                None
+            }
+            'm' => {
+                self.ask_option(super::option_lines::OptionLine::ReturnFrom { id: item.id });
                 None
             }
             'x' => {
@@ -215,22 +231,26 @@ impl App {
         })
     }
 
-    /// Works out returning `item` and asks, showing what changed; or says why it can't.
-    fn ask_to_return(&mut self, item: &ActiveItem) {
+    /// Works out returning the checkout `id`, from `from` if its working copy moved, and asks,
+    /// showing what changed; or says why it can't.
+    pub(super) fn ask_to_return(&mut self, id: Id, from: Option<std::path::PathBuf>) {
+        let from = from.map(|p| crate::paths::expand(&p.to_string_lossy()));
         let plan = self.archive.items().ok().and_then(|items| {
-            let found = items.into_iter().find(|i| i.id == item.id)?;
+            let found = items.into_iter().find(|i| i.id == id)?;
             Some(carrel_core::checkout::plan_return(
                 &self.archive,
                 &found,
-                None,
+                from.as_deref(),
             ))
         });
         match plan {
             Some(Ok(plan)) => {
                 self.confirm = Some(Confirm::Return {
-                    id: item.id,
+                    id,
                     title: plan.title.clone(),
                     changes: crate::checkout::describe_return(&plan),
+                    from,
+                    snapshots: self.backups_set_up(),
                 });
             }
             Some(Err(e)) => self.message = Some(format!("Can't return it: {e}")),

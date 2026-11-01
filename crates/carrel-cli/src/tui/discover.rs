@@ -1,19 +1,21 @@
 //! The Discover screen (`docs/design/librarian.md`, "Discovery"): the views the core computes,
 //! drawn as `carrel discover` draws them. `d` shows on this day, `w` wanders the stacks, one
 //! key per step (`Space` or `Enter`), with the item's preview where the terminal draws
-//! images, `t` the timeline (`p` changes its periods), `m` the archive map as a sized tree,
-//! and `h` activity as a block heatmap. Now and then a wander step asks a question about its
-//! item, which `a` answers.
+//! images, `t` the timeline (`p` changes its periods, `/` narrows it by words and filters and
+//! `b` chooses its date), `m` the archive map as a sized tree, and `h` activity as a block
+//! heatmap (`r` chooses its days). Now and then a wander step asks a question about its item,
+//! which `a` answers. `w` in Browse starts a walk from the item shown.
 
-use carrel_core::discover::Catalog;
 use carrel_core::discover::timeline::{Options, Resolution};
 use carrel_core::discover::wander::{self, Surroundings, Walk};
+use carrel_core::discover::{Catalog, DateKind};
 use carrel_core::questions::QuestionEntry;
 use carrel_core::questions::moments::wander_asks;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 
 use super::app::{App, Tab};
 use super::item::ItemView;
+use super::option_lines::OptionLine;
 use super::review::Handled;
 
 /// Which discovery view is shown.
@@ -54,6 +56,12 @@ pub struct Stacks {
     pub scroll: u16,
     /// The timeline's periods.
     pub per: Resolution,
+    /// The timeline's words and filters, as `carrel discover timeline QUERY` takes them.
+    pub timeline_words: String,
+    /// Which date the timeline goes by; none for when each was made, else filed.
+    pub timeline_by: Option<DateKind>,
+    /// The first and last day activity covers; none for the last year.
+    pub activity_range: Option<(jiff::civil::Date, jiff::civil::Date)>,
     /// The walk, once one has started.
     pub walk: Option<Walk>,
     /// The step shown, as its lines.
@@ -92,32 +100,81 @@ impl App {
                 &carrel_core::discover::today::on_this_day(&catalog, today),
                 today,
             ),
-            View::Timeline => {
-                let options = Options {
-                    by: None,
-                    resolution: self.stacks.per,
-                    filters: carrel_core::search::query::Filters::default(),
-                    only: None,
-                };
-                crate::discover::timeline_text(
-                    &carrel_core::discover::timeline::timeline(&catalog, &options),
-                    3,
-                )
-            }
+            View::Timeline => self.timeline_lines(&catalog),
             View::Map => {
                 crate::discover::map_text(&carrel_core::discover::map::map(&catalog), None)
             }
             View::Activity => {
-                let (from, to) = carrel_core::discover::activity::last_year(today);
-                crate::discover::activity_text(&carrel_core::discover::activity::activity(
-                    &catalog, from, to,
-                ))
+                let (from, to) = self
+                    .stacks
+                    .activity_range
+                    .unwrap_or_else(|| carrel_core::discover::activity::last_year(today));
+                let mut text = format!("From {from} to {to}\n\n");
+                text.push_str(&crate::discover::activity_text(
+                    &carrel_core::discover::activity::activity(&catalog, from, to),
+                ));
+                text
             }
             View::Wander => return,
         }
         .lines()
         .map(str::to_owned)
         .collect();
+    }
+
+    /// The timeline, as `carrel discover timeline` draws it with the words, filters and date
+    /// chosen, below a line saying which they are.
+    fn timeline_lines(&self, catalog: &Catalog) -> String {
+        let query = match carrel_core::search::query::Query::parse(&self.stacks.timeline_words) {
+            Ok(query) => query,
+            Err(e) => return format!("{e}; press / to change the words"),
+        };
+        let only = match carrel_core::discover::timeline::matching(&self.archive, &query) {
+            Ok(only) => only,
+            Err(e) => return e.to_string(),
+        };
+        let options = Options {
+            by: self.stacks.timeline_by,
+            resolution: self.stacks.per,
+            filters: query.filters.clone(),
+            only,
+        };
+        let mut text = format!(
+            "By {}",
+            self.stacks
+                .timeline_by
+                .map_or("when made, else filed", DateKind::name)
+        );
+        if !self.stacks.timeline_words.is_empty() {
+            text.push_str(&format!(", for “{}”", self.stacks.timeline_words));
+        }
+        text.push_str("\n\n");
+        text.push_str(&crate::discover::timeline_text(
+            &carrel_core::discover::timeline::timeline(catalog, &options),
+            3,
+        ));
+        text
+    }
+
+    /// Starts a new walk from the item at `card`, as `carrel discover wander ITEM` does, and
+    /// shows its first step on the Discover screen.
+    pub(super) fn wander_from(&mut self, card: &str) {
+        let Some(id) = self
+            .archive
+            .items()
+            .ok()
+            .and_then(|items| items.into_iter().find(|i| i.card == card))
+            .map(|i| i.id)
+        else {
+            self.message = Some("It isn't in the archive any more".into());
+            return;
+        };
+        self.stacks.walk = Some(Walk::new(new_seed(), Some(id)).remembering(&self.records.visits));
+        self.stacks.view = View::Wander;
+        self.stacks.done = false;
+        self.stacks.asked_at = None;
+        self.tab = Tab::Discover;
+        self.wander_step();
     }
 
     /// Takes the walk's next step, starting one if there's none: the item, why it came next,
@@ -220,6 +277,22 @@ impl App {
                 };
                 self.load_discover();
             }
+            (View::Timeline, KeyCode::Char('/')) => {
+                self.ask_option(OptionLine::TimelineWords);
+                if let Some(input) = self.input.as_mut() {
+                    input.text.clone_from(&self.stacks.timeline_words);
+                }
+            }
+            (View::Timeline, KeyCode::Char('b')) => {
+                self.stacks.timeline_by = match self.stacks.timeline_by {
+                    None => Some(DateKind::Created),
+                    Some(DateKind::Created) => Some(DateKind::Filed),
+                    Some(DateKind::Filed) => Some(DateKind::Worked),
+                    Some(DateKind::Worked) => None,
+                };
+                self.load_discover();
+            }
+            (View::Activity, KeyCode::Char('r')) => self.ask_option(OptionLine::ActivityRange),
             _ => return Handled::No,
         }
         Handled::Yes(None)
@@ -251,7 +324,13 @@ impl App {
                 }
                 keys.extend([("o", "open in Browse"), ("n", "new walk")]);
             }
-            View::Timeline => keys.extend([("p", "periods"), ("↑↓", "scroll")]),
+            View::Timeline => keys.extend([
+                ("p", "periods"),
+                ("/", "words"),
+                ("b", "by date"),
+                ("↑↓", "scroll"),
+            ]),
+            View::Activity => keys.extend([("r", "days"), ("↑↓", "scroll")]),
             _ => keys.push(("↑↓", "scroll")),
         }
         keys.push(("?", "help"));

@@ -9,10 +9,12 @@ use carrel_core::history::Entry;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 
 use super::app::{App, Effect, step};
+use super::option_lines::OptionLine;
 use super::review::Handled;
 use super::screens::{Input, InputPurpose};
 
-/// How much of the files' contents `v` reads back, as `carrel backup verify` does by default.
+/// How much of the files' contents `v` reads back unless told otherwise, as
+/// `carrel backup verify` does by default.
 pub const VERIFY_PERCENT: u8 = 1;
 
 /// A password, kept out of debug output and logs.
@@ -57,7 +59,10 @@ impl App {
                 None
             }
             KeyCode::Char('n') => Some(Effect::BackupNow),
-            KeyCode::Char('v') => Some(Effect::BackupVerify),
+            KeyCode::Char('v') => {
+                self.ask_option(OptionLine::VerifyPercent);
+                None
+            }
             KeyCode::Char('r') => {
                 match self
                     .snapshots()
@@ -112,7 +117,8 @@ impl App {
     }
 
     /// What happens when a line typed for backups is entered: the repository, then the
-    /// password (twice for a new repository), then setting up; or the item to restore.
+    /// password (twice for a new repository), then its name; or the item to restore, then
+    /// the folder to restore it into.
     pub(super) fn backup_input(&mut self, purpose: InputPurpose, text: String) -> Option<Effect> {
         match purpose {
             InputPurpose::BackupRepository => {
@@ -144,14 +150,18 @@ impl App {
                         self.message = Some("The passwords don't match; nothing was set up".into());
                         None
                     }
-                    _ => Some(Effect::BackupSetup {
-                        repository,
-                        password: Secret(text),
-                    }),
+                    _ => {
+                        self.ask_option(OptionLine::BackupDescription {
+                            repository,
+                            password: Secret(text),
+                        });
+                        None
+                    }
                 }
             }
             InputPurpose::RestoreItem { at } if !text.is_empty() => {
-                Some(Effect::BackupRestore { item: text, at })
+                self.ask_option(OptionLine::RestoreTo { item: text, at });
+                None
             }
             InputPurpose::RestoreItem { .. } => {
                 self.message = Some("No item given; nothing restored".into());

@@ -11,6 +11,7 @@ The command line and the interactive mode run on macOS, Linux and Windows. The M
 | Capability | Command line | Interactive mode | Mac app |
 | --- | --- | --- | --- |
 | Create, open and switch archives | `init`, `open` | ✓ `Ctrl-O`, Settings | ✓ |
+| Create an archive with a chosen embedding model, or start history for one that has none | `init --embedding-model`, `init` in the archive | ✓ `Ctrl-O` | #343 |
 | Status, problems and Recent | `status` | ✓ Status | ✓ Status |
 | Add items to the intake queue | `ingest` | ✓ Ingest | ✓ drag, ⌘O (#236) |
 | The worker's progress | `ingest --status` | ✓ | ✓ (#236) |
@@ -20,15 +21,18 @@ The command line and the interactive mode run on macOS, Linux and Windows. The M
 | Review: duplicates (keep both, file as a version) | `review` | ✓ | ✓ (#234) |
 | Questions: answer and dismiss | `questions` | ✓ Questions | ✓ (#234) |
 | Questions: ranked, with suggested answers, skip | `questions`, `questions skip` | ✓ Questions (`1`–`9`, `s`) | ranked; suggestions and skip #319 |
-| Questions about an item, a group, a sender | `questions answer`, `questions about` | ✓ Questions | groups ✓; items and senders #319 |
+| Questions about an item, a group, a sender | `questions answer`, `questions about` | ✓ Questions; `A` in Browse asks for an item's | groups ✓; items and senders #319 |
 | Questions while browsing and wandering, from the librarian, and a few a day on Status | `show`, `discover wander`, `ask`, `status` | ✓ Browse, Discover, Librarian, Status (`a`) | #316 |
 | Browse collections and items | `show`, `status` | ✓ Browse | ✓ Browse |
 | Previews of items | the item's path in `show` | ✓ Browse, in terminals that draw images (#258) | ✓ inspector and grid (#256) |
 | An item's history and related items | `show` | ✓ | ✓ |
 | Search, with filters and reasons | `search` | ✓ `/` | ✓ ⌘F (#236) |
 | Discovery: on this day, timeline | `discover today`, `discover timeline` | ✓ Discover (`D`) | ✓ Discover |
+| Discovery: the timeline's words, filters and date | `discover timeline QUERY --by` | ✓ `/` and `b` on the timeline | ✓ Discover |
 | Discovery: wander the stacks | `discover wander` | ✓ Discover, with previews where the terminal draws them | ✓ Discover, with previews |
+| Discovery: wander from an item | `discover wander ITEM` | ✓ `w` in Browse | #343 |
 | Discovery: the archive map, activity | `discover map`, `discover activity` | ✓ a sized tree and a block heatmap | ✓ a treemap and a heatmap |
+| Discovery: activity over chosen days | `discover activity --from --to` | ✓ `r` on activity | #343 |
 | Discovery: the tag and link graph | `discover graph [--items]` | #326, a text view of the strongest connections | #327, a drawn graph |
 | Resurfacing forgotten collections | `status` | ✓ Status | ✓ Status |
 | The embedding index: status, rebuild, switch models | `index` | ✓ Status, Settings | ✓ Settings → Search (#267) |
@@ -39,13 +43,16 @@ The command line and the interactive mode run on macOS, Linux and Windows. The M
 | Expand a filed compressed file | `expand` | ✓ `z` in Browse | ✓ ⇧⌘E (#268) |
 | Check out an item | `checkout` | ✓ `o` in Browse | ✓ (#235) |
 | Return or cancel a checkout | `return` | ✓ Active | ✓ (#235) |
+| Return a working copy that moved, and trim its session snapshots | `return --from`, `--trim-snapshots` | ✓ `m`, and `t` when asked, in Active | #343 |
 | List checkouts | `checkouts` | ✓ Active | ✓ (#235) |
 | Desk items: add, remove, archive | `desk` | ✓ Active | ✓ (#235) |
+| Desk items: a title and summary for the card | `desk add --title --summary` | ✓ asked when adding | #343 |
 | Work-session entries: approve, edit, combine, drop | `sessions` | ✓ Active | ✓ (#235) |
 | History and undo | `log`, `undo` | ✓ History | ✓ (#235) |
 | The librarian: ask, converse, save to the Journal | `ask` | ✓ the Librarian screen (`L`) | ✓ the Librarian panel (⌥⌘L), Ask About This (⇧⌘L) |
 | The librarian's changes: list and undo them together | `status`, `log --librarian`, `undo --librarian` | ✓ the Librarian screen, Status and History | ✓ the Librarian panel, Status and History |
 | Backups: set up, snapshot, list, verify, restore | `backup` | ✓ Backups | ✓ Backups (#266) |
+| Backups: the repository's name, how much to verify, where to restore | `backup setup --description`, `verify --percent`, `restore --to` | ✓ asked along the way | #343 |
 | Settings, this device's and the archive's | `settings` | ✓ Settings | ✓ Settings → General (#267) |
 | Models: list, download, remove | `models` | ✓ Settings | ✓ Settings → Models (#267) |
 | Providers in use, and file types not read | `providers`, `formats` | ✓ Settings | ✓ Settings → Providers (#267) |
