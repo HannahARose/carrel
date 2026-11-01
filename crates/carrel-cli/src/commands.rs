@@ -343,18 +343,19 @@ fn archive_header(archive: &Archive) -> String {
 pub fn status(archive: Option<&Path>) -> Result<Report, Failure> {
     let archive = locate(archive)?;
     let mut records = crate::asking::Records::here(&archive);
-    status_on(&archive, &mut records)
+    status_on(&archive, &mut records, carrel_core::local::home_dir())
 }
 
 /// `carrel status` for `archive`, with this device's records of discovery and the day's
-/// questions in `records`.
+/// questions in `records`, looking for active work in `home`'s Desktop and Code folders.
 pub fn status_on(
     archive: &Archive,
     records: &mut crate::asking::Records,
+    home: Option<std::path::PathBuf>,
 ) -> Result<Report, Failure> {
     let archive = archive.clone();
     let this_device = Identity::load()?.map(|i| i.device);
-    let summary = carrel_core::status::summary(&archive, &Looking::here(this_device))?;
+    let summary = carrel_core::status::summary(&archive, &Looking::in_home(this_device, home))?;
     let history = summary.history.as_deref();
 
     let mut text = archive_header(&archive);
@@ -381,6 +382,8 @@ pub fn status_on(
     text.push_str(&recent_section(&summary.recent));
     let (librarian_text, librarian) = crate::ask::status_section(history);
     text.push_str(&librarian_text);
+    let (crawler_text, crawler) = crate::crawl::status_section(history);
+    text.push_str(&crawler_text);
     if !summary.problems.is_empty() {
         writeln!(
             text,
@@ -425,6 +428,7 @@ pub fn status_on(
         "recent": summary.recent.iter().map(|r| recent_line(r).1).collect::<Vec<_>>(),
         "signals": summary.signals,
         "librarian": librarian,
+        "crawler": crawler,
         "desk": desk,
         "resurfaced": resurfaced,
         "questions_today": daily,

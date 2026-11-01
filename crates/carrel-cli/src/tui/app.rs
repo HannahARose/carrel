@@ -518,6 +518,8 @@ pub struct App {
     pub settings_chosen: usize,
     /// What the providers on this device offer, found when Settings is first shown.
     pub here: Option<super::embedding::Here>,
+    /// What the providers offer, while it's being found in the background.
+    pub finding_here: Option<std::sync::mpsc::Receiver<super::embedding::Here>>,
     /// How far work in the background has got, when it says.
     pub progress: super::embedding::Shared,
     /// The archives opened or created on this device, for the archive switcher.
@@ -547,6 +549,9 @@ pub struct App {
     /// This device's records of discovery and of the day's questions: saved, or in tests
     /// kept in memory, so they never write the real configuration.
     pub records: crate::asking::Records,
+    /// Where Status looks for active work: the person's home, or in tests none, so they
+    /// never look in the person's own folders.
+    pub active_work_home: Option<std::path::PathBuf>,
     /// The open questions about the item Browse shows.
     pub item_questions: Vec<QuestionEntry>,
     /// The conversation on the Librarian screen.
@@ -622,6 +627,7 @@ impl App {
             settings: Vec::new(),
             settings_chosen: 0,
             here: None,
+            finding_here: None,
             progress: super::embedding::Shared::default(),
             known_archives: Vec::new(),
             backup_chosen: 0,
@@ -646,6 +652,11 @@ impl App {
                 crate::asking::Records::in_memory(&archive_for_records)
             } else {
                 crate::asking::Records::here(&archive_for_records)
+            },
+            active_work_home: if cfg!(test) {
+                None
+            } else {
+                carrel_core::local::home_dir()
             },
             item_questions: Vec::new(),
             talk: super::librarian::Talk::default(),
@@ -674,7 +685,14 @@ impl App {
     /// [`Failure`] if the archive can't be read.
     pub fn reload(&mut self) -> Result<(), Failure> {
         self.archive = Archive::open(self.archive.root())?;
-        self.status = lines(&crate::commands::status_on(&self.archive, &mut self.records)?.text);
+        self.status = lines(
+            &crate::commands::status_on(
+                &self.archive,
+                &mut self.records,
+                self.active_work_home.clone(),
+            )?
+            .text,
+        );
         self.status.extend(self.index_status());
         self.status
             .extend(crate::usage_report::status_lines(&self.archive));
@@ -950,7 +968,8 @@ impl App {
             KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Providers may have come or gone too.
                 if self.here.is_some() {
-                    self.here = Some(super::embedding::Here::find());
+                    carrel_core::providers::device::forget_providers();
+                    self.find_here();
                 }
                 self.message = Some(match self.reload() {
                     Ok(()) => "Refreshed".into(),

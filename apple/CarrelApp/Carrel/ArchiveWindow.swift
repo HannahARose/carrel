@@ -91,6 +91,9 @@ struct ArchiveSidebar: View {
                 Label("Questions", systemImage: "questionmark.bubble")
                     .badge(model.archive?.questions.count ?? 0)
                     .tag(Screen.questions)
+                Label("Restructure", systemImage: "rectangle.3.group")
+                    .badge(model.archive?.restructureProposals.count ?? 0)
+                    .tag(Screen.restructure)
                 Label("Active", systemImage: "arrow.up.forward.square")
                     .badge(model.activeScreen?.pendingCount ?? 0)
                     .tag(Screen.active)
@@ -165,6 +168,8 @@ struct ArchiveScreenContent: View {
             }
         case .questions:
             if let questions = model.questions { QuestionsView(questions: questions) }
+        case .restructure:
+            if let restructure = model.restructure { RestructureView(restructure: restructure) }
         case .active:
             if let active = model.activeScreen { ActiveView(model: active) }
         case .history:
@@ -193,6 +198,10 @@ private struct Inspector: View {
                 question: question, questions: questions,
                 collections: model.collections.map(\.path)
             ) { id in model.items.first { $0.id == id }?.title }
+        } else if model.screen == .restructure, let restructure = model.restructure,
+            let proposal = restructure.selected
+        {
+            RestructureInspector(proposal: proposal, restructure: restructure)
         } else if model.screen == .active, let active = model.activeScreen {
             ActiveInspector(model: active)
         } else if model.screen == .history, let history = model.historyScreen {

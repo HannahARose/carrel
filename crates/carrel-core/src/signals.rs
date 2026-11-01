@@ -97,6 +97,16 @@ pub enum Signal {
         /// How many times an item in each was worked on the same day.
         days: usize,
     },
+    /// Many of a collection's items, as the crawler judged them, don't fit its design
+    /// document (`docs/design/restructure.md`, "Crawlers").
+    Misfits {
+        /// The collection.
+        collection: String,
+        /// How many of its items don't fit.
+        misfits: usize,
+        /// How many the crawler judged.
+        judged: usize,
+    },
     /// Two sibling collections are divided at very different levels of detail: one into
     /// many small collections, the other hardly at all.
     UnevenDetail {
@@ -117,6 +127,7 @@ impl Signal {
     pub fn weight(&self) -> f64 {
         match self {
             Self::Holding { items } | Self::Crowded { items, .. } => *items as f64,
+            Self::Misfits { misfits, .. } => *misfits as f64,
             Self::Uncertain { low, medium, .. } => *low as f64 + *medium as f64 / 2.0,
             Self::Single { .. } => 1.0,
             Self::SpreadTag { collections, .. } => collections.len() as f64,
@@ -148,6 +159,13 @@ impl Signal {
                 format!("{collection}: {items} loose items and no subcollections")
             }
             Self::Single { collection } => format!("{collection}: only one item"),
+            Self::Misfits {
+                collection,
+                misfits,
+                judged,
+            } => format!(
+                "{collection}: {misfits} of the {judged} items the crawler checked don't fit it"
+            ),
             Self::SpreadTag { tag, collections } => {
                 format!("Tag {tag} is used in {}", collections.join(", "))
             }
@@ -213,6 +231,15 @@ pub fn signals(archive: &Archive) -> Result<Vec<Signal>, ArchiveError> {
         usize::try_from(crowded).unwrap_or(usize::MAX),
     );
     found.extend(from_graph(&Graph::build(&catalog), warrant));
+    found.extend(
+        crate::crawl::verdicts::misfits(&crate::crawl::verdicts::all(archive))
+            .into_iter()
+            .map(|(collection, misfits, judged)| Signal::Misfits {
+                collection,
+                misfits,
+                judged,
+            }),
+    );
     found.sort_by(|a, b| b.weight().total_cmp(&a.weight()));
     Ok(found)
 }

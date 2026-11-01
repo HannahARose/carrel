@@ -163,9 +163,22 @@ A model is recommended for the librarian when it shows no restricted text, finds
 
 The catalog's `librarian` flag records the recommendation, as `recommended` does for filing. Once a model has it, the librarian runs by default on the largest recommended model installed that fits the device's memory, and otherwise, as now, on the largest installed open model that fits, then Apple's model. The `librarian.model` setting still overrides both. No model has the flag yet.
 
-### Librarian: not run yet
+### Librarian: 2026-11-01
 
-No real model has been measured. The runs happen on the reference machine, one model at a time with nothing else compiling, and set the `librarian` flags from what they show.
+On DeskBook, an M2 Max MacBook Pro with 32 GB, with Carrel 0.5.1, one model at a time with nothing else compiling. [Full report](2026-11-01/librarian/report.md) · [results.json](2026-11-01/librarian/results.json)
+
+| Model | Recall | Precision | Facts | Restricted shown | Unanswered | Steps | s/question | Meets the bar |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Apple Foundation Model | 67% | 74% | 67% | 0 | 2 | 6.8 | 67.2 | no: recall, facts, too slow |
+| Granite 4.2 3B (llama.cpp) | 54% | 92% | 72% | 0 | 4 | 3.9 | 36.0 | no: recall, facts |
+| Qwen3.5 4B (llama.cpp) | 48% | 86% | 87% | 0 | 7 | 1.7 | 37.0 | no: recall |
+
+No model meets the bar yet, so none has the `librarian` flag, and the default stays as it was: the largest installed open model that fits, then Apple's model. What held them back is mostly in the librarian, not the models (#356):
+
+- **Answers cut off:** every one of Qwen's 7 unanswered questions, and all 4 of Granite's, stopped at the 900-token output limit before the answer ended. Qwen states the most facts when it does answer (87%).
+- **Repeated tool calls:** Apple's model ran the same tool call twice in a row 122 times over 41 questions, and Granite 40 times, using up steps and time. One question searched "laptop cost warranty" seven times.
+- **Context:** a listing question ("which receipts are from 2025?") was too long for Apple's on-device model.
+- **No restricted text was shown** by any model.
 
 ## Question value
 
@@ -187,9 +200,20 @@ carrel bench --questions --out bench-results
 
 It writes `bench-results/questions/results.json` and `report.md`, with every question, its known answer, what moved and what it won. Each model's run is saved to `questions/runs/` and reused; `--fresh` starts over.
 
-### Question value: not run yet
+### Question value: 2026-11-01
 
-No real model has been measured. The test set's file names were written for filing, so they raise few questions; if the first run shows too few to rank, the next step is a handful of items whose names share a term or a sender.
+On DeskBook, as above. [Report](2026-11-01/questions/report.md) · [results.json](2026-11-01/questions/results.json)
+
+The batch of 81 items raised no questions with any of the three models, so there was nothing to rank. Routing was 79% with Apple's model, 72% with Granite 4.2 3B and 88% with Qwen3.5 4B. As expected, the test set's file names don't raise questions, so the next step is the handful of items whose names share a term or a sender (#357).
+
+So 35 items were added for this benchmark (#357), each with its known answer in `answers.yaml`:
+
+- **names sharing an unknown term:** two or three items each for ORCA, QPCR, ISA, DnD, LIGO, EHIC, BrewLog, CNC, PhD and OSM. These raise a term question whatever the model does;
+- **a sender with no collection:** Calder Building Society and Mariner Travel, three or four items each, across collections;
+- **a group that would make a collection:** four Allotment items;
+- **uncertain placements:** three Larkspur Road items from an old flat, each fitting more than one collection.
+
+The senders, the group and the uncertain placements raise a group question when the model splits them or isn't sure of them. The filing, findability and librarian benchmarks see the added items too, so their totals from runs after this aren't comparable with the 2026-11-01 runs item for item.
 
 ## Running it again
 

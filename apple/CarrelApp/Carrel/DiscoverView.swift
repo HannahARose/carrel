@@ -18,6 +18,7 @@ struct DiscoverView: View {
             case .timeline: TimelinePage(discover: discover, window: window)
             case .map: ArchiveMapPage(discover: discover, window: window)
             case .activity: ActivityPage(discover: discover)
+            case .graph: GraphPage(discover: discover, window: window)
             }
         }
         .overlay(alignment: .bottom) {
