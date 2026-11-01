@@ -1010,3 +1010,88 @@ fn a_proposal_is_found_by_its_identifier_or_alone_and_a_section_replaces_its_own
     restructure::reject(&archive, &projects).unwrap();
     assert_eq!(restructure::find_any(&archive, None).unwrap().id, again.id);
 }
+
+#[test]
+fn an_item_whose_card_cant_be_written_keeps_its_contents_with_it() {
+    let setup = setup();
+    let root = &setup.root;
+    let id = setup.ids["bird-1"];
+    // Writing the card's temporary file in Projects fails (as a full disk or a permission
+    // error would): here, because something is already in its place.
+    std::fs::create_dir(root.join(format!("Projects/.bird-1.txt.md.tmp-{id}"))).unwrap();
+    let archive = setup.archive();
+    let mut proposal = Proposal::new(ProposalKind::Section, "");
+    proposal.changes = vec![
+        serde_json::from_value(json!({
+            "id": "1",
+            "change": {"kind": "move-items", "to": "Projects"},
+            "reason": "It belongs there.",
+            "invasiveness": "between-branches",
+            "items": [{"id": setup.ids["bird-1"], "card": "Reading/bird-1.txt.md", "title": "bird-1"}],
+        }))
+        .unwrap(),
+    ];
+    let approved = restructure::approve(&archive, &proposal, None, setup.holder).unwrap();
+    let outcome = &approved.outcomes[0];
+    let card_in_reading = root.join("Reading/bird-1.txt.md").is_file();
+    let contents_in_reading = root.join("Reading/bird-1.txt").is_file();
+    let recorded = outcome.moves.iter().any(|m| m.item == id);
+    assert!(
+        (card_in_reading && contents_in_reading) || recorded,
+        "card in Reading: {card_in_reading}, contents in Reading: {contents_in_reading}, \
+         contents in Projects: {}, move recorded for undo: {recorded}; outcome {outcome:#?}",
+        root.join("Projects/bird-1.txt").is_file()
+    );
+}
+
+/// A merge that fails part way leaves each item whole, on one side or the other, with every
+/// item it did move recorded, so undo puts the merge back exactly (#377).
+#[test]
+fn a_merge_that_fails_part_way_leaves_each_item_whole_and_undoes_exactly() {
+    let setup = setup();
+    let root = &setup.root;
+    let before = tree(root);
+    let second = setup.ids["seed-2"];
+    std::fs::create_dir(root.join(format!("Projects/.seed-2.txt.md.tmp-{second}"))).unwrap();
+    let archive = setup.archive();
+    let mut proposal = Proposal::new(ProposalKind::Section, "");
+    proposal.changes = vec![
+        serde_json::from_value(json!({
+            "id": "1",
+            "change": {"kind": "merge-collection", "from": "Notes", "into": "Projects"},
+            "reason": "They're the same garden.",
+            "invasiveness": "top-level",
+        }))
+        .unwrap(),
+    ];
+    let approved = restructure::approve(&archive, &proposal, None, setup.holder).unwrap();
+    let outcome = &approved.outcomes[0];
+    assert!(outcome.not_applied.is_some(), "{outcome:#?}");
+    // The first seed moved, card and contents, and its move is recorded.
+    assert!(root.join("Projects/seed-1.txt").is_file());
+    assert!(root.join("Projects/seed-1.txt.md").is_file());
+    assert!(outcome.moves.iter().any(|m| m.item == setup.ids["seed-1"]));
+    // The second stayed whole in Notes.
+    assert!(root.join("Notes/seed-2.txt").is_file());
+    assert!(root.join("Notes/seed-2.txt.md").is_file());
+    assert!(!root.join("Projects/seed-2.txt").exists());
+
+    // Undo puts the first seed back.
+    std::fs::remove_dir(root.join(format!("Projects/.seed-2.txt.md.tmp-{second}"))).unwrap();
+    let lease = DiskLock::for_archive(&archive)
+        .acquire(setup.holder, "test", DEFAULT_LEASE)
+        .unwrap();
+    History::open(&archive)
+        .unwrap()
+        .undo(&archive, &approved.commit.clone().unwrap(), &lease)
+        .unwrap();
+    lease.release().unwrap();
+    let after = tree(root);
+    let missing: Vec<&String> = before.keys().filter(|k| !after.contains_key(*k)).collect();
+    let extra: Vec<&String> = after.keys().filter(|k| !before.contains_key(*k)).collect();
+    assert!(missing.is_empty(), "missing after undo: {missing:?}");
+    assert!(extra.is_empty(), "left behind by undo: {extra:?}");
+    for (path, contents) in &before {
+        assert_eq!(&after[path], contents, "{path} differs after undo");
+    }
+}

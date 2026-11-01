@@ -174,23 +174,51 @@ fn move_items(
         match move_one(archive, item, to) {
             Ok(moved) => {
                 outcome.items.push(item.id);
-                outcome.moves.extend(moved);
+                outcome.moves.extend(moved.contents);
+                outcome.warnings.extend(moved.warnings);
             }
-            Err(why) => outcome.skipped.push((item.id, why)),
+            Err(failed) => {
+                outcome.skipped.push((item.id, failed.why));
+                outcome.moves.extend(failed.left);
+            }
         }
     }
     Ok(())
 }
 
-/// Moves one item and its card into the folder `to`, keeping their names. Returns the move of
-/// its contents (a card-only item has none); the inner error says why it was left alone.
-fn move_one(archive: &Archive, item: &ItemRef, to: &str) -> Result<Option<Move>, String> {
+/// What moving one item did: the move of its contents (a card-only item has none), and what
+/// went wrong after both had moved, such as a changelog line that couldn't be added.
+struct Moved {
+    contents: Option<Move>,
+    warnings: Vec<String>,
+}
+
+/// Why an item couldn't be moved. It's left whole where it was, unless putting its contents
+/// back failed too: then `left` is the move of its contents, for undo to put them back.
+struct NotMoved {
+    why: String,
+    left: Option<Move>,
+}
+
+impl From<String> for NotMoved {
+    fn from(why: String) -> Self {
+        Self { why, left: None }
+    }
+}
+
+/// Moves one item and its card into the folder `to`, keeping their names. It's all or nothing
+/// (#377): the card is written beside its new place first, so nothing has moved if that fails,
+/// and if anything fails after the contents have moved, they're moved back. Once both have
+/// moved, a changelog line that can't be added is a warning, and the move still counts.
+fn move_one(archive: &Archive, item: &ItemRef, to: &str) -> Result<Moved, NotMoved> {
     let root = archive.root();
     let card_path = root.join(&item.card);
     let text = std::fs::read_to_string(&card_path).map_err(|e| e.to_string())?;
     let mut file = CardFile::parse(&text).map_err(|e| e.to_string())?;
     if file.card().checked_out.is_some() {
-        return Err("it's checked out; it can move once it's returned".into());
+        return Err("it's checked out; it can move once it's returned"
+            .to_owned()
+            .into());
     }
     let from_folder = folder_of(&item.card);
     let card_name = name_of(&item.card);
@@ -198,16 +226,25 @@ fn move_one(archive: &Archive, item: &ItemRef, to: &str) -> Result<Option<Move>,
     let contents = item.item.as_deref();
     for name in contents.map(name_of).into_iter().chain([card_name]) {
         if !is_free(&target, name) {
-            return Err(format!("{to} already has something named {name}"));
+            return Err(format!("{to} already has something named {name}").into());
         }
     }
     // The owner approved where it goes, so its placement is no longer in doubt (FORMAT.md §5.8).
     file.card_mut().placement = None;
     let updated = file.to_text().map_err(|e| e.to_string())?;
+    let new_card = target.join(card_name);
+    let temp = target.join(format!(".{card_name}.tmp-{}", item.id));
+    std::fs::write(&temp, updated).map_err(|e| {
+        let _ = std::fs::remove_file(&temp);
+        e.to_string()
+    })?;
     let moved = match contents {
         Some(contents) => {
             let new = join(to, name_of(contents));
-            std::fs::rename(root.join(contents), root.join(&new)).map_err(|e| e.to_string())?;
+            if let Err(e) = std::fs::rename(root.join(contents), root.join(&new)) {
+                let _ = std::fs::remove_file(&temp);
+                return Err(e.to_string().into());
+            }
             Some(Move {
                 item: item.id,
                 from: contents.to_owned(),
@@ -216,33 +253,59 @@ fn move_one(archive: &Archive, item: &ItemRef, to: &str) -> Result<Option<Move>,
         }
         None => None,
     };
-    let new_card = target.join(card_name);
-    let temp = target.join(format!(".{card_name}.tmp-{}", item.id));
-    std::fs::write(&temp, updated)
-        .and_then(|()| std::fs::rename(&temp, &new_card))
-        .and_then(|()| std::fs::remove_file(&card_path))
-        .map_err(|e| e.to_string())?;
+    // From here, a failure puts the contents back, so the item stays whole where it was.
+    let put_back = |why: String| -> NotMoved {
+        let _ = std::fs::remove_file(&temp);
+        match &moved {
+            Some(m) => match std::fs::rename(root.join(&m.to), root.join(&m.from)) {
+                Ok(()) => why.into(),
+                Err(e) => NotMoved {
+                    why: format!(
+                        "{why}; its contents couldn't be put back from {}: {e}",
+                        m.to
+                    ),
+                    left: Some(m.clone()),
+                },
+            },
+            None => why.into(),
+        }
+    };
+    if let Err(e) = std::fs::rename(&temp, &new_card) {
+        return Err(put_back(e.to_string()));
+    }
+    if let Err(e) = std::fs::remove_file(&card_path) {
+        let _ = std::fs::remove_file(&new_card);
+        return Err(put_back(e.to_string()));
+    }
     let title = file.card().title.clone();
-    changelog(
-        archive,
-        from_folder,
-        &format!("moved “{}” to {to}", title.replace('|', "\\|")),
-    )?;
-    changelog(
-        archive,
-        to,
-        &format!(
-            "moved [{}]({}) here from {}",
-            escape_link_text(&title),
-            crate::listing::link_destination(card_name),
-            if from_folder.is_empty() {
-                "the top level"
-            } else {
-                from_folder
-            }
+    let warnings = [
+        changelog(
+            archive,
+            from_folder,
+            &format!("moved “{}” to {to}", title.replace('|', "\\|")),
         ),
-    )?;
-    Ok(moved)
+        changelog(
+            archive,
+            to,
+            &format!(
+                "moved [{}]({}) here from {}",
+                escape_link_text(&title),
+                crate::listing::link_destination(card_name),
+                if from_folder.is_empty() {
+                    "the top level"
+                } else {
+                    from_folder
+                }
+            ),
+        ),
+    ]
+    .into_iter()
+    .filter_map(Result::err)
+    .collect();
+    Ok(Moved {
+        contents: moved,
+        warnings,
+    })
 }
 
 /// Checks that the collection at `path` can move: it exists, isn't Holding, and holds no
@@ -425,9 +488,18 @@ fn merge(archive: &Archive, from: &str, into: &str, outcome: &mut Outcome) -> Re
         return Err(format!("{into} already has something named {taken}"));
     }
     for item in &contents.items {
-        let moved = move_one(archive, item, into)?;
-        outcome.items.push(item.id);
-        outcome.moves.extend(moved);
+        match move_one(archive, item, into) {
+            Ok(moved) => {
+                outcome.items.push(item.id);
+                outcome.moves.extend(moved.contents);
+                outcome.warnings.extend(moved.warnings);
+            }
+            // What moved before stays recorded, so undo puts the merge back as far as it went.
+            Err(failed) => {
+                outcome.moves.extend(failed.left);
+                return Err(failed.why);
+            }
+        }
     }
     for (name, id) in &contents.subcollections {
         let (old, new) = (join(from, name), join(into, name));
