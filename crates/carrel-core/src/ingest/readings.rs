@@ -448,7 +448,7 @@ mod tests {
         let path = Path::new("/Users/me/Downloads/cognitogram_keychain_plate copy.stl");
         assert!(weigh(&mut readings, path, ""));
         assert_eq!(readings[0].title, "Keychain plate");
-        assert!(readings[0].against.is_empty());
+        assert_eq!(readings[0].against, Vec::<String>::new());
         assert_eq!(
             readings[1].against,
             ["the file name (“cognitogram_keychain_plate copy”)"]

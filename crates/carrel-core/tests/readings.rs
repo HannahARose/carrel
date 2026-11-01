@@ -267,7 +267,7 @@ fn a_card_that_ignores_the_file_name_is_asked_again_once() {
     let s = setup();
     let (_, entry) = ingest(&s, Scripted::new(vec![sure]));
     assert_eq!(entry.card.title, "3D-printed fish model with text");
-    assert!(entry.readings.is_empty());
+    assert_eq!(entry.readings, []);
     assert!(entry.problems.is_empty(), "{:?}", entry.problems);
 }
 
@@ -278,7 +278,7 @@ fn a_broken_alternative_is_dropped_on_the_last_try_without_failing_the_card() {
     broken["alternatives"][0]["title"] = json!("");
     let (_, entry) = ingest(&s, Scripted::new(vec![broken]));
     assert_eq!(entry.card.title, "3D-printed fish model with text");
-    assert!(entry.readings.is_empty());
+    assert_eq!(entry.readings, []);
     assert!(entry.problems.is_empty(), "{:?}", entry.problems);
     assert!(
         entry
@@ -316,7 +316,9 @@ fn drafting_again_replaces_the_question_offering_the_old_readings() {
         .filter(|p| p.stage == "question")
         .collect();
     assert_eq!(waits.len(), 1, "{waits:?}");
-    assert!(waits[0]
-        .message
-        .contains(&carrel_core::review::short_id(offering[0].id)));
+    assert!(
+        waits[0]
+            .message
+            .contains(&carrel_core::review::short_id(offering[0].id))
+    );
 }

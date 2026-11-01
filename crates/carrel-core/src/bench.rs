@@ -635,16 +635,16 @@ items:
             "Fish model: a fish".into(),
             "Keychain plate: a plate for a keychain".into(),
         ];
-        let (score, items) = score(&answers, &[a, b.clone()], 1.0);
+        let (both, items) = score(&answers, &[a, b.clone()], 1.0);
         assert_eq!(items[0].reading, Some(ReadingRating::Right));
         assert_eq!(items[1].reading, Some(ReadingRating::Offered));
-        assert_eq!((score.misread, score.misread_offered), (1, 1));
-        assert!((score.readings_offered - 0.5).abs() < f64::EPSILON);
+        assert_eq!((both.misread, both.misread_offered), (1, 1));
+        assert!((both.readings_offered - 0.5).abs() < f64::EPSILON);
 
         b.readings.pop();
-        let (score, items) = score(&answers, &[b], 1.0);
+        let (alone, items) = score(&answers, &[b], 1.0);
         assert_eq!(items[0].reading, Some(ReadingRating::Wrong));
-        assert_eq!((score.misread, score.misread_offered), (1, 0));
+        assert_eq!((alone.misread, alone.misread_offered), (1, 0));
     }
 
     #[test]

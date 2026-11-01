@@ -157,7 +157,8 @@ fn known_terms(archive: &Archive, collections: &[Collection], glossary: &Glossar
 }
 
 /// The questions a batch raises, the most worth answering first: those whose answer would
-/// settle the most items Carrel is least sure of. `entries` are the batch's proposals.
+/// settle the most items Carrel is least sure of. `entries` are the batch's proposals. An item
+/// whose readings are in doubt is asked about with them ([`super::readings::question`]).
 #[must_use]
 pub fn ask(
     archive: &Archive,
@@ -241,6 +242,7 @@ pub fn ask(
         questions.push(entry);
     }
     questions.extend(groups(entries, &known, &questions, &choices, batch));
+    questions.extend(entries.iter().filter_map(super::readings::question));
     let value = |q: &QuestionEntry| -> f64 {
         q.items
             .iter()
