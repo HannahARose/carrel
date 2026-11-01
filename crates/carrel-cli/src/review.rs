@@ -572,29 +572,8 @@ fn decide(
 /// The editor to open: the `editor` preference, then `$VISUAL`, then `$EDITOR`, then
 /// `notepad` on Windows or `vi`. Its words are split as a shell would, so `code --wait` works.
 pub(crate) fn editor() -> (String, &'static str) {
-    if let Some(chosen) = crate::config::Prefs::load()
-        .ok()
-        .and_then(|p| p.editor)
-        .filter(|e| !e.trim().is_empty())
-    {
-        return (chosen, "Carrel's editor setting");
-    }
-    for var in ["VISUAL", "EDITOR"] {
-        if let Some(chosen) = std::env::var(var).ok().filter(|e| !e.trim().is_empty()) {
-            return (
-                chosen,
-                if var == "VISUAL" {
-                    "$VISUAL"
-                } else {
-                    "$EDITOR"
-                },
-            );
-        }
-    }
-    (
-        if cfg!(windows) { "notepad" } else { "vi" }.to_owned(),
-        "the system's default",
-    )
+    let preference = crate::config::Prefs::load().ok().and_then(|p| p.editor);
+    carrel_core::file_pickers::editor_in_use(preference.as_deref())
 }
 
 /// Opens `path` in the editor and waits for it to close.

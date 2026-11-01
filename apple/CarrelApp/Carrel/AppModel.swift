@@ -49,6 +49,8 @@ final class AppModel {
     var activeArchive: URL?
     /// An item for its archive's window to choose, from a link the agent's menu opened.
     var pendingLink: AgentLink?
+    /// A screen for an archive's window to show, such as Backups from Settings.
+    var pendingScreen: PendingScreen?
 
     init(recents: RecentArchives = RecentArchives()) {
         self.recents = recents
@@ -94,6 +96,19 @@ final class AppModel {
             pendingLink = link.item.map { AgentLink(archive: root, item: $0) }
             show(root)
         }
+    }
+
+    /// Has the window for the archive at `root` show `screen`, once it's in front.
+    func show(_ screen: Screen, in root: URL) {
+        pendingScreen = PendingScreen(archive: root.standardizedFileURL, screen: screen)
+    }
+
+    /// The screen the window for the archive at `root` was asked to show, once.
+    func takePendingScreen(for root: URL) -> Screen? {
+        guard let pending = pendingScreen, pending.archive == root.standardizedFileURL
+        else { return nil }
+        pendingScreen = nil
+        return pending.screen
     }
 
     /// The item a link asked the window for the archive at `root` to choose, once.
@@ -165,4 +180,10 @@ final class EmbeddingModelPicker {
 /// What went wrong, in the core's own words for the core's errors.
 func message(for error: any Error) -> String {
     (error as? CarrelError)?.message ?? error.localizedDescription
+}
+
+/// A screen an archive's window is asked to show.
+struct PendingScreen: Equatable {
+    var archive: URL
+    var screen: Screen
 }

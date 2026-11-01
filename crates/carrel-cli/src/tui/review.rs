@@ -29,8 +29,8 @@ pub enum Purpose {
     Answer(Id),
     /// Setting this setting to it.
     Setting(String),
-    /// Downloading this catalog model, after asking.
-    Download,
+    /// Downloading or deleting a model, after asking: these choices, by their words.
+    Models(Vec<(String, super::model_changes::ModelChange)>),
     /// Working on the embedding index: these choices, by their words.
     Index(Vec<(String, super::embedding::Choice)>),
     /// Setting this collection's own eagerness to it.
@@ -293,8 +293,8 @@ impl App {
                         learn: false,
                     }),
                     Purpose::Setting(key) => Some(super::settings::set(&key, &to)),
-                    Purpose::Download => {
-                        self.confirm_download(&to);
+                    Purpose::Models(choices) => {
+                        self.confirm_model_change(&choices, &to);
                         None
                     }
                     Purpose::Index(choices) => self.index_chosen(&choices, &to),

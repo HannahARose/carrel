@@ -357,7 +357,7 @@ impl ArchiveHandle {
     target_os = "watchos",
     target_os = "visionos"
 )))]
-fn download(
+pub(crate) fn download(
     name: &str,
     dir: &std::path::Path,
     progress: Option<Arc<dyn ProgressListener>>,
@@ -392,7 +392,7 @@ fn download(
     target_os = "watchos",
     target_os = "visionos"
 ))]
-fn download(
+pub(crate) fn download(
     _name: &str,
     _dir: &std::path::Path,
     _progress: Option<Arc<dyn ProgressListener>>,

@@ -20,7 +20,7 @@ struct SettingsView: View {
             Tab("Search", systemImage: "magnifyingglass") { SearchTab(model: model) }
             Tab("Providers", systemImage: "puzzlepiece.extension") { ProvidersTab(model: model) }
             Tab("Backups", systemImage: "externaldrive.badge.timemachine") {
-                BackupsTab(settings: settings)
+                BackupsSettingsTab(model: model)
             }
             Tab("Agent", systemImage: "person.badge.clock") { AgentTab() }
         }
@@ -31,37 +31,6 @@ struct SettingsView: View {
             model = archive.map { SettingsModel(url: $0) }
             await model?.load()
         }
-    }
-}
-
-private struct BackupsTab: View {
-    let settings: LocalSettings?
-
-    var body: some View {
-        Form {
-            Section("Kopia") {
-                if let kopia = settings?.kopia {
-                    LabeledContent("Installed", value: kopia.path(percentEncoded: false))
-                } else {
-                    Text("Kopia isn’t installed. Backups use the installed Kopia, as the CLI does.")
-                        .foregroundStyle(.secondary)
-                }
-            }
-            if let archive = settings?.archive {
-                Section("“\(archive.name)”") {
-                    LabeledContent(
-                        "Backups on this Mac", value: archive.backupsSetUp ? "Set up" : "Not set up"
-                    )
-                }
-            }
-            Section {
-                Text(
-                    "Setting up backups comes to the app in a later build. Until then, use `carrel backup`."
-                )
-                .foregroundStyle(.secondary)
-            }
-        }
-        .formStyle(.grouped)
     }
 }
 

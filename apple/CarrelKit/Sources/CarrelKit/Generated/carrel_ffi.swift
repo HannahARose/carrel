@@ -898,7 +898,7 @@ public protocol ArchiveHandleProtocol: AnyObject, Sendable {
     func cancelCheckout(item: String) throws  -> String?
     
     /**
-     * Checks out the item `item` to the folder `to` (the Desktop when `None`), due back on
+     * Checks out the item `item` to the folder `to` (`checkout.destination`, the Desktop unless changed, when `None`), due back on
      * `due` (`YYYY-MM-DD`) if given. The archive copy is read-only until it's returned.
      *
      * # Errors
@@ -1653,6 +1653,36 @@ public protocol ArchiveHandleProtocol: AnyObject, Sendable {
     func undoLibrarianChanges(since: Int64) throws  -> LibrarianUndone
     
     /**
+     * Downloads the catalog model `name` in `format` into this device's models folder, as
+     * [`download_model`](Self::download_model) does. Call it only once the owner has
+     * confirmed, having seen the size. Returns where it was saved.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] for a model that isn't in the catalog or has no build in
+     * that format, or [`CarrelError::Failed`] if the helper is missing or the download
+     * fails.
+     */
+    func downloadModelIn(name: String, format: ModelFormat, progress: ProgressListener?) throws  -> String
+    
+    /**
+     * The formats of every catalog model that can be downloaded, and which are here.
+     */
+    func modelFormats()  -> [ModelFormats]
+    
+    /**
+     * Deletes the downloaded model `name` in `format` from this device's models folder,
+     * leaving the other format. Call it only once the owner has confirmed. Returns what was
+     * deleted.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if it isn't downloaded in that format, or
+     * [`CarrelError::Failed`] if it can't be deleted.
+     */
+    func removeModelIn(name: String, format: ModelFormat) throws  -> String
+    
+    /**
      * Downloads the catalog model `name` into this device's models folder through the
      * network helper, `carrel-fetch`, reporting bytes to `progress`. Call it only once the
      * owner has confirmed, having seen the size ([`CatalogModel::size`]). Returns where it
@@ -2090,6 +2120,16 @@ public protocol ArchiveHandleProtocol: AnyObject, Sendable {
     func searchWords(query: String, limit: UInt32) throws  -> SearchResults
     
     /**
+     * Where items are checked out to when no folder is given, by the archive's
+     * `checkout.destination`: the Desktop unless it's changed. `None` without a home folder.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the archive can't be read.
+     */
+    func checkoutFolder() throws  -> String?
+    
+    /**
      * Chooses the text model that drafts cards on this device (`None` lets Carrel choose)
      * and the one asked for a second opinion (`off`, or `None` for a recommended one).
      * Names are `provider/offer`, an offer, or a provider alone.
@@ -2476,7 +2516,7 @@ open func cancelCheckout(item: String)throws  -> String?  {
 }
     
     /**
-     * Checks out the item `item` to the folder `to` (the Desktop when `None`), due back on
+     * Checks out the item `item` to the folder `to` (`checkout.destination`, the Desktop unless changed, when `None`), due back on
      * `due` (`YYYY-MM-DD`) if given. The archive copy is read-only until it's returned.
      *
      * # Errors
@@ -3824,6 +3864,62 @@ open func undoLibrarianChanges(since: Int64)throws  -> LibrarianUndone  {
 }
     
     /**
+     * Downloads the catalog model `name` in `format` into this device's models folder, as
+     * [`download_model`](Self::download_model) does. Call it only once the owner has
+     * confirmed, having seen the size. Returns where it was saved.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] for a model that isn't in the catalog or has no build in
+     * that format, or [`CarrelError::Failed`] if the helper is missing or the download
+     * fails.
+     */
+open func downloadModelIn(name: String, format: ModelFormat, progress: ProgressListener?)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_download_model_in(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(name),
+        FfiConverterTypeModelFormat_lower(format),
+        FfiConverterOptionTypeProgressListener.lower(progress),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * The formats of every catalog model that can be downloaded, and which are here.
+     */
+open func modelFormats() -> [ModelFormats]  {
+    return try!  FfiConverterSequenceTypeModelFormats.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_model_formats(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Deletes the downloaded model `name` in `format` from this device's models folder,
+     * leaving the other format. Call it only once the owner has confirmed. Returns what was
+     * deleted.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if it isn't downloaded in that format, or
+     * [`CarrelError::Failed`] if it can't be deleted.
+     */
+open func removeModelIn(name: String, format: ModelFormat)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_remove_model_in(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(name),
+        FfiConverterTypeModelFormat_lower(format),uniffiCallStatus
+    )
+})
+}
+    
+    /**
      * Downloads the catalog model `name` into this device's models folder through the
      * network helper, `carrel-fetch`, reporting bytes to `progress`. Call it only once the
      * owner has confirmed, having seen the size ([`CatalogModel::size`]). Returns where it
@@ -4595,6 +4691,23 @@ open func searchWords(query: String, limit: UInt32)throws  -> SearchResults  {
             self.uniffiCloneHandle(),
         FfiConverterString.lower(query),
         FfiConverterUInt32.lower(limit),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Where items are checked out to when no folder is given, by the archive's
+     * `checkout.destination`: the Desktop unless it's changed. `None` without a home folder.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the archive can't be read.
+     */
+open func checkoutFolder()throws  -> String?  {
+    return try  FfiConverterOptionString.lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_checkout_folder(
+            self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
 }
@@ -9283,6 +9396,19 @@ public struct DeviceSettings: Equatable, Hashable {
      * strongest this device has.
      */
     public var librarianModel: String?
+    /**
+     * The picker in use, and why, such as "yazi (found installed)".
+     */
+    public var pickerInUse: String
+    /**
+     * The editor in use, and where it comes from, such as "vi (the system's default)".
+     * The command line also looks at `$VISUAL` and `$EDITOR` in the terminal it runs in.
+     */
+    public var editorInUse: String
+    /**
+     * The pickers Carrel knows, in the order it looks for them.
+     */
+    public var knownPickers: [KnownPicker]
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -9297,10 +9423,23 @@ public struct DeviceSettings: Equatable, Hashable {
         /**
          * The text model the librarian answers with, as `provider/offer`; `None` for the
          * strongest this device has.
-         */librarianModel: String?) {
+         */librarianModel: String?, 
+        /**
+         * The picker in use, and why, such as "yazi (found installed)".
+         */pickerInUse: String, 
+        /**
+         * The editor in use, and where it comes from, such as "vi (the system's default)".
+         * The command line also looks at `$VISUAL` and `$EDITOR` in the terminal it runs in.
+         */editorInUse: String, 
+        /**
+         * The pickers Carrel knows, in the order it looks for them.
+         */knownPickers: [KnownPicker]) {
         self.picker = picker
         self.editor = editor
         self.librarianModel = librarianModel
+        self.pickerInUse = pickerInUse
+        self.editorInUse = editorInUse
+        self.knownPickers = knownPickers
     }
 
     
@@ -9321,7 +9460,10 @@ public struct FfiConverterTypeDeviceSettings: FfiConverterRustBuffer {
             try DeviceSettings(
                 picker: FfiConverterOptionString.read(from: &buf), 
                 editor: FfiConverterOptionString.read(from: &buf), 
-                librarianModel: FfiConverterOptionString.read(from: &buf)
+                librarianModel: FfiConverterOptionString.read(from: &buf), 
+                pickerInUse: FfiConverterString.read(from: &buf), 
+                editorInUse: FfiConverterString.read(from: &buf), 
+                knownPickers: FfiConverterSequenceTypeKnownPicker.read(from: &buf)
         )
     }
 
@@ -9329,6 +9471,9 @@ public struct FfiConverterTypeDeviceSettings: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.picker, into: &buf)
         FfiConverterOptionString.write(value.editor, into: &buf)
         FfiConverterOptionString.write(value.librarianModel, into: &buf)
+        FfiConverterString.write(value.pickerInUse, into: &buf)
+        FfiConverterString.write(value.editorInUse, into: &buf)
+        FfiConverterSequenceTypeKnownPicker.write(value.knownPickers, into: &buf)
     }
 }
 
@@ -12173,6 +12318,85 @@ public func FfiConverterTypeKindCount_lower(_ value: KindCount) -> RustBuffer {
 
 
 /**
+ * A file picker Carrel knows how to run.
+ */
+public struct KnownPicker: Equatable, Hashable {
+    /**
+     * Its name, as the `picker` preference names it.
+     */
+    public var name: String
+    /**
+     * What it's like.
+     */
+    public var about: String
+    /**
+     * "installed", how to install it here, or "not for this system".
+     */
+    public var state: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Its name, as the `picker` preference names it.
+         */name: String, 
+        /**
+         * What it's like.
+         */about: String, 
+        /**
+         * "installed", how to install it here, or "not for this system".
+         */state: String) {
+        self.name = name
+        self.about = about
+        self.state = state
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension KnownPicker: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeKnownPicker: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> KnownPicker {
+        return
+            try KnownPicker(
+                name: FfiConverterString.read(from: &buf), 
+                about: FfiConverterString.read(from: &buf), 
+                state: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: KnownPicker, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterString.write(value.about, into: &buf)
+        FfiConverterString.write(value.state, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeKnownPicker_lift(_ buf: RustBuffer) throws -> KnownPicker {
+    return try FfiConverterTypeKnownPicker.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeKnownPicker_lower(_ value: KnownPicker) -> RustBuffer {
+    return FfiConverterTypeKnownPicker.lower(value)
+}
+
+
+/**
  * A path left out when adding to the queue, and why.
  */
 public struct LeftOut: Equatable, Hashable {
@@ -13307,6 +13531,95 @@ public func FfiConverterTypeModelChoices_lift(_ buf: RustBuffer) throws -> Model
 #endif
 public func FfiConverterTypeModelChoices_lower(_ value: ModelChoices) -> RustBuffer {
     return FfiConverterTypeModelChoices.lower(value)
+}
+
+
+/**
+ * The formats a catalog model comes in, and which are here.
+ */
+public struct ModelFormats: Equatable, Hashable {
+    /**
+     * The model's short name.
+     */
+    public var name: String
+    /**
+     * Whether its GGUF file is in the models folder.
+     */
+    public var ggufHere: Bool
+    /**
+     * The size of its MLX build in bytes, if it has one.
+     */
+    public var mlxSize: UInt64?
+    /**
+     * Whether its MLX build is in the models folder.
+     */
+    public var mlxHere: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The model's short name.
+         */name: String, 
+        /**
+         * Whether its GGUF file is in the models folder.
+         */ggufHere: Bool, 
+        /**
+         * The size of its MLX build in bytes, if it has one.
+         */mlxSize: UInt64?, 
+        /**
+         * Whether its MLX build is in the models folder.
+         */mlxHere: Bool) {
+        self.name = name
+        self.ggufHere = ggufHere
+        self.mlxSize = mlxSize
+        self.mlxHere = mlxHere
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension ModelFormats: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeModelFormats: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ModelFormats {
+        return
+            try ModelFormats(
+                name: FfiConverterString.read(from: &buf), 
+                ggufHere: FfiConverterBool.read(from: &buf), 
+                mlxSize: FfiConverterOptionUInt64.read(from: &buf), 
+                mlxHere: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ModelFormats, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterBool.write(value.ggufHere, into: &buf)
+        FfiConverterOptionUInt64.write(value.mlxSize, into: &buf)
+        FfiConverterBool.write(value.mlxHere, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeModelFormats_lift(_ buf: RustBuffer) throws -> ModelFormats {
+    return try FfiConverterTypeModelFormats.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeModelFormats_lower(_ value: ModelFormats) -> RustBuffer {
+    return FfiConverterTypeModelFormats.lower(value)
 }
 
 
@@ -17157,6 +17470,10 @@ public struct Setting: Equatable, Hashable {
      */
     public var key: String
     /**
+     * Its name, for people, such as "Originals".
+     */
+    public var title: String
+    /**
      * What it does, in words.
      */
     public var description: String
@@ -17165,9 +17482,19 @@ public struct Setting: Equatable, Hashable {
      */
     public var value: String
     /**
-     * The values it can take, when they're a fixed list; otherwise a whole number.
+     * The values it can take, when they're a fixed list; otherwise [`takes`](Self::takes)
+     * says what it takes.
      */
     public var choices: [String]
+    /**
+     * Whether it takes several of its choices at once, separated by commas, as `reminders`
+     * does.
+     */
+    public var takesSeveral: Bool
+    /**
+     * The values it takes, in words, such as "a whole number, at least 1".
+     */
+    public var takes: String
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -17176,18 +17503,32 @@ public struct Setting: Equatable, Hashable {
          * Its key, as `settings.json` writes it, such as `ingest.originals`.
          */key: String, 
         /**
+         * Its name, for people, such as "Originals".
+         */title: String, 
+        /**
          * What it does, in words.
          */description: String, 
         /**
          * Its value.
          */value: String, 
         /**
-         * The values it can take, when they're a fixed list; otherwise a whole number.
-         */choices: [String]) {
+         * The values it can take, when they're a fixed list; otherwise [`takes`](Self::takes)
+         * says what it takes.
+         */choices: [String], 
+        /**
+         * Whether it takes several of its choices at once, separated by commas, as `reminders`
+         * does.
+         */takesSeveral: Bool, 
+        /**
+         * The values it takes, in words, such as "a whole number, at least 1".
+         */takes: String) {
         self.key = key
+        self.title = title
         self.description = description
         self.value = value
         self.choices = choices
+        self.takesSeveral = takesSeveral
+        self.takes = takes
     }
 
     
@@ -17207,17 +17548,23 @@ public struct FfiConverterTypeSetting: FfiConverterRustBuffer {
         return
             try Setting(
                 key: FfiConverterString.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
                 description: FfiConverterString.read(from: &buf), 
                 value: FfiConverterString.read(from: &buf), 
-                choices: FfiConverterSequenceString.read(from: &buf)
+                choices: FfiConverterSequenceString.read(from: &buf), 
+                takesSeveral: FfiConverterBool.read(from: &buf), 
+                takes: FfiConverterString.read(from: &buf)
         )
     }
 
     public static func write(_ value: Setting, into buf: inout [UInt8]) {
         FfiConverterString.write(value.key, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
         FfiConverterString.write(value.description, into: &buf)
         FfiConverterString.write(value.value, into: &buf)
         FfiConverterSequenceString.write(value.choices, into: &buf)
+        FfiConverterBool.write(value.takesSeveral, into: &buf)
+        FfiConverterString.write(value.takes, into: &buf)
     }
 }
 
@@ -19434,6 +19781,81 @@ public func FfiConverterTypeItemKind_lift(_ buf: RustBuffer) throws -> ItemKind 
 #endif
 public func FfiConverterTypeItemKind_lower(_ value: ItemKind) -> RustBuffer {
     return FfiConverterTypeItemKind.lower(value)
+}
+
+
+
+/**
+ * A model's file format.
+ */
+
+public enum ModelFormat: Equatable, Hashable {
+    
+    /**
+     * One GGUF file, for the llama.cpp provider.
+     */
+    case gguf
+    /**
+     * A folder, for the MLX provider on Apple-silicon Macs.
+     */
+    case mlx
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension ModelFormat: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeModelFormat: FfiConverterRustBuffer {
+    typealias SwiftType = ModelFormat
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ModelFormat {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .gguf
+        
+        case 2: return .mlx
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: ModelFormat, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .gguf:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .mlx:
+            writeInt(&buf, Int32(2))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeModelFormat_lift(_ buf: RustBuffer) throws -> ModelFormat {
+    return try FfiConverterTypeModelFormat.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeModelFormat_lower(_ value: ModelFormat) -> RustBuffer {
+    return FfiConverterTypeModelFormat.lower(value)
 }
 
 
@@ -21690,6 +22112,31 @@ fileprivate struct FfiConverterSequenceTypeKindCount: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeKnownPicker: FfiConverterRustBuffer {
+    typealias SwiftType = [KnownPicker]
+
+    public static func write(_ value: [KnownPicker], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeKnownPicker.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [KnownPicker] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [KnownPicker]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeKnownPicker.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeLeftOut: FfiConverterRustBuffer {
     typealias SwiftType = [LeftOut]
 
@@ -21882,6 +22329,31 @@ fileprivate struct FfiConverterSequenceTypeMapRegion: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeMapRegion.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeModelFormats: FfiConverterRustBuffer {
+    typealias SwiftType = [ModelFormats]
+
+    public static func write(_ value: [ModelFormats], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeModelFormats.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ModelFormats] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [ModelFormats]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeModelFormats.read(from: &buf))
         }
         return seq
     }
@@ -22716,7 +23188,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_carrel_ffi_checksum_method_archivehandle_cancel_checkout() != 27377) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_carrel_ffi_checksum_method_archivehandle_check_out() != 50222) {
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_check_out() != 36547) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_decide_entries() != 46758) {
@@ -22929,6 +23401,15 @@ private let initializationResult: InitializationResult = {
     if (uniffi_carrel_ffi_checksum_method_archivehandle_undo_librarian_changes() != 45212) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_download_model_in() != 6836) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_model_formats() != 57830) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_remove_model_in() != 41850) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_download_model() != 29926) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -23053,6 +23534,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_search_words() != 565) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_checkout_folder() != 27883) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_choose_models() != 39343) {

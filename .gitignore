@@ -7,8 +7,9 @@ fixtures/bench/archive/.obsidian/*
 # carrel bench's default output
 /bench-results/
 
-# Rust build output
+# Rust build output, and the coverage data an instrumented test run leaves
 /target/
+*.profraw
 
 # Built by scripts/build-xcframework.sh
 /apple/CarrelKit/CarrelFFI.xcframework/

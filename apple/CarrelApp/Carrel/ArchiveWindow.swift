@@ -57,6 +57,9 @@ struct ArchiveWindow: View {
             choosePendingItem()
         }
         .onChange(of: app.pendingLink) { choosePendingItem() }
+        .onChange(of: app.pendingScreen, initial: true) {
+            if let screen = app.takePendingScreen(for: model.root) { model.screen = screen }
+        }
         .handlesExternalEvents(preferring: [AgentLink.scheme], allowing: [AgentLink.scheme])
         .onOpenURL { url in
             app.open(link: url) { openWindow(id: Self.windowID, value: $0) }

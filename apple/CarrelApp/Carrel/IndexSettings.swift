@@ -139,8 +139,11 @@ private struct ChoicesSection: View {
                     }
                     Spacer()
                     if let download = other.download {
-                        Button("Download…") { model.confirmingDownload = download }
-                            .disabled(!download.downloadable || model.isWorking)
+                        Button("Download…") {
+                            model.confirmingFormat = .gguf
+                            model.confirmingDownload = download
+                        }
+                        .disabled(!download.downloadable || model.isWorking)
                     }
                 }
             }

@@ -62,6 +62,7 @@ pub mod history;
 pub mod index;
 pub mod intake;
 pub mod librarian;
+pub mod model_formats;
 pub mod models;
 pub mod previews;
 pub mod questions;
