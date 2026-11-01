@@ -295,3 +295,49 @@ fn another_devices_shares_wait_in_its_inbox_until_the_writer_applies_them() {
     assert_eq!(last[0].summary, "Apply 2 inbox entries");
     writing.release().unwrap();
 }
+
+#[test]
+fn a_written_note_is_queued_as_a_file_of_its_own_or_sent_to_the_inbox() {
+    use carrel_core::written_note::{WrittenNoteAdded, add_written_note};
+    let s = Setup::new();
+    let notes = s.dir.path().join("notes");
+    let added = add_written_note(
+        &s.archive,
+        &notes,
+        "Ring the framer about the lamp print.",
+        None,
+        Some("For the hallway"),
+        s.holder,
+    )
+    .unwrap();
+    let WrittenNoteAdded::Queued { path, queued } = added else {
+        panic!("queued here: {added:?}")
+    };
+    assert!(path.starts_with(&notes));
+    assert_eq!(
+        path.file_name().unwrap(),
+        "Ring the framer about the lamp print.md"
+    );
+    assert_eq!(queued.added.len(), 1);
+    assert_eq!(queued.added[0].path, path.canonicalize().unwrap());
+    assert_eq!(queued.added[0].note.as_deref(), Some("For the hallway"));
+
+    let other = Holder {
+        person: s.holder.person,
+        device: Id::new_v7(),
+    };
+    let writing = s.lease(s.holder);
+    let sent = add_written_note(&s.archive, &notes, "Elsewhere", Some("Away"), None, other)
+        .unwrap();
+    let WrittenNoteAdded::Sent { inbox: entry, writer } = sent else {
+        panic!("sent while another device writes: {sent:?}")
+    };
+    assert_eq!(writer, s.holder.device);
+    assert!(entry.starts_with(inbox::folder(&s.archive, other.device)));
+    assert_eq!(
+        std::fs::read_dir(&notes).unwrap().count(),
+        1,
+        "the sent note's own copy is removed"
+    );
+    writing.release().unwrap();
+}
