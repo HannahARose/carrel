@@ -3910,3 +3910,76 @@ fn discover_graph_lists_the_strongest_connections() {
     assert!(items.contains("oscillator-sim (Projects)"), "{items}");
     assert!(items.contains("1 link (derived-from)"), "{items}");
 }
+
+#[cfg(unix)]
+#[test]
+fn edit_body_adds_notes_keeps_carrels_sections_and_undo_reverses_it() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(&root, &["init"]);
+    let card = root.join("Projects/Hardware/parts-list.csv.md");
+    let before = std::fs::read_to_string(&card).unwrap();
+    let edit = |script: &str| {
+        let editor = sandbox.path("editor.sh");
+        std::fs::write(&editor, format!("#!/bin/sh\n{script}\n")).unwrap();
+        std::fs::set_permissions(&editor, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::process::Command::new(env!("CARGO_BIN_EXE_carrel"))
+            .args([
+                "edit",
+                "Projects/Hardware/parts-list.csv",
+                "--body",
+                "--json",
+            ])
+            .current_dir(&root)
+            .env("CARREL_CONFIG_DIR", sandbox.path("config"))
+            .env("CARREL_WORKER", "off")
+            .env_remove("VISUAL")
+            .env("EDITOR", &editor)
+            .output()
+            .unwrap()
+    };
+
+    // A note at the top is saved; the fields and Carrel's sections are as they were.
+    let out = edit(
+        r#"{ echo "Bought the strip at the market."; cat "$1"; } > "$1.new" && mv "$1.new" "$1""#,
+    );
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(report["changed"], serde_json::json!(["notes"]));
+    let after = std::fs::read_to_string(&card).unwrap();
+    assert!(after.contains("Bought the strip at the market."), "{after}");
+    let fields = |text: &str| text.split("---").nth(1).unwrap().to_owned();
+    assert_eq!(fields(&after), fields(&before), "the fields are kept");
+
+    // Changing the history section is refused: the editor opens again saying so, and
+    // saving it as it opened changes nothing.
+    if after.contains("<!-- carrel:history -->") {
+        let out = edit(
+            r#"if grep -q "To fix" "$1"; then exit 0; fi; sed 's/^## History$/## Changed/' "$1" > "$1.new" && mv "$1.new" "$1""#,
+        );
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+        assert_eq!(report["changed"], serde_json::json!([]));
+        assert_eq!(std::fs::read_to_string(&card).unwrap(), after);
+    }
+
+    let change = sandbox.json(&root, &["log"])[0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    sandbox.ok(&root, &["undo", &change[..8]]);
+    assert_eq!(
+        std::fs::read_to_string(&card).unwrap(),
+        before,
+        "undo restores the card"
+    );
+}
