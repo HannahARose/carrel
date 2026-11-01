@@ -29,6 +29,7 @@ use serde_json::{Value, json};
 use crate::{Failure, Report};
 
 /// A model to measure: a provider's text-model offer.
+#[derive(Clone)]
 pub(crate) struct Model {
     pub(crate) provider: String,
     pub(crate) offer: String,
@@ -77,7 +78,7 @@ pub struct BenchArgs {
     pub mode: BenchMode,
     /// With `--search`: title and summarize each item's card as a model drafted it in an
     /// earlier run's `results.json`, instead of by its file name; repeat for more.
-    #[arg(long, value_name = "RESULTS", requires = "search", conflicts_with_all = ["librarian", "questions", "crawl"])]
+    #[arg(long, value_name = "RESULTS", requires = "search", conflicts_with_all = ["librarian", "questions", "crawl", "restructure"])]
     pub cards: Vec<PathBuf>,
 }
 
@@ -109,6 +110,13 @@ pub struct BenchMode {
     /// `results.json` and `report.md` to `crawl/` in `--out`.
     #[arg(long, conflicts_with_all = ["compare", "second"])]
     pub crawl: bool,
+    /// Measure restructure proposals instead of filing: on the same muddled archive, propose a
+    /// restructure of the whole archive at each eagerness, with numbers alone and with each
+    /// text model, and score whether it recovers the intended shape, its moves weighted by
+    /// invasiveness, and its findability gain. Writes `results.json` and `report.md` to
+    /// `restructure/` in `--out`.
+    #[arg(long, conflicts_with_all = ["compare", "second", "limit"])]
+    pub restructure: bool,
 }
 
 /// `carrel bench`.
@@ -126,6 +134,8 @@ pub fn bench(args: &BenchArgs, json: bool) -> Result<Report, Failure> {
         crate::bench_questions::question_value_bench(args, json)
     } else if args.mode.crawl {
         crate::bench_crawl::crawl_bench(args, json)
+    } else if args.mode.restructure {
+        crate::bench_restructure::restructure_bench(args, json)
     } else {
         filing(args, json)
     }

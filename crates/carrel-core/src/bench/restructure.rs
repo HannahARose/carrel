@@ -17,8 +17,9 @@ use super::{Answers, crawl::Misplaced};
 use crate::card::Id;
 use crate::restructure::{Edit, Invasiveness, Proposal};
 
-/// Where each item would be once `proposal` is applied, from `before`, by identifier. Moves,
-/// merges and renames carry items along; nothing else moves anything.
+/// Where each item in `before` would be once `proposal` is applied, by identifier. Moves,
+/// merges and renames carry items along; nothing else moves anything. Items `before` doesn't
+/// have, such as Holding's own, are left out.
 #[must_use]
 pub fn after(before: &BTreeMap<Id, String>, proposal: &Proposal) -> BTreeMap<Id, String> {
     let mut places = before.clone();
@@ -26,7 +27,9 @@ pub fn after(before: &BTreeMap<Id, String>, proposal: &Proposal) -> BTreeMap<Id,
         match &change.change {
             Edit::MoveItems { to } => {
                 for item in &change.items {
-                    places.insert(item.id, to.clone());
+                    if let Some(place) = places.get_mut(&item.id) {
+                        place.clone_from(to);
+                    }
                 }
             }
             Edit::MergeCollection { from, into: to } | Edit::RenameCollection { from, to } => {
@@ -57,7 +60,11 @@ pub fn moves(before: &BTreeMap<Id, String>, proposal: &Proposal) -> Moves {
     let mut counted = Moves::default();
     for change in &proposal.changes {
         let moved = match &change.change {
-            Edit::MoveItems { .. } => change.items.len(),
+            Edit::MoveItems { .. } => change
+                .items
+                .iter()
+                .filter(|i| before.contains_key(&i.id))
+                .count(),
             Edit::MergeCollection { from, .. } | Edit::RenameCollection { from, .. } => before
                 .values()
                 .filter(|p| within(p, from).is_some())
