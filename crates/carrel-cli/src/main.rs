@@ -4,6 +4,7 @@
 //! scripts. Errors go to standard error (as `{"error": "…"}` with `--json`) and exit with
 //! status 1; usage mistakes exit with status 2.
 
+mod agent;
 mod backup;
 mod bench;
 mod checkout;
@@ -125,6 +126,10 @@ enum Command {
     /// Draft the items waiting in the intake queue on this device, until none are left.
     /// Adding to the queue starts one in the background, so this is rarely run by hand.
     Worker,
+    /// Run the background agent until stopped: it drafts the queue, keeps the index current,
+    /// records work sessions as they finish and takes scheduled snapshots. With no archives,
+    /// the one found as for any command.
+    Agent(AgentArgs),
     /// Review proposals to file items: list, show, edit, approve, hold, move or reject them.
     Review {
         /// Include proposals already decided (with no subcommand).
@@ -460,6 +465,41 @@ enum CollectionAction {
         #[arg(long = "tag", value_name = "NAME=MEANING")]
         tags: Vec<String>,
     },
+}
+
+#[derive(Debug, clap::Args)]
+#[command(args_conflicts_with_subcommands = true)]
+struct AgentArgs {
+    #[command(subcommand)]
+    action: Option<AgentAction>,
+    /// The archives to look after.
+    #[arg(value_name = "ARCHIVE")]
+    archives: Vec<PathBuf>,
+    /// Look for changes every few seconds instead of through file events, as for archives
+    /// on network drives.
+    #[arg(long)]
+    poll: bool,
+    /// Stop after this many seconds, as in tests.
+    #[arg(long, hide = true, value_name = "SECONDS")]
+    stop_after: Option<u64>,
+}
+
+#[derive(Debug, Subcommand)]
+enum AgentAction {
+    /// Start the agent at log-in, and now: a launchd user agent on macOS, a systemd user
+    /// service on Linux, a Task Scheduler task on Windows.
+    Install {
+        /// The archives to look after. With none, the one found as for any command.
+        #[arg(value_name = "ARCHIVE")]
+        archives: Vec<PathBuf>,
+        /// Look for changes every few seconds instead of through file events.
+        #[arg(long)]
+        poll: bool,
+    },
+    /// Stop the agent started at log-in, and remove exactly what `install` wrote.
+    Uninstall,
+    /// Whether the agent is installed, for which archives, and whether it's running.
+    Status,
 }
 
 #[derive(Debug, Subcommand)]
@@ -841,12 +881,8 @@ fn main() -> ExitCode {
             ingest::command(cli.archive.as_deref(), &args.into_request(), cli.json)
         }
         Command::Worker => worker::run(cli.archive.as_deref()),
-        Command::Settings { action } => match action {
-            Some(SettingsAction::Set { key, value }) => {
-                settings::set(cli.archive.as_deref(), &key, &value)
-            }
-            _ => settings::list(cli.archive.as_deref()),
-        },
+        Command::Agent(args) => agent_command(cli.archive.as_deref(), args, cli.json),
+        Command::Settings { action } => settings_command(cli.archive.as_deref(), action),
         Command::Review { all, action } => review_command(cli.archive.as_deref(), all, action),
         Command::Edit { item } => edit::edit(cli.archive.as_deref(), &item),
         Command::Expand { item, anyway } => expand::expand(cli.archive.as_deref(), &item, anyway),
@@ -909,6 +945,37 @@ fn after(
         worker::after_change(archive);
     }
     result
+}
+
+/// `carrel settings` and its subcommands.
+fn settings_command(
+    archive: Option<&std::path::Path>,
+    action: Option<SettingsAction>,
+) -> Result<Report, Failure> {
+    match action {
+        Some(SettingsAction::Set { key, value }) => settings::set(archive, &key, &value),
+        _ => settings::list(archive),
+    }
+}
+
+/// `carrel agent` and its subcommands.
+fn agent_command(
+    archive: Option<&std::path::Path>,
+    args: AgentArgs,
+    json: bool,
+) -> Result<Report, Failure> {
+    match args.action {
+        None => agent::run(
+            &args.archives,
+            archive,
+            args.poll,
+            args.stop_after.map(std::time::Duration::from_secs),
+            json,
+        ),
+        Some(AgentAction::Install { archives, poll }) => agent::install(&archives, archive, poll),
+        Some(AgentAction::Uninstall) => agent::uninstall(),
+        Some(AgentAction::Status) => agent::status(archive),
+    }
 }
 
 /// `carrel index` and its subcommands.

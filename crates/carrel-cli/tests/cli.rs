@@ -3141,3 +3141,164 @@ fn an_item_question_is_answered_through_a_correction() {
         0
     );
 }
+
+impl Sandbox {
+    /// `carrel` with a temporary home folder too, for the agent's service files, and the
+    /// service manager never run.
+    fn agent_command(&self, cwd: &Path, args: &[&str]) -> std::process::Command {
+        let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_carrel"));
+        command
+            .args(args)
+            .current_dir(cwd)
+            .env("CARREL_CONFIG_DIR", self.path("config"))
+            .env("CARREL_TRASH_DIR", self.path("Trash"))
+            .env("CARREL_WORKER", "off")
+            .env("CARREL_SERVICE_MANAGER", "off")
+            .env("HOME", self.path("home"))
+            .env("USERPROFILE", self.path("home"))
+            .env("XDG_CONFIG_HOME", self.path("home/.config"))
+            .env("APPDATA", self.path("home/AppData"));
+        command
+    }
+
+    fn agent_json(&self, cwd: &Path, args: &[&str]) -> Value {
+        let mut args = args.to_vec();
+        args.push("--json");
+        let out = self.agent_command(cwd, &args).output().unwrap();
+        assert!(
+            out.status.success(),
+            "carrel {args:?} failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        serde_json::from_slice(&out.stdout).unwrap()
+    }
+}
+
+#[test]
+fn agent_install_writes_only_its_own_file_in_the_home_folder_and_uninstall_removes_it() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    let home = sandbox.path("home");
+    std::fs::create_dir_all(&home).unwrap();
+
+    let status = sandbox.agent_json(&root, &["agent", "status"]);
+    assert_eq!(status["installed"], false);
+    assert_eq!(status["archives"][0]["running"], false);
+
+    let installed = sandbox.agent_json(&root, &["agent", "install", "--poll"]);
+    assert_eq!(installed["installed"], true);
+    assert_eq!(installed["ran"], json!([]), "the service manager isn't run");
+    let file = PathBuf::from(installed["file"].as_str().unwrap());
+    assert!(
+        file.starts_with(&home) || file.starts_with(sandbox.path("config")),
+        "{} is in the temporary folders",
+        file.display()
+    );
+    let text = std::fs::read(&file).unwrap();
+    assert_ne!(text, Vec::<u8>::new());
+
+    let status = sandbox.agent_json(&root, &["agent", "status"]);
+    assert_eq!(status["installed"], true);
+    assert_eq!(status["file"], installed["file"]);
+    assert_eq!(status["archives"].as_array().unwrap().len(), 1);
+    assert_eq!(status["archives"][0]["installed"], true);
+    assert_eq!(status["archives"][0]["running"], false);
+
+    let out = sandbox
+        .agent_command(&root, &["agent", "install", "--poll"])
+        .output()
+        .unwrap();
+    let said = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        said.contains("Reinstalled") && said.contains("Wrote "),
+        "{said}"
+    );
+
+    let removed = sandbox.agent_json(&root, &["agent", "uninstall"]);
+    assert_eq!(removed["removed"], installed["file"]);
+    assert!(!file.exists());
+    let again = sandbox.agent_json(&root, &["agent", "uninstall"]);
+    assert_eq!(again["removed"], Value::Null, "nothing to remove");
+}
+
+#[test]
+fn the_agent_steps_aside_while_the_mac_apps_agent_runs() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    let id = sandbox.json(&root, &["status"])["archive"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let workers = sandbox.path("config/workers");
+    std::fs::create_dir_all(&workers).unwrap();
+    let mac_agent = std::fs::File::create(workers.join(format!("{id}.agent"))).unwrap();
+    mac_agent.try_lock().unwrap();
+
+    let out = sandbox
+        .agent_command(&root, &["agent", "--stop-after", "1"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let said = String::from_utf8_lossy(&out.stdout);
+    assert!(said.contains("Stepping aside"), "{said}");
+    assert!(!said.contains("Looking after"), "{said}");
+    let status = sandbox.agent_json(&root, &["agent", "status"]);
+    assert_eq!(status["archives"][0]["running"], true);
+}
+
+#[test]
+fn the_agent_drafts_what_is_queued_and_the_clis_worker_steps_aside_for_it() {
+    use std::io::BufRead as _;
+
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    let note = sandbox.path("note.txt");
+    std::fs::write(&note, "a note\n").unwrap();
+    let mut agent = sandbox
+        .agent_command(&root, &["agent", "--json", "--stop-after", "60"])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut lines = std::io::BufReader::new(agent.stdout.take().unwrap()).lines();
+    let mut next = || -> Value { serde_json::from_str(&lines.next().unwrap().unwrap()).unwrap() };
+    assert_eq!(next()["event"], "claimed");
+
+    // Ingest starts no worker of its own: the agent hears the queue change.
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_carrel"))
+        .args(["ingest", note.to_str().unwrap(), "--json"])
+        .current_dir(&root)
+        .env("CARREL_CONFIG_DIR", sandbox.path("config"))
+        .env("CARREL_TRASH_DIR", sandbox.path("Trash"))
+        .env_remove("CARREL_WORKER")
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let queued: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(queued["worker_started"], false);
+    assert_eq!(sandbox.json(&root, &["worker"])["agent"], true);
+
+    let drafted = loop {
+        let event = next();
+        if event["event"] == "finished"
+            && event["job"] == "work"
+            && event["summary"]
+                .as_str()
+                .is_some_and(|s| s.contains("drafted"))
+        {
+            break event;
+        }
+    };
+    assert_eq!(drafted["summary"], "drafted 1 item");
+    assert_eq!(
+        sandbox.json(&root, &["ingest", "--status"])["waiting"],
+        json!([])
+    );
+    agent.kill().unwrap();
+    agent.wait().unwrap();
+    assert_eq!(
+        sandbox.json(&root, &["ingest", "--status"])["agent"],
+        false,
+        "the lock goes with the process"
+    );
+}

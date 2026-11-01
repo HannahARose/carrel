@@ -54,6 +54,10 @@ With `--json`, `carrel search` prints `{"root", "query", "total", "meaning", "re
 | `carrel ingest --status` | Shows the worker and this device's queue, including items that failed. |
 | `carrel ingest --remove ID`, `--first ID`, `--retry ID` | Takes a waiting item off the queue, moves it to the front, or tries a failed one again. |
 | `carrel worker` | Drafts this device's queue until it's empty, then embeds the items behind in the meaning index, if a provider here runs the archive's embedding model. Adding to the queue starts one in the background, and so does every command that changes filed items (approving, correcting, editing, renaming, returning and undoing), so this is rarely run by hand. Set `CARREL_WORKER=off` to stop one starting by itself. |
+| `carrel agent [ARCHIVE...] [--poll]` | Runs the background agent until stopped: it drafts the queue as items arrive, keeps the meaning index current, records work sessions as they finish and takes a daily snapshot once backups are set up. It hears changes through file events, or with `--poll` looks every few seconds. It steps aside while the Mac app's agent looks after an archive. With `--json`, it prints one JSON value per event (`claimed`, `stepped_aside`, `started`, `finished`, `postponed`, `failed`, `cannot_open`). |
+| `carrel agent install [ARCHIVE...] [--poll]` | Starts the agent at log-in, and now: a launchd user agent on macOS, a systemd user service on Linux, a Task Scheduler task on Windows. It says the file it wrote and the commands it ran. |
+| `carrel agent status` | Whether the agent is installed, for which archives, and whether an agent looks after each of them (and the current archive) now. |
+| `carrel agent uninstall` | Stops the agent and removes exactly what `install` wrote. |
 
 ## Review
 
@@ -139,6 +143,7 @@ Backups need [Kopia](https://kopia.io), beside `carrel` or on `PATH`.
 | `CARREL_CONFIG_DIR` | Where Carrel keeps this device's files, instead of the default (see the [User guide](user-guide.md#what-carrel-keeps-on-this-device)) |
 | `CARREL_MODELS_DIR` | Where local models are kept |
 | `CARREL_WORKER=off` | Never start a worker in the background |
+| `CARREL_SERVICE_MANAGER=off` | `carrel agent install` and `uninstall` write and remove the service's file without running `launchctl`, `systemctl` or `schtasks` |
 | `CARREL_TRASH_DIR` | Put files Carrel trashes (such as a zip after it's unpacked) in this folder instead of the system Trash |
 | `CARREL_OCR_LANGUAGES` | Tesseract's languages for OCR, such as `eng+deu` |
 | `CARREL_IMAGE_DESCRIPTIONS=off` | Read images on a Mac without asking Apple's model to describe them, to measure what the descriptions add |
