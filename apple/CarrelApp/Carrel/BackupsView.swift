@@ -44,14 +44,15 @@ struct BackupsView: View {
                     Task { await backups.snapshotNow() }
                 }
                 .disabled(!backups.isSetUp || backups.working != nil)
-                Button("Verify", systemImage: "checkmark.shield") {
-                    Task { await backups.verify() }
+                Button("Verify…", systemImage: "checkmark.shield") {
+                    backups.choosingVerify = true
                 }
-                .help("Check every snapshot, reading back 1% of the files")
+                .help("Check every snapshot, reading back as much of the files as you choose")
                 .disabled(!backups.isSetUp || backups.working != nil)
             }
         }
         .sheet(item: $backups.setup) { _ in BackupSetupSheet(backups: backups) }
+        .sheet(isPresented: $backups.choosingVerify) { VerifySheet(backups: backups) }
         .task { await backups.refresh() }
     }
 
@@ -186,28 +187,68 @@ struct BackupInspector: View {
                 .disabled(!backups.isSetUp || backups.working != nil)
             } footer: {
                 Text(
-                    "Restores an item’s contents as they were then into a new folder beside the archive. Nothing in the archive changes."
+                    "Restores an item’s contents as they were then into a new folder beside the archive, or one you choose. Nothing in the archive changes."
                 )
                 .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
         .sheet(isPresented: $choosing) {
-            RestoreItemSheet(items: items) { id in
+            RestoreItemSheet(items: items) { id, folder in
                 choosing = false
-                Task { await backups.restore(item: id) }
+                Task { await backups.restore(item: id, to: folder) }
             }
         }
     }
 }
 
-/// Choosing the item to restore, among those with contents.
+/// How much of the files Verify reads back, from 1% to all of them.
+private struct VerifySheet: View {
+    let backups: BackupsModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var percent = Double(BackupsModel.defaultVerifyPercent)
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Verify the Backups").font(.headline)
+            Text(
+                "Every snapshot’s structure is checked, and this much of the files’ contents is read back and compared. More takes longer."
+            )
+            .fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Slider(value: $percent, in: 1...100, step: 1) { Text("Read back") }
+                Stepper(
+                    "\(Int(percent))%", value: $percent, in: 1...100, step: 1
+                )
+                .monospacedDigit()
+                .fixedSize()
+            }
+            HStack {
+                Spacer()
+                Button("Cancel", role: .cancel) { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button("Verify") {
+                    let chosen = UInt8(percent)
+                    dismiss()
+                    Task { await backups.verify(percent: chosen) }
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(width: 420)
+    }
+}
+
+/// Choosing the item to restore, among those with contents, and where it goes: a new folder
+/// beside the archive, or a new place the owner names.
 private struct RestoreItemSheet: View {
     let items: [ItemSummary]
-    let restore: (String) -> Void
+    let restore: (String, URL?) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var filter = ""
     @State private var chosen: ItemSummary.ID?
+    @State private var place: URL?
 
     private var shown: [ItemSummary] {
         items.filter { [.file, .folder, .bundle].contains($0.kind) }
@@ -223,6 +264,17 @@ private struct RestoreItemSheet: View {
                 Label(item.title, systemImage: item.kind.symbol)
             }
             .frame(minHeight: 260)
+            LabeledContent("Restore to") {
+                HStack {
+                    Text(place?.path(percentEncoded: false) ?? "A new folder beside the archive")
+                        .lineLimit(1).truncationMode(.middle)
+                    Button("Choose…") { choosePlace() }
+                        .disabled(chosen == nil)
+                    if place != nil {
+                        Button("Beside the Archive") { place = nil }
+                    }
+                }
+            }
         }
         .padding()
         .frame(width: 420)
@@ -231,9 +283,21 @@ private struct RestoreItemSheet: View {
                 Button("Cancel") { dismiss() }
             }
             ToolbarItem(placement: .confirmationAction) {
-                Button("Restore") { if let chosen { restore(chosen) } }
+                Button("Restore") { if let chosen { restore(chosen, place) } }
                     .disabled(chosen == nil)
             }
         }
+    }
+
+    /// Asks where the restored copy goes, under a name that isn't taken.
+    private func choosePlace() {
+        let panel = NSSavePanel()
+        panel.canCreateDirectories = true
+        panel.prompt = "Restore Here"
+        panel.message = "Choose where the restored copy goes. Nothing in the archive changes."
+        panel.nameFieldStringValue =
+            items.first { $0.id == chosen }
+            .map { URL(filePath: $0.item ?? $0.card).lastPathComponent } ?? ""
+        if panel.runModal() == .OK, let url = panel.url { place = url }
     }
 }
