@@ -60,6 +60,8 @@ extension CollectionSummary: Identifiable {
 }
 
 extension Proposal: Identifiable {}
+extension RestructureProposal: Identifiable {}
+extension RestructureChange: Identifiable {}
 extension ReviewBatch: Identifiable {}
 extension Question: Identifiable {}
 extension ActiveItem: Identifiable {}
