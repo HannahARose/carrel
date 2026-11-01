@@ -2,8 +2,9 @@
 //! drawn as `carrel discover` draws them. `d` shows on this day, `w` wanders the stacks, one
 //! key per step (`Space` or `Enter`), with the item's preview where the terminal draws
 //! images, `t` the timeline (`p` changes its periods, `/` narrows it by words and filters and
-//! `b` chooses its date), `m` the archive map as a sized tree, and `h` activity as a block
-//! heatmap (`r` chooses its days). Now and then a wander step asks a question about its item,
+//! `b` chooses its date), `m` the archive map as a sized tree, `h` activity as a block
+//! heatmap (`r` chooses its days), and `g` the graph's strongest connections, between
+//! collections or, with `c`, between items. Now and then a wander step asks a question about its item,
 //! which `a` answers. `w` in Browse starts a walk from the item shown.
 
 use carrel_core::discover::timeline::{Options, Resolution};
@@ -20,6 +21,9 @@ use super::item::ItemView;
 use super::option_lines::OptionLine;
 use super::review::Handled;
 
+/// How many connections the graph view shows, the strongest first.
+const GRAPH_SHOWN: usize = 30;
+
 /// Which discovery view is shown.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum View {
@@ -34,16 +38,19 @@ pub enum View {
     Map,
     /// When things were filed and worked on, as a heatmap.
     Activity,
+    /// The strongest connections, between collections or items.
+    Graph,
 }
 
 impl View {
     /// Every view, with its key and name, in order.
-    pub const ALL: [(Self, char, &'static str); 5] = [
+    pub const ALL: [(Self, char, &'static str); 6] = [
         (Self::Today, 'd', "on this day"),
         (Self::Wander, 'w', "wander"),
         (Self::Timeline, 't', "timeline"),
         (Self::Map, 'm', "map"),
         (Self::Activity, 'h', "activity"),
+        (Self::Graph, 'g', "graph"),
     ];
 }
 
@@ -64,6 +71,8 @@ pub struct Stacks {
     pub timeline_by: Option<DateKind>,
     /// The first and last day activity covers; none for the last year.
     pub activity_range: Option<(jiff::civil::Date, jiff::civil::Date)>,
+    /// Whether the graph shows connections between items rather than collections.
+    pub graph_items: bool,
     /// The walk, once one has started.
     pub walk: Option<Walk>,
     /// The step shown, as its lines.
@@ -117,6 +126,11 @@ impl App {
                 ));
                 text
             }
+            View::Graph => crate::discover::graph_text(
+                &carrel_core::graph::Graph::build(&catalog),
+                self.stacks.graph_items,
+                GRAPH_SHOWN,
+            ),
             View::Wander => return,
         }
         .lines()
@@ -295,6 +309,11 @@ impl App {
                 self.load_discover();
             }
             (View::Activity, KeyCode::Char('r')) => self.ask_option(OptionLine::ActivityRange),
+            (View::Graph, KeyCode::Char('c')) => {
+                self.stacks.graph_items = !self.stacks.graph_items;
+                self.stacks.scroll = 0;
+                self.load_discover();
+            }
             _ => return Handled::No,
         }
         Handled::Yes(None)
@@ -317,6 +336,7 @@ impl App {
             ("t", "timeline"),
             ("m", "map"),
             ("h", "activity"),
+            ("g", "graph"),
         ];
         match self.stacks.view {
             View::Wander => {
@@ -333,6 +353,17 @@ impl App {
                 ("↑↓", "scroll"),
             ]),
             View::Activity => keys.extend([("r", "days"), ("↑↓", "scroll")]),
+            View::Graph => keys.extend([
+                (
+                    "c",
+                    if self.stacks.graph_items {
+                        "collections"
+                    } else {
+                        "items"
+                    },
+                ),
+                ("↑↓", "scroll"),
+            ]),
             _ => keys.push(("↑↓", "scroll")),
         }
         keys.push(("?", "help"));
@@ -394,6 +425,17 @@ pub(super) mod tests {
         app.key(key(KeyCode::Char('p')));
         assert_ne!(app.stacks.lines, month, "p groups by day instead");
         assert!(app.keys().contains(&("p", "periods")));
+
+        // The graph: collections, then items with c.
+        app.key(key(KeyCode::Char('g')));
+        let text = screen(&app, 120, 30);
+        assert!(text.contains("Projects ↔ Reading"), "{text}");
+        assert!(app.keys().contains(&("c", "items")));
+        app.key(key(KeyCode::Char('c')));
+        let text = screen(&app, 120, 30);
+        assert!(text.contains("between items"), "{text}");
+        assert!(text.contains("oscillator-sim (Projects)"), "{text}");
+        assert!(app.keys().contains(&("c", "collections")));
     }
 
     #[test]

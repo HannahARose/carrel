@@ -556,11 +556,7 @@ pub fn graph(archive: Option<&Path>, items: bool, limit: usize) -> Result<Report
         .into_iter()
         .take(limit)
         .collect();
-    let text = if items {
-        item_edges_text(&found, &edges)
-    } else {
-        connections_text(&connections)
-    };
+    let text = graph_text(&found, items, limit);
     let node = |id| {
         found.item(id).map(|i| {
             json!({
@@ -584,6 +580,22 @@ pub fn graph(archive: Option<&Path>, items: bool, limit: usize) -> Result<Report
         })).collect::<Vec<_>>(),
     });
     Ok(Report::new(text, json))
+}
+
+/// The graph's `limit` strongest connections, as `carrel discover graph` writes them:
+/// between collections, or with `items` between items in different collections.
+pub(crate) fn graph_text(found: &Graph, items: bool, limit: usize) -> String {
+    if items {
+        let edges: Vec<&Edge> = found
+            .strongest_item_edges()
+            .into_iter()
+            .take(limit)
+            .collect();
+        item_edges_text(found, &edges)
+    } else {
+        let connections: Vec<Connection> = found.connections().into_iter().take(limit).collect();
+        connections_text(&connections)
+    }
 }
 
 /// Why two things are connected, in words: their links, days worked on together and tags.
