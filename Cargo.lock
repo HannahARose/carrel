@@ -440,7 +440,7 @@ dependencies = [
 
 [[package]]
 name = "carrel-cli"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "base64 0.22.1",
  "carrel-core",
@@ -457,7 +457,7 @@ dependencies = [
 
 [[package]]
 name = "carrel-core"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "bzip2",
  "crc32fast",
@@ -485,7 +485,7 @@ dependencies = [
 
 [[package]]
 name = "carrel-fetch"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "carrel-core",
  "fs4",
@@ -498,7 +498,7 @@ dependencies = [
 
 [[package]]
 name = "carrel-ffi"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "carrel-core",
  "jiff",
@@ -510,7 +510,7 @@ dependencies = [
 
 [[package]]
 name = "carrel-provider-cad"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "carrel-core",
  "carrel-provider-extract",
@@ -523,7 +523,7 @@ dependencies = [
 
 [[package]]
 name = "carrel-provider-extract"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "carrel-core",
  "pdf-extract",
@@ -534,7 +534,7 @@ dependencies = [
 
 [[package]]
 name = "carrel-provider-llama"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "carrel-core",
  "llama-cpp-2",
@@ -3540,7 +3540,7 @@ dependencies = [
 
 [[package]]
 name = "uniffi-bindgen"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "uniffi",
 ]
