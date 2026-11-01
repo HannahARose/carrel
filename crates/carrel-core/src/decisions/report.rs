@@ -60,6 +60,8 @@ pub struct ModelUse {
     pub rejected: usize,
     /// `accepted` as a share of `proposals`.
     pub accepted_share: f64,
+    /// Its cards corrected.
+    pub corrections: usize,
     /// Corrections of its fields, by field.
     pub corrected_fields: BTreeMap<String, usize>,
     /// Corrections of its cards, by the item's extension (or kind, for a folder).
@@ -349,6 +351,7 @@ fn models(events: &[&Event], moves: &HashMap<Id, Routed>) -> Vec<ModelUse> {
                 ..
             } => {
                 let use_ = model_use(&mut by, name_of(model.as_ref()));
+                use_.corrections += 1;
                 for field in fields {
                     *use_.corrected_fields.entry(field.clone()).or_default() += 1;
                 }
@@ -396,6 +399,7 @@ fn model_use(by: &mut BTreeMap<String, ModelUse>, model: String) -> &mut ModelUs
         held: 0,
         rejected: 0,
         accepted_share: 0.0,
+        corrections: 0,
         corrected_fields: BTreeMap::new(),
         corrected_types: BTreeMap::new(),
         drafted: 0,
@@ -773,7 +777,8 @@ impl UsageReport {
                     .collect();
                 writeln!(
                     text,
-                    "    corrected: {}; by type: {}",
+                    "    {} corrected: {}; by type: {}",
+                    m.corrections,
                     fields.join(", "),
                     types.join(", ")
                 )

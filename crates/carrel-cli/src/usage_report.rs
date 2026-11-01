@@ -86,9 +86,13 @@ pub fn report(archive: Option<&Path>, since: &str, names: bool) -> Result<Report
 }
 
 /// The Report section of the interactive mode's Status: the last 30 days, with collections
-/// by path, as it's the owner's own screen.
+/// by path, as it's the owner's own screen. Empty in unit tests.
 #[must_use]
 pub fn status_lines(archive: &Archive) -> Vec<String> {
+    // Unit tests never read this device's own log.
+    if cfg!(test) {
+        return Vec::new();
+    }
     let mut lines = vec![
         String::new(),
         "Report (`carrel report` to share it):".to_owned(),

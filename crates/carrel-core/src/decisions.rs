@@ -287,3 +287,70 @@ pub fn opened(archive: &Archive, item: Id) {
         );
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn snapshot_at(at: &str) -> Record {
+        Record {
+            at: at.into(),
+            archive: Id::new_v7(),
+            event: Event::Snapshot {
+                items: 1,
+                holding: 0,
+                low: 0,
+                medium: 0,
+                crowded: 0,
+                single: 0,
+                spread_tags: 0,
+            },
+        }
+    }
+
+    #[test]
+    fn records_go_in_their_months_file_and_old_ones_are_trimmed() {
+        let dir = tempfile::tempdir().unwrap();
+        for at in [
+            "2026-07-20T10:00:00Z",
+            "2026-08-05T10:00:00Z",
+            "2026-08-20T10:00:00Z",
+            "2026-11-01T10:00:00Z",
+        ] {
+            append(dir.path(), &snapshot_at(at)).unwrap();
+        }
+        assert!(dir.path().join("2026-07.jsonl").is_file());
+        assert_eq!(
+            read(dir.path(), "2026-01-01T00:00:00Z".parse().unwrap()).len(),
+            4
+        );
+
+        // 90 days before 2026-11-01 is 2026-08-03: July goes, August keeps both.
+        trim(dir.path(), 90, "2026-11-01T12:00:00Z".parse().unwrap());
+        assert!(!dir.path().join("2026-07.jsonl").exists());
+        assert_eq!(
+            read(dir.path(), "2026-01-01T00:00:00Z".parse().unwrap()).len(),
+            3
+        );
+
+        // 80 days before is 2026-08-13: the first August line goes.
+        trim(dir.path(), 80, "2026-11-01T12:00:00Z".parse().unwrap());
+        let kept = read(dir.path(), "2026-01-01T00:00:00Z".parse().unwrap());
+        let times: Vec<&str> = kept.iter().map(|r| r.at.as_str()).collect();
+        assert_eq!(times, ["2026-08-20T10:00:00Z", "2026-11-01T10:00:00Z"]);
+        assert_eq!(
+            read(dir.path(), "2026-09-01T00:00:00Z".parse().unwrap()).len(),
+            1
+        );
+    }
+
+    #[test]
+    fn the_log_keeps_ninety_days_unless_told() {
+        assert_eq!(keep_days(&Prefs::default()), KEEP_DAYS);
+        let prefs = Prefs {
+            report_keep_days: Some(0),
+            ..Prefs::default()
+        };
+        assert_eq!(keep_days(&prefs), 1, "at least a day");
+    }
+}

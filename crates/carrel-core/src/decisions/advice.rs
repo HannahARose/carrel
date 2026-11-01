@@ -56,7 +56,7 @@ fn models(report: &UsageReport, found: &mut Vec<Recommendation>) {
                 "Switch the model that drafts cards: `carrel settings set model NAME` (`carrel models` lists them), or set `second_model` to ask another when the first isn't sure.",
             ));
         }
-        let corrections: usize = m.corrected_fields.values().sum();
+        let corrections = m.corrections;
         if m.proposals >= ENOUGH && corrections * 2 >= m.proposals {
             let (field, n) = m
                 .corrected_fields
