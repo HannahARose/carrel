@@ -5,6 +5,7 @@
 use std::path::PathBuf;
 
 use carrel_core::ingest::IntakeOptions;
+use carrel_core::written_note::{self, WrittenNoteAdded};
 use carrel_core::{inbox, intake};
 
 use crate::intake::{Added, LeftOut};
@@ -30,6 +31,24 @@ impl Shared {
             },
             inbox: Some(text(path)),
             writer: Some(writer.to_string()),
+        }
+    }
+
+    fn queued(queued: intake::Queued) -> Self {
+        Self {
+            added: Added {
+                added: queued.added.iter().map(Into::into).collect(),
+                left_out: queued
+                    .skipped
+                    .into_iter()
+                    .map(|s| LeftOut {
+                        path: text(&s.path),
+                        reason: s.reason,
+                    })
+                    .collect(),
+            },
+            inbox: None,
+            writer: None,
         }
     }
 }
@@ -64,21 +83,7 @@ impl ArchiveHandle {
             holder.device,
             note.as_deref(),
         )?;
-        Ok(Shared {
-            added: Added {
-                added: queued.added.iter().map(Into::into).collect(),
-                left_out: queued
-                    .skipped
-                    .into_iter()
-                    .map(|s| LeftOut {
-                        path: text(&s.path),
-                        reason: s.reason,
-                    })
-                    .collect(),
-            },
-            inbox: None,
-            writer: None,
-        })
+        Ok(Shared::queued(queued))
     }
 
     /// Adds the web address `url` to the intake queue, to be filed as a `url` item drafted
@@ -119,6 +124,44 @@ impl ArchiveHandle {
             },
             inbox: None,
             writer: None,
+        })
+    }
+
+    /// Adds `text` as a note item of its own, titled `title` (or named by its first words),
+    /// with the owner's `note` for its draft and card: kept as a Markdown file in a folder of
+    /// its own in `folder` (this device's notes folder when `None`) and queued as any file is.
+    /// While another device is the writer, it goes into this device's inbox instead.
+    ///
+    /// # Errors
+    ///
+    /// [`CarrelError::Invalid`] if `text` is empty, or [`CarrelError::Failed`] if the note,
+    /// the queue or the inbox can't be written.
+    pub fn share_note(
+        &self,
+        text: String,
+        title: Option<String>,
+        note: Option<String>,
+        folder: Option<String>,
+    ) -> Result<Shared, CarrelError> {
+        let archive = self.fresh()?;
+        let holder = self.holder()?;
+        let folder = folder
+            .map(PathBuf::from)
+            .or_else(written_note::written_notes_dir)
+            .ok_or_else(|| CarrelError::Failed {
+                message: "There's no folder to keep the note in.".into(),
+            })?;
+        let added = written_note::add_written_note(
+            &archive,
+            &folder,
+            &text,
+            title.as_deref(),
+            note.as_deref(),
+            holder,
+        )?;
+        Ok(match added {
+            WrittenNoteAdded::Sent { inbox, writer } => Shared::sent(&inbox, writer),
+            WrittenNoteAdded::Queued { queued, .. } => Shared::queued(queued),
         })
     }
 }
@@ -179,5 +222,29 @@ mod tests {
         );
         assert!(std::path::Path::new(sent.inbox.as_deref().unwrap()).is_file());
         assert_eq!(sent.added.added.len(), 0);
+    }
+
+    #[test]
+    fn a_written_note_is_kept_in_the_folder_given_and_queued_as_an_item() {
+        let sample = Sample::new();
+        let folder = sample.dir.path().join("Sent");
+        let shared = sample
+            .handle
+            .share_note(
+                "Call about the lamp.".into(),
+                Some("Lamp".into()),
+                Some("Soon".into()),
+                Some(text(&folder)),
+            )
+            .unwrap();
+        assert_eq!(shared.added.added.len(), 1);
+        assert!(shared.added.added[0].path.ends_with("/Lamp.md"));
+        assert_eq!(std::fs::read_dir(&folder).unwrap().count(), 1);
+        assert!(matches!(
+            sample
+                .handle
+                .share_note(" ".into(), None, None, Some(text(&folder))),
+            Err(CarrelError::Invalid { .. })
+        ));
     }
 }

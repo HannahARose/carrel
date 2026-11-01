@@ -66,7 +66,10 @@ pub fn written_note_file_name(text: &str, title: Option<&str>) -> String {
         name = "Note".to_owned();
     }
     let lower = name.to_ascii_lowercase();
-    if ![".md", ".markdown", ".txt"].iter().any(|e| lower.ends_with(e)) {
+    if ![".md", ".markdown", ".txt"]
+        .iter()
+        .any(|e| lower.ends_with(e))
+    {
         name.push_str(".md");
     }
     name
@@ -131,8 +134,13 @@ pub fn add_written_note(
         each: false,
         whole: true,
     };
-    let queued =
-        intake::add_with_note(archive, std::slice::from_ref(&path), one, holder.device, note)?;
+    let queued = intake::add_with_note(
+        archive,
+        std::slice::from_ref(&path),
+        one,
+        holder.device,
+        note,
+    )?;
     Ok(WrittenNoteAdded::Queued { path, queued })
 }
 
@@ -152,7 +160,10 @@ mod tests {
         );
         assert_eq!(written_note_file_name("   ", None), "Note.md");
         assert_eq!(written_note_file_name("x", Some("notes.txt")), "notes.txt");
-        assert_eq!(written_note_file_name("x", Some("Dr. Smith")), "Dr. Smith.md");
+        assert_eq!(
+            written_note_file_name("x", Some("Dr. Smith")),
+            "Dr. Smith.md"
+        );
         let long = "word ".repeat(40);
         assert!(written_note_file_name(&long, Some(&long)).chars().count() <= 83);
     }

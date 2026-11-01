@@ -327,9 +327,13 @@ fn a_written_note_is_queued_as_a_file_of_its_own_or_sent_to_the_inbox() {
         device: Id::new_v7(),
     };
     let writing = s.lease(s.holder);
-    let sent = add_written_note(&s.archive, &notes, "Elsewhere", Some("Away"), None, other)
-        .unwrap();
-    let WrittenNoteAdded::Sent { inbox: entry, writer } = sent else {
+    let sent =
+        add_written_note(&s.archive, &notes, "Elsewhere", Some("Away"), None, other).unwrap();
+    let WrittenNoteAdded::Sent {
+        inbox: entry,
+        writer,
+    } = sent
+    else {
         panic!("sent while another device writes: {sent:?}")
     };
     assert_eq!(writer, s.holder.device);

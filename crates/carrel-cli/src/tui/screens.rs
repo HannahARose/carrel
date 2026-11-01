@@ -39,6 +39,8 @@ pub enum InputPurpose {
     Ingest,
     /// A note about what's planned for ingest, for the drafts and the cards.
     IngestNote,
+    /// A note the owner writes, to add as an item of its own.
+    IngestWritten,
     /// A new value for this setting.
     Setting(String),
     /// The folder for a backup repository, new or existing.
@@ -136,6 +138,7 @@ impl Input {
             InputPurpose::Ask => "your question for the librarian",
             InputPurpose::Ingest => "paths to ingest (or drop files here), or a web address",
             InputPurpose::IngestNote => "a note about them, for their cards, or nothing",
+            InputPurpose::IngestWritten => "your note, to file as an item of its own",
             InputPurpose::Setting(_) => "the new value",
             InputPurpose::BackupRepository => "the backup folder (drop it here)",
             InputPurpose::BackupPassword { .. } => "the password",
@@ -340,6 +343,7 @@ impl App {
                         return Some(super::settings::set(&key, &text));
                     }
                     InputPurpose::IngestNote => self.noted(&text),
+                    InputPurpose::IngestWritten => self.plan_written_note(&text),
                     InputPurpose::Ingest if super::intake::is_web_address(&text) => {
                         self.plan_url(text.trim());
                     }

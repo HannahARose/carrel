@@ -1252,7 +1252,7 @@ fn draw_ingest(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
         if app.intake.iter().any(|e| !e.stuck()) {
             "No worker is running; queue something or run `carrel worker` to start one".into()
         } else {
-            "Press i to add files and folders.".into()
+            "Press i to add files and folders, or a to write a note.".into()
         }
     });
     frame.render_widget(Paragraph::new(head), top);
