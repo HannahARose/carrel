@@ -3,7 +3,7 @@
 # .github/workflows/project.yml with these set:
 #
 #   GH_TOKEN        a token that can edit the project (the PROJECT_TOKEN secret)
-#   PROJECT_OWNER   the user who owns the project, and PROJECT_NUMBER its number
+#   PROJECT_OWNER   the organization that owns the project, and PROJECT_NUMBER its number
 #   EVENT, ACTION   the event name and its action, such as issues and closed
 #   NODE_ID         the issue's or pull request's GraphQL ID
 #   DRAFT, MERGED   for pull requests: "true" or "false"
@@ -16,21 +16,21 @@ set -euo pipefail
 
 project=$(gh api graphql -F owner="$PROJECT_OWNER" -F number="$PROJECT_NUMBER" -f query='
   query($owner: String!, $number: Int!) {
-    user(login: $owner) {
+    organization(login: $owner) {
       projectV2(number: $number) {
         id
         field(name: "Status") { ... on ProjectV2SingleSelectField { id options { id name } } }
       }
     }
   }')
-project_id=$(jq -r '.data.user.projectV2.id' <<<"$project")
-field_id=$(jq -r '.data.user.projectV2.field.id' <<<"$project")
+project_id=$(jq -r '.data.organization.projectV2.id' <<<"$project")
+field_id=$(jq -r '.data.organization.projectV2.field.id' <<<"$project")
 
 # move CONTENT_ID STATUS: adds the issue or pull request to the board if needed, then sets
 # its status.
 move() {
   local option item
-  option=$(jq -r --arg name "$2" '.data.user.projectV2.field.options[] | select(.name == $name) | .id' <<<"$project")
+  option=$(jq -r --arg name "$2" '.data.organization.projectV2.field.options[] | select(.name == $name) | .id' <<<"$project")
   item=$(gh api graphql -f project="$project_id" -f content="$1" --jq '.data.addProjectV2ItemById.item.id' -f query='
     mutation($project: ID!, $content: ID!) {
       addProjectV2ItemById(input: {projectId: $project, contentId: $content}) { item { id } }
