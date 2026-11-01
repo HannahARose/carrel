@@ -64,7 +64,7 @@ final class ActiveScreenModelTests: XCTestCase {
     /// A desk item with two pending entries, newest first.
     private func deskItemWithEntries() async throws -> ActiveItem {
         let plans = try sample.makeFolder("Plans")
-        await model.addToDesk(plans)
+        await model.addToDesk(DeskDraft(url: plans))
         XCTAssertNil(model.problem)
         let item = try XCTUnwrap(model.selectedItem)
         let path =
@@ -163,7 +163,7 @@ final class ActiveScreenModelTests: XCTestCase {
 
     func testTheDeskTakesAFolderAndCantBeReturned() async throws {
         let plans = try sample.makeFolder("Plans")
-        await model.addToDesk(plans)
+        await model.addToDesk(DeskDraft(url: plans))
         XCTAssertNil(model.problem)
         let item = try XCTUnwrap(model.selectedItem)
         XCTAssertEqual(item.kind, .desk)
@@ -173,9 +173,61 @@ final class ActiveScreenModelTests: XCTestCase {
         model.askToCancel()
         XCTAssertNil(model.cancelling)
 
-        await model.removeFromDesk()
+        model.askToTakeOff()
+        XCTAssertEqual(model.takingOff?.id, item.id, "asks how")
+        await model.takeOff(item, .keepCard)
         XCTAssertNil(model.problem)
         XCTAssertFalse(model.items.contains { $0.id == item.id })
+    }
+
+    func testTheDeskTakesATitleAndSummaryAndCanDeleteTheCard() async throws {
+        let plans = try sample.makeFolder("Plans")
+        await model.addToDesk(
+            DeskDraft(url: plans, title: "House plans", summary: "Drawings for the extension."))
+        XCTAssertNil(model.problem)
+        let item = try XCTUnwrap(model.selectedItem)
+        XCTAssertEqual(item.title, "House plans")
+        let card =
+            item.card.hasPrefix("/")
+            ? URL(filePath: item.card) : sample.root.appending(path: item.card)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: card.path(percentEncoded: false)))
+
+        await model.takeOff(item, .deleteCard)
+        XCTAssertNil(model.problem)
+        XCTAssertFalse(model.items.contains { $0.id == item.id })
+        XCTAssertFalse(FileManager.default.fileExists(atPath: card.path(percentEncoded: false)))
+    }
+
+    func testArchivingADeskItemQueuesIt() async throws {
+        let plans = try sample.makeFolder("Plans")
+        await model.addToDesk(DeskDraft(url: plans, title: "Plans", summary: "What's next."))
+        let item = try XCTUnwrap(model.selectedItem)
+        await model.takeOff(item, .archive)
+        XCTAssertNil(model.problem)
+        XCTAssertFalse(model.items.contains { $0.id == item.id })
+        XCTAssertTrue(sample.archive.intake.waiting.contains { $0.path.hasSuffix("Plans") })
+    }
+
+    func testReturningFromWhereTheWorkingCopyMoved() async throws {
+        let id = try sample.item(titled: "Desk lamp parts list")
+        await model.checkOut(
+            CheckoutDraft(item: id, title: "", folder: try sample.makeFolder("Work"), due: nil))
+        let item = try XCTUnwrap(model.selectedItem)
+        let moved = sample.folder.appending(path: "moved.csv")
+        try FileManager.default.moveItem(at: URL(filePath: item.working), to: moved)
+
+        await model.askToReturn()
+        XCTAssertNil(model.returning, "it isn't where it went")
+        XCTAssertNotNil(model.problem)
+        model.problem = nil
+
+        await model.askToReturn(from: moved)
+        let preview = try XCTUnwrap(model.returning)
+        XCTAssertEqual(preview.working, moved.path(percentEncoded: false))
+        XCTAssertEqual(preview.sessionSnapshots, 0, "no backups")
+        await model.confirmReturn(preview, trimmingSnapshots: true)
+        XCTAssertNil(model.problem)
+        XCTAssertFalse(model.items.contains { $0.id == id })
     }
 
     func testEntriesAreCountedForTheBadgeAndApproved() async throws {

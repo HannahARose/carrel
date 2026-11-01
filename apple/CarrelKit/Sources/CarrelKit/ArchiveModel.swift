@@ -173,8 +173,12 @@ public final class ArchiveModel {
         active = try await call { try $0.active() }
     }
 
-    /// Reads the history again, the newest `limit` changes.
-    public func refreshHistory(limit: UInt32? = 200) async throws {
+    /// How many of the newest changes `history` holds; `nil` for all of them.
+    public var historyLimit: UInt32? = 200
+
+    /// Reads the history again, the newest `historyLimit` changes.
+    public func refreshHistory() async throws {
+        let limit = historyLimit
         history = try await call { try $0.history(limit: limit) }
     }
 
@@ -339,6 +343,15 @@ public final class ArchiveModel {
         return outcome
     }
 
+    /// Saves an edited body, Notes and all, to a filed card; Carrel's sections must be as
+    /// they were.
+    @discardableResult
+    public func edit(item id: String, body: String) async throws -> EditOutcome {
+        let outcome = try await call { try $0.editCardBody(item: id, body: body) }
+        if case .saved = outcome { try await changed { _ in } }
+        return outcome
+    }
+
     /// Saves edited fields to a proposal's card.
     @discardableResult
     public func edit(proposal id: String, fields: CardFields) async throws -> EditOutcome {
@@ -360,11 +373,16 @@ public final class ArchiveModel {
         return out
     }
 
-    /// Returns the checked-out item `id`. Show `handle.returnPreview(item:)` first.
+    /// Returns the checked-out item `id`, from where it went or from `folder` when the
+    /// working copy has moved; `trimmingSnapshots` forgets the checkout's session snapshots
+    /// afterwards, as the owner chose. Show `handle.returnPreview(item:from:)` first.
     @discardableResult
-    public func returnItem(_ id: String) async throws -> Returned {
+    public func returnItem(_ id: String, from folder: URL? = nil, trimmingSnapshots: Bool = false)
+        async throws -> Returned
+    {
+        let from = folder?.path(percentEncoded: false)
         let returned = try await call(reporting: "Returning") { handle, _ in
-            try handle.returnItem(item: id)
+            try handle.returnItem(item: id, from: from, trimSnapshots: trimmingSnapshots)
         }
         try await changed { try await $0.refreshActive() }
         return returned
@@ -477,6 +495,13 @@ public final class ArchiveModel {
         searchResults = nil
     }
 
+    /// Starts the history of an archive that has none yet, as `carrel init` does in an
+    /// existing archive, and reads everything again.
+    public func startHistory() async throws {
+        try await call { try $0.startHistory() }
+        try await refreshAll()
+    }
+
     /// Undoes the change `id`, as a new change.
     public func undo(_ id: String) async throws {
         _ = try await call { try $0.undo(id: id) }
@@ -568,6 +593,24 @@ public final class ArchiveModel {
         let added = try await call { try $0.queue(paths: paths, each: each, whole: whole) }
         try await refreshIntake()
         return added
+    }
+
+    /// Takes the entry `id` out of the intake queue.
+    public func unqueue(_ id: String) async throws {
+        try await call { try $0.unqueue(id: id) }
+        try await refreshIntake()
+    }
+
+    /// Moves the entry `id` to the front of the intake queue.
+    public func queueFirst(_ id: String) async throws {
+        try await call { try $0.queueFirst(id: id) }
+        try await refreshIntake()
+    }
+
+    /// Lets the failed entry `id` be tried again.
+    public func retryQueued(_ id: String) async throws {
+        try await call { try $0.retryQueued(id: id) }
+        try await refreshIntake()
     }
 
     /// Drafts what's queued here, when the agent isn't running to do it: with it running,

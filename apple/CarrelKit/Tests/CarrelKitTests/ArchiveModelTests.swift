@@ -182,7 +182,7 @@ final class Reports: ProgressListener, @unchecked Sendable {
 
         try "part,source\nLED strip,shop\n".write(
             toFile: out.working, atomically: true, encoding: .utf8)
-        let preview = try model.handle.returnPreview(item: item)
+        let preview = try model.handle.returnPreview(item: item, from: nil)
         #expect(preview.changes.changed.count == 1)
         let returned = try await model.returnItem(item)
         #expect(returned.commit != nil)
