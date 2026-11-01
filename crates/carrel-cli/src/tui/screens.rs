@@ -462,6 +462,9 @@ impl App {
             return Handled::Yes(effect);
         }
         let on_item = self.browse_pane != Pane::Collections;
+        if !on_item && let Some(handled) = self.collection_restructure_key(key) {
+            return handled;
+        }
         if let Handled::Yes(effect) = self.browse_action_key(key, on_item) {
             return Handled::Yes(effect);
         }
