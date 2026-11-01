@@ -52,6 +52,7 @@ impl App {
                 return Vec::new();
             }
         };
+        carrel_core::decisions::search(&self.archive, &query, &results);
         let (items, others): (Vec<Hit>, Vec<Hit>) = results
             .hits
             .into_iter()
@@ -67,6 +68,14 @@ impl App {
                 _ => None,
             })
             .collect()
+    }
+
+    /// Notes, in the decision log, that the chosen search result was opened, and where it
+    /// ranked.
+    pub(super) fn note_search_result_opened(&self) {
+        if let Some(Found::Item(item)) = self.searched.hit(self.browse_item).map(|h| &h.found) {
+            carrel_core::decisions::opened(&self.archive, item.id);
+        }
     }
 
     /// The title of Browse's list while a search is shown.

@@ -241,6 +241,7 @@ pub fn summary(archive: &Archive, looking: &Looking) -> Result<Summary, StatusEr
     let recent = recent(history.as_deref(), work);
     let names = crate::names::check(archive)?;
     let signals = crate::signals::signals(archive)?;
+    crate::decisions::snapshot(archive, &items, &signals);
     let desk = match looking.device {
         Some(device) => Desk::load(archive, device)?,
         None => Desk::default(),

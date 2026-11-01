@@ -93,6 +93,23 @@ impl Prepared {
         self
     }
 
+    /// Logs it in this device's decision log as it's saved ([`crate::decisions`]).
+    fn log_decision(&self, archive: &Archive) {
+        let about = match &self.pending {
+            Pending::Proposal(entry) => crate::decisions::Corrected::Proposal(entry),
+            Pending::Filed { item, .. } => crate::decisions::Corrected::Filed(item),
+        };
+        crate::decisions::corrected(
+            archive,
+            about,
+            &self.worked.changes,
+            &self.changed,
+            &self.before,
+            self.moved.is_some(),
+            &self.by,
+        );
+    }
+
     /// The corrected proposal, when it's a proposal that's corrected.
     #[must_use]
     pub fn proposal(&self) -> Option<&ReviewEntry> {
@@ -398,6 +415,9 @@ pub fn save<E: From<PrepareError>>(
     prepared: Prepared,
     holder: impl FnOnce() -> Result<Holder, E>,
 ) -> Result<Saved, E> {
+    if matches!(prepared.pending, Pending::Proposal(_)) {
+        prepared.log_decision(archive);
+    }
     match prepared.pending {
         Pending::Proposal(entry) => {
             ReviewQueue::of(archive)
@@ -432,6 +452,7 @@ pub fn save_holding(
     prepared: Prepared,
     lease: &WriterLease,
 ) -> Result<Saved, PrepareError> {
+    prepared.log_decision(archive);
     let to = prepared.to().map(str::to_owned);
     match prepared.pending {
         Pending::Proposal(entry) => {

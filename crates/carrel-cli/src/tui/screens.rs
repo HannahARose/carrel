@@ -468,7 +468,10 @@ impl App {
                     self.browse_pane = Pane::Items;
                     self.load_card();
                 }
-                Pane::Items if self.item.card.is_some() => self.browse_pane = Pane::Item,
+                Pane::Items if self.item.card.is_some() => {
+                    self.browse_pane = Pane::Item;
+                    self.note_search_result_opened();
+                }
                 _ => {}
             },
             KeyCode::Left | KeyCode::Char('h') => {
