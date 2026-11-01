@@ -1,6 +1,6 @@
 # Design: iCloud, iPad and iPhone (v0.8)
 
-Status: proposed 2026-11-01, for the owner's review. Issue #7.
+Status: accepted 2026-11-01, with the five recommendations below. Issue #7.
 
 ## What this adds
 
@@ -112,7 +112,7 @@ v0.8 builds on the core rather than replacing it:
 8. Moving an archive into iCloud Drive, and `carrel sync status`.
 9. The user guide, then the gate checklist.
 
-## Decisions (recommended)
+## Decisions (accepted 2026-11-01)
 
 1. **The archive stays plain files in iCloud Drive, and CloudKit holds only the writer lock (device, lease, history head), never file contents.** Recommended: it keeps the archive readable everywhere without Carrel, as the spec requires, and keeps CloudKit small and private.
 2. **On a Mac the agent holds the lock, and the app and command line go through it. On Linux and Windows the command line acts on a synced archive only through its inbox.** Recommended: one writer per Mac, and no way for a device without CloudKit to write history behind the lock's back.
