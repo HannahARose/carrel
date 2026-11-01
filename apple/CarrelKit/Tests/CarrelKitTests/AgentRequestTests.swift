@@ -217,6 +217,23 @@ struct RequestSample {
         #expect(none.items.isEmpty)
     }
 
+    @Test func itemsCollectionsAndWhatsActiveAreListedForShortcuts() async throws {
+        let test = try await RequestSample()
+        let item = try test.sample.item(titled: "Desk lamp parts list")
+        let found = await test.handler.handle(.items(archive: nil, ids: [item, "no-such-item"]))
+        #expect(found.items.map(\.id) == [item])
+        #expect(found.items.first?.path?.hasPrefix(test.root + "/") == true)
+
+        let collections = await test.handler.handle(.collections(archive: nil))
+        #expect(collections.outcome == .done)
+        #expect(collections.items.map(\.id) == (try test.handle.collections()).map(\.path))
+
+        let active = await test.handler.handle(.active(archive: nil))
+        #expect(active.outcome == .done)
+        #expect(active.items.map(\.id) == (try test.handle.active()).map(\.id))
+        #expect(active.message.contains("checked out"))
+    }
+
     @Test func openingShowsTheItemInTheApp() async throws {
         let test = try await RequestSample()
         let item = try test.sample.item(titled: "Desk lamp parts list")
