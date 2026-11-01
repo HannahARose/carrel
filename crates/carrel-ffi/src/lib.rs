@@ -62,6 +62,7 @@ pub mod librarian;
 pub mod models;
 pub mod previews;
 pub mod records;
+pub mod restructure;
 pub mod review;
 pub mod search;
 pub mod settings;
