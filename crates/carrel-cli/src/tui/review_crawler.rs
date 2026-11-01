@@ -1,7 +1,7 @@
 //! The crawler's findings in Review (`docs/design/restructure.md`, "In each interface"): what
 //! it found could be better about items already filed, each with its reason and how sure it
 //! was, approved or rejected as `carrel review approve` and `reject` do. `f` switches Review
-//! between the ingest proposals and these. Above them is how far the crawler has got, as
+//! between the ingest proposals, these and restructure proposals. Above them is how far the crawler has got, as
 //! `carrel crawl status` says; `r` runs a pass now and `u` undoes this week's changes it made
 //! on its own, as `carrel crawl run` and `carrel crawl undo 7d` do.
 
@@ -18,11 +18,33 @@ use super::app::{App, Confirm, Effect};
 use super::review::Handled;
 use super::ui::Theme;
 
+/// Which of Review's lists is shown.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ReviewList {
+    /// What ingest proposes to file.
+    #[default]
+    Proposals,
+    /// What the crawler found could be better about items already filed.
+    Crawler,
+    /// Restructure proposals: sections and tags.
+    Restructure,
+}
+
+impl ReviewList {
+    /// The list `f` shows next.
+    #[must_use]
+    pub fn next(self) -> Self {
+        match self {
+            Self::Proposals => Self::Crawler,
+            Self::Crawler => Self::Restructure,
+            Self::Restructure => Self::Proposals,
+        }
+    }
+}
+
 /// The crawler's findings waiting in Review, and which are chosen and marked.
 #[derive(Debug, Default)]
 pub struct CrawlerReview {
-    /// Whether Review shows these rather than the ingest proposals.
-    pub shown: bool,
     /// The findings, oldest first.
     pub entries: Vec<CrawlEntry>,
     /// The one chosen.
@@ -62,13 +84,18 @@ impl App {
         crawler.status = status_lines(&self.archive);
     }
 
-    /// `f` on Review: switches between the ingest proposals and the crawler's findings.
+    /// `f` on Review: switches between the ingest proposals, the crawler's findings and
+    /// restructure proposals; the keys of the last two.
     pub(super) fn review_list_key(&mut self, key: KeyEvent) -> Option<Handled> {
         if key.code == KeyCode::Char('f') {
-            self.crawler.shown = !self.crawler.shown;
+            self.review_list = self.review_list.next();
             return Some(Handled::Yes(None));
         }
-        self.crawler.shown.then(|| self.crawler_key(key))
+        match self.review_list {
+            ReviewList::Proposals => None,
+            ReviewList::Crawler => Some(self.crawler_key(key)),
+            ReviewList::Restructure => Some(self.restructure_key(key)),
+        }
     }
 
     /// A key while Review shows the crawler's findings.
@@ -116,7 +143,9 @@ impl App {
                 self.confirm = Some(Confirm::RejectFindings(targets));
                 Handled::Yes(None)
             }
-            KeyCode::Char('r') => Handled::Yes(Some(Effect::CrawlNow)),
+            KeyCode::Char('r') => Handled::Yes(Some(Effect::Restructure(
+                super::review_restructure::RestructureAction::CrawlNow,
+            ))),
             KeyCode::Char('u') if crawler.recent == 0 => {
                 self.message = Some("The crawler made no changes of its own this week".into());
                 Handled::Yes(None)
@@ -147,28 +176,30 @@ pub fn crawler_keys() -> Vec<(&'static str, &'static str)> {
         ("o", "open the item"),
         ("r", "check some now"),
         ("u", "undo this week's"),
-        ("f", "proposals"),
+        ("f", "restructure"),
         ("?", "help"),
     ]
 }
 
-/// How many findings and proposals wait, for the line above either list.
+/// What waits in each of Review's lists, the one shown first, for the line above it. Empty
+/// when only ingest proposals wait.
 #[must_use]
 pub fn lists_line(app: &App) -> String {
     let findings = app.crawler.entries.len();
-    let proposals = app.queue.len();
+    let restructures = app.restructure.proposals.len();
     let plural = |n: usize, one: &str| format!("{n} {one}{}", if n == 1 { "" } else { "s" });
-    if app.crawler.shown {
-        format!(
-            "From the crawler: {} (f for {})",
-            plural(findings, "finding"),
-            plural(proposals, "proposal")
-        )
-    } else if findings > 0 {
-        format!("f for the crawler's {}", plural(findings, "finding"))
-    } else {
-        String::new()
-    }
+    let shown = match app.review_list {
+        ReviewList::Proposals if findings + restructures == 0 => return String::new(),
+        ReviewList::Proposals => "Proposals to file",
+        ReviewList::Crawler => "From the crawler",
+        ReviewList::Restructure => "Restructure",
+    };
+    format!(
+        "{shown}. f switches: {} to file, {} from the crawler, {} to restructure.",
+        plural(app.queue.len(), "proposal"),
+        plural(findings, "finding"),
+        plural(restructures, "proposal")
+    )
 }
 
 /// How far the crawler has got through `archive`, in words, as `carrel crawl status` says it.
@@ -327,6 +358,7 @@ mod tests {
 
     use super::super::app::{Confirm, Effect, Tab};
     use super::super::tests::{key, sample, screen};
+    use super::ReviewList;
 
     #[test]
     fn the_crawlers_findings_are_approved_and_rejected_in_review() {
@@ -352,9 +384,9 @@ mod tests {
         app.key(key(KeyCode::Char('2')));
         assert_eq!(app.tab, Tab::Review);
         assert!(
-            screen(&app, 120, 30).contains("f for the crawler's 1 finding"),
+            screen(&app, 140, 30).contains("1 finding from the crawler"),
             "{}",
-            screen(&app, 120, 30)
+            screen(&app, 140, 30)
         );
 
         app.key(key(KeyCode::Char('f')));
@@ -366,7 +398,12 @@ mod tests {
         assert!(text.contains("It's a paper, not a project."), "{text}");
         assert!(app.keys().contains(&("x", "reject")));
         assert!(text.contains("Pace steady"), "how far it has got: {text}");
-        assert_eq!(app.key(key(KeyCode::Char('r'))), Some(Effect::CrawlNow));
+        assert_eq!(
+            app.key(key(KeyCode::Char('r'))),
+            Some(Effect::Restructure(
+                super::super::review_restructure::RestructureAction::CrawlNow
+            ))
+        );
         assert_eq!(app.key(key(KeyCode::Char('u'))), None);
         assert_eq!(
             app.message.as_deref(),
@@ -387,6 +424,10 @@ mod tests {
         );
 
         app.key(key(KeyCode::Char('f')));
-        assert!(!app.crawler.shown, "f goes back to the proposals");
+        assert_eq!(
+            app.review_list,
+            ReviewList::Restructure,
+            "f goes on to restructure"
+        );
     }
 }

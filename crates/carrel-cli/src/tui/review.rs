@@ -33,6 +33,8 @@ pub enum Purpose {
     Download,
     /// Working on the embedding index: these choices, by their words.
     Index(Vec<(String, super::embedding::Choice)>),
+    /// Setting this collection's own eagerness to it.
+    Eagerness(String),
     /// Switching archives: these choices, by their words.
     Archive(Vec<(String, super::archives::Choice)>),
 }
@@ -296,6 +298,12 @@ impl App {
                         None
                     }
                     Purpose::Index(choices) => self.index_chosen(&choices, &to),
+                    Purpose::Eagerness(collection) => Some(Effect::Restructure(
+                        super::review_restructure::RestructureAction::Eagerness {
+                            collection,
+                            level: to,
+                        },
+                    )),
                     Purpose::Archive(choices) => self.archive_chosen(&choices, &to),
                 };
             }

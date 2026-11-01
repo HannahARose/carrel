@@ -417,7 +417,7 @@ Each change says why and which items it changes. **Tags you wrote yourself stay 
 
 Approve it all with `carrel restructure tags approve`, part of it with `--only 1,3` (the changes' numbers), or none with `carrel restructure tags reject`. Approving rewrites the cards and the vocabularies in `ARCHIVE.md` and each `_collection.md` (noting it in the collection's changelog) as **one change in History**, so `carrel undo` puts everything back at once. A vocabulary keeps a tag that items left alone still use. Changes are applied to the archive as it is when you approve: a card you've changed since is left alone and reported.
 
-The proposal waits in `_System/queue/proposals/` until you decide, and proposing again replaces it. Tag proposals in the interactive mode (#326) and the Mac app (#327) come later in v0.7.
+The proposal waits in `_System/queue/proposals/` until you decide, and proposing again replaces it. In the interactive mode, `f` on Review goes to the restructure proposals, where `t` proposes tag changes (see [Reorganizing a section](#reorganizing-a-section) for the keys).
 
 ### Reorganizing a section
 
@@ -430,6 +430,8 @@ Filing puts each item where it fits best today, but an archive's shape drifts: a
 
 Approve it all with `carrel restructure approve`, or part of it with `--only 1,2`: a change that needs one you left out (moving items into a collection you didn't create, say) is dropped too, and Carrel says so. Approving takes a backup snapshot first when backups are set up, applies the changes to the archive as it is then (an item checked out or moved since is left alone and reported), rewrites links to the moved cards and rebuilds the listings, and records it all as **one change in History**, so `carrel undo` puts every item, folder, design document and link back.
 
+In the interactive mode, `f` on Review (twice from the proposals to file) shows the restructure proposals waiting, tag proposals too. The chosen one's changes are beside the archive as it is now and as they would leave it. `↑↓` choose a change, with its reason and what it touches below, `Space` leaves one out (the after side follows), `a` approves the rest, `x` rejects the proposal, and `[` `]` go to another. `p` proposes a new shape for the whole archive, and on a collection in Browse, `R` proposes one for it.
+
 ### How eager Carrel is to rearrange
 
 Some people want the organization refined even when that means moving a lot; others have learned where things are and would rather it stayed put. `restructure.eagerness` says which:
@@ -441,7 +443,7 @@ Some people want the organization refined even when that means moving a lot; oth
 | Extra cost in a section restructured recently | heavy (0.5), for a year | moderate (0.2), for 90 days | light (0.05), for 30 days |
 | Items moved between branches per proposal | at most 10 | as many as the gain justifies | as many as the gain justifies |
 
-Set it for the archive with `carrel settings set restructure.eagerness settled`, or for one collection and everything in it with `carrel restructure eagerness Reading settled` (stored in its `_collection.md`, so a collection you know by heart can stay still while a messy one gets tidied; `default` clears it). The numbers behind the levels are settings too (`restructure.margin`, `restructure.stability_penalty`, `restructure.stability_days`, `restructure.move_budget`; `default` puts one back to its level's). Eagerness changes how readily Carrel proposes, never whether it asks: every restructure waits for your approval, and even Eager won't propose a shape the findability test finds harder to navigate.
+Set it for the archive with `carrel settings set restructure.eagerness settled`, or for one collection and everything in it with `carrel restructure eagerness Reading settled` (stored in its `_collection.md`, so a collection you know by heart can stay still while a messy one gets tidied; `default` clears it). The numbers behind the levels are settings too (`restructure.margin`, `restructure.stability_penalty`, `restructure.stability_days`, `restructure.move_budget`; `default` puts one back to its level's). Eagerness changes how readily Carrel proposes, never whether it asks: every restructure waits for your approval, and even Eager won't propose a shape the findability test finds harder to navigate. In the interactive mode, it's in Settings for the archive, and `E` on a collection in Browse sets the collection's own.
 
 ### The crawler
 

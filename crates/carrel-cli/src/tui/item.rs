@@ -204,7 +204,12 @@ impl App {
             keys.push(("a", "answer its question"));
         }
         match self.browse_pane {
-            Pane::Collections => keys.extend([("→", "items"), ("n", "new collection")]),
+            Pane::Collections => keys.extend([
+                ("→", "items"),
+                ("n", "new collection"),
+                ("E", "eagerness"),
+                ("R", "propose a shape"),
+            ]),
             Pane::Items => keys.push(("←→", "collections/item")),
             Pane::Item => {
                 keys.push(("←", "items"));

@@ -464,6 +464,9 @@ fn draw_confirm(frame: &mut Frame, confirm: &Confirm, theme: Theme, area: Rect) 
         ),
         Confirm::RejectFindings(ids) => super::review_crawler::reject_findings_confirm(ids),
         Confirm::UndoCrawler(count) => super::review_crawler::undo_crawler_confirm(*count),
+        Confirm::RejectRestructure { what, .. } => {
+            super::review_restructure::reject_restructure_confirm(what)
+        }
         Confirm::Reject(ids) => (
             " Reject ",
             format!(
@@ -537,9 +540,16 @@ fn confidence(entry: &ReviewEntry) -> String {
 }
 
 fn draw_review(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
-    if app.crawler.shown {
-        super::review_crawler::draw_crawler_findings(frame, app, theme, area);
-        return;
+    match app.review_list {
+        super::review_crawler::ReviewList::Crawler => {
+            super::review_crawler::draw_crawler_findings(frame, app, theme, area);
+            return;
+        }
+        super::review_crawler::ReviewList::Restructure => {
+            super::review_restructure::draw_restructures(frame, app, theme, area);
+            return;
+        }
+        super::review_crawler::ReviewList::Proposals => {}
     }
     if app.queue.is_empty() {
         let also = super::review_crawler::lists_line(app);
@@ -699,6 +709,7 @@ fn draw_picker(frame: &mut Frame, picker: &Picker, theme: Theme, area: Rect) {
         super::review::Purpose::Setting(_) => "Set it to",
         super::review::Purpose::Download => "Download",
         super::review::Purpose::Index(_) => "Search index",
+        super::review::Purpose::Eagerness(_) => "How eager to rearrange",
         super::review::Purpose::Archive(_) => "Archives",
     };
     let title = if picker.filter.is_empty() {
