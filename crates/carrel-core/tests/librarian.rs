@@ -980,5 +980,5 @@ fn a_model_that_fails_on_the_last_step_fails_the_question_to_ask_again() {
     let mut conversation = Conversation::default();
     let asked = librarian.ask(&mut conversation, "What's the lamp made of?");
     assert!(asked.is_err(), "only a cut-off answer ends as out of room");
-    assert!(conversation.answers.is_empty());
+    assert_eq!(conversation.answers, []);
 }
