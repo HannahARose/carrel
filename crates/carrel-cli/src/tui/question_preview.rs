@@ -134,7 +134,7 @@ mod tests {
         let text = screen(&app, 260, 30);
         assert!(text.contains("Preview"), "{text}");
         assert!(text.contains("arm.svg"), "the folder's listing: {text}");
-        let path = dir.path().join("archive/Projects/Hardware/lamp-build");
+        let path = app.archive.root().join("Projects/Hardware/lamp-build");
         assert!(text.contains(&path.display().to_string()), "{text}");
         drop(dir);
     }
