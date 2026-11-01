@@ -1,5 +1,7 @@
 //! `carrel ask`: the librarian at the terminal (`docs/design/librarian.md`). One question
-//! gives one answer; without one, it's a conversation, a question per line. `--save` writes
+//! gives one answer; without one, it's a conversation, a question per line. `--about` says
+//! what the questions are about, an item or a collection, as the other interfaces say what's
+//! in view ([`About`]). `--save` writes
 //! the conversation to this month's Journal; `--json` gives the answers for programs. The
 //! core runs the loop ([`carrel_core::librarian`]); this module chooses the model, words the
 //! answers and asks the owner to confirm the changes the librarian suggests.
@@ -14,7 +16,7 @@ use carrel_core::archive::Archive;
 use carrel_core::coordinator::{Coordinator as _, DEFAULT_LEASE, DiskLock};
 use carrel_core::history::Entry;
 use carrel_core::librarian::changes::{self, Outcome, Suggestion};
-use carrel_core::librarian::{Answer, Conversation, Librarian, Stopped, journal, model};
+use carrel_core::librarian::{About, Answer, Conversation, Librarian, Stopped, journal, model};
 use carrel_core::providers::Registry;
 use carrel_core::providers::device::AvailableModel;
 use carrel_core::questions::QuestionEntry;
@@ -107,19 +109,26 @@ pub fn what_to_do(missing: &model::NoModel) -> String {
     text
 }
 
-/// `carrel ask`.
+/// `carrel ask`, the words of `question` asked about the item or collection `about` names,
+/// if it names one.
 ///
 /// # Errors
 ///
-/// [`Failure`] if there's no model, the archive can't be read, the model fails, or saving
-/// fails.
+/// [`Failure`] if `about` names nothing, there's no model, the archive can't be read, the
+/// model fails, or saving fails.
 pub fn ask(
     archive: Option<&Path>,
-    question: &str,
+    question: &[String],
+    about: Option<String>,
     save: bool,
     json: bool,
 ) -> Result<Report, Failure> {
+    let question = &question.join(" ");
     let archive = locate(archive)?;
+    let about = about
+        .map(|name| About::find(&archive, &name))
+        .transpose()
+        .map_err(Failure::new)?;
     let (registry, _) = crate::providers::registry();
     let model = the_model(&registry)?;
     let identity = Identity::load_or_create()?;
@@ -136,11 +145,14 @@ pub fn ask(
             &registry,
             &librarian,
             (&mut conversation, &mut conversing, &mut asked),
+            about.as_ref(),
             json,
         )?;
     } else {
         working(&librarian, json);
-        let answer = librarian.ask(&mut conversation, question)?.clone();
+        let answer = librarian
+            .ask_about(&mut conversation, question, about.as_ref())?
+            .clone();
         text = describe(&answer);
         let question = question_after(&archive, &mut conversing, &answer);
         if let Some(question) = &question {
@@ -204,12 +216,14 @@ fn converse(
         &mut Conversing,
         &mut Vec<Option<QuestionEntry>>,
     ),
+    about: Option<&About>,
     json: bool,
 ) -> Result<(), Failure> {
     let terminal = std::io::stdin().is_terminal() && std::io::stderr().is_terminal();
     if terminal && !json {
+        let what = about.map_or_else(|| "your archive".to_owned(), |a| a.describe(archive));
         eprintln!(
-            "Ask the librarian about your archive ({}). An empty line ends the conversation.",
+            "Ask the librarian about {what} ({}). An empty line ends the conversation.",
             librarian.model().label
         );
     }
@@ -234,7 +248,9 @@ fn converse(
             break;
         }
         working(librarian, json);
-        let answer = librarian.ask(conversation, line.trim())?.clone();
+        let answer = librarian
+            .ask_about(conversation, line.trim(), about)?
+            .clone();
         let question = question_after(archive, conversing, &answer);
         asked.push(question.clone());
         if json {

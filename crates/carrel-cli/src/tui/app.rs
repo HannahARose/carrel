@@ -1097,6 +1097,9 @@ impl App {
             }
             KeyCode::Char('i') => return self.start_ingest(),
             KeyCode::Char(c) if Tab::ALL.iter().any(|t| t.key() == c) => {
+                if c == Tab::Librarian.key() {
+                    self.carry_to_librarian();
+                }
                 if let Some(tab) = Tab::ALL.iter().find(|t| t.key() == c) {
                     self.tab = *tab;
                 }

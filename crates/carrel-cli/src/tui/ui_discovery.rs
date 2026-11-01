@@ -27,6 +27,12 @@ pub fn draw_librarian(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
         Layout::horizontal([Constraint::Percentage(55), Constraint::Percentage(45)]).areas(area);
     let bold = Style::new().add_modifier(Modifier::BOLD);
     let mut lines: Vec<Line> = Vec::new();
+    if let Some((_, title)) = &app.talk.about {
+        lines.push(Line::styled(
+            format!("About: {title}  (x for the whole archive)"),
+            theme.key(),
+        ));
+    }
     if app.talk.conversation.answers.is_empty() && app.talk.waiting.is_none() {
         lines.push(Line::from(
             "Ask the librarian about your archive: Enter, then your question.",

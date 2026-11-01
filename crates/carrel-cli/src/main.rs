@@ -137,6 +137,10 @@ enum Command {
         /// The question; without one, a conversation, a question per line.
         #[arg(value_name = "QUESTION")]
         question: Vec<String>,
+        /// What the questions are about, so "this" and "here" mean it: an item (its
+        /// identifier, card, path or title) or a collection (its path or title).
+        #[arg(long, value_name = "ITEM|COLLECTION")]
+        about: Option<String>,
         /// Save the conversation to this month's Journal.
         #[arg(long)]
         save: bool,
@@ -1143,9 +1147,11 @@ fn main() -> ExitCode {
         Command::Undo { change, librarian } => {
             undo_command(cli.archive.as_deref(), change, librarian)
         }
-        Command::Ask { question, save } => {
-            ask::ask(cli.archive.as_deref(), &question.join(" "), save, cli.json)
-        }
+        Command::Ask {
+            question,
+            about,
+            save,
+        } => ask::ask(cli.archive.as_deref(), &question, about, save, cli.json),
         Command::Init {
             path,
             name,

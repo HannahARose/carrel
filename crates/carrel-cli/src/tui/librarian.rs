@@ -9,11 +9,15 @@
 //! collection asked about first. With it on, the librarian's changes this week are listed,
 //! `u` undoes the chosen one and `U` all of them. When an item comes up that Carrel has a
 //! question about, the librarian asks it, now and then, and `a` answers it.
+//!
+//! `L` from Browse, Questions or Discover carries what's in view there, the item or
+//! collection (or the search, or the Discover view), shown above the conversation, so "this"
+//! means it; `x` asks about the whole archive again.
 
 use carrel_core::coordinator::{Coordinator as _, DEFAULT_LEASE, DiskLock, Holder};
 use carrel_core::history::Entry;
 use carrel_core::librarian::changes::{Change, Outcome, Suggestion};
-use carrel_core::librarian::{Answer, Conversation, ItemLink, Librarian, journal};
+use carrel_core::librarian::{About, Answer, Conversation, ItemLink, Librarian, journal};
 use carrel_core::providers::Registry;
 use carrel_core::providers::device::AvailableModel;
 use carrel_core::questions::QuestionEntry;
@@ -44,6 +48,8 @@ pub struct Talk {
     pub question: Option<QuestionEntry>,
     /// The chosen item, for the right side.
     pub item: ItemView,
+    /// What the questions are about, with its title, when `L` brought it from another screen.
+    pub about: Option<(About, String)>,
 }
 
 /// A row to choose on the Librarian screen.
@@ -63,9 +69,9 @@ pub fn recent_changes(history: &[Entry]) -> Vec<Entry> {
     carrel_core::librarian::changes::recent(history, since)
 }
 
-/// Asks `question` in `conversation` with `model` from `registry`, as `carrel ask` does,
-/// letting the librarian make the changes it's sure of for `holder` when `librarian.changes`
-/// is on. Returns the conversation with the answer added.
+/// Asks `question` about `about` in `conversation` with `model` from `registry`, as
+/// `carrel ask` does, letting the librarian make the changes it's sure of for `holder` when
+/// `librarian.changes` is on. Returns the conversation with the answer added.
 ///
 /// # Errors
 ///
@@ -74,7 +80,7 @@ pub fn ask_with(
     root: &std::path::Path,
     (registry, model): (&Registry, AvailableModel),
     mut conversation: Conversation,
-    question: &str,
+    (question, about): (&str, Option<&About>),
     holder: Holder,
     progress: &super::embedding::Shared,
 ) -> Result<Conversation, String> {
@@ -96,7 +102,7 @@ pub fn ask_with(
         .with_changes_for(holder)
         .with_progress(&tell);
     librarian
-        .ask(&mut conversation, question)
+        .ask_about(&mut conversation, question, about)
         .map_err(|e| e.to_string())?;
     Ok(conversation)
 }
@@ -110,7 +116,7 @@ pub enum LibrarianUnanswered {
     Failed(String),
 }
 
-/// Asks `question` on this device's librarian, in the background.
+/// Asks `question` about `about` on this device's librarian, in the background.
 ///
 /// # Errors
 ///
@@ -118,7 +124,7 @@ pub enum LibrarianUnanswered {
 pub fn ask_here(
     root: &std::path::Path,
     conversation: Conversation,
-    question: &str,
+    (question, about): (&str, Option<&About>),
     progress: &super::embedding::Shared,
 ) -> Result<Conversation, LibrarianUnanswered> {
     let (registry, _) = crate::providers::registry();
@@ -131,7 +137,7 @@ pub fn ask_here(
         root,
         (&registry, model),
         conversation,
-        question,
+        (question, about),
         identity.holder(),
         progress,
     )
@@ -196,6 +202,42 @@ pub fn suggestion_row(suggestion: &Suggestion) -> String {
 }
 
 impl App {
+    /// Takes what's in view to the Librarian screen, as `L` does from Browse, Questions or
+    /// Discover: Browse's chosen item, or its collection while choosing among them, or the
+    /// search it shows; the filed item the chosen question is about; or the item a wander is at, else the
+    /// Discover view. From other screens, what the questions were about stays.
+    pub(super) fn carry_to_librarian(&mut self) {
+        let about = match self.tab {
+            Tab::Browse if self.browse_pane == super::item::Pane::Collections => self
+                .collections
+                .get(self.browse_collection)
+                .map(|c| About::Collection(c.path.clone())),
+            Tab::Browse => match self.browse_items.get(self.browse_item) {
+                Some((card, _)) => About::find(&self.archive, card).ok(),
+                None => self.search.clone().map(About::Search),
+            },
+            Tab::Questions => self
+                .asked
+                .get(self.asked_chosen)
+                .and_then(|q| q.about.first())
+                .map(|id| About::Item(*id)),
+            Tab::Discover => match &self.stacks.item.card {
+                Some(card) if self.stacks.view == super::discover::View::Wander => {
+                    About::find(&self.archive, card).ok()
+                }
+                _ => super::discover::View::ALL
+                    .iter()
+                    .find(|(view, ..)| *view == self.stacks.view)
+                    .map(|(.., name)| About::Discover((*name).to_owned())),
+            },
+            _ => return,
+        };
+        self.talk.about = about.map(|about| {
+            let title = about.title(&self.archive);
+            (about, title)
+        });
+    }
+
     /// The rows of the Librarian screen: the last answer's items and suggestions, then the
     /// librarian's changes this week.
     pub fn talk_rows(&self) -> Vec<TalkRow<'_>> {
@@ -343,8 +385,16 @@ impl App {
             }
             (KeyCode::Char('s'), _) => Some(Effect::SaveConversation),
             (KeyCode::Char('n'), _) => {
-                self.talk = Talk::default();
+                self.talk = Talk {
+                    about: self.talk.about.take(),
+                    ..Talk::default()
+                };
                 self.message = Some("A new conversation".into());
+                None
+            }
+            (KeyCode::Char('x'), _) if self.talk.about.is_some() => {
+                self.talk.about = None;
+                self.message = Some("Asking about the whole archive".into());
                 None
             }
             (KeyCode::Char('y'), Some(TalkRow::Suggestion(s))) => {
@@ -391,6 +441,9 @@ impl App {
         }
         if !self.librarian_changes.is_empty() {
             keys.push(("U", "undo all its changes"));
+        }
+        if self.talk.about.is_some() {
+            keys.push(("x", "about the whole archive"));
         }
         keys.extend([("s", "save"), ("n", "new"), ("?", "help")]);
         keys
@@ -449,14 +502,21 @@ impl Asking {
         self.answer.is_some()
     }
 
-    /// Asks `question` in the conversation on the Librarian screen, in the background.
+    /// Asks `question` in the conversation on the Librarian screen, about what it shows the
+    /// questions are about, in the background.
     pub fn start(&mut self, app: &mut App, question: String) {
         let root = app.archive.root().to_owned();
         let conversation = app.talk.conversation.clone();
+        let about = app.talk.about.as_ref().map(|(about, _)| about.clone());
         let progress = app.progress.clone();
         let (send, receive) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
-            let _ = send.send(ask_here(&root, conversation, &question, &progress));
+            let _ = send.send(ask_here(
+                &root,
+                conversation,
+                (&question, about.as_ref()),
+                &progress,
+            ));
         });
         app.busy = Some("Asking the librarian…".into());
         self.answer = Some(receive);
@@ -607,7 +667,7 @@ pub(super) mod tests {
             app.archive.root(),
             (&registry, model),
             app.talk.conversation.clone(),
-            question,
+            (question, app.talk.about.as_ref().map(|(about, _)| about)),
             holder(),
             &app.progress,
         );
@@ -694,6 +754,92 @@ pub(super) mod tests {
         app.key(key(KeyCode::Char('L')));
         app.key(key(KeyCode::Char('n')));
         assert_eq!(app.talk.conversation, Conversation::default());
+    }
+
+    #[test]
+    fn l_carries_what_is_in_view_and_x_takes_it_away() {
+        use carrel_core::librarian::About;
+        let (_dir, mut app) = sample(true);
+
+        // A collection, while choosing among them in Browse.
+        app.tab = Tab::Browse;
+        app.browse_pane = super::super::item::Pane::Collections;
+        app.browse_collection = app
+            .collections
+            .iter()
+            .position(|c| c.path == "Projects/Hardware")
+            .unwrap();
+        app.key(key(KeyCode::Char('L')));
+        assert_eq!(app.tab, Tab::Librarian);
+        assert_eq!(
+            app.talk.about,
+            Some((
+                About::Collection("Projects/Hardware".into()),
+                "Hardware".into()
+            ))
+        );
+        assert!(screen(&app, 120, 30).contains("About: Hardware  (x for the whole archive)"));
+
+        // The chosen item, which the question is then about.
+        app.tab = Tab::Browse;
+        app.go_to(PARTS_LIST);
+        app.key(key(KeyCode::Char('L')));
+        let parts = About::find(&app.archive, PARTS_LIST).unwrap();
+        assert_eq!(app.talk.about.as_ref().map(|(a, _)| a), Some(&parts));
+        assert!(screen(&app, 120, 30).contains("About: Desk lamp parts list"));
+        let About::Item(id) = parts else {
+            panic!("an item")
+        };
+        ask(
+            &mut app,
+            "Is this in the right place?",
+            vec![
+                tool("show", &id.to_string()),
+                answer("Yes: Hardware is for builds.", &[PARTS_LIST], 0.2),
+            ],
+        );
+        let answered = app.talk.conversation.answers.last().unwrap();
+        assert_eq!(
+            answered.about.as_deref(),
+            Some("the item “Desk lamp parts list” (Projects/Hardware/parts-list.csv.md)")
+        );
+        assert!(
+            answered.steps.is_empty(),
+            "its card was loaded up front, so showing it again isn't a step"
+        );
+
+        // `n` keeps it; `x` takes it away; other screens leave it as it is.
+        app.key(key(KeyCode::Char('n')));
+        assert!(app.talk.about.is_some());
+        assert!(app.keys().contains(&("x", "about the whole archive")));
+        app.key(key(KeyCode::Char('x')));
+        assert_eq!(app.talk.about, None);
+        assert!(!screen(&app, 120, 30).contains("About:"));
+
+        // Discover's view, when no item is in view there.
+        app.key(key(KeyCode::Char('D')));
+        app.key(key(KeyCode::Char('L')));
+        assert_eq!(
+            app.talk.about,
+            Some((
+                About::Discover("on this day".into()),
+                "Discover: on this day".into()
+            ))
+        );
+        app.key(key(KeyCode::Char('1')));
+        app.key(key(KeyCode::Char('L')));
+        assert!(app.talk.about.is_some(), "Status has nothing to carry");
+
+        // The chosen question's item.
+        let (card, question) = super::super::discover::tests::asked_item(&app);
+        app.asked = vec![question];
+        app.asked_chosen = 0;
+        app.tab = Tab::Questions;
+        app.key(key(KeyCode::Char('L')));
+        assert_eq!(
+            app.talk.about.as_ref().map(|(a, _)| a),
+            Some(&About::find(&app.archive, &card).unwrap())
+        );
     }
 
     #[test]
