@@ -167,13 +167,13 @@ pub fn schema(paths: &[String]) -> Value {
 /// misfit it's less sure of than [`MISFIT_CONFIDENCE`] counts as fitting.
 #[must_use]
 pub fn read(answer: &Value, card: &Card, collection: &str) -> Option<Judgment> {
+    // Its white space run together: a suggestion is one line, whatever the model wrote.
     let text = |key: &str| {
         answer
             .get(key)
             .and_then(Value::as_str)
-            .map(str::trim)
+            .map(|t| t.split_whitespace().collect::<Vec<_>>().join(" "))
             .filter(|t| !t.is_empty())
-            .map(str::to_owned)
     };
     let fits = answer.get("fits")?.as_bool()?;
     let stated = answer
