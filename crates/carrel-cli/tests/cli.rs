@@ -2853,3 +2853,254 @@ fn the_worker_steps_aside_while_the_agent_looks_after_the_archive() {
     assert_eq!(worked["done"], 1);
     assert_eq!(sandbox.json(&root, &["ingest", "--status"])["agent"], false);
 }
+
+/// Runs `carrel` with a scripted text model (`carrel-provider-echo-script`) answering with
+/// `script`'s lines, one per request, and `input` on standard input.
+fn with_script(
+    sandbox: &Sandbox,
+    root: &Path,
+    script: &[Value],
+    args: &[&str],
+    input: &str,
+) -> Output {
+    use std::io::Write as _;
+    let bin = sandbox.path("bin");
+    if !bin.exists() {
+        std::fs::create_dir(&bin).unwrap();
+        std::fs::copy(
+            echo_provider(),
+            bin.join(format!(
+                "carrel-provider-echo-script{}",
+                std::env::consts::EXE_SUFFIX
+            )),
+        )
+        .unwrap();
+    }
+    let lines: Vec<String> = script.iter().map(Value::to_string).collect();
+    let file = sandbox.path("script.jsonl");
+    std::fs::write(&file, lines.join("\n")).unwrap();
+    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_carrel"))
+        .args(args)
+        .current_dir(root)
+        .env("PATH", &bin)
+        .env("ECHO_SCRIPT", &file)
+        .env("CARREL_CONFIG_DIR", sandbox.path("config"))
+        .env("CARREL_TRASH_DIR", sandbox.path("Trash"))
+        .env("CARREL_WORKER", "off")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(input.as_bytes())
+        .unwrap();
+    child.wait_with_output().unwrap()
+}
+
+fn librarian_tool(action: &str, input: &str) -> Value {
+    json!({"action": action, "input": input, "answer": "", "items": [], "passages": [], "suggestions": []})
+}
+
+fn librarian_answer(text: &str, items: &[&str], suggestions: Value) -> Value {
+    json!({"action": "answer", "input": "", "answer": text, "items": items, "passages": [], "suggestions": suggestions})
+}
+
+const PARTS_LIST: &str = "Projects/Hardware/parts-list.csv.md";
+
+fn refile_parts_list(confidence: f64) -> Value {
+    json!([{"change": "refile", "item": PARTS_LIST, "field": "", "value": "Reading",
+            "why": "It's reference material.", "confidence": confidence}])
+}
+
+#[test]
+fn ask_answers_one_question_with_the_items_it_found() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    let script = [
+        librarian_tool("search", "lamp"),
+        librarian_answer(
+            "Your desk lamp build has a parts list.",
+            &[PARTS_LIST],
+            json!([]),
+        ),
+    ];
+    let out = with_script(
+        &sandbox,
+        &root,
+        &script,
+        &[
+            "ask", "What", "do", "I", "have", "about", "the", "lamp?", "--json",
+        ],
+        "",
+    );
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let answer: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(answer["question"], "What do I have about the lamp?");
+    assert_eq!(answer["text"], "Your desk lamp build has a parts list.");
+    assert_eq!(answer["items"][0]["card"], PARTS_LIST);
+    assert_eq!(answer["steps"][0]["tool"], "search");
+    assert_eq!(
+        answer["model"], "echo-script/Echo model",
+        "each answer names its model"
+    );
+    assert_eq!(
+        answer["saved"],
+        Value::Null,
+        "nothing is written unless saved"
+    );
+    assert_eq!(
+        answer["changes"], false,
+        "librarian.changes is off by default"
+    );
+
+    let text = with_script(&sandbox, &root, &script, &["ask", "The lamp?"], "");
+    let text = String::from_utf8(text.stdout).unwrap();
+    assert!(
+        text.starts_with("Your desk lamp build has a parts list.\n"),
+        "{text}"
+    );
+    assert!(
+        text.contains(&format!("Items:\n  {PARTS_LIST}  Desk lamp parts list")),
+        "{text}"
+    );
+    assert!(text.contains("(echo-script/Echo model · 1 step)"), "{text}");
+}
+
+#[test]
+fn ask_alone_holds_a_conversation_and_save_keeps_it_in_the_journal() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    let script = [
+        librarian_answer("Two projects.", &[], json!([])),
+        librarian_answer("The lamp is newer.", &[PARTS_LIST], json!([])),
+    ];
+    let out = with_script(
+        &sandbox,
+        &root,
+        &script,
+        &["ask", "--save", "--json"],
+        "What projects do I have?\nWhich is newer?\n\n",
+    );
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let reply: Value = serde_json::from_slice(&out.stdout).unwrap();
+    let answers = reply["answers"].as_array().unwrap();
+    assert_eq!(answers.len(), 2);
+    assert_eq!(answers[1]["text"], "The lamp is newer.");
+    let path = reply["saved"]["path"].as_str().unwrap();
+    assert!(path.starts_with("Journal/"), "{path}");
+    let journal = std::fs::read_to_string(root.join(path)).unwrap();
+    assert!(
+        journal.contains("## Conversations with the librarian"),
+        "{journal}"
+    );
+    assert!(journal.contains("**You asked:** What projects do I have?"));
+    assert!(journal.contains("**The librarian:** The lamp is newer."));
+    assert!(journal.contains("[Desk lamp parts list]("), "{journal}");
+    let log = sandbox.json(&root, &["log"]);
+    assert!(
+        log[0]["summary"]
+            .as_str()
+            .unwrap()
+            .starts_with("Save a conversation with the librarian"),
+        "{log}"
+    );
+}
+
+#[test]
+fn the_librarians_suggestions_are_for_the_owner_unless_changes_are_on() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    let script = [librarian_answer("Here.", &[], refile_parts_list(0.95))];
+
+    let off = with_script(&sandbox, &root, &script, &["ask", "Tidy?", "--json"], "");
+    let off: Value = serde_json::from_slice(&off.stdout).unwrap();
+    assert_eq!(off["suggestions"][0]["outcome"], "proposed");
+    assert_eq!(off["suggestions"][0]["change"], "refile");
+    assert!(
+        off["suggestions"][0]["command"]
+            .as_str()
+            .unwrap()
+            .starts_with("carrel correct \"Projects/Hardware/parts-list.csv.md\""),
+        "{off}"
+    );
+    assert!(root.join(PARTS_LIST).exists(), "nothing changed");
+
+    sandbox.ok(&root, &["settings", "set", "librarian.changes", "on"]);
+    let on = with_script(&sandbox, &root, &script, &["ask", "Tidy?", "--json"], "");
+    assert!(
+        on.status.success(),
+        "{}",
+        String::from_utf8_lossy(&on.stderr)
+    );
+    let on: Value = serde_json::from_slice(&on.stdout).unwrap();
+    assert_eq!(on["changes"], true);
+    assert_eq!(on["suggestions"][0]["outcome"], "made", "{on}");
+    assert!(root.join("Reading/parts-list.csv").exists());
+
+    let status = sandbox.ok(&root, &["status"]);
+    assert!(status.contains("The librarian's changes this week (1 change; undo them all with `carrel undo --librarian 7d`)"), "{status}");
+    let json = sandbox.json(&root, &["status"]);
+    assert_eq!(json["librarian"]["changes"].as_array().unwrap().len(), 1);
+    let log = sandbox.json(&root, &["log", "--librarian"]);
+    assert_eq!(log.as_array().unwrap().len(), 1);
+    assert_eq!(log[0]["agent"], "librarian");
+    assert!(sandbox.ok(&root, &["log"]).contains("(by the librarian)"));
+
+    let undone = sandbox.json(&root, &["undo", "--librarian", "1d"]);
+    assert_eq!(undone["undone"].as_array().unwrap().len(), 1, "{undone}");
+    assert!(
+        root.join("Projects/Hardware/parts-list.csv").exists(),
+        "back where it was"
+    );
+    assert_eq!(
+        sandbox
+            .json(&root, &["log", "--librarian"])
+            .as_array()
+            .unwrap()
+            .len(),
+        1,
+        "the change stays in history, undone by the owner's change"
+    );
+    let again = sandbox.ok(&root, &["undo", "--librarian", "1d"]);
+    assert!(again.contains("no changes since then"), "{again}");
+    let status = sandbox.json(&root, &["status"]);
+    assert_eq!(status["librarian"]["changes"], json!([]));
+
+    // Below the confidence it needs, it's left for the owner even when changes are on.
+    let unsure = [librarian_answer("Here.", &[], refile_parts_list(0.6))];
+    let unsure = with_script(&sandbox, &root, &unsure, &["ask", "Tidy?", "--json"], "");
+    let unsure: Value = serde_json::from_slice(&unsure.stdout).unwrap();
+    assert_eq!(unsure["suggestions"][0]["outcome"], "proposed");
+}
+
+#[test]
+fn librarian_settings_are_shown_and_checked() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    let settings = sandbox.json(&root, &["settings"]);
+    assert_eq!(settings["archive"]["librarian.changes"], "off");
+    assert_eq!(settings["archive"]["librarian.confidence"], "0.9");
+    let bad = sandbox.run_in(&root, &["settings", "set", "librarian.confidence", "2"]);
+    assert_eq!(bad.status.code(), Some(1));
+    sandbox.ok(&root, &["settings", "set", "librarian.confidence", "0.8"]);
+    let wrong = sandbox.run_in(&root, &["settings", "set", "librarian.model", "nope/none"]);
+    assert_eq!(wrong.status.code(), Some(1));
+    let none = sandbox.run_in(&root, &["ask", "Anything?"]);
+    assert_eq!(none.status.code(), Some(1), "no text model here");
+}

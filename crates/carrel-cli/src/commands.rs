@@ -368,6 +368,8 @@ pub fn status(archive: Option<&Path>) -> Result<Report, Failure> {
     text.push_str(&crate::backup::status_line(&archive, history));
     text.push_str(&writer_line(summary.writer.as_ref(), this_device));
     text.push_str(&recent_section(&summary.recent));
+    let (librarian_text, librarian) = crate::ask::status_section(history);
+    text.push_str(&librarian_text);
     if !summary.problems.is_empty() {
         writeln!(
             text,
@@ -407,6 +409,7 @@ pub fn status(archive: Option<&Path>) -> Result<Report, Failure> {
         "writer": writer_json(summary.writer.as_ref()),
         "recent": summary.recent.iter().map(|r| recent_line(r).1).collect::<Vec<_>>(),
         "signals": summary.signals,
+        "librarian": librarian,
         "desk": desk,
         "names": summary.names.iter().map(|f| json!({
             "path": f.path,
@@ -748,15 +751,20 @@ fn item_history_section(entries: &[Entry]) -> String {
 /// A change on one line: its short identifier, when, the operation and the summary.
 pub(crate) fn log_line(entry: &Entry) -> String {
     format!(
-        "{}  {}  {:<11} {}",
+        "{}  {}  {:<11} {}{}",
         &entry.id[..entry.id.len().min(10)],
         local_time(entry.time),
         entry.operation.map_or("", |o| o.as_str()),
-        entry.summary
+        entry.summary,
+        entry
+            .agent
+            .as_ref()
+            .map(|a| format!("  (by the {a})"))
+            .unwrap_or_default()
     )
 }
 
-fn entry_json(entry: &Entry) -> Value {
+pub(crate) fn entry_json(entry: &Entry) -> Value {
     json!({
         "id": entry.id,
         "summary": entry.summary,
@@ -767,12 +775,17 @@ fn entry_json(entry: &Entry) -> Value {
         "items": entry.items,
         "moves": entry.moves.iter().map(|m| json!({ "item": m.item, "from": m.from, "to": m.to })).collect::<Vec<_>>(),
         "reverts": entry.reverts,
+        "agent": entry.agent,
         "time": jiff::Timestamp::from_second(entry.time).map(|t| t.to_string()).unwrap_or_default(),
     })
 }
 
 /// `carrel log`.
-pub fn log(archive: Option<&Path>, max_count: Option<usize>) -> Result<Report, Failure> {
+pub fn log(
+    archive: Option<&Path>,
+    max_count: Option<usize>,
+    librarian: bool,
+) -> Result<Report, Failure> {
     let archive = locate(archive)?;
     let history = match History::open(&archive) {
         Ok(history) => history,
@@ -784,6 +797,9 @@ pub fn log(archive: Option<&Path>, max_count: Option<usize>) -> Result<Report, F
         Err(e) => return Err(e.into()),
     };
     let mut entries = history.log()?;
+    if librarian {
+        entries.retain(|e| e.agent.as_deref() == Some(carrel_core::librarian::changes::AGENT));
+    }
     if let Some(max) = max_count {
         entries.truncate(max);
     }

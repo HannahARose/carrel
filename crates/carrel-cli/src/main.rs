@@ -4,6 +4,7 @@
 //! scripts. Errors go to standard error (as `{"error": "…"}` with `--json`) and exit with
 //! status 1; usage mistakes exit with status 2.
 
+mod ask;
 mod backup;
 mod bench;
 mod checkout;
@@ -107,6 +108,21 @@ enum Command {
         /// Show at most this many.
         #[arg(short = 'n', long, value_name = "COUNT")]
         max_count: Option<usize>,
+        /// Only the changes the librarian made on its own.
+        #[arg(long)]
+        librarian: bool,
+    },
+    /// Ask the librarian about what's in the archive: `carrel ask "…"` for one answer, or
+    /// `carrel ask` alone for a conversation. It searches, reads and follows links through
+    /// read-only tools, answers with the items and passages it used, and suggests changes,
+    /// which it makes itself only when `librarian.changes` is on.
+    Ask {
+        /// The question; without one, a conversation, a question per line.
+        #[arg(value_name = "QUESTION")]
+        question: Vec<String>,
+        /// Save the conversation to this month's Journal.
+        #[arg(long)]
+        save: bool,
     },
     /// List the providers on this device (text models, text extraction) and which are used.
     Providers,
@@ -139,7 +155,12 @@ enum Command {
     /// Undo a recorded change with a new change that reverses it; see `carrel log`.
     Undo {
         /// The change's identifier, or its start.
-        change: String,
+        #[arg(required_unless_present = "librarian")]
+        change: Option<String>,
+        /// Instead, undo every change the librarian made on its own since then: a span such
+        /// as 24h or 7d, `today`, or a date (2026-11-01).
+        #[arg(long, value_name = "SINCE", conflicts_with = "change")]
+        librarian: Option<String>,
     },
     /// Edit a filed item's card in your editor (the `editor` setting, $VISUAL or $EDITOR):
     /// checked as proposals are, the body kept exactly, and one change undo can reverse.
@@ -746,20 +767,25 @@ impl<E: std::error::Error> From<E> for Failure {
     }
 }
 
+/// `carrel` alone: the interactive mode in a terminal, else the usage message, as for any
+/// missing command.
+fn without_command(archive: Option<&std::path::Path>, json: bool) -> ExitCode {
+    use std::io::IsTerminal as _;
+    if std::io::stdin().is_terminal() && std::io::stdout().is_terminal() && !json {
+        return finish(tui::run(archive), false);
+    }
+    <Cli as clap::CommandFactory>::command()
+        .error(
+            clap::error::ErrorKind::MissingSubcommand,
+            "a command is needed when not in a terminal",
+        )
+        .exit();
+}
+
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let Some(command) = cli.command else {
-        use std::io::IsTerminal as _;
-        if std::io::stdin().is_terminal() && std::io::stdout().is_terminal() && !cli.json {
-            return finish(tui::run(cli.archive.as_deref()), false);
-        }
-        // Not in a terminal, as in scripts: the usage message, as for any missing command.
-        <Cli as clap::CommandFactory>::command()
-            .error(
-                clap::error::ErrorKind::MissingSubcommand,
-                "a command is needed when not in a terminal",
-            )
-            .exit();
+        return without_command(cli.archive.as_deref(), cli.json);
     };
     let changes = changes_archive(&command);
     if changes {
@@ -767,7 +793,12 @@ fn main() -> ExitCode {
     }
     let result = match command {
         Command::Tui => tui::run(cli.archive.as_deref()),
-        Command::Undo { change } => commands::undo(cli.archive.as_deref(), &change),
+        Command::Undo { change, librarian } => {
+            undo_command(cli.archive.as_deref(), change, librarian)
+        }
+        Command::Ask { question, save } => {
+            ask::ask(cli.archive.as_deref(), &question.join(" "), save, cli.json)
+        }
         Command::Init {
             path,
             name,
@@ -786,19 +817,17 @@ fn main() -> ExitCode {
             search::search(cli.archive.as_deref(), &query, limit, cli.json)
         }
         Command::Index { action } => index_command(cli.archive.as_deref(), action, cli.json),
-        Command::Log { max_count } => commands::log(cli.archive.as_deref(), max_count),
+        Command::Log {
+            max_count,
+            librarian,
+        } => commands::log(cli.archive.as_deref(), max_count, librarian),
         Command::Providers => Ok(providers::list()),
         Command::Formats => Ok(formats::list()),
         Command::Ingest(args) => {
             ingest::command(cli.archive.as_deref(), &args.into_request(), cli.json)
         }
         Command::Worker => worker::run(cli.archive.as_deref()),
-        Command::Settings { action } => match action {
-            Some(SettingsAction::Set { key, value }) => {
-                settings::set(cli.archive.as_deref(), &key, &value)
-            }
-            _ => settings::list(cli.archive.as_deref()),
-        },
+        Command::Settings { action } => settings_command(cli.archive.as_deref(), action),
         Command::Review { all, action } => review_command(cli.archive.as_deref(), all, action),
         Command::Edit { item } => edit::edit(cli.archive.as_deref(), &item),
         Command::Expand { item, anyway } => expand::expand(cli.archive.as_deref(), &item, anyway),
@@ -831,13 +860,14 @@ fn main() -> ExitCode {
             discard,
             trim_snapshots,
         ),
-        Command::Collection { action } => match action {
-            CollectionAction::New {
-                path,
-                description,
-                tags,
-            } => commands::collection_new(cli.archive.as_deref(), &path, description, &tags),
-        },
+        Command::Collection {
+            action:
+                CollectionAction::New {
+                    path,
+                    description,
+                    tags,
+                },
+        } => commands::collection_new(cli.archive.as_deref(), &path, description, &tags),
         Command::Backup { action } => backup_command(cli.archive.as_deref(), action),
         Command::Questions { action } => questions_command(cli.archive.as_deref(), action),
         Command::Bench(args) => bench::bench(&args, cli.json),
@@ -877,6 +907,32 @@ fn index_command(
     }
 }
 
+/// `carrel settings`, and `carrel settings set`.
+fn settings_command(
+    archive: Option<&std::path::Path>,
+    action: Option<SettingsAction>,
+) -> Result<Report, Failure> {
+    match action {
+        Some(SettingsAction::Set { key, value }) => settings::set(archive, &key, &value),
+        _ => settings::list(archive),
+    }
+}
+
+/// `carrel undo`: one change, or the librarian's since a time.
+fn undo_command(
+    archive: Option<&std::path::Path>,
+    change: Option<String>,
+    librarian: Option<String>,
+) -> Result<Report, Failure> {
+    match (change, librarian) {
+        (Some(change), _) => commands::undo(archive, &change),
+        (None, Some(since)) => ask::undo(archive, &since),
+        (None, None) => Err(Failure::new(
+            "say which change to undo, or --librarian SINCE",
+        )),
+    }
+}
+
 /// `carrel models` and its subcommands.
 fn models_command(
     action: ModelsAction,
@@ -896,6 +952,7 @@ fn models_command(
 fn changes_archive(command: &Command) -> bool {
     match command {
         Command::Undo { .. }
+        | Command::Ask { .. }
         | Command::Correct { .. }
         | Command::Edit { .. }
         | Command::Expand { .. }
