@@ -1,8 +1,8 @@
 # Architecture
 
-How Carrel is put together as of v0.2: the parts, what each does, how they talk to each other, and what they keep on disk. It's for anyone who wants to change Carrel. The [Code map](code-map.md) points from each part to the types and functions to read in the [code documentation](https://hrose.me/carrel/), and the [Overhead](overhead.md) page measures what splitting Carrel into separate programs costs.
+How Carrel is put together as of v0.2: the parts, what each does, how they talk to each other, and what they keep on disk. It's for anyone who wants to change Carrel. The [Code map](code-map.md) points from each part to the types and functions to read in the [code documentation](https://horizon-labs.github.io/carrel/), and the [Overhead](overhead.md) page measures what splitting Carrel into separate programs costs.
 
-What's planned but not built yet (the Mac app in v0.5, its background agent, iCloud sync through CloudKit in v0.9) is marked as such. The design spec and the [Roadmap](https://github.com/HannahARose/carrel/wiki/Roadmap) describe it.
+What's planned but not built yet (the Mac app in v0.5, its background agent, iCloud sync through CloudKit in v0.9) is marked as such. The design spec and the [Roadmap](https://github.com/Horizon-Labs/carrel/wiki/Roadmap) describe it.
 
 ## The shape of it
 
@@ -50,16 +50,16 @@ Four ideas run through it:
 
 | Part | Kind | What it does |
 | --- | --- | --- |
-| [`carrel-core`](https://hrose.me/carrel/carrel_core/) | Rust library | The archive format, cards, history, coordination, ingest, review, filing, backups, signals, the provider protocol's client and server sides, model downloads' checks. Builds for macOS, Linux, Windows and iOS; prints nothing and opens no network connection. |
-| [`carrel`](https://hrose.me/carrel/carrel/) (`crates/carrel-cli`) | Program | The command-line tool, the interactive mode (`tui/`), the worker, and the benchmark. Each command returns a [`Report`](https://hrose.me/carrel/carrel/struct.Report.html) (text for people, JSON for scripts); `main` prints it. |
+| [`carrel-core`](https://horizon-labs.github.io/carrel/carrel_core/) | Rust library | The archive format, cards, history, coordination, ingest, review, filing, backups, signals, the provider protocol's client and server sides, model downloads' checks. Builds for macOS, Linux, Windows and iOS; prints nothing and opens no network connection. |
+| [`carrel`](https://horizon-labs.github.io/carrel/carrel/) (`crates/carrel-cli`) | Program | The command-line tool, the interactive mode (`tui/`), the worker, and the benchmark. Each command returns a [`Report`](https://horizon-labs.github.io/carrel/carrel/struct.Report.html) (text for people, JSON for scripts); `main` prints it. |
 | `carrel worker` | Process of the same program | Drafts the intake queue, one item at a time, detached from the terminal. One per archive per device. |
-| [`carrel-provider-llama`](https://github.com/HannahARose/carrel/tree/dev/crates/carrel-provider-llama) | Program | Text models: local GGUF models through llama.cpp, with Metal on Macs. |
-| [`carrel-provider-extract`](https://hrose.me/carrel/carrel_provider_extract/) | Program | PDF text in Rust, OCR through Tesseract when it's installed, and what 3MF, G-code, STEP and IGES files say about themselves. |
-| [`carrel-provider-cad`](https://github.com/HannahARose/carrel/tree/dev/crates/carrel-provider-cad) | Program, optional | STEP and IGES models meshed through OpenCascade and drawn by a software renderer, for an image reader to describe. Builds without OpenCascade, and then says how to install it. |
+| [`carrel-provider-llama`](https://github.com/Horizon-Labs/carrel/tree/dev/crates/carrel-provider-llama) | Program | Text models: local GGUF models through llama.cpp, with Metal on Macs. |
+| [`carrel-provider-extract`](https://horizon-labs.github.io/carrel/carrel_provider_extract/) | Program | PDF text in Rust, OCR through Tesseract when it's installed, and what 3MF, G-code, STEP and IGES files say about themselves. |
+| [`carrel-provider-cad`](https://github.com/Horizon-Labs/carrel/tree/dev/crates/carrel-provider-cad) | Program, optional | STEP and IGES models meshed through OpenCascade and drawn by a software renderer, for an image reader to describe. Builds without OpenCascade, and then says how to install it. |
 | `carrel-provider-apple` (`apple/CarrelProviders`) | Swift program | Apple's on-device model (Foundation Models), PDFKit and Vision. |
-| [`carrel-fetch`](https://hrose.me/carrel/carrel_fetch/) | Program | The network helper: downloads models, and is the only Carrel program that goes online. |
+| [`carrel-fetch`](https://horizon-labs.github.io/carrel/carrel_fetch/) | Program | The network helper: downloads models, and is the only Carrel program that goes online. |
 | Kopia | Third-party program | Deduplicated, encrypted backups of file contents. |
-| [`carrel-ffi`](https://hrose.me/carrel/carrel_ffi/), `apple/CarrelKit` | Rust library and Swift package | UniFFI bindings for the Mac and iOS apps (v0.5); today they create and open archives and list collections and items. |
+| [`carrel-ffi`](https://horizon-labs.github.io/carrel/carrel_ffi/), `apple/CarrelKit` | Rust library and Swift package | UniFFI bindings for the Mac and iOS apps (v0.5); today they create and open archives and list collections and items. |
 | `apple/CarrelApp` | Xcode project | The Mac app (v0.5), over CarrelKit. |
 
 ### Inside the core
@@ -123,7 +123,7 @@ flowchart TB
 
 ### 1. In-process calls
 
-The CLI calls the core as a library. Commands in `crates/carrel-cli/src` turn arguments into core calls and results into a `Report`. The interactive mode doesn't reimplement commands: it calls the same functions (`crate::review::approve`, `crate::ingest::change_queued`, …), so it reports exactly what the commands would. The core's decisions that every interface shares, such as approving, moving or answering, are in [`actions`](https://hrose.me/carrel/carrel_core/actions/), so the Mac app will reuse them too.
+The CLI calls the core as a library. Commands in `crates/carrel-cli/src` turn arguments into core calls and results into a `Report`. The interactive mode doesn't reimplement commands: it calls the same functions (`crate::review::approve`, `crate::ingest::change_queued`, …), so it reports exactly what the commands would. The core's decisions that every interface shares, such as approving, moving or answering, are in [`actions`](https://horizon-labs.github.io/carrel/carrel_core/actions/), so the Mac app will reuse them too.
 
 ### 2. Providers: JSON-RPC over standard input and output
 
@@ -131,9 +131,9 @@ Specified in [docs/providers.md](../providers.md). In short:
 
 - A provider is any program named `carrel-provider-NAME`, found beside `carrel` or on `PATH`. Carrel starts it, sends `initialize`, and gets its **offers**: each capability it has (`text-model`, `extract-text`), a priority (100 for native tools, 50 for portable ones, 10 for built-ins) and whether it's available now.
 - Requests (`text/complete`, `text/count-tokens`, `text/extract`) are JSON-RPC 2.0, one line each, one at a time. Standard error is the provider's log; Carrel keeps the last lines for error messages.
-- Errors carry a code: 1 unavailable, 2 unsupported, 3 failed, 4 declined (a safety refusal). The [`Registry`](https://hrose.me/carrel/carrel_core/providers/struct.Registry.html) ranks offers by priority (or the owner's choice), tries the next on any error, and records each attempt; cards record which model produced their fields.
+- Errors carry a code: 1 unavailable, 2 unsupported, 3 failed, 4 declined (a safety refusal). The [`Registry`](https://horizon-labs.github.io/carrel/carrel_core/providers/struct.Registry.html) ranks offers by priority (or the owner's choice), tries the next on any error, and records each attempt; cards record which model produced their fields.
 - Timeouts: 10 seconds to initialize, 10 minutes a request.
-- [`providers::serve`](https://hrose.me/carrel/carrel_core/providers/serve/fn.serve.html) is the other end, used by the Rust providers; a provider in another language just speaks the protocol (the Apple one is Swift). `crates/carrel-core/examples/echo_provider.rs` is a complete one in about 100 lines.
+- [`providers::serve`](https://horizon-labs.github.io/carrel/carrel_core/providers/serve/fn.serve.html) is the other end, used by the Rust providers; a provider in another language just speaks the protocol (the Apple one is Swift). `crates/carrel-core/examples/echo_provider.rs` is a complete one in about 100 lines.
 
 ```mermaid
 sequenceDiagram
@@ -158,15 +158,15 @@ A provider program lives as long as the process that started it, so a model stay
 
 ### 3. The network helper: one request, a stream of events
 
-[`models::download`](https://hrose.me/carrel/carrel_core/models/fn.download.html) starts `carrel-fetch` with one [`FetchRequest`](https://hrose.me/carrel/carrel_core/models/struct.FetchRequest.html) on standard input (URL, allowed hosts, size, SHA-256, destination, log) and reads [`FetchEvent`](https://hrose.me/carrel/carrel_core/models/enum.FetchEvent.html) lines (progress, done, failed). The helper refuses hosts not on the list, resumes partial files, hashes as it writes, and logs every request. The core then hashes the file again itself before giving it the name the provider looks for. `cargo deny` keeps HTTP clients out of every other crate (`deny.toml`).
+[`models::download`](https://horizon-labs.github.io/carrel/carrel_core/models/fn.download.html) starts `carrel-fetch` with one [`FetchRequest`](https://horizon-labs.github.io/carrel/carrel_core/models/struct.FetchRequest.html) on standard input (URL, allowed hosts, size, SHA-256, destination, log) and reads [`FetchEvent`](https://horizon-labs.github.io/carrel/carrel_core/models/enum.FetchEvent.html) lines (progress, done, failed). The helper refuses hosts not on the list, resumes partial files, hashes as it writes, and logs every request. The core then hashes the file again itself before giving it the name the provider looks for. `cargo deny` keeps HTTP clients out of every other crate (`deny.toml`).
 
 ### 4. Kopia: a program with JSON output
 
-[`backup::Kopia`](https://hrose.me/carrel/carrel_core/backup/struct.Kopia.html) runs `kopia` with a configuration file per archive on this device, and reads its JSON output. The repository password is kept in the system keychain by Kopia, never in the archive. Filing a batch takes a snapshot, pinned so retention never removes it, and names it in the history commit.
+[`backup::Kopia`](https://horizon-labs.github.io/carrel/carrel_core/backup/struct.Kopia.html) runs `kopia` with a configuration file per archive on this device, and reads its JSON output. The repository password is kept in the system keychain by Kopia, never in the archive. Filing a batch takes a snapshot, pinned so retention never removes it, and names it in the history commit.
 
 ### 5. History: Git, in-process
 
-[`history::History`](https://hrose.me/carrel/carrel_core/history/struct.History.html) uses libgit2 on `_System/history.git`, tracking exactly the metadata files (cards, documents, `_System`), never item contents. Each change is one commit with trailers: `Carrel-Operation`, `Carrel-Items`, and `Carrel-Snapshot` when a backup was taken. Undo is a new commit that reverses one, moving files back where it has to.
+[`history::History`](https://horizon-labs.github.io/carrel/carrel_core/history/struct.History.html) uses libgit2 on `_System/history.git`, tracking exactly the metadata files (cards, documents, `_System`), never item contents. Each change is one commit with trailers: `Carrel-Operation`, `Carrel-Items`, and `Carrel-Snapshot` when a backup was taken. Undo is a new commit that reverses one, moving files back where it has to.
 
 ### 6. Files, between Carrel's own processes
 
@@ -193,15 +193,15 @@ Queue entries record the device they belong to, since only that device has the f
 
 ### Ingest: from a path to a proposal
 
-1. `carrel ingest PATH` or the interactive mode calls [`intake::add`](https://hrose.me/carrel/carrel_core/intake/fn.add.html): **plan** the paths ([`ingest::plan`](https://hrose.me/carrel/carrel_core/ingest/fn.plan.html): intake, kind, fingerprint, duplicates against a checksum index), skip what's queued or proposed, and write one intake entry per item.
-2. [`worker::start`](https://hrose.me/carrel/carrel/worker/fn.start.html) launches `carrel worker` detached, unless one holds the lock.
-3. The worker ([`worker::work`](https://hrose.me/carrel/carrel/worker/fn.work.html)) starts the providers once, then for each entry calls [`intake::process`](https://hrose.me/carrel/carrel_core/intake/fn.process.html), which runs [`run_with_progress`](https://hrose.me/carrel/carrel_core/ingest/run/fn.run_with_progress.html) on that one item:
-   - **text** ([`ingest::text::read`](https://hrose.me/carrel/carrel_core/ingest/text/fn.read.html)): the best extractor, trimmed of back matter and fitted to the model's context;
-   - **card** ([`ingest::card::draft`](https://hrose.me/carrel/carrel_core/ingest/card/fn.draft.html)): a model drafts it against a JSON Schema, then checks; a failed check is retried with the problems stated, then the next model;
-   - **route** ([`Router`](https://hrose.me/carrel/carrel_core/ingest/route/struct.Router.html)): rules first, then the model level by level with design documents as context, asked twice;
-   - **sensitivity** ([`assess`](https://hrose.me/carrel/carrel_core/ingest/sensitivity/fn.assess.html)): the rule floor, then the model, which may only raise it;
+1. `carrel ingest PATH` or the interactive mode calls [`intake::add`](https://horizon-labs.github.io/carrel/carrel_core/intake/fn.add.html): **plan** the paths ([`ingest::plan`](https://horizon-labs.github.io/carrel/carrel_core/ingest/fn.plan.html): intake, kind, fingerprint, duplicates against a checksum index), skip what's queued or proposed, and write one intake entry per item.
+2. [`worker::start`](https://horizon-labs.github.io/carrel/carrel/worker/fn.start.html) launches `carrel worker` detached, unless one holds the lock.
+3. The worker ([`worker::work`](https://horizon-labs.github.io/carrel/carrel/worker/fn.work.html)) starts the providers once, then for each entry calls [`intake::process`](https://horizon-labs.github.io/carrel/carrel_core/intake/fn.process.html), which runs [`run_with_progress`](https://horizon-labs.github.io/carrel/carrel_core/ingest/run/fn.run_with_progress.html) on that one item:
+   - **text** ([`ingest::text::read`](https://horizon-labs.github.io/carrel/carrel_core/ingest/text/fn.read.html)): the best extractor, trimmed of back matter and fitted to the model's context;
+   - **card** ([`ingest::card::draft`](https://horizon-labs.github.io/carrel/carrel_core/ingest/card/fn.draft.html)): a model drafts it against a JSON Schema, then checks; a failed check is retried with the problems stated, then the next model;
+   - **route** ([`Router`](https://horizon-labs.github.io/carrel/carrel_core/ingest/route/struct.Router.html)): rules first, then the model level by level with design documents as context, asked twice;
+   - **sensitivity** ([`assess`](https://horizon-labs.github.io/carrel/carrel_core/ingest/sensitivity/fn.assess.html)): the rule floor, then the model, which may only raise it;
    - **propose**: a review entry, saved at once.
-4. Questions are recomputed across all open proposals ([`intake::ask_with_waiting`](https://hrose.me/carrel/carrel_core/intake/fn.ask_with_waiting.html)); an owner rule with `auto_file` files its item straight away; the intake entry is removed.
+4. Questions are recomputed across all open proposals ([`intake::ask_with_waiting`](https://horizon-labs.github.io/carrel/carrel_core/intake/fn.ask_with_waiting.html)); an owner rule with `auto_file` files its item straight away; the intake entry is removed.
 
 ```mermaid
 sequenceDiagram
@@ -231,7 +231,7 @@ sequenceDiagram
 
 ### Approval: from a proposal to a filed item
 
-[`actions::decide`](https://hrose.me/carrel/carrel_core/actions/fn.decide.html) takes the writer lease and calls [`filing::file_batch`](https://hrose.me/carrel/carrel_core/ingest/filing/fn.file_batch.html): each item is moved or copied in under a portable, free name, checked against its checksum, given its card and a changelog line; listings are refreshed; a backup snapshot is taken if one's set up; and the batch becomes one history commit naming the snapshot.
+[`actions::decide`](https://horizon-labs.github.io/carrel/carrel_core/actions/fn.decide.html) takes the writer lease and calls [`filing::file_batch`](https://horizon-labs.github.io/carrel/carrel_core/ingest/filing/fn.file_batch.html): each item is moved or copied in under a portable, free name, checked against its checksum, given its card and a changelog line; listings are refreshed; a backup snapshot is taken if one's set up; and the batch becomes one history commit naming the snapshot.
 
 ```mermaid
 sequenceDiagram
@@ -255,11 +255,11 @@ sequenceDiagram
 
 ### Undo
 
-[`History::undo`](https://hrose.me/carrel/carrel_core/history/struct.History.html#method.undo) reads the change's tree and its parent's, moves items back, restores the metadata files, and commits the reversal. Undoing the history's first change is refused.
+[`History::undo`](https://horizon-labs.github.io/carrel/carrel_core/history/struct.History.html#method.undo) reads the change's tree and its parent's, moves items back, restores the metadata files, and commits the reversal. Undoing the history's first change is refused.
 
 ## Concurrency and failure
 
-- **Writing the archive** needs the writer lease ([`DiskLock`](https://hrose.me/carrel/carrel_core/coordinator/struct.DiskLock.html), [`WriterLease`](https://hrose.me/carrel/carrel_core/coordinator/struct.WriterLease.html)): filing, undo, renames, new collections, settings. Only the lease holder may commit history. Reading needs nothing.
+- **Writing the archive** needs the writer lease ([`DiskLock`](https://horizon-labs.github.io/carrel/carrel_core/coordinator/struct.DiskLock.html), [`WriterLease`](https://horizon-labs.github.io/carrel/carrel_core/coordinator/struct.WriterLease.html)): filing, undo, renames, new collections, settings. Only the lease holder may commit history. Reading needs nothing.
 - **The worker doesn't hold the lease while drafting**; drafting only writes queue files. It takes the lease briefly only when a rule files an item.
 - **A crash** loses at most the item being drafted: its intake entry stays and is drafted again. A crash in the moment between saving a proposal and removing its entry would leave the entry to be drafted a second time, giving two proposals for one item; rejecting the extra one is safe.
 - **Two devices** on one archive need a coordinator other than the lock file; the CLI warns in synced folders until CloudKit's lock arrives (v0.9).

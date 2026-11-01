@@ -33,7 +33,7 @@ jobs:
         env:
           # A token with only the project scope; an environment would add setup for no gain.
           GH_TOKEN: ${{ secrets.PROJECT_TOKEN }} # zizmor: ignore[secrets-outside-env]
-          PROJECT_OWNER: ${{ github.repository_owner }}
+          PROJECT_OWNER: HannahARose # the board stays on the owner's account
           PROJECT_NUMBER: 2
           EVENT: ${{ github.event_name }}
           ACTION: ${{ github.event.action }}

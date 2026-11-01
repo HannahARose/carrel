@@ -7,7 +7,7 @@ Most of Carrel is built by Claude sessions, each working on one issue, with one 
 The board moves itself from pull requests (`.github/scripts/project-status.sh`): a draft PR puts it and the issues it closes in **In progress**, a PR ready for review in **In review**, and merging in **Done**. So:
 
 1. **Open a draft PR as soon as you push your first commit,** with "Closes #N" (or "Part of #N" when the issue stays open) in the body. Push early, even a small first step; don't hold everything for one push at the end.
-2. **Mark it ready for review** (`gh pr ready`) once the checks below pass locally. Then turn on auto-merge (`gh pr merge --auto --squash`) for a PR into `dev`.
+2. **Mark it ready for review** (`gh pr ready`) once the checks below pass locally. Then turn on auto-merge (`gh pr merge --auto --squash`) for a PR into `dev`: with dev's merge queue, that adds it to the queue once its checks pass, and the queue tests it together with dev and the pull requests ahead of it before merging.
 3. **Ask the owner on the issue:** a comment starting `Question for the owner:`, then wait for the answer. The dashboard lists every open one.
 4. **Say when you're stuck,** in a comment on the issue starting `Blocked:`, with what you need.
 5. **When the plan changes,** for example when part of the issue moves elsewhere, say so in a comment on the issue, so the board and the issue agree.

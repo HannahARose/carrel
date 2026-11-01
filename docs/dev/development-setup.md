@@ -43,10 +43,10 @@ gh auth setup-git
 
 `gh auth setup-git` lets plain `git push` over HTTPS use your GitHub CLI login. To work with the project board from the CLI, and to push changes to GitHub Actions workflows, also run `gh auth refresh -s project,workflow`.
 
-Clone the repository. The default branch is `dev`; see the wiki's [Development Workflow](https://github.com/HannahARose/carrel/wiki/Development-Workflow) page for branches.
+Clone the repository. The default branch is `dev`; see the wiki's [Development Workflow](https://github.com/Horizon-Labs/carrel/wiki/Development-Workflow) page for branches.
 
 ```bash
-gh repo clone HannahARose/carrel
+gh repo clone Horizon-Labs/carrel
 ```
 
 ## 3. Rust
@@ -107,7 +107,7 @@ cargo run --bin carrel -- --version
 
 ### Which CI jobs run when
 
-CI (`.github/workflows/ci.yml`) runs only what a change affects. Its first job, "Changes" (`.github/scripts/ci-changes.sh`), lists the files a pull request or push changes and says which areas they touch: Rust, the Swift package, the Mac app, the MLX provider, Swift formatting, each portable provider, Kopia backups, the editor plugins, dependencies and the workflows. Each job runs only for its own area, so a change to the docs runs Format and Docs hygiene, which always run, and nothing else. Everything runs when a workflow changes, for the weekly schedule and a manual run, and for a pull request into `main`, which also restores no caches so that a release is checked from a clean build. A push to `dev`, which is a merged pull request, runs the jobs for what that merge changed, to catch two pull requests that pass alone but not together, and it's the only run that saves caches. Once the merge queue is on ([#298](https://github.com/HannahARose/carrel/issues/298)), a queue group runs the jobs for what it changes against its base, and "CI passed" reports on it. "CI passed" is the required check: it passes when every job passed or was skipped because its area didn't change. While a pull request is a draft, only the Linux jobs run; its macOS and Windows jobs wait until it's marked ready, so pushes made while it's being worked on don't queue for the few macOS runners, and a draft can't merge. Coverage, a Linux job, also waits until a pull request is ready. A push to `dev` reports its result as "Dev check", not "CI passed", so that it can't stand in for a release pull request's own clean run, which shares its commit. To see what a change would run, `EVENT=push BEFORE=origin/dev SHA=HEAD .github/scripts/ci-changes.sh`.
+CI (`.github/workflows/ci.yml`) runs only what a change affects. Its first job, "Changes" (`.github/scripts/ci-changes.sh`), lists the files a pull request or push changes and says which areas they touch: Rust, the Swift package, the Mac app, the MLX provider, Swift formatting, each portable provider, Kopia backups, the editor plugins, dependencies and the workflows. Each job runs only for its own area, so a change to the docs runs Format and Docs hygiene, which always run, and nothing else. Everything runs when a workflow changes, for the weekly schedule and a manual run, and for a pull request into `main`, which also restores no caches so that a release is checked from a clean build. A push to `dev`, which is a merged pull request, runs the jobs for what that merge changed, to catch two pull requests that pass alone but not together, and it's the only run that saves caches. Once the merge queue is on ([#298](https://github.com/Horizon-Labs/carrel/issues/298)), a queue group runs the jobs for what it changes against its base, and "CI passed" reports on it. "CI passed" is the required check: it passes when every job passed or was skipped because its area didn't change. While a pull request is a draft, only the Linux jobs run; its macOS and Windows jobs wait until it's marked ready, so pushes made while it's being worked on don't queue for the few macOS runners, and a draft can't merge. Coverage, a Linux job, also waits until a pull request is ready. A push to `dev` reports its result as "Dev check", not "CI passed", so that it can't stand in for a release pull request's own clean run, which shares its commit. To see what a change would run, `EVENT=push BEFORE=origin/dev SHA=HEAD .github/scripts/ci-changes.sh`.
 
 ### Coverage and performance
 
@@ -215,15 +215,15 @@ gh auth status
 
 | Tool | Install | Needed from |
 | --- | --- | --- |
-| `cargo-deny` (dependency checks: `cargo deny check`) | `brew install cargo-deny` | [#40](https://github.com/HannahARose/carrel/issues/40) |
-| `cargo-llvm-cov` (coverage: see [Coverage and performance](#coverage-and-performance)) | `brew install cargo-llvm-cov` and `rustup component add llvm-tools-preview` | [#48](https://github.com/HannahARose/carrel/issues/48) |
-| `zizmor` and `actionlint` (workflow checks: `zizmor .` and `actionlint`) | `brew install zizmor actionlint` | [#40](https://github.com/HannahARose/carrel/issues/40) |
-| `cmake` (builds llama.cpp for `carrel-provider-llama`; its tests take a model folder in `CARREL_TEST_LLAMA_MODELS`) | `brew install cmake` | [#87](https://github.com/HannahARose/carrel/issues/87) |
-| `typos`, `markdownlint-cli2` and `lychee` (docs checks: `typos`, `markdownlint-cli2`, `lychee --offline README.md FORMAT.md`) | `brew install typos-cli markdownlint-cli2 lychee` | [#41](https://github.com/HannahARose/carrel/issues/41) |
-| `uniffi-bindgen` (Swift bindings) | built from the workspace by `scripts/generate-bindings.sh` | [#20](https://github.com/HannahARose/carrel/issues/20) |
-| swift-format (Swift style: `scripts/swift-format.sh`) | comes with Xcode | [#44](https://github.com/HannahARose/carrel/issues/44) |
-| Kopia (backups) | `brew install kopia` | [#32](https://github.com/HannahARose/carrel/issues/32), v0.2 |
-| A local MLX model (about 15–20 GB) | downloaded by Carrel's model settings | [#24](https://github.com/HannahARose/carrel/issues/24), v0.2 |
+| `cargo-deny` (dependency checks: `cargo deny check`) | `brew install cargo-deny` | [#40](https://github.com/Horizon-Labs/carrel/issues/40) |
+| `cargo-llvm-cov` (coverage: see [Coverage and performance](#coverage-and-performance)) | `brew install cargo-llvm-cov` and `rustup component add llvm-tools-preview` | [#48](https://github.com/Horizon-Labs/carrel/issues/48) |
+| `zizmor` and `actionlint` (workflow checks: `zizmor .` and `actionlint`) | `brew install zizmor actionlint` | [#40](https://github.com/Horizon-Labs/carrel/issues/40) |
+| `cmake` (builds llama.cpp for `carrel-provider-llama`; its tests take a model folder in `CARREL_TEST_LLAMA_MODELS`) | `brew install cmake` | [#87](https://github.com/Horizon-Labs/carrel/issues/87) |
+| `typos`, `markdownlint-cli2` and `lychee` (docs checks: `typos`, `markdownlint-cli2`, `lychee --offline README.md FORMAT.md`) | `brew install typos-cli markdownlint-cli2 lychee` | [#41](https://github.com/Horizon-Labs/carrel/issues/41) |
+| `uniffi-bindgen` (Swift bindings) | built from the workspace by `scripts/generate-bindings.sh` | [#20](https://github.com/Horizon-Labs/carrel/issues/20) |
+| swift-format (Swift style: `scripts/swift-format.sh`) | comes with Xcode | [#44](https://github.com/Horizon-Labs/carrel/issues/44) |
+| Kopia (backups) | `brew install kopia` | [#32](https://github.com/Horizon-Labs/carrel/issues/32), v0.2 |
+| A local MLX model (about 15–20 GB) | downloaded by Carrel's model settings | [#24](https://github.com/Horizon-Labs/carrel/issues/24), v0.2 |
 
 ## Privacy while developing
 

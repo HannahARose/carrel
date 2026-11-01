@@ -9,7 +9,7 @@ Every `.gguf` file in Carrel's models folder is offered as a text model:
 - `~/Library/Application Support/Carrel/models` on macOS, or `~/.config/carrel/models` elsewhere
 - `CARREL_MODELS_DIR` overrides it
 
-With no model there, `carrel providers` says where to put one. A command to download recommended models is [#99](https://github.com/HannahARose/carrel/issues/99). A small instruct model such as Qwen2.5 0.5B Instruct (Q4_K_M, about 470 MB) is enough to try it.
+With no model there, `carrel providers` says where to put one. A command to download recommended models is [#99](https://github.com/Horizon-Labs/carrel/issues/99). A small instruct model such as Qwen2.5 0.5B Instruct (Q4_K_M, about 470 MB) is enough to try it.
 
 - **Context:** 8,192 tokens unless `CARREL_LLAMA_CONTEXT` says otherwise. Prompts that don't fit, with room for the answer, are reported as unsupported, so Carrel can try another model.
 - **Structured output:** answers that must follow a JSON Schema are constrained by a grammar, so they're always valid JSON.
