@@ -105,12 +105,17 @@ impl App {
     /// Starts finding what the providers here offer in the background, unless that's under
     /// way; what was found before stays shown meanwhile (#333).
     pub(super) fn find_here(&mut self) {
+        self.find_here_with(Here::find);
+    }
+
+    /// Starts finding what the providers here offer with `find`, as [`App::find_here`] does.
+    fn find_here_with(&mut self, find: impl FnOnce() -> Here + Send + 'static) {
         if self.finding_here.is_some() {
             return;
         }
         let (send, receive) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
-            let _ = send.send(Here::find());
+            let _ = send.send(find());
         });
         self.finding_here = Some(receive);
     }
@@ -784,5 +789,43 @@ mod tests {
             before,
             "no registry was built on the thread that reads keys"
         );
+    }
+
+    /// A provider that never answers `initialize` holds up finding the providers, but no
+    /// screen switch waits for it (#333): Settings says it's still finding them, and shows
+    /// them once they're found.
+    #[test]
+    fn a_hung_provider_holds_up_no_screen_switch() {
+        let (_dir, mut app) = sample(false);
+        let (answer, hung) = std::sync::mpsc::channel::<()>();
+        app.find_here_with(move || {
+            let _ = hung.recv();
+            Here {
+                provider_count: (3, 1),
+                ..Here::default()
+            }
+        });
+
+        let started = std::time::Instant::now();
+        for c in "8123456789LD8".chars() {
+            app.key(key(KeyCode::Char(c)));
+            app.poll_here();
+        }
+        assert_eq!(app.tab, Tab::Settings);
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(2),
+            "took {:?}",
+            started.elapsed()
+        );
+        assert!(screen(&app, 140, 40).contains("finding them…"));
+
+        answer.send(()).unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while app.here.is_none() && std::time::Instant::now() < deadline {
+            app.poll_here();
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert_eq!(app.here.as_ref().map(|h| h.provider_count), Some((3, 1)));
+        assert!(screen(&app, 140, 40).contains("3 providers, 1 couldn't start"));
     }
 }
