@@ -91,6 +91,24 @@ impl Changes {
             && !self.reroute
             && self.fact.is_none()
     }
+
+    /// The same changes, each marked as worked out by a model rather than dictated, as the
+    /// librarian's are.
+    #[must_use]
+    pub fn inferred(mut self) -> Self {
+        fn undictate<T>(field: &mut Option<Field<T>>) {
+            if let Some(field) = field {
+                field.dictated = false;
+            }
+        }
+        undictate(&mut self.title);
+        undictate(&mut self.summary);
+        undictate(&mut self.created);
+        undictate(&mut self.tags);
+        undictate(&mut self.sensitivity);
+        undictate(&mut self.collection);
+        self
+    }
 }
 
 /// The fields a correction can change, as a filed card and a proposal's draft both have them.

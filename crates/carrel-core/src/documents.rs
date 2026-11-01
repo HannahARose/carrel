@@ -160,9 +160,50 @@ pub struct Settings {
     /// (`docs/design/compressed.md`).
     #[serde(default, skip_serializing_if = "is_default_choice")]
     pub compressed_files: crate::compressed::plan::Choice,
+    /// What the librarian may do on its own (`docs/design/librarian.md`).
+    #[serde(default, skip_serializing_if = "LibrarianSettings::is_default")]
+    pub librarian: LibrarianSettings,
     /// Keys this version doesn't know.
     #[serde(flatten)]
     pub extra: Extra,
+}
+
+/// What the librarian may do on its own (FORMAT.md §7.2, `docs/design/librarian.md`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LibrarianSettings {
+    /// Whether it may make the changes it's sure of without asking (refiling, correcting
+    /// fields, renaming, creating collections), each one undoable. Off, it only suggests them.
+    #[serde(default)]
+    pub changes: bool,
+    /// How sure it must be, from 0 to 1, to make a change on its own.
+    #[serde(default = "default_confidence")]
+    pub confidence: f64,
+    /// Keys this version doesn't know.
+    #[serde(flatten)]
+    pub extra: Extra,
+}
+
+/// How sure the librarian must be to make a change on its own, unless the owner says.
+pub const DEFAULT_CONFIDENCE: f64 = 0.9;
+
+fn default_confidence() -> f64 {
+    DEFAULT_CONFIDENCE
+}
+
+impl Default for LibrarianSettings {
+    fn default() -> Self {
+        Self {
+            changes: false,
+            confidence: DEFAULT_CONFIDENCE,
+            extra: Extra::new(),
+        }
+    }
+}
+
+impl LibrarianSettings {
+    fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
 }
 
 /// Search embedding settings (FORMAT.md §7.2, `docs/design/search.md`).
@@ -400,6 +441,7 @@ impl Default for Settings {
             signals: SignalSettings::default(),
             questions: QuestionSettings::default(),
             compressed_files: crate::compressed::plan::Choice::default(),
+            librarian: LibrarianSettings::default(),
             extra: Extra::new(),
         }
     }
