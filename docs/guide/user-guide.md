@@ -327,7 +327,7 @@ In the interactive mode, `L` opens the **Librarian** screen: the conversation on
 - With it on, the changes it made are listed under **The librarian's changes this week**: `u` undoes the chosen one and `U` all of them, after asking.
 - `s` saves the conversation to the Journal, and `n` starts a new one; an unsaved conversation is gone when you leave.
 
-
+## Discovering the archive
 
 Search finds what you ask for. Discovery shows you the archive itself, so you come across what you'd forgotten. Each view is computed by Carrel's core and drawn by each interface in its own way; on the command line they're `carrel discover` and its subcommands, with `--json` for programs.
 

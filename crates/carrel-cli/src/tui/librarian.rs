@@ -329,11 +329,10 @@ impl App {
                 self.confirm = Some(Confirm::UndoLibrarian(self.librarian_changes.len()));
                 None
             }
-            (KeyCode::Char('o') | KeyCode::Right, _) => {
-                if let Some(card) = self.talk.item.card.clone() {
-                    self.tab = Tab::Browse;
-                    self.go_to(&card);
-                }
+            (KeyCode::Char('o') | KeyCode::Right, _) if self.talk.item.card.is_some() => {
+                let card = self.talk.item.card.clone().unwrap_or_default();
+                self.tab = Tab::Browse;
+                self.go_to(&card);
                 None
             }
             _ => return Handled::No,
