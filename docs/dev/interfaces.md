@@ -30,6 +30,7 @@ The command line and the interactive mode run on macOS, Linux and Windows. The M
 | Previews of items | the item's path in `show` | ✓ Browse, in terminals that draw images (#258) | ✓ inspector and grid (#256) |
 | An item's history and related items | `show` | ✓ | ✓ the inspector's History and Related |
 | Search, with filters and reasons | `search` | ✓ `/` | ✓ ⌘F (#236) |
+| Search from outside Carrel | `search` | ✓ `/` | ✓ Spotlight finds cards, collections and glossary facts, by `spotlight.index`; a result opens the item in Carrel (#411) |
 | Discovery: on this day, timeline | `discover today`, `discover timeline` | ✓ Discover (`D`) | ✓ Discover |
 | Discovery: the timeline's words, filters and date | `discover timeline QUERY --by` | ✓ `/` and `b` on the timeline | ✓ Discover |
 | Discovery: wander the stacks | `discover wander` | ✓ Discover, with previews where the terminal draws them | ✓ Discover, with previews |
@@ -86,6 +87,7 @@ Each setting, and where it's changed. `carrel settings set KEY VALUE` changes ev
 | `ingest.originals`, `compressed_files`, `signals.crowded_items`, `questions.skip_days`, `outside_edits` | Settings | Settings → General |
 | `checkout.destination`, `checkout.after_return`, `sessions.idle_minutes`, `reminders` | Settings | Settings → General |
 | `librarian.changes`, `librarian.confidence` | Settings | Settings → General |
+| `spotlight.index`, what a Mac's Spotlight finds (#411) | Settings | Settings → General |
 | `embedding.model`, chosen once, then switched | Settings, the index's row | Settings → Search |
 | `backups` | Backups | Backups, and its status in Settings → Backups |
 
@@ -98,5 +100,6 @@ These stay in one interface, for the reason given:
 - **`carrel agent` runs in the foreground** until stopped, because it's what the operating system's service manager starts at log-in (`carrel agent install`). The interactive mode shows and installs it (#279) rather than running it while open. The Mac app has its own agent, a login item, with the same schedule; one agent looks after an archive on each device, and the other steps aside.
 - **The `previews` setting** chooses how a terminal draws pictures, so only the interactive mode has it.
 - **Previews in a terminal** need a terminal that can draw images (#258). Elsewhere the interactive mode shows the card. The command line's output is text, so `carrel show` gives the card and the item's path instead.
+- **Spotlight** is how macOS searches everything at once, so only the Mac has it. `carrel search` and `/` find the same cards. `spotlight.index` is an archive setting in every interface, since it decides what the archive shows anyone at a Mac.
 - **Grid views, dragging and the menu bar** are ways of working in a graphical app. The command line and the interactive mode reach the same capabilities through their own commands and screens, as the table shows.
 - **Platform-only models and readers,** such as Apple's model or Vision's OCR, are available in every interface on the platforms that have them. Elsewhere, the open models and the extraction provider stand in.

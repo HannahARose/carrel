@@ -496,6 +496,7 @@ Archive-level settings that every device follows. Version 1.0 defines:
 | `restructure.move_budget` | integer, or `none` for no limit: how many items one proposal may move between branches or top-level collections; subdividing, renaming and rewriting don't count. Unset, the level's: 10, none, none | none |
 | `crawler.changes` | `true` (the crawler may refile items and correct model-written card fields on its own when it's sure, each an undoable change marked as its own, §8.2) or `false` (its findings wait in Review, §7.9) | `false` |
 | `crawler.pace` | `off`, `gentle`, `steady` or `brisk`: how much of a device's idle time the crawler uses to recheck where items are filed. It runs only when the device is idle and on power | `steady` |
+| `spotlight.index` | `standard` (a Mac's Spotlight finds public and personal items' cards in full, sensitive items by title only, and the collections and glossary facts), `all-but-restricted` (every item's card in full but restricted items') or `off` (nothing). Restricted items are never indexed, whatever it says | `standard` |
 
 Programs **must** preserve unknown keys.
 

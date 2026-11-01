@@ -551,6 +551,7 @@ The Settings screen (`8`), or `carrel settings`, shows two kinds:
 | `restructure.margin`, `restructure.stability_penalty`, `restructure.stability_days`, `restructure.move_budget` | The numbers behind the eagerness levels, to tune them directly; `default` puts one back to its level's | the level's |
 | `crawler.changes` | `on` lets the crawler make the refiles and corrections it's sure of, each undoable; `off` leaves them in Review (see [The crawler](#the-crawler)) | `off` |
 | `crawler.pace` | How much of the device's idle time the crawler uses: `off`, `gentle`, `steady` or `brisk` | `steady` |
+| `spotlight.index` | What Spotlight finds on a Mac, where anyone at it can see: `standard` finds public and personal items in full and sensitive ones by title only, `all-but-restricted` every item but restricted ones in full, `off` nothing. Restricted items are never found (see [Spotlight](mac-app.md#spotlight)) | `standard` |
 | `outside_edits` | `flag` changes made outside Carrel for review, `reconcile` them as edits, or treat them as `drift` to undo. Stored now; it takes effect when Carrel starts watching for outside changes, in a later version | `flag` |
 
 Changing an archive setting is a change in history, so it can be undone.
