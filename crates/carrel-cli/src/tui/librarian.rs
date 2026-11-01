@@ -202,6 +202,17 @@ pub fn suggestion_row(suggestion: &Suggestion) -> String {
 }
 
 impl App {
+    /// Shows the screen whose key is `c`, taking what's in view along to the Librarian
+    /// screen ([`Self::carry_to_librarian`]).
+    pub(super) fn switch_tab_carrying_view(&mut self, c: char) {
+        if c == Tab::Librarian.key() {
+            self.carry_to_librarian();
+        }
+        if let Some(tab) = Tab::ALL.iter().find(|t| t.key() == c) {
+            self.tab = *tab;
+        }
+    }
+
     /// Takes what's in view to the Librarian screen, as `L` does from Browse, Questions or
     /// Discover: Browse's chosen item, or its collection while choosing among them, or the
     /// search it shows; the filed item the chosen question is about; or the item a wander is at, else the

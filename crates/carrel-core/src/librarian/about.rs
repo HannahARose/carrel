@@ -131,18 +131,18 @@ impl About {
 
     /// What's loaded for the model before it starts: the item's card and its collection,
     /// the collection, or what the search found.
-    pub(super) fn load(&self, shelf: &Shelf<'_>, question: &str) -> Loaded {
+    pub(super) fn load(&self, stacks: &Shelf<'_>, question: &str) -> Loaded {
         let mut loaded = Loaded {
-            described: self.describe(shelf.archive),
+            described: self.describe(stacks.archive),
             ..Loaded::default()
         };
         match self {
             Self::Item(id) => {
                 let input = id.to_string();
-                let card = shelf.run("show", &input, question);
+                let card = stacks.run("show", &input, question);
                 loaded.text = clip(&card.text, LOADED_CHARS - ITS_COLLECTION_CHARS);
                 if let Some(link) = card.found.first() {
-                    let collection = shelf.run("collection", &link.collection, question);
+                    let collection = stacks.run("collection", &link.collection, question);
                     write!(
                         loaded.text,
                         "\nIts collection: {}",
@@ -153,12 +153,12 @@ impl About {
                 loaded.calls.push(("show", input, card));
             }
             Self::Collection(path) => {
-                let ran = shelf.run("collection", path, question);
+                let ran = stacks.run("collection", path, question);
                 loaded.text = clip(&ran.text, LOADED_CHARS);
                 loaded.calls.push(("collection", path.clone(), ran));
             }
             Self::Search(words) => {
-                let ran = shelf.run("search", words, question);
+                let ran = stacks.run("search", words, question);
                 loaded.text = clip(&ran.text, LOADED_CHARS);
                 loaded.calls.push(("search", words.clone(), ran));
             }

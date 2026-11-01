@@ -82,16 +82,11 @@ pub fn markdown(conversation: &Conversation, folder: &str, at: &jiff::Zoned) -> 
     };
     writeln!(text, "With the librarian, on {}.\n", models.join(", ")).unwrap();
     for answer in &conversation.answers {
-        match &answer.about {
-            Some(about) => writeln!(
-                text,
-                "**You asked,** about {}: {}\n",
-                escape(about),
-                answer.question.trim()
-            ),
-            None => writeln!(text, "**You asked:** {}\n", answer.question.trim()),
-        }
-        .unwrap();
+        let asked = match &answer.about {
+            Some(about) => format!("**You asked,** about {}:", escape(about)),
+            None => "**You asked:**".to_owned(),
+        };
+        writeln!(text, "{asked} {}\n", answer.question.trim()).unwrap();
         writeln!(text, "**The librarian:** {}\n", answer.text.trim()).unwrap();
         if !answer.items.is_empty() {
             text.push_str("Items:\n\n");
