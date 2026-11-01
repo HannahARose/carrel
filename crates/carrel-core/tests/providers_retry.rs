@@ -2,6 +2,8 @@
 //! start once, and one whose offer becomes available; and forgetting them while another thread
 //! is asking a program that never answers. In a file of their own, since they set how soon
 //! programs are asked again for the whole test process, and hold up discovery for seconds.
+//! The test programs are shell scripts, so the file runs only where they do.
+#![cfg(unix)]
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -29,7 +31,6 @@ fn from_dir(registry: &Registry, dir: &Path) -> Vec<String> {
 
 /// A shell-script provider named `carrel-provider-<name>` in `dir`, offering one text model
 /// `<name>`. `before` runs first: it can exit, or set `avail` (`true` unless it does).
-#[cfg(unix)]
 fn script_provider(dir: &Path, name: &str, before: &str) -> PathBuf {
     use std::os::unix::fs::PermissionsExt as _;
     let path = dir.join(format!("carrel-provider-{name}"));
@@ -55,7 +56,6 @@ done
 
 /// A provider that couldn't start once, as when it timed out under load, is tried again
 /// by a later registry, rather than being remembered as failed for the rest of the session.
-#[cfg(unix)]
 #[test]
 fn a_provider_that_failed_to_start_once_is_tried_again() {
     retry_at_once();
@@ -89,7 +89,6 @@ fn a_provider_that_failed_to_start_once_is_tried_again() {
 /// A provider whose offers change while its program and the models folder don't, as Apple's
 /// does when its own model finishes downloading or Apple Intelligence is turned on, is seen
 /// with its new offers by a later registry.
-#[cfg(unix)]
 #[test]
 fn a_provider_whose_offer_becomes_available_is_seen_again() {
     retry_at_once();
@@ -124,7 +123,6 @@ fn a_provider_whose_offer_becomes_available_is_seen_again() {
 
 /// Forgetting the providers, as the interactive mode's Ctrl-R does on its key thread,
 /// returns at once even while another thread is finding them.
-#[cfg(unix)]
 #[test]
 fn forgetting_the_providers_never_waits_for_a_discovery() {
     use carrel_core::local::Prefs;
