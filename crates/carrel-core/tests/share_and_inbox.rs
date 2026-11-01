@@ -9,7 +9,7 @@ use carrel_core::card::{Id, Kind};
 use carrel_core::card_file::CardFile;
 use carrel_core::coordinator::{Coordinator as _, DEFAULT_LEASE, DiskLock, Holder, WriterLease};
 use carrel_core::history::{History, Operation};
-use carrel_core::inbox::{self, InboxAction};
+use carrel_core::inbox::{self, Request};
 use carrel_core::ingest::IntakeOptions;
 use carrel_core::ingest::filing::Placement;
 use carrel_core::intake::{add_url, add_with_note, process, waiting};
@@ -250,12 +250,15 @@ fn another_devices_shares_wait_in_its_inbox_until_the_writer_applies_them() {
     .unwrap();
     assert!(photo.exists(), "the original stays where it was");
     let waiting_now = inbox::waiting(&s.archive);
-    assert_eq!(
-        waiting_now
-            .iter()
-            .map(|(_, e)| e.action)
-            .collect::<Vec<_>>(),
-        [InboxAction::Add, InboxAction::AddUrl],
+    assert!(
+        matches!(
+            waiting_now
+                .iter()
+                .map(|(_, e)| &e.request)
+                .collect::<Vec<_>>()
+                .as_slice(),
+            [Request::Add { .. }, Request::AddUrl { .. }]
+        ),
         "in the order they were sent"
     );
     assert!(
@@ -265,10 +268,19 @@ fn another_devices_shares_wait_in_its_inbox_until_the_writer_applies_them() {
         "nothing is queued until the writer applies them"
     );
 
+    // The writer applies them without holding the lease itself: each is applied as theirs.
+    writing.release().unwrap();
     let received = s.dir.path().join("received");
-    let applied = inbox::apply(&s.archive, &writing, &received).unwrap();
+    let registry = Registry::with_built_ins();
+    let applying = inbox::Applying {
+        writer: s.holder,
+        received: &received,
+        registry: &registry,
+        backups: None,
+    };
+    let applied = inbox::apply(&s.archive, &applying).unwrap();
     assert_eq!(applied.entries, 2, "{:?}", applied.problems);
-    assert!(applied.commit.is_some());
+    assert_eq!(applied.commits.len(), 2);
     let queued = waiting(&s.archive, s.holder.device, false).unwrap();
     assert_eq!(queued.len(), 2);
     let file = queued.iter().find(|e| e.url.is_none()).unwrap();
@@ -292,6 +304,13 @@ fn another_devices_shares_wait_in_its_inbox_until_the_writer_applies_them() {
     let history = History::open(&s.archive).unwrap();
     let last = history.log().unwrap();
     assert_eq!(last[0].operation, Some(Operation::Inbox));
-    assert_eq!(last[0].summary, "Apply 2 inbox entries");
-    writing.release().unwrap();
+    assert_eq!(
+        last[0].summary,
+        "Apply an inbox entry: add https://example.org/a"
+    );
+    assert_eq!(
+        last[0].device,
+        Some(other.device),
+        "recorded as the sender's"
+    );
 }

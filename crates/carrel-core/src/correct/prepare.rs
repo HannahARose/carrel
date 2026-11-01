@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use crate::actions::{self, ActionError};
 use crate::archive::{Archive, ArchiveError, Collection, ItemRef};
-use crate::card::{Checksum, DateOrTime, Kind, Sensitivity};
+use crate::card::{Checksum, DateOrTime, Id, Kind, Sensitivity};
 use crate::card_file::{CardFile, CardFileError};
 use crate::coordinator::{
     Coordinator as _, CoordinatorError, DEFAULT_LEASE, DiskLock, Holder, WriterLease,
@@ -110,6 +110,21 @@ impl Prepared {
         );
     }
 
+    /// Who said the words, as the change's summary names them ([`Prepared::said_by`]).
+    #[must_use]
+    pub fn by(&self) -> &str {
+        &self.by
+    }
+
+    /// What's corrected: the proposal's identifier, or the filed item's.
+    #[must_use]
+    pub fn corrects(&self) -> Corrects {
+        match &self.pending {
+            Pending::Proposal(entry) => Corrects::Proposal(entry.id),
+            Pending::Filed { item, .. } => Corrects::Filed(item.id),
+        }
+    }
+
     /// The corrected proposal, when it's a proposal that's corrected.
     #[must_use]
     pub fn proposal(&self) -> Option<&ReviewEntry> {
@@ -118,6 +133,16 @@ impl Prepared {
             Pending::Filed { .. } => None,
         }
     }
+}
+
+/// What a correction corrects ([`Prepared::corrects`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "kind", content = "id", rename_all = "kebab-case")]
+pub enum Corrects {
+    /// The proposal with this identifier.
+    Proposal(Id),
+    /// The filed item with this identifier.
+    Filed(Id),
 }
 
 /// What saving a correction did.
@@ -257,6 +282,37 @@ pub fn prepare_review(
     id: &str,
     words: &str,
 ) -> Result<Prepared, PrepareError> {
+    review(archive, registry, id, words, |subject, earlier| {
+        crate::correct::work_out(registry, subject, words, earlier)
+    })
+}
+
+/// Prepares the correction `worked`, already worked out from `words` on another device, for
+/// the proposal `id`, without a model and without saving anything: how the writer applies a
+/// correction sent through an inbox ([`crate::inbox`]).
+///
+/// # Errors
+///
+/// [`PrepareError`] if the proposal isn't found, or the correction doesn't apply to it.
+pub fn prepare_review_worked(
+    archive: &Archive,
+    registry: &Registry,
+    id: &str,
+    words: &str,
+    worked: Worked,
+) -> Result<Prepared, PrepareError> {
+    review(archive, registry, id, words, |_, _| Ok(worked))
+}
+
+/// Prepares a correction to the proposal `id`, with its changes from `work`, given the card as
+/// the model sees it and the owner's earlier corrections.
+fn review(
+    archive: &Archive,
+    registry: &Registry,
+    id: &str,
+    words: &str,
+    work: impl FnOnce(&Subject<'_>, &[String]) -> Result<Worked, CorrectionError>,
+) -> Result<Prepared, PrepareError> {
     let entry = actions::proposals(archive, &[id.to_owned()])?
         .pop()
         .ok_or_else(|| PrepareError::NoProposal(id.to_owned()))?;
@@ -274,7 +330,7 @@ pub fn prepare_review(
         collections: &context.described,
         vocabulary: &context.vocabulary,
     };
-    let worked = crate::correct::work_out(registry, &subject, words, &earlier)?;
+    let worked = work(&subject, &earlier)?;
     let corrected = actions::correct_proposal(archive, registry, &entry, &worked, words)?;
     let after = corrected.entry.card.fields();
     Ok(Prepared {
@@ -307,6 +363,23 @@ pub fn prepare_filed(
     filed(archive, registry, item, words, |subject, earlier| {
         crate::correct::work_out(registry, subject, words, earlier)
     })
+}
+
+/// Prepares the correction `worked`, already worked out from `words` on another device, for
+/// the filed item `item`, without a model and without saving anything: how the writer applies
+/// a correction sent through an inbox ([`crate::inbox`]).
+///
+/// # Errors
+///
+/// [`PrepareError`] if its card can't be read.
+pub fn prepare_filed_worked(
+    archive: &Archive,
+    registry: &Registry,
+    item: ItemRef,
+    words: &str,
+    worked: Worked,
+) -> Result<Prepared, PrepareError> {
+    filed(archive, registry, item, words, |_, _| Ok(worked))
 }
 
 /// Prepares `lines` of `field: value`, worked out by `model` rather than said by the owner,

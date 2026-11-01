@@ -402,28 +402,25 @@ impl Worker<'_> {
         }
     }
 
-    /// Applies other devices' inboxes, as the writer: what they sent joins this device's
-    /// queue. Nothing happens while another device is the writer, or the lease is busy.
+    /// Applies other devices' inboxes, as the writer: each entry as its sender's, what they
+    /// sent to add joining this device's queue. Nothing happens while another device is the
+    /// writer, or this one acts through its inbox.
     fn apply_inbox(&self) {
         let Some(received) = &self.received else {
             return;
         };
         if crate::inbox::waiting(self.archive).is_empty()
-            || crate::inbox::writer_elsewhere(self.archive, self.holder.device).is_some()
+            || crate::inbox::sending(self.archive, self.holder.device).is_some()
         {
             return;
         }
-        let coordinator = crate::coordinator::DiskLock::for_archive(self.archive);
-        let Ok(lease) = crate::coordinator::Coordinator::acquire(
-            &coordinator,
-            self.holder,
-            "inbox",
-            crate::coordinator::DEFAULT_LEASE,
-        ) else {
-            return;
+        let applying = crate::inbox::Applying {
+            writer: self.holder,
+            received,
+            registry: self.registry,
+            backups: self.backups,
         };
-        let _ = crate::inbox::apply(self.archive, &lease, received);
-        let _ = lease.release();
+        let _ = crate::inbox::apply(self.archive, &applying);
     }
 
     /// Embeds what's behind in the archive's index with its embedding model, if a provider

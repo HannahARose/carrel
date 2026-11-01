@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use crate::archive::{Archive, ItemRef};
 use crate::card::{Checkout, Checksum, DateOrTime, Extra, Id};
 use crate::card_file::CardFile;
-use crate::coordinator::WriterLease;
+use crate::coordinator::{Holder, WriterLease};
 use crate::detect::Rules;
 use crate::history::{Change, History, HistoryError, Operation};
 use crate::manifest::{Diff, Entry, Manifest, ManifestError};
@@ -127,7 +127,7 @@ pub fn check_out(
     let root = archive.root();
     let card_path = root.join(&item.card);
     let original = std::fs::read_to_string(&card_path).map_err(io(&card_path))?;
-    let mut file = CardFile::parse(&original).map_err(|e| CheckoutError::Card(e.to_string()))?;
+    let file = CardFile::parse(&original).map_err(|e| CheckoutError::Card(e.to_string()))?;
     if let Some(out) = &file.card().checked_out {
         return Err(CheckoutError::AlreadyOut(out.to.clone()));
     }
@@ -163,13 +163,63 @@ pub fn check_out(
         return Err(CheckoutError::CopyChanged(working));
     }
 
+    let marking = Marking {
+        card_path: &card_path,
+        original: &original,
+        source: &source,
+        working: &working.display().to_string(),
+        manifest: &manifest,
+        due,
+        git_head: git_head(&source),
+    };
+    match mark_out(archive, item, file, &marking, lease) {
+        Ok((title, commit)) => {
+            let _ = crate::finder::add_tag(&working, crate::finder::CHECKED_OUT);
+            Ok(CheckedOut {
+                item: item.id,
+                title,
+                working,
+                commit,
+            })
+        }
+        Err(e) => {
+            undo_copy(&working);
+            Err(e)
+        }
+    }
+}
+
+/// What [`mark_out`] records about a checkout.
+struct Marking<'a> {
+    card_path: &'a Path,
+    /// The card's text before, to put back if recording fails.
+    original: &'a str,
+    /// The archive copy.
+    source: &'a Path,
+    /// Where the working copy is, on the device that checked it out.
+    working: &'a str,
+    manifest: &'a Manifest,
+    due: Option<DateOrTime>,
+    git_head: Option<String>,
+}
+
+/// Records `item` as checked out, holding `lease`, as `lease`'s holder's: `checked_out` on its
+/// card, the archive copy made read-only, one `checkout` commit. Returns the title and the
+/// commit; on failure the card and the archive copy are put back.
+fn mark_out(
+    archive: &Archive,
+    item: &ItemRef,
+    mut file: CardFile,
+    marking: &Marking<'_>,
+    lease: &WriterLease,
+) -> Result<(String, Option<String>), CheckoutError> {
     let title = file.card().title.clone();
     let mut extra = Extra::new();
-    if let Some(head) = git_head(&source) {
-        extra.insert("git_head".into(), serde_json::Value::String(head));
+    if let Some(head) = &marking.git_head {
+        extra.insert("git_head".into(), serde_json::Value::String(head.clone()));
     }
     file.card_mut().checked_out = Some(Checkout {
-        to: working.display().to_string(),
+        to: marking.working.to_owned(),
         device: lease.info().device,
         person: lease.info().person,
         since: DateOrTime(
@@ -177,16 +227,16 @@ pub fn check_out(
                 .strftime("%Y-%m-%dT%H:%M:%S%:z")
                 .to_string(),
         ),
-        due,
-        manifest: Some(manifest.checksum()),
+        due: marking.due.clone(),
+        manifest: Some(marking.manifest.checksum()),
         extra,
     });
     let result = (|| -> Result<Option<String>, CheckoutError> {
         let text = file
             .to_text()
             .map_err(|e| CheckoutError::Card(e.to_string()))?;
-        write_card(&card_path, &text)?;
-        lock(&source)?;
+        write_card(marking.card_path, &text)?;
+        lock(marking.source)?;
         let mut change = Change::new(
             Operation::Checkout,
             format!("Check out “{title}”"),
@@ -198,22 +248,112 @@ pub fn check_out(
         Ok(History::open(archive)?.commit(archive, &change, lease)?)
     })();
     match result {
-        Ok(commit) => {
-            let _ = crate::finder::add_tag(&working, crate::finder::CHECKED_OUT);
-            Ok(CheckedOut {
-                item: item.id,
-                title,
-                working,
-                commit,
-            })
-        }
+        Ok(commit) => Ok((title, commit)),
         Err(e) => {
-            let _ = unlock(&source);
-            let _ = write_card(&card_path, &original);
-            undo_copy(&working);
+            let _ = unlock(marking.source);
+            let _ = write_card(marking.card_path, marking.original);
             Err(e)
         }
     }
+}
+
+/// What a device that isn't the writer took when it checked `item` out itself: the manifest
+/// of the copy it made, and the commit a Git repository was at. The writer records it with
+/// [`record_checkout`] ([`crate::inbox`]).
+///
+/// # Errors
+///
+/// [`CheckoutError::CardOnly`] or [`CheckoutError::AlreadyOut`] when it can't come out, or a
+/// failure reading or copying it. The copy is removed again on failure.
+pub fn copy_out(
+    archive: &Archive,
+    item: &ItemRef,
+    destination: &Path,
+) -> Result<(PathBuf, Manifest, Option<String>), CheckoutError> {
+    let Some(contents) = &item.item else {
+        return Err(CheckoutError::CardOnly(item.card.clone()));
+    };
+    let card_path = archive.root().join(&item.card);
+    let text = std::fs::read_to_string(&card_path).map_err(io(&card_path))?;
+    let file = CardFile::parse(&text).map_err(|e| CheckoutError::Card(e.to_string()))?;
+    if let Some(out) = &file.card().checked_out {
+        return Err(CheckoutError::AlreadyOut(out.to.clone()));
+    }
+    let source = archive.root().join(contents);
+    let rules = archive
+        .rules()
+        .map_err(|e| CheckoutError::Card(e.to_string()))?;
+    let manifest = snapshot(&source, item.id, &rules)?;
+    std::fs::create_dir_all(destination).map_err(io(destination))?;
+    let name = source
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let working = destination
+        .join(crate::ingest::filing::free_name(destination, &name).map_err(io(destination))?);
+    crate::ingest::filing::copy(&source, &working)
+        .map_err(|e| CheckoutError::Card(e.to_string()))?;
+    if !compare(&manifest, &working, &rules)?.is_empty() {
+        let _ = if working.is_dir() {
+            std::fs::remove_dir_all(&working)
+        } else {
+            std::fs::remove_file(&working)
+        };
+        return Err(CheckoutError::CopyChanged(working));
+    }
+    let _ = crate::finder::add_tag(&working, crate::finder::CHECKED_OUT);
+    Ok((working, manifest, git_head(&source)))
+}
+
+/// Records a checkout another device made with [`copy_out`], holding `lease` as that device's:
+/// the item as it is now must match `checksum`, the manifest of the copy it took. Returns the
+/// title and the commit.
+///
+/// # Errors
+///
+/// [`CheckoutError::AlreadyOut`] if it's out already, [`CheckoutError::CopyChanged`] if the
+/// item changed since the copy was taken, or a failure reading or recording it.
+pub fn record_checkout(
+    archive: &Archive,
+    item: &ItemRef,
+    working: &str,
+    checksum: &Checksum,
+    (due, git_head): (Option<DateOrTime>, Option<String>),
+    lease: &WriterLease,
+) -> Result<(String, Option<String>), CheckoutError> {
+    let Some(contents) = &item.item else {
+        return Err(CheckoutError::CardOnly(item.card.clone()));
+    };
+    let root = archive.root();
+    let card_path = root.join(&item.card);
+    let original = std::fs::read_to_string(&card_path).map_err(io(&card_path))?;
+    let file = CardFile::parse(&original).map_err(|e| CheckoutError::Card(e.to_string()))?;
+    if let Some(out) = &file.card().checked_out {
+        return Err(CheckoutError::AlreadyOut(out.to.clone()));
+    }
+    let source = root.join(contents);
+    let rules = archive
+        .rules()
+        .map_err(|e| CheckoutError::Card(e.to_string()))?;
+    let manifest = snapshot(&source, item.id, &rules)?;
+    if manifest.checksum() != *checksum {
+        return Err(CheckoutError::CopyChanged(source));
+    }
+    let saved = manifest_path(archive, item.id);
+    if let Some(parent) = saved.parent() {
+        std::fs::create_dir_all(parent).map_err(io(parent))?;
+    }
+    std::fs::write(&saved, manifest.to_tsv()).map_err(io(&saved))?;
+    let marking = Marking {
+        card_path: &card_path,
+        original: &original,
+        source: &source,
+        working,
+        manifest: &manifest,
+        due,
+        git_head,
+    };
+    mark_out(archive, item, file, &marking, lease)
 }
 
 /// A return, worked out but not yet done: what changed and the history entry it would add.
@@ -238,12 +378,15 @@ pub struct ReturnPlan {
 }
 
 /// What returning did.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Returned {
     /// The history commit.
     pub commit: Option<String>,
     /// The backup snapshot taken first, if there are backups.
     pub snapshot: Option<String>,
+    /// The archive copy as it was, kept in the holding folder when no snapshot was taken
+    /// first, on a device without Kopia ([`crate::holding`]).
+    pub held: Option<crate::holding::Held>,
 }
 
 /// Works out returning `item`: compares the working copy (at `from`, or where it was checked
@@ -420,7 +563,27 @@ pub fn finish_return(
         let _ = std::fs::rename(&outgoing, &archived);
         return Err(io(&archived)(e));
     }
-    remove_any(&outgoing);
+    // Without a snapshot first, the archive copy as it was waits in the holding folder for one.
+    let held = if backup.is_none() && crate::holding::needed(archive) {
+        let keeping = crate::holding::Keeping {
+            item: Some(plan.item),
+            title: &plan.title,
+            why: crate::holding::Why::Return,
+            name: archived.file_name().and_then(|n| n.to_str()),
+        };
+        let holder = Holder {
+            person: lease.info().person,
+            device: lease.info().device,
+        };
+        match crate::holding::keep(archive, &outgoing, &keeping, holder) {
+            Ok(held) => Some(held),
+            // Left where it is, under its temporary name, rather than lost.
+            Err(_) => None,
+        }
+    } else {
+        remove_any(&outgoing);
+        None
+    };
 
     let card = file.card_mut();
     card.checked_out = None;
@@ -463,6 +626,7 @@ pub fn finish_return(
     Ok(Returned {
         commit,
         snapshot: backup,
+        held,
     })
 }
 
