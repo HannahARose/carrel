@@ -123,15 +123,25 @@ impl App {
         self.start_picker()
     }
 
-    /// Opens the line to type or paste the path being picked, for a checkout or the desk.
+    /// Opens the line to type or paste the path being picked, for a checkout or the desk. A
+    /// checkout's starts with the archive's `checkout.destination`, the Desktop unless changed.
     pub(super) fn ask_for_path(&mut self) {
-        self.input = Some(Input {
-            purpose: if self.picking == Picking::DeskItem {
-                InputPurpose::DeskPath
-            } else {
-                InputPurpose::CheckoutFolder
-            },
-            text: String::new(),
+        self.input = Some(if self.picking == Picking::DeskItem {
+            Input {
+                purpose: InputPurpose::DeskPath,
+                text: String::new(),
+            }
+        } else {
+            let home = carrel_core::local::home_dir();
+            Input {
+                purpose: InputPurpose::CheckoutFolder,
+                text: carrel_core::settings::checkout_folder(
+                    self.archive.settings(),
+                    home.as_deref(),
+                )
+                .map(|p| p.display().to_string())
+                .unwrap_or_default(),
+            }
         });
     }
 
@@ -510,6 +520,15 @@ mod tests {
         app.key(key(KeyCode::Char('o')));
         app.key(key(KeyCode::Char('/')));
         assert_eq!(purpose(&app), &InputPurpose::CheckoutFolder);
+        let suggested = app
+            .input
+            .as_ref()
+            .map(|i| i.text.clone())
+            .unwrap_or_default();
+        assert!(
+            suggested.ends_with("Desktop"),
+            "checkout.destination: {suggested}"
+        );
         enter(&mut app, &out.display().to_string());
         enter(&mut app, "");
         assert!(matches!(

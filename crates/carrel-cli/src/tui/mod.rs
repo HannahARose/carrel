@@ -14,6 +14,7 @@ mod embedding;
 mod intake;
 mod item;
 mod librarian;
+mod model_changes;
 mod option_lines;
 mod preview;
 mod review;
@@ -478,15 +479,12 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
             finished(app, result);
             return None;
         }
-        Effect::SetSetting { key, value } => {
-            let result = crate::settings::set(Some(&root), &key, &value);
-            finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
-            return None;
-        }
+        Effect::SetSetting { key, value } => return settings::set_now(app, &root, &key, &value),
         effect @ (Effect::Return(_) | Effect::CancelCheckout(_) | Effect::Entries { .. }) => {
             active_work(root, effect)
         }
         effect @ (Effect::Download(_)
+        | Effect::ModelChange(_)
         | Effect::Restructure(_)
         | Effect::Index(_)
         | Effect::OpenArchive(_)
@@ -554,8 +552,14 @@ fn switch_or_index_work(app: &mut App, root: PathBuf, effect: Effect) -> Option<
             app.here = None;
             Some((
                 format!("Downloading {name}…"),
-                Box::new(move || crate::models::download_quietly(&name)),
+                Box::new(move || {
+                    crate::models::download_quietly(&name, crate::models::Format::Gguf)
+                }),
             ))
+        }
+        Effect::ModelChange(change) => {
+            app.here = None;
+            Some(model_changes::model_change_work(change))
         }
         Effect::Index(work) => Some(embedding::index_work(
             root,
@@ -926,7 +930,7 @@ mod tests {
         );
         assert!(text.contains(" Sample archive "), "{text}");
         assert!(
-            text.contains("Waiting for you: 1 proposal (2 to review), 1 question (3 to answer)."),
+            text.contains("Waiting for you: 1 proposal (2 to review), 1 question (4 to answer)."),
             "{text}"
         );
         assert!(text.contains("items in"), "the status report");

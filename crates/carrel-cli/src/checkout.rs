@@ -17,10 +17,11 @@ use crate::commands::{find_item, holder, locate};
 use crate::config::Identity;
 use crate::{Failure, Report};
 
-/// Where checkouts go when no folder is given: the Desktop.
-fn default_destination() -> Result<PathBuf, Failure> {
-    carrel_core::local::home_dir()
-        .map(|home| home.join("Desktop"))
+/// Where checkouts go when no folder is given: `checkout.destination`, the Desktop unless
+/// it's changed.
+fn default_destination(archive: &carrel_core::archive::Archive) -> Result<PathBuf, Failure> {
+    let home = carrel_core::local::home_dir();
+    carrel_core::settings::checkout_folder(archive.settings(), home.as_deref())
         .ok_or_else(|| Failure::new("no home folder to check out to; give one with --to"))
 }
 
@@ -40,7 +41,7 @@ pub fn checkout(
     let item = find_item(&archive, &items, query)?;
     let destination = match to {
         Some(to) => crate::paths::expand(&to.to_string_lossy()),
-        None => default_destination()?,
+        None => default_destination(&archive)?,
     };
     let due = due
         .map(|d| {

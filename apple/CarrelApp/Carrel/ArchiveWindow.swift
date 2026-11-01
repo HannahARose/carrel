@@ -57,6 +57,9 @@ struct ArchiveWindow: View {
             choosePendingItem()
         }
         .onChange(of: app.pendingLink) { choosePendingItem() }
+        .onChange(of: app.pendingScreen, initial: true) {
+            if let screen = app.takePendingScreen(for: model.root) { model.screen = screen }
+        }
         .handlesExternalEvents(preferring: [AgentLink.scheme], allowing: [AgentLink.scheme])
         .onOpenURL { url in
             app.open(link: url) { openWindow(id: Self.windowID, value: $0) }
@@ -86,7 +89,10 @@ struct ArchiveSidebar: View {
             Section {
                 Label("Status", systemImage: "gauge.with.dots.needle.33percent").tag(Screen.status)
                 Label("Review", systemImage: "tray.full")
-                    .badge(model.archive?.reviewCount ?? 0)
+                    .badge(
+                        (model.archive?.reviewCount ?? 0)
+                            + (model.archive?.crawlerFindings.count ?? 0)
+                    )
                     .tag(Screen.review)
                 Label("Questions", systemImage: "questionmark.bubble")
                     .badge(model.archive?.questions.count ?? 0)
@@ -163,13 +169,26 @@ struct ArchiveScreenContent: View {
                 .help("Show the items as a list or a grid")
             }
         case .review:
-            if let review = model.review {
-                ReviewView(review: review, collections: model.collections.map(\.path))
+            VStack(spacing: 0) {
+                if let crawler = model.crawler {
+                    ReviewSourcePicker(
+                        crawler: crawler, proposals: model.review?.proposals.count ?? 0
+                    )
+                    .padding(8)
+                }
+                if let crawler = model.crawler, crawler.isShown {
+                    CrawlerFindingsView(crawler: crawler)
+                } else if let review = model.review {
+                    ReviewView(review: review, collections: model.collections.map(\.path))
+                }
             }
         case .questions:
             if let questions = model.questions { QuestionsView(questions: questions) }
         case .restructure:
-            if let restructure = model.restructure { RestructureView(restructure: restructure) }
+            if let restructure = model.restructure {
+                RestructureView(
+                    restructure: restructure, collections: model.collections.map(\.path))
+            }
         case .active:
             if let active = model.activeScreen { ActiveView(model: active) }
         case .history:
@@ -189,7 +208,15 @@ private struct Inspector: View {
     let model: ArchiveWindowModel
 
     var body: some View {
-        if model.screen == .review, let review = model.review, let proposal = review.inspected {
+        if model.screen == .review, let crawler = model.crawler, crawler.isShown {
+            if let finding = crawler.inspected {
+                CrawlerFindingInspector(finding: finding, crawler: crawler, window: model)
+            } else {
+                ContentUnavailableView("Nothing Selected", systemImage: "binoculars")
+            }
+        } else if model.screen == .review, let review = model.review,
+            let proposal = review.inspected
+        {
             ProposalInspector(proposal: proposal, review: review, correct: model.correct)
         } else if model.screen == .questions, let questions = model.questions,
             let question = questions.selected
@@ -229,10 +256,10 @@ private struct Inspector: View {
                 }
                 .id(item.id)
             }
-        } else if case .collection = model.screen {
-            ContentUnavailableView(
-                "Nothing Selected", systemImage: "sidebar.right",
-                description: Text("Choose an item to see its preview and card."))
+        } else if case .collection(let path) = model.screen,
+            let collection = model.collections.first(where: { $0.path == path })
+        {
+            CollectionInspector(collection: collection, window: model)
         } else {
             ContentUnavailableView("Nothing Selected", systemImage: "sidebar.right")
         }

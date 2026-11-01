@@ -226,4 +226,60 @@ final class SettingsTests: XCTestCase {
             "Stopped switching to qwen3-embedding-0.6b; the archive keeps sample/embedding-model-v1."
         )
     }
+
+    func testEverySharedSettingHasATitleAndTheRemindersTakeSeveral() async throws {
+        let sample = try await SampleSettings()
+        defer { sample.remove() }
+        let model = sample.model
+        for key in [
+            "checkout.destination", "checkout.after_return", "sessions.idle_minutes", "reminders",
+        ] {
+            XCTAssertTrue(model.shared.contains { $0.key == key }, key)
+        }
+        XCTAssertFalse(model.shared.contains { $0.title == $0.key })
+        XCTAssertEqual(
+            model.shared.first { $0.key == "questions.skip_days" }?.title,
+            "Skipped questions rest")
+        let reminders = try XCTUnwrap(model.shared.first { $0.key == "reminders" })
+        XCTAssertTrue(reminders.takesSeveral)
+        XCTAssertEqual(reminders.value, "idle, weekly, menu-bar")
+
+        await model.set("reminders", to: "idle, due-date")
+        XCTAssertNil(model.problem)
+        XCTAssertEqual(model.shared.first { $0.key == "reminders" }?.value, "idle, due-date")
+        await model.set("sessions.idle_minutes", to: "0")
+        XCTAssertEqual(model.problem, "sessions.idle_minutes is a whole number, at least 1")
+    }
+
+    func testThePickerAndEditorInUseAreShownWithWhy() async throws {
+        let sample = try await SampleSettings()
+        defer { sample.remove() }
+        let model = sample.model
+        XCTAssertTrue(model.device?.knownPickers.contains { $0.name == "yazi" } == true)
+        await model.setDevice("picker", to: "builtin")
+        XCTAssertEqual(model.device?.pickerInUse, "the built-in browser (chosen)")
+        await model.setDevice("editor", to: "nvim")
+        XCTAssertEqual(model.device?.editorInUse, "nvim (Carrel's editor setting)")
+    }
+
+    func testAModelIsDeletedInTheFormatChosen() async throws {
+        let sample = try await SampleSettings { _, config in
+            let models = config.appending(path: "models")
+            try FileManager.default.createDirectory(
+                at: models.appending(path: "mlx/granite-4.2-3b"), withIntermediateDirectories: true)
+            try Data("stand-in".utf8).write(to: models.appending(path: "granite-4.2-3b.gguf"))
+        }
+        defer { sample.remove() }
+        let model = sample.model
+        let formats = try XCTUnwrap(model.modelFormats["granite-4.2-3b"])
+        XCTAssertEqual(formats.here, [.gguf, .mlx])
+        let granite = try XCTUnwrap(model.catalog.first { $0.name == "granite-4.2-3b" })
+
+        model.confirmingFormat = .mlx
+        model.confirmingRemoval = granite
+        await model.removeConfirmed()
+        XCTAssertNil(model.problem)
+        XCTAssertEqual(model.modelFormats["granite-4.2-3b"]?.here, [.gguf])
+        XCTAssertEqual(model.note, "Deleted granite-4.2-3b (MLX).")
+    }
 }

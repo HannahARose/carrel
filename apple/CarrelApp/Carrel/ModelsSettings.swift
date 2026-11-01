@@ -33,7 +33,7 @@ struct ModelsTab: View {
         }
         .modelDownloadConfirmation(model)
         .confirmationDialog(
-            "Delete \(model?.confirmingRemoval?.name ?? "")?",
+            "Delete \(model?.confirmingRemoval?.name ?? "") (\(model?.confirmingFormat.title ?? ""))?",
             isPresented: confirming(\.confirmingRemoval),
             presenting: model?.confirmingRemoval
         ) { _ in
@@ -57,16 +57,20 @@ extension View {
     /// license, as Models and Search both offer.
     func modelDownloadConfirmation(_ model: SettingsModel?) -> some View {
         confirmationDialog(
-            "Download \(model?.confirmingDownload?.name ?? "")?",
+            "Download \(model?.confirmingDownload?.name ?? "") (\(model?.confirmingFormat.title ?? ""))?",
             isPresented: Binding(
                 get: { model?.confirmingDownload != nil },
                 set: { if !$0 { model?.confirmingDownload = nil } }),
             presenting: model?.confirmingDownload
         ) { entry in
-            Button("Download \(size(entry.size))") { Task { await model?.downloadConfirmed() } }
+            let bytes = size(
+                model.map { $0.size(of: entry, in: $0.confirmingFormat) } ?? entry.size)
+            Button("Download \(bytes)") { Task { await model?.downloadConfirmed() } }
         } message: { entry in
+            let bytes = size(
+                model.map { $0.size(of: entry, in: $0.confirmingFormat) } ?? entry.size)
             Text(
-                "\(entry.title). \(size(entry.size)) from the internet, under the \(entry.license) license; it needs about \(entry.memoryGb) GB of memory."
+                "\(entry.title). \(bytes) from the internet, under the \(entry.license) license; it needs about \(entry.memoryGb) GB of memory."
             )
         }
     }
@@ -176,18 +180,24 @@ private struct ModelRow: View {
         case .builtIn:
             Text("Comes with \(entry.comesWith ?? "a provider")").foregroundStyle(.secondary)
         case .downloaded:
-            Button("Delete…") { model.confirmingRemoval = entry }
+            ModelFormatActions(entry: entry, model: model)
         case .partial(let bytes):
             VStack(alignment: .trailing) {
                 Text("Stopped at \(size(bytes))").font(.caption).foregroundStyle(.secondary)
                 HStack {
-                    Button("Delete…") { model.confirmingRemoval = entry }
-                    Button("Carry On…") { model.confirmingDownload = entry }
-                        .disabled(!entry.downloadable)
+                    Button("Delete…") {
+                        model.confirmingFormat = .gguf
+                        model.confirmingRemoval = entry
+                    }
+                    Button("Carry On…") {
+                        model.confirmingFormat = .gguf
+                        model.confirmingDownload = entry
+                    }
+                    .disabled(!entry.downloadable)
                 }
             }
         case .notDownloaded:
-            Button("Download…") { model.confirmingDownload = entry }
+            ModelFormatActions(entry: entry, model: model)
                 .disabled(!entry.downloadable)
         }
     }

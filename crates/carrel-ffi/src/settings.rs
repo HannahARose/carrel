@@ -4,6 +4,7 @@
 //! models, and the file picker and editor the command line and the interactive mode use.
 
 use carrel_core::coordinator::{Coordinator as _, DEFAULT_LEASE, DiskLock};
+use carrel_core::file_pickers;
 use carrel_core::providers::device::{resolve_model, second_model, text_models};
 use carrel_core::settings::{Key, change};
 
@@ -14,12 +15,20 @@ use crate::{ArchiveHandle, CarrelError};
 pub struct Setting {
     /// Its key, as `settings.json` writes it, such as `ingest.originals`.
     pub key: String,
+    /// Its name, for people, such as "Originals".
+    pub title: String,
     /// What it does, in words.
     pub description: String,
     /// Its value.
     pub value: String,
-    /// The values it can take, when they're a fixed list; otherwise a whole number.
+    /// The values it can take, when they're a fixed list; otherwise [`takes`](Self::takes)
+    /// says what it takes.
     pub choices: Vec<String>,
+    /// Whether it takes several of its choices at once, separated by commas, as `reminders`
+    /// does.
+    pub takes_several: bool,
+    /// The values it takes, in words, such as "a whole number, at least 1".
+    pub takes: String,
 }
 
 /// A shared setting, changed.
@@ -61,6 +70,24 @@ pub struct DeviceSettings {
     /// The text model the librarian answers with, as `provider/offer`; `None` for the
     /// strongest this device has.
     pub librarian_model: Option<String>,
+    /// The picker in use, and why, such as "yazi (found installed)".
+    pub picker_in_use: String,
+    /// The editor in use, and where it comes from, such as "vi (the system's default)".
+    /// The command line also looks at `$VISUAL` and `$EDITOR` in the terminal it runs in.
+    pub editor_in_use: String,
+    /// The pickers Carrel knows, in the order it looks for them.
+    pub known_pickers: Vec<KnownPicker>,
+}
+
+/// A file picker Carrel knows how to run.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct KnownPicker {
+    /// Its name, as the `picker` preference names it.
+    pub name: String,
+    /// What it's like.
+    pub about: String,
+    /// "installed", how to install it here, or "not for this system".
+    pub state: String,
 }
 
 impl From<carrel_core::settings::SettingsError> for CarrelError {
@@ -85,12 +112,15 @@ impl ArchiveHandle {
             .iter()
             .map(|&key| Setting {
                 key: key.as_str().to_owned(),
+                title: key.title().to_owned(),
                 description: key.describe().to_owned(),
                 value: key.get(archive.settings()),
                 choices: key
                     .choices()
                     .map(|c| c.iter().map(|&c| c.to_owned()).collect())
                     .unwrap_or_default(),
+                takes_several: key.takes_several(),
+                takes: key.takes(),
             })
             .collect())
     }
@@ -186,11 +216,36 @@ impl ArchiveHandle {
     /// [`CarrelError::Failed`] if the preferences can't be read.
     pub fn device_settings(&self) -> Result<DeviceSettings, CarrelError> {
         let prefs = self.prefs()?;
+        let (editor, from) = file_pickers::editor_in_use(prefs.editor.as_deref());
         Ok(DeviceSettings {
+            picker_in_use: file_pickers::picker_in_use(prefs.picker.as_deref()),
+            editor_in_use: format!("{editor} ({from})"),
+            known_pickers: file_pickers::KNOWN
+                .iter()
+                .map(|k| KnownPicker {
+                    name: k.name.to_owned(),
+                    about: k.about.to_owned(),
+                    state: k.state(),
+                })
+                .collect(),
             picker: prefs.picker,
             editor: prefs.editor,
             librarian_model: prefs.librarian_model,
         })
+    }
+
+    /// Where items are checked out to when no folder is given, by the archive's
+    /// `checkout.destination`: the Desktop unless it's changed. `None` without a home folder.
+    ///
+    /// # Errors
+    ///
+    /// [`CarrelError::Failed`] if the archive can't be read.
+    pub fn checkout_folder(&self) -> Result<Option<String>, CarrelError> {
+        let archive = self.fresh()?;
+        Ok(
+            carrel_core::settings::checkout_folder(archive.settings(), self.home().as_deref())
+                .map(|p| p.to_string_lossy().into_owned()),
+        )
     }
 
     /// Sets this device's `picker`, `editor` or `librarian.model` to `value`, as

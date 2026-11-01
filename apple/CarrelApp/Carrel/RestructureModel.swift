@@ -83,6 +83,18 @@ final class RestructureModel {
         } catch {}
     }
 
+    /// Proposes reorganizing the section at `collection` (empty for the whole archive), and
+    /// shows it, or says why nothing is worth proposing.
+    func proposeSection(_ collection: String) async {
+        report = nil
+        guard let proposal = try? await archive.proposeSection(collection) else { return }
+        if proposal.changes.isEmpty {
+            report = proposal.rationale
+        } else {
+            selection = proposal.id
+        }
+    }
+
     /// Approves the chosen proposal's chosen changes, or all of them.
     func approve(all: Bool = false) async {
         guard let proposal = selected else { return }

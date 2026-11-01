@@ -16,6 +16,10 @@ public struct AgentArchive: Identifiable, Sendable, Equatable {
     public var active: [ActiveItem] = []
     /// How many items wait in the intake queue on this Mac.
     public var queued = 0
+    /// How many of the crawler's findings wait in Review.
+    public var findings = 0
+    /// What the crawler's last pass here did, for people, when it did something.
+    public var crawled: String?
     /// What went wrong last, if the last job failed.
     public var problem: String?
 
@@ -280,6 +284,8 @@ public final class Agent {
                 activity = "Backing up “\(name)”"
                 _ = try await Task.detached { try handle.backUp(description: "Scheduled snapshot") }
                     .value
+            case .crawl:
+                try await crawl(handle, in: root, name: name)
             }
         } catch CarrelError.Busy {
             // Another writer has the archive; try again shortly.
@@ -299,6 +305,31 @@ public final class Agent {
         await refresh(root)
     }
 
+    /// A pass of the crawler, when its pace says one is due and the Mac is idle and on power;
+    /// it stops as soon as the owner uses the Mac.
+    private func crawl(_ handle: ArchiveHandle, in root: URL, name: String) async throws {
+        let device = MacState.now()
+        guard device.idle.map({ $0 >= 60 }) ?? true else { return }
+        activity = "Rechecking where items are filed in “\(name)”"
+        let memory = MacState.memoryGB
+        let passed: CrawlerPassed?
+        do {
+            passed = try await Task.detached(priority: .background) {
+                try handle.crawlWhenIdle(
+                    idleSeconds: device.idle, onPower: device.onPower, model: nil,
+                    memoryGb: memory, stop: StopWhenUsed())
+            }.value
+        } catch CarrelError.Invalid {
+            // No text model on this Mac: nothing to crawl with, and nothing the owner must fix.
+            return
+        }
+        if let summary = passed?.summary,
+            let index = archives.firstIndex(where: { $0.root == root })
+        {
+            archives[index].crawled = "The crawler \(summary)"
+        }
+    }
+
     // MARK: - What the menu bar shows
 
     /// Reads what's active and queued in `root` again, and the working copies to watch.
@@ -307,7 +338,8 @@ public final class Agent {
         let read = await Task.detached {
             (
                 try? handle.active(), (try? handle.intake())?.waiting.count ?? 0,
-                handle.idleMinutes(), handle.backupsSetUp()
+                handle.idleMinutes(), handle.backupsSetUp(),
+                (try? handle.crawlerFindings())?.count ?? 0
             )
         }.value
         guard followed[root] != nil else { return }
@@ -320,6 +352,7 @@ public final class Agent {
         if let index = archives.firstIndex(where: { $0.root == root }) {
             archives[index].active = active
             archives[index].queued = read.1
+            archives[index].findings = read.4
         }
         if moved, followed[root]?.claim != nil { watch(root) }
     }

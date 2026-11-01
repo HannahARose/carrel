@@ -24,6 +24,8 @@ final class ReviewModel {
     private(set) var report: String?
     /// Called after items are filed, so Browse shows them.
     @ObservationIgnored var filed: () async -> Void = {}
+    /// Switches Review to the crawler's findings (`f`).
+    @ObservationIgnored var showCrawler: () -> Void = {}
 
     init(archive: ArchiveModel) {
         self.archive = archive

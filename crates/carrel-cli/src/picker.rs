@@ -5,98 +5,7 @@ use std::path::{Path, PathBuf};
 
 use crate::Failure;
 
-/// What the `picker` preference names when the owner wants the built-in browser.
-pub const BUILT_IN: &str = "builtin";
-
-/// A file picker Carrel knows how to run.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Known {
-    /// Its name, as in the `picker` preference.
-    pub name: &'static str,
-    /// The command, with `{out}` for the file to write chosen paths to; without it, the
-    /// picker writes them to standard output.
-    pub command: &'static str,
-    /// What it's like, for the Settings screen.
-    pub about: &'static str,
-    /// How to install it on macOS, Linux and Windows; `None` where it doesn't run.
-    pub install: [Option<&'static str>; 3],
-}
-
-/// The pickers found automatically, in order of preference.
-pub const KNOWN: [Known; 6] = [
-    Known {
-        name: "yazi",
-        command: "yazi --chooser-file={out}",
-        about: "fast, with previews of files and images",
-        install: [
-            Some("brew install yazi"),
-            Some("cargo install --locked yazi-fm yazi-cli"),
-            Some("winget install sxyazi.yazi"),
-        ],
-    },
-    Known {
-        name: "lf",
-        command: "lf -selection-path={out}",
-        about: "small and quick, with ranger's keys",
-        install: [
-            Some("brew install lf"),
-            Some("apt install lf"),
-            Some("scoop install lf"),
-        ],
-    },
-    Known {
-        name: "nnn",
-        command: "nnn -p {out}",
-        about: "tiny and fast, with many plugins",
-        install: [Some("brew install nnn"), Some("apt install nnn"), None],
-    },
-    Known {
-        name: "ranger",
-        command: "ranger --choosefiles={out}",
-        about: "Vim keys, three columns and previews",
-        install: [
-            Some("brew install ranger"),
-            Some("apt install ranger"),
-            None,
-        ],
-    },
-    Known {
-        name: "vifm",
-        command: "vifm --choose-files {out}",
-        about: "two panes, driven like Vim",
-        install: [Some("brew install vifm"), Some("apt install vifm"), None],
-    },
-    Known {
-        name: "fzf",
-        command: "fzf --multi --walker=file,dir",
-        about: "type to find files anywhere below the folder",
-        install: [
-            Some("brew install fzf"),
-            Some("apt install fzf"),
-            Some("winget install junegunn.fzf"),
-        ],
-    },
-];
-
-impl Known {
-    /// Whether it's installed here.
-    #[must_use]
-    pub fn installed(&self) -> bool {
-        crate::paths::program(self.name).is_some()
-    }
-
-    /// How to install it on this system, if it runs here.
-    #[must_use]
-    pub fn install_here(&self) -> Option<&'static str> {
-        if cfg!(target_os = "macos") {
-            self.install[0]
-        } else if cfg!(windows) {
-            self.install[2]
-        } else {
-            self.install[1]
-        }
-    }
-}
+pub use carrel_core::file_pickers::{BUILT_IN, KNOWN};
 
 /// How the owner picks files.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -115,10 +24,7 @@ pub fn choose(preference: Option<&str>) -> Choice {
         if wanted.eq_ignore_ascii_case(BUILT_IN) {
             return Choice::BuiltIn;
         }
-        let command = KNOWN
-            .iter()
-            .find(|k| k.name == wanted)
-            .map_or(wanted, |k| k.command);
+        let command = carrel_core::file_pickers::known(wanted).map_or(wanted, |k| k.command);
         return Choice::Command(crate::paths::split_words(command));
     }
     KNOWN

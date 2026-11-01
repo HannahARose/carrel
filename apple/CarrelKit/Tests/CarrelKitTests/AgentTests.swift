@@ -60,7 +60,7 @@ import Testing
         plan.noticed(["/Work/Lamp/a.txt"], at: start)
         plan.noticed(["/Work/Lamp/a.txt"], at: start + 600)
         let idle: TimeInterval = 30 * 60
-        #expect(plan.due(at: start + idle + AgentPlan.margin).isEmpty, "work went on")
+        #expect(!plan.due(at: start + idle + AgentPlan.margin).contains(.sessions), "work went on")
         #expect(plan.due(at: start + 600 + idle + AgentPlan.margin) == [.sessions])
         #expect(!plan.due(at: start).contains(.work), "work on a copy doesn't run the worker")
     }
@@ -92,6 +92,27 @@ import Testing
         plan.ran(.backup, startedAt: start + AgentPlan.backupRetry)
         #expect(plan.backupDue == start + AgentPlan.backupRetry + AgentPlan.backupEvery)
         #expect(plan.due(at: start + AgentPlan.backupEvery).isEmpty)
+    }
+
+    @Test func theCrawlerOnlyGetsTimeNothingElseNeedsAndWaitsAfterChanges() {
+        var plan = AgentPlan(root: root)
+        plan.start(at: start)
+        let every = AgentPlan.crawlEvery
+        #expect(plan.due(at: start) == [.work, .sessions], "not straight away")
+        plan.ran(.work, startedAt: start)
+        plan.ran(.sessions, startedAt: start)
+        #expect(plan.due(at: start + every) == [.crawl])
+        plan.noticed(["/Archive/_System/queue/intake/a.json"], at: start + every)
+        #expect(
+            plan.due(at: start + every + AgentPlan.settle) == [.work],
+            "the worker first, and the crawler waits")
+        plan.ran(.work, startedAt: start + every + AgentPlan.settle)
+        #expect(plan.due(at: start + every + 60).isEmpty, "it waits after a change")
+        #expect(plan.due(at: start + 2 * every) == [.crawl])
+        plan.ran(.crawl, startedAt: start + 2 * every)
+        #expect(plan.nextDue == start + 3 * every)
+        plan.postpone(.crawl, until: start + 4 * every)
+        #expect(plan.due(at: start + 3 * every).isEmpty)
     }
 }
 
@@ -220,12 +241,14 @@ func realPath(_ path: String) -> String {
         test.agent.noticed([working + "/sketch.txt"], in: test.root)
         let idle = TimeInterval(test.handle.idleMinutes()) * 60
         test.clock.advance(idle)
-        #expect(test.agent.due(at: test.clock.now).isEmpty, "the session may still be going")
+        // The crawler may be due by now too; it only takes time nothing else needs.
+        let others = { test.agent.due(at: test.clock.now).map(\.1).filter { $0 != .crawl } }
+        #expect(others().isEmpty, "the session may still be going")
         test.clock.advance(AgentPlan.margin)
-        #expect(test.agent.due(at: test.clock.now).map(\.1) == [.sessions])
+        #expect(others() == [.sessions])
         await test.agent.runDue()
         #expect(test.agent.archives.first?.problem == nil)
-        #expect(test.agent.due(at: test.clock.now).isEmpty)
+        #expect(others().isEmpty)
     }
 
     #if os(macOS)

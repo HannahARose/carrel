@@ -248,6 +248,25 @@ The catalog's `crawler` flag records the recommendation. Once a model has it, th
 
 No real model has been measured. The runs happen on the reference machine and set the `crawler` flags from what they show.
 
+## Restructure
+
+Whether a restructure proposal recovers what was muddled (`docs/design/restructure.md`, "Measuring it"). `carrel bench --restructure` builds the same muddled archive as `--crawl`, embeds its cards with the catalog's default embedding model when a provider here runs it, then has Carrel propose a restructure of the whole archive at each eagerness (settled, balanced and eager), once with numbers alone and once with each text model naming the groups and running the findability test. Each proposal is scored on:
+
+- **the shape:** how closely the items that end up together match the intended shape, as the F1 of the pairs of items put in the same collection, before and after the proposal. It recovers the shape when the F1 rises. Scoring by pairs means a new `Cooking` collection recovers the missing Recipes as well as a `Recipes` would;
+- **fixed and broken:** the misplaced items it would put in a collection `answers.yaml` accepts, or a subcollection of one, and the well-placed items it would move out of one;
+- **moves:** the items it moves, and those moves weighted by each change's invasiveness, from 1 for rewriting to 5 for moving top-level collections, with the weighted moves for each item it fixes;
+- **the findability gain:** in its own findability test, the held-out cards found in the proposed tree less those found in the current one, as a share of those tried. Numbers alone can't run the test.
+
+```bash
+carrel bench --restructure --out bench-results
+```
+
+It writes `bench-results/restructure/results.json` and `report.md`. Each proposal's score is saved to `restructure/runs/` as it's made, so a stopped run carries on; `--fresh` starts over, and `--model NAME` measures one text model beside numbers alone. Proposals are never applied: where each item would end up is worked out from the changes.
+
+### Restructure: not run yet
+
+No real model has been measured. On the stub card vectors in the tests, which know the intended shape, numbers alone at Balanced subdivide collections without breaking anything and bring the archive closer to the intended shape, but hold back the new top-level collections that would recover Recipes; each eagerness recovers at least as much as the one below it.
+
 ## Running it again
 
 ```bash

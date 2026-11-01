@@ -53,8 +53,9 @@ struct ReviewView: View {
     }
 
     /// The single letters the list answers to: approve, hold, move, reject, expand or keep
-    /// compressed, and a duplicate filed as a version or beside the original.
-    static let keys = CharacterSet(charactersIn: "ahmrzvb")
+    /// compressed, a duplicate filed as a version or beside the original, and the crawler's
+    /// findings instead.
+    static let keys = CharacterSet(charactersIn: "ahmrzvbf")
 }
 
 extension ReviewModel {
@@ -74,6 +75,10 @@ extension ReviewModel {
 
     /// Acts on a single letter typed in the list; returns whether it meant something.
     func key(_ characters: String) -> Bool {
+        if characters == "f" {
+            showCrawler()
+            return true
+        }
         let ids = selected.map(\.id)
         guard !ids.isEmpty else { return false }
         switch characters {
