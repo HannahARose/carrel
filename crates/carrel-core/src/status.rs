@@ -169,6 +169,8 @@ pub struct Looking {
     pub device: Option<Id>,
     /// The folders to look in for active work, such as the Desktop and `~/Code`.
     pub places: Vec<PathBuf>,
+    /// The person's home, which a checked-out folder written with `~` is in.
+    pub home: Option<PathBuf>,
     /// Now.
     pub now: std::time::SystemTime,
 }
@@ -177,11 +179,20 @@ impl Looking {
     /// Looking on `device` in the Desktop and `~/Code`, as of now.
     #[must_use]
     pub fn here(device: Option<Id>) -> Self {
+        Self::in_home(device, crate::local::home_dir())
+    }
+
+    /// Looking on `device` in `home`'s Desktop and Code folders, as of now. Tests give a
+    /// temporary folder, so they never look in the person's own.
+    #[must_use]
+    pub fn in_home(device: Option<Id>, home: Option<PathBuf>) -> Self {
         Self {
             device,
-            places: crate::local::home_dir()
+            places: home
+                .as_ref()
                 .map(|home| vec![home.join("Desktop"), home.join("Code")])
                 .unwrap_or_default(),
+            home,
             now: std::time::SystemTime::now(),
         }
     }
@@ -234,7 +245,13 @@ pub fn summary(archive: &Archive, looking: &Looking) -> Result<Summary, StatusEr
         Some(device) => Desk::load(archive, device)?,
         None => Desk::default(),
     };
-    let desk = crate::desk::suggest(archive, &desk, &looking.places, looking.now)?;
+    let desk = crate::desk::suggest(
+        archive,
+        &desk,
+        &looking.places,
+        looking.home.as_deref(),
+        looking.now,
+    )?;
     Ok(Summary {
         collections,
         items: items.len(),
@@ -351,6 +368,7 @@ mod tests {
         Looking {
             device: None,
             places: Vec::new(),
+            home: None,
             now: std::time::SystemTime::now(),
         }
     }

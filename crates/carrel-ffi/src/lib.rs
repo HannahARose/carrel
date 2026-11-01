@@ -21,6 +21,7 @@
 //! | [`settings`] | The archive's settings and this device's model choices |
 //! | [`models`] | The model catalog, providers, and downloads |
 //! | [`intake`] | The intake queue |
+//! | [`backups`](mod@backups) | Backups: setting up a repository, the snapshots, taking one, verifying, restoring |
 //! | [`agent`] | The Mac app's agent: its claim on an archive, work sessions and scheduled snapshots |
 //!
 //! [`TextModel`] and [`ModelProvider`](correct::ModelProvider) are implemented in Swift and called from Rust, as is
@@ -46,6 +47,7 @@ use carrel_core::providers::Registry;
 
 pub mod active;
 pub mod agent;
+pub mod backups;
 pub mod browse;
 pub mod correct;
 pub mod edit;
@@ -288,6 +290,13 @@ pub struct OpenOptions {
     /// Whether to start provider programs; without them only the built-in providers read
     /// text, and corrections need a [`ModelProvider`](correct::ModelProvider).
     pub start_providers: bool,
+    /// The folder standing for the person's home: where Status looks for active work (its
+    /// Desktop and Code folders), where a checkout goes by default (its Desktop), and what
+    /// `~` means in a checked-out path. `None` for the person's own
+    /// ([`carrel_core::local::home_dir`]). Tests give a temporary folder, so they never look
+    /// in the owner's.
+    #[uniffi(default = None)]
+    pub home: Option<String>,
 }
 
 /// An open archive.
@@ -310,6 +319,15 @@ impl ArchiveHandle {
             Some(dir) => Ok(PathBuf::from(dir)),
             None => Ok(carrel_core::local::config_folder()?),
         }
+    }
+
+    /// The person's home folder, or the one standing for it.
+    fn home(&self) -> Option<PathBuf> {
+        self.options
+            .home
+            .as_ref()
+            .map(PathBuf::from)
+            .or_else(carrel_core::local::home_dir)
     }
 
     /// This device's identity, created on first use.
@@ -555,6 +573,7 @@ fn create_archive(
             config_dir: Some(text(config)),
             provider_folders: Vec::new(),
             start_providers: true,
+            home: None,
         },
     }))
 }
@@ -595,6 +614,7 @@ mod tests {
                     config_dir: Some(text(&dir.path().join("config"))),
                     provider_folders: Vec::new(),
                     start_providers: false,
+                    home: Some(text(&dir.path().join("home"))),
                 },
             )
             .unwrap();
@@ -1032,6 +1052,21 @@ mod tests {
         let related = sample.handle.related(item).unwrap();
         assert_eq!(related.items.len(), 0);
         assert!(related.why_none.is_some());
+    }
+
+    #[test]
+    fn status_looks_for_active_work_in_the_home_it_was_given() {
+        let sample = Sample::new();
+        let project = sample.dir.path().join("home/Code/lamp-firmware");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(project.join("main.c"), "int main(void) { return 0; }").unwrap();
+        let status = sample.handle.status().unwrap();
+        let tracked: Vec<&str> = status.to_track.iter().map(|t| t.path.as_str()).collect();
+        assert_eq!(tracked.len(), 1, "{tracked:?}");
+        assert!(
+            Path::new(tracked[0]).ends_with(Path::new("home").join("Code").join("lamp-firmware")),
+            "{tracked:?}"
+        );
     }
 
     #[test]

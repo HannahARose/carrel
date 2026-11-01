@@ -17,6 +17,7 @@ enum Screen: Hashable {
     /// Browse, showing the collection at this path.
     case collection(String)
     case history
+    case backups
 }
 
 /// A collection and the collections nested inside it.
@@ -93,6 +94,7 @@ final class ArchiveWindowModel {
     // Review, Questions, corrections and editing (#234).
     private(set) var review: ReviewModel?
     private(set) var questions: QuestionsModel?
+    private(set) var backups: BackupsModel?
     /// The correction sheet's, while it's open.
     var correction: CorrectionModel?
     /// The filed item whose card the inspector is editing (⌘E).
@@ -159,7 +161,9 @@ final class ArchiveWindowModel {
             review = ReviewModel(archive: archive)
             review?.filed = { [weak self] in await self?.refreshItems() }
             questions = QuestionsModel(archive: archive)
-            activeScreen = ActiveScreenModel(archive: archive) { [weak self] in
+            backups = BackupsModel(archive: archive)
+            activeScreen = ActiveScreenModel(archive: archive, checkoutFolder: checkoutFolder) {
+                [weak self] in
                 await self?.refreshItems()
             }
             historyScreen = HistoryScreenModel(archive: archive) { [weak self] in
@@ -179,6 +183,13 @@ final class ArchiveWindowModel {
         } catch {
             problem = message(for: error)
         }
+    }
+
+    /// Where a checkout goes unless changed: the Desktop of the home the archive was opened
+    /// with, as the core checks out by default.
+    private var checkoutFolder: URL {
+        options?.home.map { URL(filePath: $0).appending(path: "Desktop") }
+            ?? FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask)[0]
     }
 
     /// Reads the collections and items again, after a change that files or refiles items.
@@ -223,6 +234,7 @@ final class ArchiveWindowModel {
         case .active: "Active"
         case .collection(let path): collections.first { $0.path == path }?.title ?? path
         case .history: "History"
+        case .backups: "Backups"
         }
     }
 

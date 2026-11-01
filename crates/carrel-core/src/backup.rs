@@ -62,6 +62,8 @@ pub enum BackupError {
     WrongPassword,
     /// The repository can't go there.
     Refused(String),
+    /// There's no snapshot to restore from, as asked.
+    NoSnapshot(String),
     /// The backup program failed.
     Failed(String),
     /// A file or process operation failed.
@@ -89,7 +91,7 @@ impl std::fmt::Display for BackupError {
                 path.display()
             ),
             Self::WrongPassword => f.write_str("the backup password is wrong"),
-            Self::Refused(why) | Self::Failed(why) => f.write_str(why),
+            Self::Refused(why) | Self::Failed(why) | Self::NoSnapshot(why) => f.write_str(why),
             Self::Io { what, source } => write!(f, "{what}: {source}"),
         }
     }
@@ -364,7 +366,7 @@ impl Kopia {
             patterns: ignore_patterns(archive),
             password: (!keep).then(|| password.to_owned()),
         };
-        let created = !repository.join("kopia.repository.f").exists();
+        let created = !is_repository(&repository);
         std::fs::create_dir_all(&repository).map_err(|source| BackupError::Io {
             what: format!("creating {}", repository.display()),
             source,
@@ -416,9 +418,7 @@ impl Kopia {
 
     fn reachable(&self) -> Result<(), BackupError> {
         match self.repository_path() {
-            Some(path) if !path.join("kopia.repository.f").exists() => {
-                Err(BackupError::Unreachable(path))
-            }
+            Some(path) if !is_repository(&path) => Err(BackupError::Unreachable(path)),
             _ => Ok(()),
         }
     }
@@ -689,6 +689,123 @@ pub fn record(archive: &Archive, repository: &str, description: &str) -> std::io
     std::fs::rename(&temp, &path)
 }
 
+/// Whether `folder` holds a Kopia repository already, so setting up connects to it rather than
+/// creating one, and asks for its password once rather than twice.
+#[must_use]
+pub fn is_repository(folder: &Path) -> bool {
+    folder.join("kopia.repository.f").exists()
+}
+
+/// What a repository at `repository` is called when the owner gives no description: its
+/// folder's name, such as "Backup drive".
+#[must_use]
+pub fn default_description(repository: &Path) -> String {
+    repository
+        .file_name()
+        .map_or_else(|| "Backups".into(), |n| n.to_string_lossy().into_owned())
+}
+
+/// Records a repository just set up in `settings.json` ([`record`]) and in history, with a
+/// change of its own, holding `lease`. Returns the history commit.
+///
+/// # Errors
+///
+/// [`crate::history::HistoryError`] if the settings or history can't be written.
+pub fn record_setup(
+    archive: &Archive,
+    setup: &Setup,
+    description: &str,
+    lease: &crate::coordinator::WriterLease,
+) -> Result<Option<String>, crate::history::HistoryError> {
+    use crate::history::{Change, History, HistoryError, Operation};
+    record(archive, &setup.repository, description).map_err(|source| HistoryError::Io {
+        path: archive.root().join("_System/settings.json"),
+        source,
+    })?;
+    let change = Change::new(
+        Operation::Edit,
+        format!("Back up to “{description}”"),
+        lease.info().person,
+        lease.info().device,
+    );
+    History::open(archive)?.commit(archive, &change, lease)
+}
+
+/// The history entries in `log` that took a Kopia snapshot, in `log`'s order (newest first
+/// for [`crate::history::History::log`]). History records each snapshot with its change, so
+/// this needs no backup drive.
+pub fn snapshot_entries(
+    log: &[crate::history::Entry],
+) -> impl Iterator<Item = &crate::history::Entry> {
+    log.iter().filter(|e| {
+        e.snapshot
+            .as_deref()
+            .is_some_and(|s| s.starts_with(KOPIA_PREFIX))
+    })
+}
+
+/// The snapshot to restore from, with the change it was taken with: the one taken with the
+/// change `at` names (an identifier or its start), or the latest before it; without `at`, the
+/// latest. `log` is newest first.
+///
+/// # Errors
+///
+/// [`BackupError::NoSnapshot`] when there's no such change, or no snapshot by then.
+pub fn restore_point<'a>(
+    log: &'a [crate::history::Entry],
+    at: Option<&str>,
+) -> Result<(&'a crate::history::Entry, &'a str), BackupError> {
+    let entry = match at {
+        Some(at) => {
+            let position = log
+                .iter()
+                .position(|e| e.id.starts_with(at))
+                .ok_or_else(|| BackupError::NoSnapshot(format!("no change {at} in the history")))?;
+            snapshot_entries(&log[position..]).next().ok_or_else(|| {
+                BackupError::NoSnapshot(format!("no snapshot was taken by change {at}"))
+            })?
+        }
+        None => snapshot_entries(log)
+            .next()
+            .ok_or_else(|| BackupError::NoSnapshot("no snapshot has been taken yet".into()))?,
+    };
+    let snapshot = entry
+        .snapshot
+        .as_deref()
+        .and_then(|s| s.strip_prefix(KOPIA_PREFIX))
+        .unwrap_or_default();
+    Ok((entry, snapshot))
+}
+
+/// A free folder beside the archive for an item restored as of `entry`, from the item's path
+/// `path`: `NAME (restored 2026-10-29)`, then `NAME (restored 2026-10-29, 2)` and so on.
+#[must_use]
+pub fn restore_beside(archive: &Archive, path: &str, entry: &crate::history::Entry) -> PathBuf {
+    let parent = archive
+        .root()
+        .parent()
+        .map_or_else(|| archive.root().to_owned(), Path::to_owned);
+    let name = path
+        .trim_end_matches('/')
+        .rsplit('/')
+        .next()
+        .unwrap_or(path);
+    let date = jiff::Timestamp::from_second(entry.time)
+        .map(|t| {
+            t.to_zoned(jiff::tz::TimeZone::system())
+                .strftime("%Y-%m-%d")
+                .to_string()
+        })
+        .unwrap_or_default();
+    let mut target = parent.join(format!("{name} (restored {date})"));
+    let mut n = 2;
+    while target.exists() {
+        target = parent.join(format!("{name} (restored {date}, {n})"));
+        n += 1;
+    }
+    target
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -751,6 +868,41 @@ mod tests {
             "nothing changed, so history has nothing to record"
         );
         assert_eq!(History::open(&archive).unwrap().log().unwrap().len(), 1);
+    }
+
+    fn entry(id: &str, snapshot: Option<&str>) -> crate::history::Entry {
+        crate::history::Entry {
+            id: id.into(),
+            summary: format!("Change {id}"),
+            operation: None,
+            person: None,
+            device: None,
+            snapshot: snapshot.map(str::to_owned),
+            items: Vec::new(),
+            moves: Vec::new(),
+            reverts: None,
+            time: 0,
+        }
+    }
+
+    #[test]
+    fn restoring_finds_the_snapshot_taken_by_then() {
+        let log = [
+            entry("c3", None),
+            entry("c2", Some("kopia:k2")),
+            entry("c1", None),
+            entry("c0", Some("kopia:k0")),
+        ];
+        let at = |at| restore_point(&log, at).map(|(e, s)| (e.id.clone(), s.to_owned()));
+        assert_eq!(at(None).unwrap(), ("c2".into(), "k2".into()));
+        assert_eq!(at(Some("c1")).unwrap(), ("c0".into(), "k0".into()));
+        assert_eq!(at(Some("c2")).unwrap(), ("c2".into(), "k2".into()));
+        assert!(matches!(at(Some("c9")), Err(BackupError::NoSnapshot(_))));
+        assert!(matches!(
+            restore_point(&log[2..3], None),
+            Err(BackupError::NoSnapshot(_))
+        ));
+        assert_eq!(snapshot_entries(&log).count(), 2);
     }
 
     #[test]

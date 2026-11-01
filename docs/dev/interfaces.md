@@ -43,7 +43,7 @@ The command line and the interactive mode run on macOS, Linux and Windows. The M
 | History and undo | `log`, `undo` | ✓ History | ✓ (#235) |
 | The librarian: ask, converse, save to the Journal | `ask` | #290 | #291 |
 | The librarian's changes: list and undo them together | `status`, `log --librarian`, `undo --librarian` | #290 | #291 |
-| Backups: set up, snapshot, list, verify, restore | `backup` | ✓ Backups | #266 |
+| Backups: set up, snapshot, list, verify, restore | `backup` | ✓ Backups | ✓ Backups (#266) |
 | Settings, this device's and the archive's | `settings` | ✓ Settings | ✓ Settings → General (#267) |
 | Models: list, download, remove | `models` | ✓ Settings | ✓ Settings → Models (#267) |
 | Providers in use, and file types not read | `providers`, `formats` | ✓ Settings | ✓ Settings → Providers (#267) |

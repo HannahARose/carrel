@@ -28,6 +28,7 @@ Each screen does what its interactive-mode counterpart does, through the same co
 | Active | Checked-out and desk items with their pending entries: return, cancel, open the working copy, approve, combine, edit or drop entries. |
 | Browse | The collection tree in the sidebar, items in the content column as a list or a grid of thumbnails, and the chosen item's preview above its card in the inspector. Quick actions: check out, correct, edit, show in Finder. |
 | History | Every change, with undo after a confirmation sheet that says what undoing does and doesn't restore. |
+| Backups | What the interactive mode's Backups screen and `carrel backup` do: set up a repository on a folder or drive (the password asked for once and kept in the keychain by Kopia), the snapshots taken with each change, newest first and read from history so they show without the drive, Snapshot Now, Verify, and restoring an item from the chosen snapshot into a new folder beside the archive. |
 
 - **Search** is the toolbar field (⌘F): the same `carrel search` with its filters, results as a list with the matched passage highlighted. Typing filters as you go over words; meaning search runs when you pause, so typing never waits on the model.
 - **Adding items:** drag files or folders onto the window, or File → Add to Archive… (⌘O). They join the intake queue, as `carrel ingest` adds them, and the agent drafts them.

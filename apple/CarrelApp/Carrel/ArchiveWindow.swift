@@ -100,6 +100,7 @@ private struct Sidebar: View {
             }
             Section {
                 Label("History", systemImage: "clock.arrow.circlepath").tag(Screen.history)
+                Label("Backups", systemImage: "externaldrive.badge.timemachine").tag(Screen.backups)
             }
         }
         .listStyle(.sidebar)
@@ -158,6 +159,8 @@ private struct ScreenContent: View {
             if let active = model.activeScreen { ActiveView(model: active) }
         case .history:
             if let history = model.historyScreen { HistoryView(model: history) }
+        case .backups:
+            if let backups = model.backups { BackupsView(backups: backups) }
         }
     }
 }
@@ -179,6 +182,10 @@ private struct Inspector: View {
             ActiveInspector(model: active)
         } else if model.screen == .history, let history = model.historyScreen {
             ChangeInspector(model: history) { id in model.items.first { $0.id == id }?.title }
+        } else if model.screen == .backups, let backups = model.backups,
+            let change = backups.selected
+        {
+            BackupInspector(change: change, backups: backups, items: model.items)
         } else if let item = model.selectedItem {
             if let edit = model.editing, edit.target == .item(item.id) {
                 ItemEditor(item: item, edit: edit) { model.editing = nil }

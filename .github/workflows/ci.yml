@@ -14,12 +14,17 @@ name: CI
 #   later merge can't cancel the check of an earlier one.
 # - Caches are restored everywhere and saved only on dev, so pull requests don't evict them.
 #   Pull requests into main restore none: a release is checked from a clean build.
+# - While a pull request is a draft, only the Linux jobs run: the macOS and Windows ones (and
+#   their matrix entries) wait until it's marked ready, so a session's pushes while it works
+#   don't queue for the few macOS runners. A draft can't merge, so nothing unchecked lands.
 # - "CI passed" is the required check. It passes when every job passed or was skipped because
 #   its area didn't change, and fails if "Changes" itself failed.
 
 on:
   pull_request:
     branches: [dev, main]
+    # ready_for_review: a draft's macOS and Windows jobs run when it's marked ready.
+    types: [opened, synchronize, reopened, ready_for_review]
   # main gets only merges of dev that its pull request has already checked from scratch.
   push:
     branches: [dev]
@@ -63,6 +68,12 @@ jobs:
       workflows: ${{ steps.areas.outputs.workflows }}
       cache: ${{ steps.areas.outputs.cache }}
       save: ${{ steps.areas.outputs.save }}
+      # "false" while a pull request is a draft: macOS and Windows jobs wait for it to be ready.
+      heavy: ${{ steps.weight.outputs.heavy }}
+      # Matrix entries to leave out while a draft: macOS and Windows.
+      light-exclude: ${{ steps.weight.outputs.exclude }}
+      # The platforms for jobs that run on all three: only Linux while a draft.
+      oses: ${{ steps.weight.outputs.oses }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -78,6 +89,23 @@ jobs:
           BASE_SHA: ${{ github.event.merge_group.base_sha }}
           SHA: ${{ github.sha }}
         run: .github/scripts/ci-changes.sh
+      - id: weight
+        env:
+          DRAFT: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft }}
+        run: |
+          if [ "$DRAFT" = true ]; then
+            {
+              echo "heavy=false"
+              echo 'exclude=[{"os":"macos-latest"},{"os":"windows-latest"}]'
+              echo 'oses=["ubuntu-latest"]'
+            } >> "$GITHUB_OUTPUT"
+          else
+            {
+              echo "heavy=true"
+              echo 'exclude=[]'
+              echo 'oses=["macos-latest","ubuntu-latest","windows-latest"]'
+            } >> "$GITHUB_OUTPUT"
+          fi
 
   fmt:
     name: Format
@@ -91,7 +119,7 @@ jobs:
   clippy:
     name: Clippy
     needs: changes
-    if: needs.changes.outputs.rust == 'true'
+    if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.heavy == 'true'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -111,6 +139,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        exclude: ${{ fromJSON(needs.changes.outputs.light-exclude) }}
         # macOS is the main platform; Linux and Windows keep the core and CLI portable.
         os: [macos-latest, ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
@@ -151,7 +180,7 @@ jobs:
     # package also builds for iOS, and test the Apple provider on its own and through Carrel.
     name: Swift package
     needs: changes
-    if: needs.changes.outputs.swift == 'true'
+    if: needs.changes.outputs.swift == 'true' && needs.changes.outputs.heavy == 'true'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -223,7 +252,7 @@ jobs:
     # for v1.0 (#47), so there are no signing secrets here.
     name: Mac app
     needs: changes
-    if: needs.changes.outputs.app == 'true'
+    if: needs.changes.outputs.app == 'true' && needs.changes.outputs.heavy == 'true'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -282,7 +311,7 @@ jobs:
     # Swift style, as set in .swift-format. swift-format comes with Xcode.
     name: Swift format
     needs: changes
-    if: needs.changes.outputs.swift-format == 'true'
+    if: needs.changes.outputs.swift-format == 'true' && needs.changes.outputs.heavy == 'true'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -301,7 +330,7 @@ jobs:
     # the on-device runner drafts with real MLX models.
     name: MLX provider
     needs: changes
-    if: needs.changes.outputs.mlx == 'true'
+    if: needs.changes.outputs.mlx == 'true' && needs.changes.outputs.heavy == 'true'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -419,6 +448,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        exclude: ${{ fromJSON(needs.changes.outputs.light-exclude) }}
         os: [macos-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
     env:
@@ -456,6 +486,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        exclude: ${{ fromJSON(needs.changes.outputs.light-exclude) }}
         os: [macos-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
     env:
@@ -526,27 +557,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: macos-latest
-            asset: kopia-0.23.1-macOS-arm64
-            sha256: 19e6ed637221f4dfd46a46e978ec4c509c386b522d746db2cd6762b217478111
-            archive: tar.gz
-          - os: ubuntu-latest
-            asset: kopia-0.23.1-linux-x64
-            sha256: 416d0f84a3dbb321a8b2d8f0997b1a0a6e915babe79ee76fa6e4d2bd1e1c5178
-            archive: tar.gz
-          - os: windows-latest
-            asset: kopia-0.23.1-windows-x64
-            sha256: f0369d9657dbe47a1b8b6ff4e308c5958a4813b405d4e32ae9d81b3f2b3d8251
-            archive: zip
+        os: ${{ fromJSON(needs.changes.outputs.oses) }}
     runs-on: ${{ matrix.os }}
     defaults:
       run:
         shell: bash
     env:
-      ASSET: ${{ matrix.asset }}
-      SHA256: ${{ matrix.sha256 }}
-      ARCHIVE: ${{ matrix.archive }}
+      # Kopia's release for each platform, looked up by matrix.os (a draft runs only Linux).
+      ASSET: ${{ fromJSON('{"macos-latest":"kopia-0.23.1-macOS-arm64","ubuntu-latest":"kopia-0.23.1-linux-x64","windows-latest":"kopia-0.23.1-windows-x64"}')[matrix.os] }}
+      SHA256: ${{ fromJSON('{"macos-latest":"19e6ed637221f4dfd46a46e978ec4c509c386b522d746db2cd6762b217478111","ubuntu-latest":"416d0f84a3dbb321a8b2d8f0997b1a0a6e915babe79ee76fa6e4d2bd1e1c5178","windows-latest":"f0369d9657dbe47a1b8b6ff4e308c5958a4813b405d4e32ae9d81b3f2b3d8251"}')[matrix.os] }}
+      ARCHIVE: ${{ matrix.os == 'windows-latest' && 'zip' || 'tar.gz' }}
       KOPIA_CHECK_FOR_UPDATES: "false"
       CARREL_REQUIRE_KOPIA: "1"
     steps:
