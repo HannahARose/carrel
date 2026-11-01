@@ -178,6 +178,9 @@ pub struct RestructureScore {
     pub findability_gain: Option<f64>,
     /// Why the findability test didn't run, if it didn't.
     pub untested: Option<String>,
+    /// Each change it proposed, in words, with the items it moves by file name.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub changed: Vec<String>,
     /// Groups worth looking at that it left out, each as what it would have done and why
     /// not.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -252,6 +255,11 @@ pub fn score(
         }),
         findability,
         untested: assessment.and_then(|a| a.untested.clone()),
+        changed: proposal
+            .changes
+            .iter()
+            .map(|c| describe_change(c, files))
+            .collect(),
         held_back: assessment.map_or_else(Vec::new, |a| {
             a.held_back
                 .iter()
@@ -259,6 +267,31 @@ pub fn score(
                 .collect()
         }),
         seconds,
+    }
+}
+
+/// `change` in words, with the items it moves named by file.
+fn describe_change(
+    change: &crate::restructure::ProposedChange,
+    files: &BTreeMap<Id, String>,
+) -> String {
+    let what = match &change.change {
+        Edit::CreateCollection { path, .. } => format!("create {path}"),
+        Edit::MoveItems { to } => format!("move to {to}"),
+        Edit::MergeCollection { from, into } => format!("merge {from} into {into}"),
+        Edit::RenameCollection { from, to } => format!("rename {from} to {to}"),
+        Edit::RewriteDesign { collection, .. } => format!("rewrite {collection}'s design"),
+        other => format!("{other:?}"),
+    };
+    let items: Vec<&str> = change
+        .items
+        .iter()
+        .filter_map(|t| files.get(&t.id).map(String::as_str))
+        .collect();
+    if items.is_empty() {
+        what
+    } else {
+        format!("{what}: {}", items.join(", "))
     }
 }
 
