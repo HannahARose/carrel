@@ -634,6 +634,17 @@ enum DiscoverAction {
         #[arg(long, value_name = "DATE")]
         to: Option<String>,
     },
+    /// The tag and link graph: which collections connect and why, through the tags their
+    /// items share, the links between them and the days they were worked on together,
+    /// strongest first.
+    Graph {
+        /// List the strongest connections between items in different collections instead.
+        #[arg(long)]
+        items: bool,
+        /// List at most this many connections.
+        #[arg(short = 'n', long, value_name = "COUNT", default_value_t = 10)]
+        limit: usize,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -1176,6 +1187,7 @@ fn discover_command(
         DiscoverAction::Activity { from, to } => {
             discover::activity(archive, from.as_deref(), to.as_deref())
         }
+        DiscoverAction::Graph { items, limit } => discover::graph(archive, items, limit),
     }
 }
 
