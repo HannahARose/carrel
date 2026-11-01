@@ -288,6 +288,7 @@ const HELP_ROWS: &[(&str, &str)] = &[
         "z",
         "unpack a zip when it's approved, or keep it compressed (Review)",
     ),
+    ("d", "draft again with the models here now (Review)"),
     (
         "Space  A",
         "mark several; approve all high-confidence (Review)",
@@ -592,6 +593,9 @@ fn draw_review(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
                     .and_then(|v| v.as_str().map(str::to_owned))
                     .unwrap_or_default(),
             );
+        }
+        if carrel_core::ingest::redraft::wants_redraft(entry) {
+            flags.push("draft again?".into());
         }
         if entry.duplicate_of.is_some() {
             flags.push("duplicate".into());

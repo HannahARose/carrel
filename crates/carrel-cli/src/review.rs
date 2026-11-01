@@ -60,6 +60,9 @@ pub fn list(archive: Option<&Path>, all: bool) -> Result<Report, Failure> {
                 Some(Choice::Ask) => flags.push("expand?".into()),
                 None => {}
             }
+            if carrel_core::ingest::redraft::wants_redraft(entry) {
+                flags.push("draft again?".into());
+            }
             if entry.duplicate_of.is_some() {
                 flags.push("duplicate".into());
             } else if !entry.likely_duplicates.is_empty() {
@@ -239,6 +242,14 @@ pub(crate) fn detail(archive: Option<&Path>, id: &str, compare: bool) -> Result<
         for problem in &entry.problems {
             writeln!(text, "  {}: {}", problem.stage, problem.message).unwrap();
         }
+    }
+    if carrel_core::ingest::redraft::wants_redraft(&entry) {
+        writeln!(
+            text,
+            "\nDraft it again with the models here now: `carrel review redraft {}`",
+            short_id(entry.id)
+        )
+        .unwrap();
     }
     let mut json = serde_json::to_value(&entry).unwrap_or(Value::Null);
     if let Value::Object(map) = &mut json {

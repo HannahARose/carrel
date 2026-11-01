@@ -293,6 +293,8 @@ pub enum Effect {
     },
     /// Reject these proposals.
     Reject(Vec<Id>),
+    /// Draft these proposals again with the models here now.
+    Redraft(Vec<Id>),
     /// Expand these compressed files when they're approved, or keep them compressed.
     Compressed {
         /// The proposals.
@@ -816,7 +818,15 @@ impl App {
             return keys;
         }
         // The decisions need the room; the screen keys are in ? help.
-        let mut keys = vec![
+        let mut keys = Vec::new();
+        if self
+            .queue
+            .get(self.chosen)
+            .is_some_and(carrel_core::ingest::redraft::wants_redraft)
+        {
+            keys.push(("d", "draft again"));
+        }
+        keys.extend([
             ("a", "approve"),
             ("h", "hold"),
             ("m", "move"),
@@ -827,7 +837,7 @@ impl App {
             ("A", "all high"),
             ("?", "help"),
             ("q", "quit"),
-        ];
+        ]);
         if let Some(plan) = self
             .queue
             .get(self.chosen)
