@@ -122,7 +122,7 @@ When a card is wrong, say what's wrong: `c` on a proposal in Review or on an ite
 
 - **Narrow or broad.** "It's from 2019, not 2025" changes the date. "This is a picture of Lake Annecy, not Geneva" changes what the item is, so the title, summary and tags follow, and the item is routed again: a proposal moves, and a filed item is refiled.
 - **You see it first.** Each change is shown before and after, with the values you stated marked "(yours)". Nothing is saved until you agree.
-- **Or edit it yourself:** `e` in Browse, or `carrel edit ITEM`, opens the card's fields in your editor, the same way `e` does for a proposal in Review. Delete a line to clear it. `E`, or `carrel edit ITEM --body`, opens its body instead, for notes of your own; Carrel's sections, such as the history, stay as they are.
+- **Or edit it yourself:** `e` in Browse, or `carrel edit ITEM`, opens the card's fields in your editor, the same way `e` does for a proposal in Review. Delete a line to clear it. `E`, or `carrel edit ITEM --body`, opens its body instead, for notes of your own; Carrel's sections, such as the history, stay as they are. If the body is saved another way while you're editing it (in the app, on another device, or a new history entry), your edit is saved beside what changed, and nothing is overwritten: when both changed the same lines, you're shown both, to tidy and save, or to keep the card as it is.
 - **Exact fixes without a model:** lines like `created: 2019-03-31`, `tags: +housing -bank`, `sensitivity: personal`, `collection: Home` or `title: …` are applied as written.
 - **Your word goes, with one safeguard.** You can lower the sensitivity, choose any collection, and set any field. An item where a rule found a card number, account number, key, password or recovery codes stays at least sensitive.
 - **It sticks.** Fields you stated outright stop being marked as model-written, so later model work never overwrites them. Fields the model worked out from a broad correction stay model-written, but the correction is kept with the card, so a later re-check can't undo it. Each correction is one change in history, with your words, and `carrel undo` reverses it.
@@ -349,7 +349,7 @@ Search finds what you ask for. Discovery shows you the archive itself, so you co
 
 In the interactive mode, `D` opens the **Discover** screen, with a key for each view: `d` on this day, `w` wander (`Space` takes the next step, `n` starts another walk, `o` opens the item in Browse; the item's preview is beside it where the terminal draws one), `t` the timeline (`p` changes between months, days and years), `m` the archive map as a sized tree, `h` activity as a block heatmap, and `g` the graph's strongest connections, as `carrel discover graph` lists them (`c` switches between collections and items). Status shows the resurfaced collection, and showing an item in Browse counts as opening its collection.
 
-In the Mac app, the views are in the sidebar's **Discover** section: wander with each item's preview, the archive map as a treemap and activity as a heatmap, and Status's **Not Opened in a While** (see [The Mac app](mac-app.md#discover)).
+In the Mac app, the views are in the sidebar's **Discover** section: wander with each item's preview, the archive map as a treemap, activity as a heatmap, **Connections**, the graph drawn as collections round a circle with a line between two as thick as their ties, and Status's **Not Opened in a While** (see [The Mac app](mac-app.md#discover)).
 
 Which collections you opened, and your last walk, are kept on this device (see [What Carrel keeps on this device](#what-carrel-keeps-on-this-device)), never in the archive: looking around never changes it. A collection this device has never opened counts as last seen when something in it was last filed or worked on.
 
@@ -403,21 +403,26 @@ Every change Carrel makes to the archive is recorded: filing a batch, renaming, 
 - **History** (`6`) or `carrel log` lists changes, newest first.
 - `u` on a change, or `carrel undo CHANGE`, reverses it with a new change: files it moved go back, and cards and documents return to how they were. The change that created the history can't be undone.
 - Changes the librarian made on its own are marked **by the librarian**; `carrel undo --librarian SINCE` undoes them all together (see [What the librarian may change](#what-the-librarian-may-change)). The crawler's are marked **by the crawler**, and `carrel crawl undo SINCE` undoes them (see [The crawler](#the-crawler)).
+- A restructure, a tag proposal approved, or a collection's eagerness set is one change too, undone the same way (see [Reorganizing the archive](#reorganizing-the-archive)).
 - Rejecting a proposal isn't a change to the archive, so it isn't undone this way; ingest the file again instead.
 
-### Tidying tags
+### Writing safely
 
-Over time an archive's tags drift: `receipt` on some cards and `receipts` on others, a `photo` that's sometimes `Photo`, one tag covering two things that have nothing to do with each other, or a tag used once and never again. `carrel restructure tags` proposes tidying them, with no files moved:
+Only one program changes an archive at a time: it holds the **writer lock** (`_System/writer.lock`) while it writes, and `carrel status` shows who holds it. A lock file is only safe while one device uses the archive, so Carrel warns when the archive is in iCloud Drive, Dropbox, OneDrive or Google Drive. Syncing between devices comes with the Mac app's CloudKit lock (v0.9).
 
-- **Merging** tags that mean the same thing: capitals and punctuation, plurals, near spellings whose items are close in meaning (`colour` and `color`), and tags the meaning index puts very close that rarely share an item. The merged tag is the one the vocabularies define, else the one used most.
-- **Splitting** a tag whose items fall into groups far apart in meaning and mostly in different collections, each group getting a narrower tag (`apple` into `apple-recipes` and `apple-hardware`), named after a tag or collection that sets the group apart.
-- **Retiring** a tag used once or twice that no vocabulary defines.
+### Names that work everywhere
 
-Each change says why and which items it changes. **Tags you wrote yourself stay as you wrote them**, and so do those of checked-out items, until they're returned; the proposal lists each such item and says why it's left alone. Without the meaning index (`carrel index status`), only tags written differently and rare tags are proposed.
+`carrel status` lists names that won't work on every system: characters Windows forbids (`: ? * |`), reserved names like `CON`, trailing dots or spaces, or two names that differ only in case. `carrel rename ITEM` renames an item and its card to the suggested portable name, and updates links to it; give a name after it to choose your own. In Browse, `r` on an item does the same, starting from the suggested name, and asks first. Ingest files new items under portable names automatically.
 
-Approve it all with `carrel restructure tags approve`, part of it with `--only 1,3` (the changes' numbers), or none with `carrel restructure tags reject`. Approving rewrites the cards and the vocabularies in `ARCHIVE.md` and each `_collection.md` (noting it in the collection's changelog) as **one change in History**, so `carrel undo` puts everything back at once. A vocabulary keeps a tag that items left alone still use. Changes are applied to the archive as it is when you approve: a card you've changed since is left alone and reported.
+## Reorganizing the archive
 
-The proposal waits in `_System/queue/proposals/` until you decide, and proposing again replaces it. In the interactive mode, `f` on Review goes to the restructure proposals, where `t` proposes tag changes (see [Reorganizing a section](#reorganizing-a-section) for the keys).
+An archive's shape drifts as it grows, and Carrel can propose a better one. Every reorganization is a **proposal** you review, approving all of it, part of it or none, and nothing moves until you do. Each is **one change in History**, undone as a unit.
+
+- **[Reorganizing a section](#reorganizing-a-section):** new subcollections, collections renamed or merged, items moved between branches, for one collection and everything in it, or the whole archive.
+- **[Tidying tags](#tidying-tags):** tags merged, split or retired, with no files moved.
+- **[How eager Carrel is to rearrange](#how-eager-carrel-is-to-rearrange):** how much better a new shape must be before it's proposed, for the whole archive or one collection.
+- **[The crawler](#the-crawler):** a background pass that keeps checking where items are filed and how good their cards are.
+- **Where to start:** the **Structure** part of Status (`carrel status`, the interactive mode's and the app's Status) names the signs that a section could be better arranged (see [How Carrel chooses a collection](#how-carrel-chooses-a-collection)), and **the graph** in Discover shows which collections are tied together, and by what (see [Discovering the archive](#discovering-the-archive)). Neither changes anything.
 
 ### Reorganizing a section
 
@@ -432,6 +437,24 @@ Approve it all with `carrel restructure approve`, or part of it with `--only 1,2
 
 In the interactive mode, `f` on Review (twice from the proposals to file) shows the restructure proposals waiting, tag proposals too. The chosen one's changes are beside the archive as it is now and as they would leave it. `↑↓` choose a change, with its reason and what it touches below, `Space` leaves one out (the after side follows), `a` approves the rest, `x` rejects the proposal, and `[` `]` go to another. `p` proposes a new shape for the whole archive, and on a collection in Browse, `R` proposes one for it.
 
+In the Mac app, the **Restructure** screen lists the proposals waiting. **Propose Changes…** in its toolbar looks over a collection or the whole archive, and **Propose Changes Here** in a collection's inspector looks over that one; when nothing is worth proposing, the bar at the bottom says why. Choose a proposal to see the archive before and after side by side, how it was judged, and each change with its reason and how invasive it is (one dot to five). Untick the changes to leave out, then **Approve Chosen**, or **Approve All**, or **Reject** (see [The Mac app](mac-app.md#restructure)).
+
+**Undoing a restructure:** it's one change in History, wherever it was approved. `carrel undo CHANGE`, `u` on it in the interactive mode's History, or **Undo Change…** in the app's History puts every item, folder, design document, tag and link back as it was. Changes you've made since are kept; if one touched the same lines of a card or design document, the undo says which and changes nothing.
+
+### Tidying tags
+
+Over time an archive's tags drift: `receipt` on some cards and `receipts` on others, a `photo` that's sometimes `Photo`, one tag covering two things that have nothing to do with each other, or a tag used once and never again. `carrel restructure tags` proposes tidying them, with no files moved:
+
+- **Merging** tags that mean the same thing: capitals and punctuation, plurals, near spellings whose items are close in meaning (`colour` and `color`), and tags the meaning index puts very close that rarely share an item. The merged tag is the one the vocabularies define, else the one used most.
+- **Splitting** a tag whose items fall into groups far apart in meaning and mostly in different collections, each group getting a narrower tag (`apple` into `apple-recipes` and `apple-hardware`), named after a tag or collection that sets the group apart.
+- **Retiring** a tag used once or twice that no vocabulary defines.
+
+Each change says why and which items it changes. **Tags you wrote yourself stay as you wrote them**, and so do those of checked-out items, until they're returned; the proposal lists each such item and says why it's left alone. Without the meaning index (`carrel index status`), only tags written differently and rare tags are proposed.
+
+Approve it all with `carrel restructure tags approve`, part of it with `--only 1,3` (the changes' numbers), or none with `carrel restructure tags reject`. Approving rewrites the cards and the vocabularies in `ARCHIVE.md` and each `_collection.md` (noting it in the collection's changelog) as **one change in History**, so `carrel undo` puts everything back at once. A vocabulary keeps a tag that items left alone still use. Changes are applied to the archive as it is when you approve: a card you've changed since is left alone and reported.
+
+The proposal waits in `_System/queue/proposals/` until you decide, and proposing again replaces it. In the interactive mode, `f` on Review goes to the restructure proposals, where `t` proposes tag changes (see [Reorganizing a section](#reorganizing-a-section) for the keys). In the Mac app, **Propose Tag Changes** on the Restructure screen does the same, and a tag proposal is approved all or in part like a section's.
+
 ### How eager Carrel is to rearrange
 
 Some people want the organization refined even when that means moving a lot; others have learned where things are and would rather it stayed put. `restructure.eagerness` says which:
@@ -443,7 +466,7 @@ Some people want the organization refined even when that means moving a lot; oth
 | Extra cost in a section restructured recently | heavy (0.5), for a year | moderate (0.2), for 90 days | light (0.05), for 30 days |
 | Items moved between branches per proposal | at most 10 | as many as the gain justifies | as many as the gain justifies |
 
-Set it for the archive with `carrel settings set restructure.eagerness settled`, or for one collection and everything in it with `carrel restructure eagerness Reading settled` (stored in its `_collection.md`, so a collection you know by heart can stay still while a messy one gets tidied; `default` clears it). The numbers behind the levels are settings too (`restructure.margin`, `restructure.stability_penalty`, `restructure.stability_days`, `restructure.move_budget`; `default` puts one back to its level's). Eagerness changes how readily Carrel proposes, never whether it asks: every restructure waits for your approval, and even Eager won't propose a shape the findability test finds harder to navigate. In the interactive mode, it's in Settings for the archive, and `E` on a collection in Browse sets the collection's own.
+Set it for the archive with `carrel settings set restructure.eagerness settled`, or for one collection and everything in it with `carrel restructure eagerness Reading settled` (stored in its `_collection.md`, so a collection you know by heart can stay still while a messy one gets tidied; `default` clears it). The numbers behind the levels are settings too (`restructure.margin`, `restructure.stability_penalty`, `restructure.stability_days`, `restructure.move_budget`; `default` puts one back to its level's). Eagerness changes how readily Carrel proposes, never whether it asks: every restructure waits for your approval, and even Eager won't propose a shape the findability test finds harder to navigate. In the interactive mode, it's in Settings for the archive, and `E` on a collection in Browse sets the collection's own. In the Mac app, it's in **Settings → General** for the archive, and under **Eagerness** in a collection's inspector (in Browse, with no item chosen) for the collection: **As the archive** follows the archive's setting, or a collection it's inside that sets its own. `carrel restructure eagerness Reading` shows which applies, and where it comes from. Setting it is a change in History, so it can be undone.
 
 ### The crawler
 
@@ -455,15 +478,9 @@ Filing puts each item where it fits best on the day, with whatever model the dev
 - **Its pace** (`crawler.pace`: `off`, `gentle`, `steady` by default, or `brisk`) is how much of the device's idle time it uses. It runs in `carrel agent` and after the background worker, only when the device has been idle a while and is on power, and stops as soon as you use it or add something to the queue. `restructure.eagerness` doesn't slow it: it gathers the evidence any reorganization needs.
 - **What it learns feeds the structure signals:** a collection whose items keep not fitting shows on Status, as a sign it may want restructuring.
 
-`carrel crawl` shows how far it has got, and `carrel crawl run` checks a few items now. In the interactive mode, `f` on Review shows the crawler's findings, with how far it has got above them: `a` approves one (or those marked with `Space`), `x` rejects it, `r` checks a few items now and `u` undoes the changes it made on its own this week. Its changes are on Status and in History, and its settings in Settings. The crawler in the Mac app comes later in v0.7 (#327).
+`carrel crawl` shows how far it has got, and `carrel crawl run` checks a few items now. In the interactive mode, `f` on Review shows the crawler's findings, with how far it has got above them: `a` approves one (or those marked with `Space`), `x` rejects it, `r` checks a few items now and `u` undoes the changes it made on its own this week. Its changes are on Status and in History, and its settings in Settings.
 
-### Writing safely
-
-Only one program changes an archive at a time: it holds the **writer lock** (`_System/writer.lock`) while it writes, and `carrel status` shows who holds it. A lock file is only safe while one device uses the archive, so Carrel warns when the archive is in iCloud Drive, Dropbox, OneDrive or Google Drive. Syncing between devices comes with the Mac app's CloudKit lock (v0.9).
-
-### Names that work everywhere
-
-`carrel status` lists names that won't work on every system: characters Windows forbids (`: ? * |`), reserved names like `CON`, trailing dots or spaces, or two names that differ only in case. `carrel rename ITEM` renames an item and its card to the suggested portable name, and updates links to it; give a name after it to choose your own. In Browse, `r` on an item does the same, starting from the suggested name, and asks first. Ingest files new items under portable names automatically.
+In the Mac app, **The Crawler** on Status says how far it has got, with **Check Some Now**, and with `crawler.changes` on, its changes this week and **Undo All of Them…**. Its findings are in Review, under **From the Crawler** (`f`): `a` approves the chosen ones, `r` rejects them. History marks its changes **by the crawler**, and the background agent lets it check a few items when the Mac is idle and on power, saying so in its menu bar list (see [The Mac app](mac-app.md#the-background-agent)). Its settings are in **Settings → General**.
 
 ## Backups
 
@@ -519,6 +536,10 @@ The Settings screen (`8`), or `carrel settings`, shows two kinds:
 | `questions.skip_days` | How many days a skipped question rests before it's asked again | `14` |
 | `librarian.changes` | `on` lets the librarian refile items, correct cards, rename items and create collections on its own when it's sure, each change undoable; `off` leaves every suggestion to you (see [What the librarian may change](#what-the-librarian-may-change)) | `off` |
 | `librarian.confidence` | How sure the librarian must be, from 0.5 to 1, to make a change on its own | `0.9` |
+| `restructure.eagerness` | How readily Carrel proposes reorganizing: `settled`, `balanced` or `eager`; a collection can set its own (see [How eager Carrel is to rearrange](#how-eager-carrel-is-to-rearrange)) | `balanced` |
+| `restructure.margin`, `restructure.stability_penalty`, `restructure.stability_days`, `restructure.move_budget` | The numbers behind the eagerness levels, to tune them directly; `default` puts one back to its level's | the level's |
+| `crawler.changes` | `on` lets the crawler make the refiles and corrections it's sure of, each undoable; `off` leaves them in Review (see [The crawler](#the-crawler)) | `off` |
+| `crawler.pace` | How much of the device's idle time the crawler uses: `off`, `gentle`, `steady` or `brisk` | `steady` |
 | `outside_edits` | `flag` changes made outside Carrel for review, `reconcile` them as edits, or treat them as `drift` to undo. Stored now; it takes effect when Carrel starts watching for outside changes, in a later version | `flag` |
 
 Changing an archive setting is a change in history, so it can be undone.

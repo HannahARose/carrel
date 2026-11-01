@@ -63,17 +63,17 @@ private func slowProvider(in folder: URL) throws -> URL {
             }
         }
 
-        func started() throws -> Int {
-            try String(contentsOf: starts, encoding: .utf8).split(separator: "\n").count
-        }
         let first = try await showSettings()
-        #expect(try started() == 1)
-        // Showing it again starts nothing: counted, not timed, since a busy machine can be
-        // slow for other reasons.
-        for showing in 2...6 {
-            let took = try await showSettings()
-            print("Settings shown first in \(first), then in \(took)")
-            #expect(try started() == 1, "the provider was started again for showing \(showing)")
+        var again: [Duration] = []
+        for _ in 0..<5 {
+            again.append(try await showSettings())
         }
+        let slowest = again.max() ?? .zero
+        // The timings are printed, not checked: a busy CI runner can take longer than a provider
+        // start without starting one. That the provider started once is what matters.
+        print("Settings shown first in \(first), then at worst in \(slowest)")
+        let started = try String(contentsOf: starts, encoding: .utf8)
+            .split(separator: "\n").count
+        #expect(started == 1, "the provider was started \(started) times")
     }
 }

@@ -149,6 +149,15 @@ pub enum EditOutcome {
         /// What's wrong, in words.
         problems: Vec<String>,
     },
+    /// The card's body was saved another way while it was being edited, and the two changed
+    /// the same lines; nothing was written. The app offers to reload `current` or to keep
+    /// `both`, saved again against `current`.
+    BodyChanged {
+        /// The body as it is now.
+        current: String,
+        /// Both versions together, each changed line from each.
+        both: String,
+    },
 }
 
 /// A history entry on a card (FORMAT.md §6.8): a work session, a return, or the owner's own.
