@@ -1139,6 +1139,7 @@ pub fn apply_draft_fields(
     entry.proposed_tags = checked.new_tags;
     entry.card.dates = checked.dates;
     entry.card.sensitivity = checked.sensitivity;
+    crate::ingest::redraft::note_owner_fields(entry, &changed);
     // Fields the owner wrote are no longer a model's.
     if let Some(generated) = &mut entry.card.generated {
         generated.fields.retain(|f| !changed.contains(&f.as_str()));
@@ -1199,6 +1200,7 @@ pub fn correct_proposal(
             .to_string(),
     );
     let changed = crate::correct::apply(&mut fields, worked, words, &at);
+    crate::ingest::redraft::note_owner_fields(&mut entry, &changed);
     let kept_sensitive = fields.sensitivity < Sensitivity::Sensitive
         && entry
             .sensitivity_reasons

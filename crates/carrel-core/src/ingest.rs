@@ -9,6 +9,7 @@ pub mod card;
 pub mod filing;
 pub mod likely;
 pub mod questions;
+pub mod redraft;
 pub mod route;
 pub mod run;
 pub mod sensitivity;
@@ -660,6 +661,7 @@ impl Batch<'_> {
             problems,
             attempts,
             sensitivity_reasons: sensitivity.reasons.clone(),
+            owner_fields: Vec::new(),
             compressed,
             extra: crate::card::Extra::new(),
         })

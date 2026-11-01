@@ -644,6 +644,7 @@ A device only ever writes to its own inbox folder. The writer applies inbox file
 | `problems` | What validation or the owner needs to settle, as `{"stage", "message"}` objects |
 | `attempts` | Every provider call made for the entry: `stage`, `provider`, `offer`, `result` (`ok`, `unsupported`, `unavailable`, `declined` (a model's safety refusal) or `failed`) and an optional `message` |
 | `sensitivity_reasons` | Why `card.sensitivity` is `sensitive` or `restricted`, in words that never quote what was found; absent otherwise |
+| `owner_fields` | Optional. The card fields the owner set by editing or correcting the entry (`title`, `summary`, `tags`, `dates`, `sensitivity`), which drafting the entry again keeps |
 | `desk_card` | Optional. For a desk item being archived (§9.4), its desk card's absolute path: the filed card keeps that card's `id` and body |
 | `compressed` | Optional, for a compressed file. `format` (`zip`, `tar`, `tar-gz`, `tar-bz2`, `tar-xz`, `tar-zst`, `gz`, `bz2`, `xz`, `zst`, `7z` or `rar`); `action`: `expand` (on approval, what it holds is filed in its place, with `expanded_from` on the card, and the compressed file goes to the system Trash), `keep` or `ask` (the entry needs the owner); `reason` for keeping or asking; `by_owner` when the owner chose the action, which lifts the size limits; and when known, what expanding makes: `files`, `size`, `kind`, `sealed` and `name` |
 

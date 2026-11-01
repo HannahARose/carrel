@@ -212,6 +212,10 @@ pub struct ReviewEntry {
     /// Why the card's sensitivity is what it is, when it's sensitive or restricted.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sensitivity_reasons: Vec<String>,
+    /// The card fields the owner set by editing or correcting the proposal, such as `title`,
+    /// which drafting it again keeps.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub owner_fields: Vec<String>,
     /// For a compressed file, whether it's expanded on approval or kept, and why
     /// (`docs/design/compressed.md`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
