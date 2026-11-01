@@ -21,12 +21,15 @@ pub struct Input {
 /// What a typed line is for.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InputPurpose {
-    /// The answer to a term question: what the term means.
+    /// The answer to a question, in the owner's words: what a term means, what an item is,
+    /// or for a sender, yes, no or a collection.
     Answer {
         /// The question.
         id: Id,
         /// The question in words, shown above the line.
         question: String,
+        /// What it asks.
+        kind: QuestionKind,
     },
     /// What to search for: words, and filters such as `tag:receipts`.
     Search,
@@ -105,6 +108,14 @@ impl Input {
     /// What to type, for the help line.
     pub fn prompt(&self) -> &'static str {
         match &self.purpose {
+            InputPurpose::Answer {
+                kind: QuestionKind::Sender,
+                ..
+            } => "yes, no, or the collection's path",
+            InputPurpose::Answer {
+                kind: QuestionKind::Item,
+                ..
+            } => "your answer; you see what it changes before it's saved",
             InputPurpose::Answer { .. } => "what it is",
             InputPurpose::Search => "words and filters",
             InputPurpose::Ingest => "paths to ingest (or drop files here)",
@@ -134,10 +145,11 @@ impl Input {
 }
 
 impl App {
-    /// Keeps the questions, most items first, and the choice among them.
-    pub(super) fn load_questions(&mut self, mut questions: Vec<QuestionEntry>) {
-        questions.sort_by_key(|q| std::cmp::Reverse(q.items.len()));
-        self.asked = questions;
+    /// Keeps the questions, ranked, and the choice among them.
+    pub(super) fn load_questions(&mut self, ranked: carrel_core::questions::rank::Ranked) {
+        self.asked_settles = ranked.open.iter().map(|w| w.settles).collect();
+        self.asked = ranked.open.into_iter().map(|w| w.question).collect();
+        self.resting = ranked.resting.len();
         self.asked_chosen = self.asked_chosen.min(self.asked.len().saturating_sub(1));
     }
 
@@ -155,32 +167,29 @@ impl App {
             .collect()
     }
 
-    /// Handles a key on the Questions screen.
+    /// Handles a key on the Questions screen: Enter answers in words (or picks a collection),
+    /// a number picks a suggestion, `s` skips and `d` dismisses.
     pub(super) fn questions_key(&mut self, key: KeyEvent) -> Handled {
-        if !matches!(key.code, KeyCode::Enter | KeyCode::Char('d')) {
-            return Handled::No;
-        }
+        let digit = match key.code {
+            KeyCode::Char(c @ '1'..='9') => c.to_digit(10).map(|d| d as usize),
+            KeyCode::Enter | KeyCode::Char('d' | 's') => None,
+            _ => return Handled::No,
+        };
         if let Some(busy) = &self.busy {
             self.message = Some(format!("Still busy: {busy}"));
             return Handled::Yes(None);
         }
-        let Some(question) = self.asked.get(self.asked_chosen) else {
+        let Some(question) = self.asked.get(self.asked_chosen).cloned() else {
             self.message = Some("No questions".into());
             return Handled::Yes(None);
         };
+        if let Some(n) = digit {
+            return Handled::Yes(self.pick(&question, n));
+        }
         Handled::Yes(match (key.code, question.kind) {
             (KeyCode::Char('d'), _) => Some(Effect::Dismiss(question.id)),
-            (_, QuestionKind::Term) => {
-                self.input = Some(Input {
-                    purpose: InputPurpose::Answer {
-                        id: question.id,
-                        question: question.question.clone(),
-                    },
-                    text: String::new(),
-                });
-                None
-            }
-            (_, QuestionKind::Collection) => {
+            (KeyCode::Char('s'), _) => Some(Effect::Skip(question.id)),
+            (_, QuestionKind::Collection | QuestionKind::Group) => {
                 self.picker = Some(Picker {
                     collections: question.choices.clone(),
                     filter: String::new(),
@@ -189,7 +198,97 @@ impl App {
                 });
                 None
             }
+            (_, kind) => {
+                self.input = Some(Input {
+                    purpose: InputPurpose::Answer {
+                        id: question.id,
+                        question: question.question.clone(),
+                        kind,
+                    },
+                    text: String::new(),
+                });
+                None
+            }
         })
+    }
+
+    /// Picks `question`'s suggestion `n`, counting from 1.
+    fn pick(&mut self, question: &QuestionEntry, n: usize) -> Option<Effect> {
+        let Some(suggestion) = n.checked_sub(1).and_then(|i| question.suggestions.get(i)) else {
+            self.message = Some(format!("There's no suggestion {n}"));
+            return None;
+        };
+        if suggestion.no_change {
+            return Some(Effect::Answer {
+                id: question.id,
+                answer: n.to_string(),
+                learn: false,
+            });
+        }
+        match question.kind {
+            QuestionKind::Item => self.answer_item(question, &suggestion.answer),
+            QuestionKind::Sender => {
+                self.confirm = Some(super::app::Confirm::Rule {
+                    id: question.id,
+                    answer: n.to_string(),
+                    subject: question.subject.clone(),
+                    path: suggestion.answer.clone(),
+                });
+                None
+            }
+            _ => Some(Effect::Answer {
+                id: question.id,
+                answer: n.to_string(),
+                learn: false,
+            }),
+        }
+    }
+
+    /// Answers the item `question` with `answer`, through the corrections pop-up.
+    fn answer_item(&mut self, question: &QuestionEntry, answer: &str) -> Option<Effect> {
+        use carrel_core::questions::answer::{Target, item_words, target};
+        let target = match target(question)? {
+            Target::Proposal(id) => Correcting::Proposal(id),
+            Target::Filed(id) => Correcting::Item(id.to_string()),
+        };
+        Some(Effect::Correction(super::app::Step::Work {
+            target,
+            words: item_words(question, answer),
+            answering: Some(question.id),
+        }))
+    }
+
+    /// Answers the question `id` with what the owner typed.
+    fn typed_answer(&mut self, id: Id, text: String) -> Option<Effect> {
+        let question = self.asked.iter().find(|q| q.id == id)?.clone();
+        match question.kind {
+            QuestionKind::Item => self.answer_item(&question, &text),
+            QuestionKind::Sender if !matches!(text.to_lowercase().as_str(), "no" | "n") => {
+                let path = if matches!(text.to_lowercase().as_str(), "yes" | "y") {
+                    question
+                        .suggestions
+                        .iter()
+                        .find(|s| s.new_collection)
+                        .map(|s| s.answer.clone())
+                        .or_else(|| question.choices.first().cloned())
+                        .unwrap_or_default()
+                } else {
+                    text.clone()
+                };
+                self.confirm = Some(super::app::Confirm::Rule {
+                    id,
+                    answer: text,
+                    subject: question.subject.clone(),
+                    path,
+                });
+                None
+            }
+            _ => Some(Effect::Answer {
+                id,
+                answer: text,
+                learn: false,
+            }),
+        }
     }
 
     /// Handles a key while a line is being typed.
@@ -212,7 +311,7 @@ impl App {
                 let text = input.text.trim().to_owned();
                 match input.purpose {
                     InputPurpose::Answer { id, .. } if !text.is_empty() => {
-                        return Some(Effect::Answer { id, answer: text });
+                        return self.typed_answer(id, text);
                     }
                     InputPurpose::Answer { .. } => {
                         self.message = Some("No answer given; the question still waits".into());
@@ -245,6 +344,7 @@ impl App {
                         return Some(Effect::Correction(super::app::Step::Work {
                             target,
                             words: text,
+                            answering: None,
                         }));
                     }
                     InputPurpose::BackupPassword { .. } => {

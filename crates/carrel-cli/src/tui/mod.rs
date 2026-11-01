@@ -266,7 +266,11 @@ type Preparing = Receiver<Result<crate::correct::Prepared, String>>;
 /// pop-up, and adding the fact it stated to the glossary.
 fn correction(app: &mut App, step: Step, preparing: &mut Option<Preparing>) {
     match step {
-        Step::Work { target, words } => {
+        Step::Work {
+            target,
+            words,
+            answering,
+        } => {
             // A model takes seconds, so it works in the background; the pop-up follows.
             let root = app.archive.root().to_owned();
             let (send, receive) = std::sync::mpsc::channel();
@@ -280,6 +284,10 @@ fn correction(app: &mut App, step: Step, preparing: &mut Option<Preparing>) {
                         screens::Correcting::Item(card) => {
                             crate::correct::prepare_filed(&archive, card, &words)
                         }
+                    })
+                    .map(|mut prepared| {
+                        prepared.answering = answering;
+                        prepared
                     });
                 let _ = send.send(result.map_err(|Failure(e)| e));
             });
@@ -414,13 +422,22 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
             finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
             return None;
         }
-        Effect::Answer { id, answer } => {
+        Effect::Answer { id, answer, learn } => {
             // A term's answer queues its items to be drafted again by the worker.
             let id = id.to_string();
+            let options = crate::questions::Options {
+                learn,
+                ..crate::questions::Options::default()
+            };
             (
                 "Answering…".into(),
-                Box::new(move || crate::questions::answer(Some(&root), &id, &[answer])),
+                Box::new(move || crate::questions::answer(Some(&root), &id, &[answer], options)),
             )
+        }
+        Effect::Skip(id) => {
+            let result = crate::questions::skip(Some(&root), &id.to_string());
+            finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
+            return None;
         }
         Effect::Decide {
             ids: chosen,

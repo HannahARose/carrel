@@ -701,6 +701,13 @@ pub fn ingest(
 ) -> Result<Ingested, ActionError> {
     let run = run_with_progress(archive, registry, paths, options, holder.device, progress)?;
     run.save(archive)?;
+    let new: Vec<crate::card::Id> = run.entries.iter().flatten().map(|e| e.id).collect();
+    let (open, _) = ReviewQueue::of(archive).list()?;
+    let senders: Vec<QuestionEntry> = crate::questions::about::senders_in(archive, &open)?
+        .into_iter()
+        .filter(|q| q.items.iter().any(|id| new.contains(id)))
+        .collect();
+    crate::questions::answer::raise(archive, senders)?;
     let chosen = run.filed_by_rule();
     let filed = if chosen.is_empty() {
         None

@@ -20,7 +20,7 @@ use crate::ingest::questions::ask;
 use crate::ingest::run::{Progress, Run, run_with_progress};
 use crate::ingest::{Candidate, IngestError, IntakeOptions, Skipped, plan};
 use crate::providers::Registry;
-use crate::questions::{QuestionEntry, QuestionQueue, mark_waiting};
+use crate::questions::QuestionEntry;
 use crate::review::{Queue, QueueEntry, ReviewEntry, ReviewError, ReviewQueue};
 
 /// The intake queue's folder, relative to the archive root.
@@ -383,8 +383,10 @@ fn missing(path: &Path) -> Option<String> {
 }
 
 /// Asks the questions the proposals `new` raise together with every open proposal: a question
-/// on a subject already asked gains the new proposals, and a new one is saved. Proposals newly
-/// named by a question are marked as waiting on it. Returns the questions saved.
+/// that says the same as one already asked merges into it, gaining the new proposals, and a new
+/// one is saved; a question the owner declined isn't asked again. Proposals newly named by a
+/// question are marked as waiting on it. Senders and projects that now recur enough to deserve
+/// their own collection are asked about too. Returns the questions saved.
 ///
 /// # Errors
 ///
@@ -393,47 +395,19 @@ pub fn ask_with_waiting(archive: &Archive, new: &[Id]) -> Result<Vec<QuestionEnt
     if new.is_empty() {
         return Ok(Vec::new());
     }
-    let reviews = ReviewQueue::of(archive);
-    let (open, _) = reviews.list()?;
-    let mut open: Vec<ReviewEntry> = open.into_iter().filter(|e| e.state.is_open()).collect();
+    let (open, _) = ReviewQueue::of(archive).list()?;
+    let open: Vec<ReviewEntry> = open.into_iter().filter(|e| e.state.is_open()).collect();
     let collections = archive.collections()?;
-    let asked = ask(archive, &collections, &Glossary::of(archive), &open);
-    let questions = QuestionQueue::of(archive);
-    let (existing, _) = questions.list()?;
-    let mut saved = Vec::new();
-    for question in asked
+    let mut asked: Vec<QuestionEntry> = ask(archive, &collections, &Glossary::of(archive), &open)
         .into_iter()
         .filter(|q| q.items.iter().any(|id| new.contains(id)))
-    {
-        let same = existing
-            .iter()
-            .find(|e| e.kind == question.kind && e.subject.eq_ignore_ascii_case(&question.subject));
-        let (question, newly) = if let Some(earlier) = same {
-            let mut merged = earlier.clone();
-            let newly: Vec<Id> = question
-                .items
-                .iter()
-                .filter(|id| !earlier.items.contains(id))
-                .copied()
-                .collect();
-            merged.items.extend(&newly);
-            (merged, newly)
-        } else {
-            let newly = question.items.clone();
-            (question, newly)
-        };
-        if newly.is_empty() {
-            continue;
-        }
-        questions.save(&question)?;
-        // In place, so a proposal named by two questions keeps both marks.
-        for entry in open.iter_mut().filter(|e| newly.contains(&e.id)) {
-            mark_waiting(entry, std::slice::from_ref(&question));
-            reviews.save(entry)?;
-        }
-        saved.push(question);
-    }
-    Ok(saved)
+        .collect();
+    asked.extend(
+        crate::questions::about::senders_in(archive, &open)?
+            .into_iter()
+            .filter(|q| q.items.iter().any(|id| new.contains(id))),
+    );
+    Ok(crate::questions::answer::raise(archive, asked)?)
 }
 
 fn now() -> DateOrTime {
