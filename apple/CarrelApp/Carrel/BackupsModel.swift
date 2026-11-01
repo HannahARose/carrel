@@ -54,8 +54,11 @@ final class BackupsModel {
     /// The password, when it's kept in memory rather than the keychain.
     private var password: String?
 
-    /// How much of the files' contents Verify reads back, as `carrel backup verify` does.
-    static let verifyPercent: UInt8 = 1
+    /// How much of the files' contents Verify reads back unless the owner chooses, as
+    /// `carrel backup verify` does without `--percent`.
+    static let defaultVerifyPercent: UInt8 = 1
+    /// Whether the owner is choosing how much Verify reads back.
+    var choosingVerify = false
 
     init(archive: ArchiveModel, passwords: BackupPasswords = .keychain) {
         self.archive = archive
@@ -139,25 +142,30 @@ final class BackupsModel {
         if taken.commit != nil { selection = snapshots.first?.id }
     }
 
-    /// Checks every snapshot's structure, reading back some of the files.
-    func verify() async {
+    /// Checks every snapshot's structure, reading back `percent`% of the files (from 1 to
+    /// 100), as `carrel backup verify --percent` does.
+    func verify(percent: UInt8 = defaultVerifyPercent) async {
+        choosingVerify = false
+        let percent = min(max(percent, 1), 100)
         let password = password
         guard
             let found = await run(
                 "Checking the backups…",
-                { try await $0.verifyBackups(percent: Self.verifyPercent, password: password) })
+                { try await $0.verifyBackups(percent: percent, password: password) })
         else { return }
-        report = "The backups check out (reading back \(Self.verifyPercent)% of files): \(found)"
+        report = "The backups check out (reading back \(percent)% of files): \(found)"
     }
 
-    /// Restores the item `id` as it was in the chosen snapshot, or the latest, into a new
-    /// folder beside the archive.
-    func restore(item id: String) async {
+    /// Restores the item `id` as it was in the chosen snapshot, or the latest, as `place`,
+    /// which mustn't exist yet, or into a new folder beside the archive when it's `nil`, as
+    /// `carrel backup restore --to` does.
+    func restore(item id: String, to place: URL? = nil) async {
         let password = password
         let at = selection
         guard
             let done = await run(
-                "Restoring…", { try await $0.restore(item: id, at: at, password: password) })
+                "Restoring…",
+                { try await $0.restore(item: id, at: at, to: place, password: password) })
         else { return }
         restored = URL(filePath: done.to)
         report =

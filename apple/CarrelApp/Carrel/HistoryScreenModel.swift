@@ -1,5 +1,6 @@
-// What the History screen shows and does: every change, newest first, and undoing one after
-// saying what undoing restores and what it doesn't.
+// What the History screen shows and does: every change, newest first, a page at a time, or
+// only the librarian's (`carrel log --librarian`), and undoing one after saying what undoing
+// restores and what it doesn't.
 
 import CarrelKit
 import Foundation
@@ -53,8 +54,36 @@ final class HistoryScreenModel {
         self.didChange = didChange
     }
 
-    /// Every change, newest first.
-    var changes: [Change] { archive.history }
+    /// Whether only the changes the librarian made on its own are listed.
+    var librarianOnly = false
+
+    /// How many changes a page holds.
+    static let pageSize: UInt32 = 200
+
+    /// Every change read, newest first, or only the librarian's.
+    var changes: [Change] {
+        librarianOnly ? archive.history.filter { $0.agent == "librarian" } : archive.history
+    }
+
+    /// Whether there may be older changes than those read.
+    var canLoadMore: Bool {
+        archive.historyLimit.map { UInt32(archive.history.count) >= $0 } ?? false
+    }
+
+    /// How many changes were read, for the list's footer.
+    var readCount: Int { archive.history.count }
+
+    /// Reads the next page of older changes.
+    func loadMore() async {
+        archive.historyLimit = (archive.historyLimit ?? 0) + Self.pageSize
+        await refresh()
+    }
+
+    /// Reads every change, however many.
+    func loadAll() async {
+        archive.historyLimit = nil
+        await refresh()
+    }
 
     var selected: Change? {
         selectedID.flatMap { id in changes.first { $0.id == id } }

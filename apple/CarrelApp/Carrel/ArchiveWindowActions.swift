@@ -54,6 +54,25 @@ struct ArchiveWindowActions: ViewModifier {
             } message: { report in
                 if let details = report.details { Text(details) }
             }
+            .confirmationDialog(
+                "How should the folders go in?",
+                isPresented: Binding(
+                    get: { model.intake?.choosingHow != nil },
+                    set: { if !$0 { model.intake?.choosingHow = nil } }),
+                presenting: model.intake?.choosingHow
+            ) { urls in
+                Button("Let Carrel Decide") { Task { await model.intake?.add(urls, as: .decide) } }
+                Button("Each Entry as Its Own Item") {
+                    Task { await model.intake?.add(urls, as: .each) }
+                }
+                Button("Each Folder as One Item") {
+                    Task { await model.intake?.add(urls, as: .whole) }
+                }
+            } message: { _ in
+                Text(
+                    "Carrel takes a folder as one item unless its name suggests a pile, such as Downloads, whose entries go in one by one."
+                )
+            }
             .task(id: model.intake.map(ObjectIdentifier.init)) {
                 await model.intake?.watch()
             }

@@ -1,0 +1,148 @@
+// What the app gained to match the command line and the interactive mode (#343): the intake
+// queue's list and folder choice, History's pages and librarian filter, a card's body edited,
+// related items, Activity's range and wandering from an item. Each test has its own copy of
+// the sample archive with a configuration folder of its own.
+
+import CarrelKit
+import XCTest
+
+@testable import Carrel
+
+final class IntakeQueueListTests: SampleCopyTestCase {
+    private func inbox(_ names: [String]) throws -> URL {
+        let inbox = folder.appending(path: "Inbox")
+        try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+        for name in names {
+            try "\(name)\n".write(
+                to: inbox.appending(path: name), atomically: true, encoding: .utf8)
+        }
+        return inbox
+    }
+
+    func testAFolderAsksHowItGoesInAndEachEntryCanBeChosen() async throws {
+        let intake = IntakeModel(archive: archive)
+        let inbox = try inbox(["one.txt", "two.txt"])
+        await intake.add([inbox])
+        XCTAssertEqual(intake.choosingHow, [inbox], "asks first")
+        XCTAssertTrue(intake.queue.waiting.isEmpty)
+
+        await intake.add([inbox], as: .each)
+        XCTAssertNil(intake.choosingHow)
+        XCTAssertEqual(intake.queue.waiting.count, 2, "each entry as its own item")
+    }
+
+    func testAFolderCanGoInWhole() async throws {
+        let intake = IntakeModel(archive: archive)
+        let inbox = try inbox(["one.txt", "two.txt"])
+        await intake.add([inbox], as: .whole)
+        XCTAssertEqual(intake.queue.waiting.count, 1, "the folder as one item")
+        XCTAssertEqual(intake.queue.waiting.first?.path.hasSuffix("/Inbox"), true)
+    }
+
+    func testEntriesAreMovedToTheFrontAndRemoved() async throws {
+        let intake = IntakeModel(archive: archive)
+        let inbox = try inbox(["one.txt", "two.txt"])
+        await intake.add([inbox.appending(path: "one.txt"), inbox.appending(path: "two.txt")])
+        XCTAssertNil(intake.choosingHow, "files don't ask")
+        let last = try XCTUnwrap(intake.queue.waiting.last)
+        await intake.moveToFront(last)
+        XCTAssertEqual(intake.queue.waiting.first?.id, last.id)
+        await intake.remove(last)
+        XCTAssertFalse(intake.queue.waiting.contains { $0.id == last.id })
+        XCTAssertEqual(intake.queue.waiting.count, 1)
+        XCTAssertNil(archive.lastError)
+    }
+}
+
+@MainActor
+final class WindowParityTests: XCTestCase {
+    private var sample: SampleWindow!
+
+    override func setUp() async throws {
+        sample = try await SampleWindow()
+    }
+
+    override func tearDown() async throws {
+        sample.remove()
+    }
+
+    func testHistoryLoadsMoreAndFiltersTheLibrariansChanges() async throws {
+        let history = try XCTUnwrap(sample.model.historyScreen)
+        _ = try await sample.archive.set("ingest.originals", to: "move")
+        _ = try await sample.archive.set("ingest.originals", to: "keep")
+        sample.archive.historyLimit = 1
+        await history.refresh()
+        XCTAssertEqual(history.changes.count, 1)
+        XCTAssertTrue(history.canLoadMore)
+        await history.loadMore()
+        XCTAssertGreaterThan(history.changes.count, 1)
+        await history.loadAll()
+        XCTAssertFalse(history.canLoadMore)
+
+        history.librarianOnly = true
+        XCTAssertTrue(history.changes.allSatisfy { $0.agent == "librarian" })
+        XCTAssertLessThan(history.changes.count, history.readCount)
+    }
+
+    func testACardsBodyIsEditedWithItsFields() async throws {
+        let item = try XCTUnwrap(sample.model.items.first { $0.title == "Desk lamp parts list" })
+        let edit = CardEditModel(archive: sample.archive, target: .item(item.id))
+        await edit.load()
+        let body = try XCTUnwrap(edit.body)
+        edit.body = "Bought the strip at the market.\n\n" + body
+        XCTAssertTrue(edit.hasChanges)
+        let saved = await edit.save()
+        XCTAssertTrue(saved)
+        XCTAssertFalse(edit.hasChanges)
+        XCTAssertTrue(edit.body?.hasPrefix("Bought the strip") == true)
+        XCTAssertEqual(sample.archive.history.first?.summary.hasSuffix("notes"), true)
+        let text = try String(contentsOf: sample.root.appending(path: item.card), encoding: .utf8)
+        XCTAssertTrue(text.contains("Bought the strip at the market."))
+    }
+
+    func testAProposalHasNoBodyToEdit() async throws {
+        let edit = CardEditModel(archive: sample.archive, target: .proposal(sampleProposal))
+        await edit.load()
+        XCTAssertNotNil(edit.fields)
+        XCTAssertNil(edit.body)
+    }
+
+    func testRelatedItemsSayWhyNoneAreNearInMeaning() async throws {
+        let related = await RelatedItems.read(sampleNote, from: sample.archive)
+        let found = try XCTUnwrap(related)
+        XCTAssertTrue(found.near.isEmpty, "the sample has no meaning index")
+        XCTAssertNotNil(found.whyNone)
+    }
+
+    func testActivityTakesADateRange() async throws {
+        let discover = try XCTUnwrap(sample.model.discover)
+        discover.activityFrom = try XCTUnwrap(
+            Calendar.current.date(from: DateComponents(year: 2026, month: 10, day: 1, hour: 12)))
+        discover.activityTo = try XCTUnwrap(
+            Calendar.current.date(from: DateComponents(year: 2026, month: 10, day: 31, hour: 12)))
+        await discover.refresh(.activity)
+        XCTAssertEqual(discover.activity?.from, "2026-10-01")
+        XCTAssertEqual(discover.activity?.to, "2026-10-31")
+    }
+
+    func testWanderingStartsFromTheItemChosen() async throws {
+        let discover = try XCTUnwrap(sample.model.discover)
+        sample.model.wander(from: sampleNote)
+        XCTAssertEqual(sample.model.screen, .discover(.wander))
+        XCTAssertTrue(discover.isStartingWalk)
+        await discover.refresh(.wander)
+        for _ in 0..<100 where discover.currentStep == nil {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertNil(discover.problem)
+        XCTAssertEqual(discover.steps.count, 1, "showing the page started no other walk")
+        XCTAssertNotEqual(discover.currentStep?.item.id, sampleNote, "it moves on from there")
+    }
+
+    func testStatusHasRecentAndTheDesksSuggestions() async throws {
+        _ = try await sample.archive.set("ingest.originals", to: "move")
+        let status = try XCTUnwrap(sample.archive.status)
+        XCTAssertTrue(status.hasHistory)
+        XCTAssertFalse(status.recent.isEmpty, "the change is recent")
+    }
+}

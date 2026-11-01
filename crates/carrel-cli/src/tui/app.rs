@@ -528,6 +528,8 @@ pub struct App {
     pub settings_chosen: usize,
     /// What the providers on this device offer, found when Settings is first shown.
     pub here: Option<super::embedding::Here>,
+    /// What the providers offer, while it's being found in the background.
+    pub finding_here: Option<std::sync::mpsc::Receiver<super::embedding::Here>>,
     /// How far work in the background has got, when it says.
     pub progress: super::embedding::Shared,
     /// The archives opened or created on this device, for the archive switcher.
@@ -636,6 +638,7 @@ impl App {
             settings: Vec::new(),
             settings_chosen: 0,
             here: None,
+            finding_here: None,
             progress: super::embedding::Shared::default(),
             known_archives: Vec::new(),
             backup_chosen: 0,
@@ -980,7 +983,8 @@ impl App {
             KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Providers may have come or gone too.
                 if self.here.is_some() {
-                    self.here = Some(super::embedding::Here::find());
+                    carrel_core::providers::device::forget_providers();
+                    self.find_here();
                 }
                 self.message = Some(match self.reload() {
                     Ok(()) => "Refreshed".into(),

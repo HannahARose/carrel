@@ -206,6 +206,15 @@ On DeskBook, as above. [Report](2026-11-01/questions/report.md) · [results.json
 
 The batch of 81 items raised no questions with any of the three models, so there was nothing to rank. Routing was 79% with Apple's model, 72% with Granite 4.2 3B and 88% with Qwen3.5 4B. As expected, the test set's file names don't raise questions, so the next step is the handful of items whose names share a term or a sender (#357).
 
+So 35 items were added for this benchmark (#357), each with its known answer in `answers.yaml`:
+
+- **names sharing an unknown term:** two or three items each for ORCA, QPCR, ISA, DnD, LIGO, EHIC, BrewLog, CNC, PhD and OSM. These raise a term question whatever the model does;
+- **a sender with no collection:** Calder Building Society and Mariner Travel, three or four items each, across collections;
+- **a group that would make a collection:** four Allotment items;
+- **uncertain placements:** three Larkspur Road items from an old flat, each fitting more than one collection.
+
+The senders, the group and the uncertain placements raise a group question when the model splits them or isn't sure of them. The filing, findability and librarian benchmarks see the added items too, so their totals from runs after this aren't comparable with the 2026-11-01 runs item for item.
+
 ## Running it again
 
 ```bash

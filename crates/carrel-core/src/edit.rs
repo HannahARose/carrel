@@ -145,6 +145,56 @@ pub fn save(
     })
 }
 
+/// Saves the owner's edit of the card's whole body, its Notes and anything else they wrote
+/// below the fields, as one history change as `holder`. Carrel's managed sections (FORMAT.md
+/// §5.3), such as the history, must come back exactly as they were: they're changed through
+/// their own actions, such as deciding pending entries on Active.
+///
+/// # Errors
+///
+/// [`ActionError::Lease`] if another writer holds the archive, or an error writing the card
+/// or the history. A body that changes a managed section isn't an error: it comes back as
+/// [`Saved::Problems`].
+pub fn save_body(
+    archive: &Archive,
+    editing: Editing,
+    body: &str,
+    holder: Holder,
+) -> Result<Saved, ActionError> {
+    let Editing { item, mut file, .. } = editing;
+    if body == file.body() {
+        return Ok(Saved::Unchanged);
+    }
+    let managed = |text: &str| {
+        crate::sections::find_all(text).map(|found| {
+            found
+                .into_iter()
+                .map(|s| (s.name, text[s.content].to_owned()))
+                .collect::<Vec<_>>()
+        })
+    };
+    let was =
+        managed(file.body()).map_err(|e| ActionError::Invalid(format!("{}: {e}", item.card)))?;
+    match managed(body) {
+        Err(e) => return Ok(Saved::Problems(vec![format!("the body's sections: {e}")])),
+        Ok(now) if now != was => {
+            return Ok(Saved::Problems(vec![
+                "Carrel's own sections, between <!-- carrel:… --> markers, have to stay as they are; change the history's entries on Active"
+                    .to_owned(),
+            ]));
+        }
+        Ok(_) => {}
+    }
+    file.set_body(body);
+    let summary = format!("Edit “{}”: notes", file.card().title);
+    let commit = write(archive, &item, &file, &summary, holder)?;
+    Ok(Saved::Changed {
+        fields: vec!["notes"],
+        summary,
+        commit,
+    })
+}
+
 /// Writes the edited card `file` for `item` and records it as one change, holding the
 /// writer lease as `holder`.
 ///

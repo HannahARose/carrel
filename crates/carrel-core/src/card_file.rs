@@ -154,6 +154,12 @@ impl CardFile {
         &self.body
     }
 
+    /// Replaces the whole body with `body`, the owner's edit of it. Check first that its
+    /// managed sections are as they were ([`crate::edit::save_body`] does).
+    pub fn set_body(&mut self, body: &str) {
+        body.clone_into(&mut self.body);
+    }
+
     /// The content of managed section `name`, if it exists.
     ///
     /// # Errors

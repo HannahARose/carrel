@@ -84,16 +84,24 @@ The crawler's findings are listed under "From the crawler": a move of a filed it
 
 ## Restructure
 
-See [Tidying tags](user-guide.md#tidying-tags).
+See [Reorganizing a section](user-guide.md#reorganizing-a-section), [How eager Carrel is to rearrange](user-guide.md#how-eager-carrel-is-to-rearrange) and [Tidying tags](user-guide.md#tidying-tags).
 
 | Command | What it does |
 | --- | --- |
+| `carrel restructure propose [COLLECTION] [--no-model]` | Proposes a better shape for the collection and everything in it, or the whole archive: new subcollections for items that belong together, small collections merged into the one their items belong with, and the design documents that name them rewritten. Each change says why and how invasive it is; the proposal gives its rationale, cost, benefit and findability result, and what it held back. It replaces any proposal waiting for the same section. With `--no-model`, or without a text model, names are plain and the findability test is left for a device with a model. |
+| `carrel restructure list` | Lists the restructure proposals waiting, tag proposals too. |
+| `carrel restructure show [ID]` | Shows a proposal, its changes grouped by how invasive they are. |
+| `carrel restructure approve [ID] [--only N,…]` | Applies the proposal, or only the numbered changes, as one history change that `carrel undo` reverses, after a backup snapshot when it moves files. A chosen change that needs one left out is dropped, and said so. |
+| `carrel restructure reject [ID]` | Drops the proposal, changing nothing. |
+| `carrel restructure eagerness [COLLECTION] [LEVEL]` | Shows how eager Carrel is to rearrange, archive-wide or at a collection, and the numbers behind it. With `settled`, `balanced`, `eager` or `default`, sets the collection's own in its design document, as a change you can undo. |
 | `carrel restructure tags [propose]` | Proposes merging tags that mean the same thing, splitting a tag spread over unrelated items and retiring rare tags, each change with why and the items it changes. Tags you wrote yourself stay, and the proposal says so. It replaces any tag proposal waiting. |
 | `carrel restructure tags show [ID]` | Shows the waiting proposal. |
 | `carrel restructure tags approve [ID] [--only N,…]` | Applies the proposal, or only the numbered changes, to the cards and vocabularies as one history change that `carrel undo` reverses. |
 | `carrel restructure tags reject [ID]` | Drops the proposal, changing nothing. |
 
-`ID` is needed only when more than one tag proposal is waiting. With `--json`, `propose` prints `{"proposal", "replaced", "note"}` (`proposal` is `null` when there's nothing to change) and `show` prints `{"proposal"}`, the proposal as it's stored: `{"id", "kind", "section", "created", "by", "invasiveness", "rationale", "changes"}`, each change `{"id", "change", "reason", "invasiveness", "items", "held", "documents", "depends_on"}`, where `change.kind` is `merge-tags` (`from`, `into`), `split-tag` (`tag`, `into`: each `{"tag", "description", "items"}`) or `retire-tag` (`tag`), items are `{"id", "card", "title"}` and held items add `why`. `approve` prints `{"proposal", "approved"}`, `approved` being `{"selection", "outcomes", "summary", "commit"}`, and `reject` prints `{"rejected"}`.
+`show`, `approve` and `reject` take any waiting proposal; `ID` is needed only when more than one is waiting. With `--json`, `restructure propose` prints `{"proposal", "replaced", "note"}`, or `{"proposal": null, "rationale", "assessment", "note"}` when nothing is worth changing; `list` prints `{"proposals"}`, each `{"id", "kind", "section", "created", "changes", "invasiveness", "rationale"}`; `show`, `approve` and `reject` print as the tag commands below do, and `approve` adds `note` (why no snapshot was taken). A section proposal's changes are `create-collection` (`path`, `description`), `move-items` (`to`), `rename-collection` (`from`, `to`), `merge-collection` (`from`, `into`) or `rewrite-design` (`collection`, `description`, `organization`), and it carries an `assessment` (FORMAT.md §7.9). Each approved change's outcome adds `moves` and, when it couldn't be made, `not_applied`; `approved` adds `snapshot`. `restructure eagerness` prints `{"collection", "eagerness", "from", "source", "thresholds", "collections"}`, and `commit` when it set one.
+
+For tag proposals, `ID` is needed only when more than one tag proposal is waiting. With `--json`, `propose` prints `{"proposal", "replaced", "note"}` (`proposal` is `null` when there's nothing to change) and `show` prints `{"proposal"}`, the proposal as it's stored: `{"id", "kind", "section", "created", "by", "invasiveness", "rationale", "changes"}`, each change `{"id", "change", "reason", "invasiveness", "items", "held", "documents", "depends_on"}`, where `change.kind` is `merge-tags` (`from`, `into`), `split-tag` (`tag`, `into`: each `{"tag", "description", "items"}`) or `retire-tag` (`tag`), items are `{"id", "card", "title"}` and held items add `why`. `approve` prints `{"proposal", "approved"}`, `approved` being `{"selection", "outcomes", "summary", "commit"}`, and `reject` prints `{"rejected"}`.
 
 ## Crawler
 

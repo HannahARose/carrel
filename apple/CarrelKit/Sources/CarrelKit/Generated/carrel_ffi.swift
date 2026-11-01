@@ -944,27 +944,30 @@ public protocol ArchiveHandleProtocol: AnyObject, Sendable {
     func removeFromDesk(path: String, deleteCard: Bool) throws  -> DeskItem
     
     /**
-     * Returns the checked-out item `item`, replacing the archive copy with the working copy,
-     * with a snapshot first when backups are set up. Ask the owner first, with
-     * [`ArchiveHandle::return_preview`].
+     * Returns the checked-out item `item`, from where it was checked out to or from `from`,
+     * replacing the archive copy with the working copy, with a snapshot first when backups
+     * are set up. Afterwards the returned version is snapshotted, and the checkout's session
+     * snapshots are forgotten when `trim_snapshots` says so, as the owner chose. Ask the
+     * owner first, with [`ArchiveHandle::return_preview`].
      *
      * # Errors
      *
      * [`CarrelError::Busy`] if another writer holds the archive, or
      * [`CarrelError::Failed`] if it isn't checked out or can't be returned.
      */
-    func returnItem(item: String) throws  -> Returned
+    func returnItem(item: String, from: String?, trimSnapshots: Bool) throws  -> Returned
     
     /**
      * What returning the checked-out item `item` would bring back, and the history entry it
-     * adds, from where it was checked out to.
+     * adds, from where it was checked out to, or from `from` when the working copy has
+     * moved.
      *
      * # Errors
      *
      * [`CarrelError::Invalid`] for an unknown item, or [`CarrelError::Failed`] if it isn't
      * checked out or its working copy can't be read.
      */
-    func returnPreview(item: String) throws  -> ReturnPreview
+    func returnPreview(item: String, from: String?) throws  -> ReturnPreview
     
     /**
      * Whether an agent looks after this archive on this device. With none, the app runs the
@@ -1264,6 +1267,15 @@ public protocol ArchiveHandleProtocol: AnyObject, Sendable {
     func wanderStep(walk: Wander) throws  -> WanderStep?
     
     /**
+     * The filed item `item`'s card body, its Notes and Carrel's sections, to edit.
+     *
+     * # Errors
+     *
+     * As [`ArchiveHandle::editable_card`].
+     */
+    func cardBody(item: String) throws  -> String
+    
+    /**
      * Saves `fields` to the filed item `item`'s card, checked as `carrel edit` checks
      * them, as one change undone from History. The card's body is kept exactly.
      *
@@ -1275,6 +1287,17 @@ public protocol ArchiveHandleProtocol: AnyObject, Sendable {
      * as [`EditOutcome::Problems`].
      */
     func editCard(item: String, fields: CardFields) throws  -> EditOutcome
+    
+    /**
+     * Saves `body` as the filed item `item`'s card body, as one change undone from History.
+     * Carrel's own sections, such as the history, have to come back as they were.
+     *
+     * # Errors
+     *
+     * As [`ArchiveHandle::edit_card`]; a body that changes Carrel's sections comes back as
+     * [`EditOutcome::Problems`].
+     */
+    func editCardBody(item: String, body: String) throws  -> EditOutcome
     
     /**
      * Saves `fields` to the proposal `id`'s card, checked as `e` in Review checks them.
@@ -2039,6 +2062,26 @@ public static func openWith(path: String, options: OpenOptions)throws  -> Archiv
 })
 }
     
+    /**
+     * Creates an archive named `name` in the empty folder `path`, as
+     * [`ArchiveHandle::create`] does, with `embedding_model` as its embedding model.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if `embedding_model` isn't one of
+     * [`embedding_model_choices`], or as [`ArchiveHandle::create`].
+     */
+public static func createWithEmbeddingModel(path: String, name: String, embeddingModel: String)throws  -> ArchiveHandle  {
+    return try  FfiConverterTypeArchiveHandle_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_constructor_archivehandle_create_with_embedding_model(
+        FfiConverterString.lower(path),
+        FfiConverterString.lower(name),
+        FfiConverterString.lower(embeddingModel),uniffiCallStatus
+    )
+})
+}
+    
 
     
     /**
@@ -2303,40 +2346,46 @@ open func removeFromDesk(path: String, deleteCard: Bool)throws  -> DeskItem  {
 }
     
     /**
-     * Returns the checked-out item `item`, replacing the archive copy with the working copy,
-     * with a snapshot first when backups are set up. Ask the owner first, with
-     * [`ArchiveHandle::return_preview`].
+     * Returns the checked-out item `item`, from where it was checked out to or from `from`,
+     * replacing the archive copy with the working copy, with a snapshot first when backups
+     * are set up. Afterwards the returned version is snapshotted, and the checkout's session
+     * snapshots are forgotten when `trim_snapshots` says so, as the owner chose. Ask the
+     * owner first, with [`ArchiveHandle::return_preview`].
      *
      * # Errors
      *
      * [`CarrelError::Busy`] if another writer holds the archive, or
      * [`CarrelError::Failed`] if it isn't checked out or can't be returned.
      */
-open func returnItem(item: String)throws  -> Returned  {
+open func returnItem(item: String, from: String?, trimSnapshots: Bool)throws  -> Returned  {
     return try  FfiConverterTypeReturned_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
         uniffiCallStatus in
     uniffi_carrel_ffi_fn_method_archivehandle_return_item(
             self.uniffiCloneHandle(),
-        FfiConverterString.lower(item),uniffiCallStatus
+        FfiConverterString.lower(item),
+        FfiConverterOptionString.lower(from),
+        FfiConverterBool.lower(trimSnapshots),uniffiCallStatus
     )
 })
 }
     
     /**
      * What returning the checked-out item `item` would bring back, and the history entry it
-     * adds, from where it was checked out to.
+     * adds, from where it was checked out to, or from `from` when the working copy has
+     * moved.
      *
      * # Errors
      *
      * [`CarrelError::Invalid`] for an unknown item, or [`CarrelError::Failed`] if it isn't
      * checked out or its working copy can't be read.
      */
-open func returnPreview(item: String)throws  -> ReturnPreview  {
+open func returnPreview(item: String, from: String?)throws  -> ReturnPreview  {
     return try  FfiConverterTypeReturnPreview_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
         uniffiCallStatus in
     uniffi_carrel_ffi_fn_method_archivehandle_return_preview(
             self.uniffiCloneHandle(),
-        FfiConverterString.lower(item),uniffiCallStatus
+        FfiConverterString.lower(item),
+        FfiConverterOptionString.lower(from),uniffiCallStatus
     )
 })
 }
@@ -2873,6 +2922,23 @@ open func wanderStep(walk: Wander)throws  -> WanderStep?  {
 }
     
     /**
+     * The filed item `item`'s card body, its Notes and Carrel's sections, to edit.
+     *
+     * # Errors
+     *
+     * As [`ArchiveHandle::editable_card`].
+     */
+open func cardBody(item: String)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_card_body(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(item),uniffiCallStatus
+    )
+})
+}
+    
+    /**
      * Saves `fields` to the filed item `item`'s card, checked as `carrel edit` checks
      * them, as one change undone from History. The card's body is kept exactly.
      *
@@ -2890,6 +2956,26 @@ open func editCard(item: String, fields: CardFields)throws  -> EditOutcome  {
             self.uniffiCloneHandle(),
         FfiConverterString.lower(item),
         FfiConverterTypeCardFields_lower(fields),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Saves `body` as the filed item `item`'s card body, as one change undone from History.
+     * Carrel's own sections, such as the history, have to come back as they were.
+     *
+     * # Errors
+     *
+     * As [`ArchiveHandle::edit_card`]; a body that changes Carrel's sections comes back as
+     * [`EditOutcome::Problems`].
+     */
+open func editCardBody(item: String, body: String)throws  -> EditOutcome  {
+    return try  FfiConverterTypeEditOutcome_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_edit_card_body(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(item),
+        FfiConverterString.lower(body),uniffiCallStatus
     )
 })
 }
@@ -14345,6 +14431,11 @@ public struct ReturnPreview: Equatable, Hashable {
      * The history entry the return adds, line by line.
      */
     public var entry: [String]
+    /**
+     * With backups, how many session snapshots of the working copy were taken while it
+     * was out, which can be forgotten once it's returned.
+     */
+    public var sessionSnapshots: UInt32
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -14369,7 +14460,11 @@ public struct ReturnPreview: Equatable, Hashable {
          */uncommitted: Bool, 
         /**
          * The history entry the return adds, line by line.
-         */entry: [String]) {
+         */entry: [String], 
+        /**
+         * With backups, how many session snapshots of the working copy were taken while it
+         * was out, which can be forgotten once it's returned.
+         */sessionSnapshots: UInt32) {
         self.item = item
         self.title = title
         self.working = working
@@ -14377,6 +14472,7 @@ public struct ReturnPreview: Equatable, Hashable {
         self.commits = commits
         self.uncommitted = uncommitted
         self.entry = entry
+        self.sessionSnapshots = sessionSnapshots
     }
 
     
@@ -14401,7 +14497,8 @@ public struct FfiConverterTypeReturnPreview: FfiConverterRustBuffer {
                 changes: FfiConverterTypeChanges.read(from: &buf), 
                 commits: FfiConverterSequenceString.read(from: &buf), 
                 uncommitted: FfiConverterBool.read(from: &buf), 
-                entry: FfiConverterSequenceString.read(from: &buf)
+                entry: FfiConverterSequenceString.read(from: &buf), 
+                sessionSnapshots: FfiConverterUInt32.read(from: &buf)
         )
     }
 
@@ -14413,6 +14510,7 @@ public struct FfiConverterTypeReturnPreview: FfiConverterRustBuffer {
         FfiConverterSequenceString.write(value.commits, into: &buf)
         FfiConverterBool.write(value.uncommitted, into: &buf)
         FfiConverterSequenceString.write(value.entry, into: &buf)
+        FfiConverterUInt32.write(value.sessionSnapshots, into: &buf)
     }
 }
 
@@ -14444,6 +14542,22 @@ public struct Returned: Equatable, Hashable {
      * The backup snapshot taken first, if there are backups.
      */
     public var snapshot: String?
+    /**
+     * With session snapshots, the one taken of the returned version afterwards.
+     */
+    public var returnedSnapshot: String?
+    /**
+     * How many session snapshots were forgotten.
+     */
+    public var snapshotsForgotten: UInt32
+    /**
+     * How many are kept.
+     */
+    public var snapshotsKept: UInt32
+    /**
+     * Why some session snapshots couldn't be forgotten, or all were kept, if they were.
+     */
+    public var snapshotProblems: [String]
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -14453,9 +14567,25 @@ public struct Returned: Equatable, Hashable {
          */commit: String?, 
         /**
          * The backup snapshot taken first, if there are backups.
-         */snapshot: String?) {
+         */snapshot: String?, 
+        /**
+         * With session snapshots, the one taken of the returned version afterwards.
+         */returnedSnapshot: String?, 
+        /**
+         * How many session snapshots were forgotten.
+         */snapshotsForgotten: UInt32, 
+        /**
+         * How many are kept.
+         */snapshotsKept: UInt32, 
+        /**
+         * Why some session snapshots couldn't be forgotten, or all were kept, if they were.
+         */snapshotProblems: [String]) {
         self.commit = commit
         self.snapshot = snapshot
+        self.returnedSnapshot = returnedSnapshot
+        self.snapshotsForgotten = snapshotsForgotten
+        self.snapshotsKept = snapshotsKept
+        self.snapshotProblems = snapshotProblems
     }
 
     
@@ -14475,13 +14605,21 @@ public struct FfiConverterTypeReturned: FfiConverterRustBuffer {
         return
             try Returned(
                 commit: FfiConverterOptionString.read(from: &buf), 
-                snapshot: FfiConverterOptionString.read(from: &buf)
+                snapshot: FfiConverterOptionString.read(from: &buf), 
+                returnedSnapshot: FfiConverterOptionString.read(from: &buf), 
+                snapshotsForgotten: FfiConverterUInt32.read(from: &buf), 
+                snapshotsKept: FfiConverterUInt32.read(from: &buf), 
+                snapshotProblems: FfiConverterSequenceString.read(from: &buf)
         )
     }
 
     public static func write(_ value: Returned, into buf: inout [UInt8]) {
         FfiConverterOptionString.write(value.commit, into: &buf)
         FfiConverterOptionString.write(value.snapshot, into: &buf)
+        FfiConverterOptionString.write(value.returnedSnapshot, into: &buf)
+        FfiConverterUInt32.write(value.snapshotsForgotten, into: &buf)
+        FfiConverterUInt32.write(value.snapshotsKept, into: &buf)
+        FfiConverterSequenceString.write(value.snapshotProblems, into: &buf)
     }
 }
 
@@ -20295,6 +20433,26 @@ public func looksCompressed(path: String) -> Bool  {
 })
 }
 /**
+ * The embedding model a new archive uses unless another is chosen.
+ */
+public func defaultEmbeddingModel() -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_func_default_embedding_model(uniffiCallStatus
+    )
+})
+}
+/**
+ * The embedding models a new archive can use, as `carrel init --embedding-model` takes them.
+ */
+public func embeddingModelChoices() -> [String]  {
+    return try!  FfiConverterSequenceString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_func_embedding_model_choices(uniffiCallStatus
+    )
+})
+}
+/**
  * The longest side of a thumbnail in the preview cache, in pixels.
  */
 public func thumbnailPixels() -> UInt32  {
@@ -20369,6 +20527,12 @@ private let initializationResult: InitializationResult = {
     if (uniffi_carrel_ffi_checksum_func_looks_compressed() != 40569) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_carrel_ffi_checksum_func_default_embedding_model() != 53069) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_func_embedding_model_choices() != 15439) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_carrel_ffi_checksum_func_thumbnail_pixels() != 32344) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -20426,10 +20590,10 @@ private let initializationResult: InitializationResult = {
     if (uniffi_carrel_ffi_checksum_method_archivehandle_remove_from_desk() != 28348) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_carrel_ffi_checksum_method_archivehandle_return_item() != 25270) {
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_return_item() != 36885) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_carrel_ffi_checksum_method_archivehandle_return_preview() != 49568) {
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_return_preview() != 54010) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_agent_running() != 64561) {
@@ -20516,7 +20680,13 @@ private let initializationResult: InitializationResult = {
     if (uniffi_carrel_ffi_checksum_method_archivehandle_wander_step() != 8914) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_card_body() != 37529) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_edit_card() != 19413) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_edit_card_body() != 62656) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_edit_proposal() != 65356) {
@@ -20745,6 +20915,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_constructor_archivehandle_open_with() != 38695) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_constructor_archivehandle_create_with_embedding_model() != 58536) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_constructor_librarianconversation_new() != 19750) {
