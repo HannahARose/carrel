@@ -499,6 +499,8 @@ pub struct App {
     pub busy: Option<String>,
     /// What's checked out, then what's on this device's desk.
     pub active: Vec<super::active::ActiveItem>,
+    /// The reminders due, which Status lists.
+    pub reminders: Vec<carrel_core::reminders::Reminder>,
     /// The working copy of the checkout being returned, to ask about once it's back, when
     /// `checkout.after_return` says to ask.
     pub returning_working_copy: Option<std::path::PathBuf>,
@@ -662,6 +664,7 @@ impl App {
             active: Vec::new(),
             returning_working_copy: None,
             active_chosen: 0,
+            reminders: Vec::new(),
             active_marked: BTreeSet::new(),
             asked: Vec::new(),
             asked_settles: Vec::new(),
@@ -772,6 +775,7 @@ impl App {
         self.load_intake();
         self.load_settings();
         self.load_active();
+        self.load_reminders();
         if !self.stacks.lines.is_empty() {
             self.load_discover();
         }
@@ -927,6 +931,9 @@ impl App {
                 keys.extend([("↑↓", "choose"), ("Enter", "answer"), ("d", "dismiss")]);
             }
             Tab::Browse => return self.browse_keys(),
+            Tab::Status if self.reminder_has_item() => {
+                keys.extend([("↑↓", "scroll"), ("Enter", "reminder's item")]);
+            }
             _ => keys.push(("↑↓", "scroll")),
         }
         keys.extend([("^R", "refresh"), ("?", "help"), ("q", "quit")]);
@@ -1026,7 +1033,8 @@ impl App {
             Tab::Backups => self.backups_key(key),
             Tab::Librarian => self.talk_key(key),
             Tab::Discover => self.discover_key(key),
-            _ => Handled::No,
+            Tab::Status => self.status_key(key),
+            Tab::History => Handled::No,
         };
         if let Handled::Yes(effect) = handled {
             return effect;
