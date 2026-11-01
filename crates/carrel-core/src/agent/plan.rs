@@ -127,7 +127,10 @@ impl Plan {
         if !relative.starts_with("_System") {
             return Change::Filed;
         }
-        if relative.starts_with(crate::intake::INTAKE_DIR) {
+        // Another device's inbox: the worker applies it when this device is the writer.
+        if relative.starts_with(crate::intake::INTAKE_DIR)
+            || relative.starts_with(crate::inbox::INBOX_DIR)
+        {
             return Change::Queue;
         }
         if (relative.starts_with("_System/devices") && name == "desk.json")
@@ -358,6 +361,7 @@ mod tests {
         let plan = plan();
         let cases = [
             ("/a/Archive/_System/queue/intake/x.json", Change::Queue),
+            ("/a/Archive/_System/inbox/d/x.json", Change::Queue),
             ("/a/Archive/Reading/Paper.pdf", Change::Filed),
             ("/a/Archive/Reading/Paper.pdf.md", Change::Filed),
             ("/a/Archive/_System/devices/d/desk.json", Change::Active),

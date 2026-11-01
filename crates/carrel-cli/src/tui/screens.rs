@@ -35,8 +35,10 @@ pub enum InputPurpose {
     Search,
     /// A question for the librarian.
     Ask,
-    /// Files and folders to ingest.
+    /// Files and folders to ingest, or a web address.
     Ingest,
+    /// A note about what's planned for ingest, for the drafts and the cards.
+    IngestNote,
     /// A new value for this setting.
     Setting(String),
     /// The folder for a backup repository, new or existing.
@@ -123,7 +125,8 @@ impl Input {
             InputPurpose::Answer { .. } => "what it is",
             InputPurpose::Search => "words and filters",
             InputPurpose::Ask => "your question for the librarian",
-            InputPurpose::Ingest => "paths to ingest (or drop files here)",
+            InputPurpose::Ingest => "paths to ingest (or drop files here), or a web address",
+            InputPurpose::IngestNote => "a note about them, for their cards, or nothing",
             InputPurpose::Setting(_) => "the new value",
             InputPurpose::BackupRepository => "the backup folder (drop it here)",
             InputPurpose::BackupPassword { .. } => "the password",
@@ -335,6 +338,10 @@ impl App {
                     }
                     InputPurpose::Setting(key) => {
                         return Some(super::settings::set(&key, &text));
+                    }
+                    InputPurpose::IngestNote => self.noted(&text),
+                    InputPurpose::Ingest if super::intake::is_web_address(&text) => {
+                        self.plan_url(text.trim());
                     }
                     InputPurpose::Ingest => {
                         let paths = crate::paths::split_paths(&text);

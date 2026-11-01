@@ -21,6 +21,7 @@
 //! | [`settings`] | The archive's settings and this device's model choices |
 //! | [`models`] | The model catalog, providers, and downloads |
 //! | [`intake`] | The intake queue |
+//! | [`sharing`] | Adding from a Mac's share sheet: notes, web addresses, and the inbox while another device writes |
 //! | [`backups`](mod@backups) | Backups: setting up a repository, the snapshots, taking one, verifying, restoring |
 //! | [`agent`] | The Mac app's agent: its claim on an archive, work sessions and scheduled snapshots |
 //! | [`librarian`] | The librarian: a conversation, saving it to the Journal, and its own changes |
@@ -72,6 +73,7 @@ pub mod restructure;
 pub mod review;
 pub mod search;
 pub mod settings;
+pub mod sharing;
 pub mod usage_report;
 pub mod working_copy;
 

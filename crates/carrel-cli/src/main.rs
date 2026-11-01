@@ -540,6 +540,16 @@ enum ModelsAction {
 struct IngestArgs {
     /// The files and folders. Each is one item.
     paths: Vec<PathBuf>,
+    /// A web address to file as a `url` item, drafted from the address and --title alone:
+    /// nothing is fetched.
+    #[arg(long, value_name = "URL", conflicts_with_all = ["paths", "each", "whole", "dry_run"])]
+    url: Option<String>,
+    /// The web address's title, such as the page's.
+    #[arg(long, value_name = "TEXT", requires = "url")]
+    title: Option<String>,
+    /// A note about what's added, given to the model drafting each card and kept in the card.
+    #[arg(long, value_name = "TEXT")]
+    note: Option<String>,
     /// Ingest each entry inside a folder as its own item.
     #[arg(long, conflicts_with = "whole")]
     each: bool,
@@ -575,7 +585,9 @@ impl IngestArgs {
             .or(self.retry.map(|id| (ingest::Change::Retry, id)));
         ingest::Request {
             paths: self.paths,
+            url: self.url.map(|url| (url, self.title)),
             options: ingest::Options {
+                note: self.note,
                 intake: carrel_core::ingest::IntakeOptions {
                     each: self.each,
                     whole: self.whole,

@@ -1,7 +1,8 @@
 // Send to Archive, the Share extension (docs/design/macos-integration.md, "Share"): files, images
-// and text from any app's share sheet join the intake queue. It's sandboxed and never writes the
-// archive: it sends each one to Carrel Agent over XPC and shows what the agent says. It doesn't
-// wait for drafting.
+// and text from any app's share sheet join the intake queue, and a web address becomes a `url`
+// item, with an optional note for their cards. It's sandboxed and never writes the archive: it
+// sends each one to Carrel Agent over XPC and shows what the agent says, including when another
+// device is the writer and it went into this Mac's inbox. It doesn't wait for drafting.
 
 import AppKit
 import CarrelKit
@@ -20,7 +21,7 @@ final class ShareViewController: NSViewController {
             }
         }
         let view = NSHostingView(rootView: SendToArchiveView(model: model))
-        view.frame.size = NSSize(width: 380, height: 220)
+        view.frame.size = NSSize(width: 380, height: 260)
         self.view = view
         let items = (extensionContext?.inputItems as? [NSExtensionItem]) ?? []
         Task { await model.read(items.flatMap { $0.attachments ?? [] }) }
@@ -39,8 +40,10 @@ final class SendToArchiveModel {
     }
 
     private(set) var shared: [Shared] = []
-    /// What couldn't be sent, such as a web address, and why.
+    /// What couldn't be sent, and why.
     private(set) var leftOut: [String] = []
+    /// The owner's note, given to the drafts and kept in the cards.
+    var note = ""
     /// The archive it goes to, from the agent's state file.
     let archive = BadgeState.read(from: AgentService.badgeStateFile)?.archives.first?.name
     private(set) var reading = true
@@ -55,8 +58,8 @@ final class SendToArchiveModel {
         for provider in providers {
             if let item = await Self.shared(from: provider) {
                 shared.append(item)
-            } else if provider.hasItemConformingToTypeIdentifier(UTType.url.identifier) {
-                leftOut.append("Web addresses can’t be sent to the archive yet.")
+            } else {
+                leftOut.append("\(provider.suggestedName ?? "Something") can’t be archived.")
             }
         }
         reading = false
@@ -65,13 +68,14 @@ final class SendToArchiveModel {
     func send() async {
         sending = true
         let client = AgentClient()
+        let note = note.trimmingCharacters(in: .whitespacesAndNewlines)
         for item in shared {
-            replies.append(await client.send(item.request))
+            replies.append(await client.send(item.request.noted(note.isEmpty ? nil : note)))
         }
         sending = false
     }
 
-    /// The request for what `provider` holds: a file, an image or text.
+    /// The request for what `provider` holds: a file, an image, a web address or text.
     private static func shared(from provider: NSItemProvider) async -> Shared? {
         if let url = await fileURL(from: provider) {
             return Shared(
@@ -88,6 +92,12 @@ final class SendToArchiveModel {
                 + (type.preferredFilenameExtension.map { "." + $0 } ?? "")
             return Shared(name: name, request: .addData(archive: nil, name: name, data: data))
         }
+        if let url = await webAddress(from: provider) {
+            let title = provider.suggestedName
+            return Shared(
+                name: title ?? url.absoluteString,
+                request: .addURL(archive: nil, url: url.absoluteString, title: title))
+        }
         if let text = await text(from: provider), !text.isEmpty {
             return Shared(name: "Text", request: .addText(archive: nil, text: text, title: nil))
         }
@@ -100,6 +110,20 @@ final class SendToArchiveModel {
         let item = try? await provider.loadItem(forTypeIdentifier: type)
         if let url = item as? URL { return url }
         return (item as? Data).flatMap { URL(dataRepresentation: $0, relativeTo: nil) }
+    }
+
+    /// A shared web address: an `http` or `https` URL that isn't a file.
+    private static func webAddress(from provider: NSItemProvider) async -> URL? {
+        let type = UTType.url.identifier
+        guard provider.hasItemConformingToTypeIdentifier(type) else { return nil }
+        let item = try? await provider.loadItem(forTypeIdentifier: type)
+        let url =
+            (item as? URL)
+            ?? (item as? Data).flatMap { URL(dataRepresentation: $0, relativeTo: nil) }
+        guard let url, ["http", "https"].contains(url.scheme?.lowercased() ?? "") else {
+            return nil
+        }
+        return url
     }
 
     private static func text(from provider: NSItemProvider) async -> String? {
@@ -119,7 +143,7 @@ final class SendToArchiveModel {
 }
 
 struct SendToArchiveView: View {
-    let model: SendToArchiveModel
+    @Bindable var model: SendToArchiveModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -130,12 +154,15 @@ struct SendToArchiveView: View {
             } else if model.sent {
                 ForEach(Array(model.replies.enumerated()), id: \.offset) { _, reply in
                     Label(
-                        reply.outcome == .done ? "Added to the intake queue" : reply.message,
+                        reply.outcome == .done && !reply.message.contains("inbox")
+                            ? "Added to the intake queue" : reply.message,
                         systemImage: reply.outcome == .done
                             ? "checkmark.circle" : "exclamationmark.triangle")
                 }
             } else {
                 ForEach(model.shared) { Label($0.name, systemImage: "doc") }
+                TextField("Note for the card (optional)", text: $model.note, axis: .vertical)
+                    .lineLimit(1...3)
                 ForEach(model.leftOut, id: \.self) {
                     Label($0, systemImage: "exclamationmark.triangle").foregroundStyle(.secondary)
                 }
@@ -157,6 +184,6 @@ struct SendToArchiveView: View {
             }
         }
         .padding()
-        .frame(width: 380, height: 220)
+        .frame(width: 380, height: 260)
     }
 }

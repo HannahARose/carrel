@@ -231,8 +231,14 @@ fn another_devices_shares_wait_in_its_inbox_until_the_writer_applies_them() {
     );
 
     let photo = s.file("photo.txt", "A photo's description.\n");
-    let sent =
-        inbox::send_paths(&s.archive, other, &[photo.clone()], false, Some("Holiday")).unwrap();
+    let sent = inbox::send_paths(
+        &s.archive,
+        other,
+        std::slice::from_ref(&photo),
+        false,
+        Some("Holiday"),
+    )
+    .unwrap();
     assert!(sent.starts_with(inbox::folder(&s.archive, other.device)));
     inbox::send_url(
         &s.archive,
@@ -277,7 +283,7 @@ fn another_devices_shares_wait_in_its_inbox_until_the_writer_applies_them() {
             .iter()
             .any(|e| e.url.as_deref() == Some("https://example.org/a"))
     );
-    assert!(inbox::waiting(&s.archive).is_empty());
+    assert_eq!(inbox::waiting(&s.archive).len(), 0);
     let empty = std::fs::read_dir(inbox::folder(&s.archive, other.device))
         .unwrap()
         .count();
