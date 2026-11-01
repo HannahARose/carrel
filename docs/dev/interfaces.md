@@ -38,7 +38,8 @@ The command line and the interactive mode run on macOS, Linux and Windows. The M
 | Resurfacing forgotten collections | `status` | ✓ Status | ✓ Status |
 | The embedding index: status, rebuild, switch models | `index` | ✓ Status, Settings | ✓ Settings → Search (#267) |
 | Correct a filed item | `correct` | ✓ `c` | ✓ ⌘K (#234) |
-| Edit a filed item's card | `edit` | ✓ `e` | ✓ ⌘E (#234), its Notes and body too |
+| Edit a filed item's card | `edit` | ✓ `e` | ✓ ⌘E (#234) |
+| Edit a filed item's card body, its notes, Carrel's sections kept | `edit --body` | ✓ `E` in Browse | ✓ ⌘E, Notes and Body |
 | Create collections | `collection` | ✓ `n` in Browse | ✓ ⌥⌘N (#268) |
 | Rename an item | `rename` | ✓ `r` in Browse | ✓ ⇧⌘R (#268) |
 | Expand a filed compressed file | `expand` | ✓ `z` in Browse | ✓ ⇧⌘E (#268) |

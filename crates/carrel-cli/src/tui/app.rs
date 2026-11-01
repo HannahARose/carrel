@@ -291,6 +291,9 @@ pub enum Effect {
     Edit(Id),
     /// Edit this filed item's card, by its card's path, in the owner's editor.
     EditItem(String),
+    /// Edit this filed item's card body, by its card's path, in the owner's editor, as
+    /// `carrel edit --body` does.
+    EditItemBody(String),
     /// Edit an active item's pending history entry in the owner's editor, as
     /// `carrel sessions edit` does.
     EditEntry {

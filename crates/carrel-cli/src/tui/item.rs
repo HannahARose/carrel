@@ -219,6 +219,7 @@ impl App {
         if self.browse_pane != Pane::Collections && !self.browse_items.is_empty() {
             keys.extend([
                 ("e", "edit"),
+                ("E", "edit body"),
                 ("c", "correct"),
                 ("o", "check out"),
                 ("r", "rename"),

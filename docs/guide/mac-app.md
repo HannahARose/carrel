@@ -131,7 +131,7 @@ The card shows the item's fields, your notes, its history and the items it links
 
 | Command | Key | What it does |
 | --- | --- | --- |
-| Edit Card | ⌘E | Edits the chosen item's card in the inspector. Saving (⌘S) runs the same checks `carrel edit` does, and shows problems beside the field |
+| Edit Card | ⌘E | Edits the chosen item's card in the inspector, its notes and body too. Saving (⌘S) runs the same checks `carrel edit` does, and shows problems beside the field |
 | Correct… | ⌘K | Opens a sheet: say what's wrong in your own words, such as a title, a date or where it belongs. The model works out the changes, you see them, then confirm or change your words |
 | Check Out… | ⌥⌘C | As on [Active](#active) |
 | New Collection… | ⌥⌘N | Asks for its path, what belongs there and its tags; it's made inside the collection you're in |
