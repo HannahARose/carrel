@@ -484,6 +484,8 @@ Archive-level settings that every device follows. Version 1.0 defines:
 | `ingest.originals` | `move` (the original is moved into the archive on approval) or `keep` (it's copied, and the original is left for the owner to delete) | `move` |
 | `signals.crowded_items` | integer: how many loose items make a collection with no subcollections crowded, as a restructure signal | `30` |
 | `compressed_files` | `expand` (a compressed file, such as a zip, is expanded when its proposal is approved, so what it holds can be browsed), `keep` (it's filed as it is) or `ask` (the owner decides for each one in Review). A collection's own `compressed_files` (§6.3) and a routing rule's `keep_compressed` (§7.4) take precedence; software, encrypted, split and unreadable archives are kept, and unsafe or very large expansions ask, whatever the setting | `expand` |
+| `librarian.changes` | `true` (the librarian may refile items, correct model-written card fields, rename items and create collections on its own when it's sure, each an undoable change marked as its own, §8.2) or `false` (it only suggests them, for the owner to confirm) | `false` |
+| `librarian.confidence` | number from 0.5 to 1: how sure the librarian must be to make a change on its own | `0.9` |
 
 Programs **must** preserve unknown keys.
 
@@ -826,6 +828,8 @@ A mirror's frontmatter is `carrel: desk-mirror`, the desk card's `id`, `card` (i
 ### 9.3 Journal
 
 `Journal/<year>/<year>-<month>.md` lists the month's approved work sessions across all items, newest first, each linking to its card. Journal files are generated from cards and may be regenerated at any time.
+
+A month's Journal may end with conversations with the librarian that the owner saved, under the heading `## Conversations with the librarian`, newest first: each a level-3 heading with when it was saved and its first question, then the questions, answers and links to the items. Everything from that heading to the end of the file is the owner's: programs keep it as it is when they regenerate the Journal, and add newly saved conversations just below the heading.
 
 ### 9.4 Desk items
 

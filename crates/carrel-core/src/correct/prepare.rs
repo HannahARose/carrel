@@ -9,7 +9,9 @@ use crate::actions::{self, ActionError};
 use crate::archive::{Archive, ArchiveError, Collection, ItemRef};
 use crate::card::{Checksum, DateOrTime, Kind, Sensitivity};
 use crate::card_file::{CardFile, CardFileError};
-use crate::coordinator::{Coordinator as _, CoordinatorError, DEFAULT_LEASE, DiskLock, Holder};
+use crate::coordinator::{
+    Coordinator as _, CoordinatorError, DEFAULT_LEASE, DiskLock, Holder, WriterLease,
+};
 use crate::correct::{Correctable as _, CorrectionError, Fact, Fields, Subject, Worked};
 use crate::history::{Change, History, HistoryError, Operation};
 use crate::ingest::Candidate;
@@ -39,6 +41,9 @@ pub struct Prepared {
     pub kept_sensitive: bool,
     /// Tags left off because they don't apply in the collection it moves to.
     pub dropped: Vec<String>,
+    /// Who said it, as the change's summary names them: the owner, unless
+    /// [`Prepared::said_by`] says otherwise.
+    by: String,
     pending: Pending,
 }
 
@@ -78,6 +83,14 @@ impl Prepared {
     #[must_use]
     pub fn to(&self) -> Option<&str> {
         self.moved.as_ref().map(|(_, to)| to.as_str())
+    }
+
+    /// Says the words were someone else's than the owner's, such as `Librarian`, as the
+    /// change's summary names them.
+    #[must_use]
+    pub fn said_by(mut self, by: &str) -> Self {
+        by.clone_into(&mut self.by);
+        self
     }
 
     /// The corrected proposal, when it's a proposal that's corrected.
@@ -257,6 +270,7 @@ pub fn prepare_review(
         changed: corrected.changed,
         kept_sensitive: corrected.kept_sensitive,
         dropped: corrected.dropped,
+        by: OWNER.into(),
         pending: Pending::Proposal(Box::new(corrected.entry)),
     })
 }
@@ -272,6 +286,48 @@ pub fn prepare_filed(
     registry: &Registry,
     item: ItemRef,
     words: &str,
+) -> Result<Prepared, PrepareError> {
+    filed(archive, registry, item, words, |subject, earlier| {
+        crate::correct::work_out(registry, subject, words, earlier)
+    })
+}
+
+/// Prepares `lines` of `field: value`, worked out by `model` rather than said by the owner,
+/// such as the librarian's, for the filed item `item`, without saving anything. Every field
+/// stays model-written, and it's checked, refiled and saved exactly as a correction the owner
+/// typed.
+///
+/// # Errors
+///
+/// [`PrepareError`] if its card can't be read, or a line isn't `field: value` with a value
+/// the field takes.
+pub fn prepare_filed_lines(
+    archive: &Archive,
+    registry: &Registry,
+    item: ItemRef,
+    lines: &str,
+    model: &str,
+) -> Result<Prepared, PrepareError> {
+    filed(archive, registry, item, lines, |subject, _| {
+        let changes = crate::correct::parse_lines(lines, subject)?.ok_or_else(|| {
+            CorrectionError::BadLine(format!("“{lines}” isn't a `field: value` line"))
+        })?;
+        Ok(Worked {
+            changes: changes.inferred(),
+            model: Some(model.to_owned()),
+            attempts: Vec::new(),
+        })
+    })
+}
+
+/// Prepares a correction to the filed item `item`, with its changes from `work`, given the
+/// card as the model sees it and the owner's earlier corrections.
+fn filed(
+    archive: &Archive,
+    registry: &Registry,
+    item: ItemRef,
+    words: &str,
+    work: impl FnOnce(&Subject<'_>, &[String]) -> Result<Worked, CorrectionError>,
 ) -> Result<Prepared, PrepareError> {
     let card_path = archive.root().join(&item.card);
     let mut file = CardFile::parse(&std::fs::read_to_string(&card_path)?)?;
@@ -294,7 +350,7 @@ pub fn prepare_filed(
         collections: &context.described,
         vocabulary: &context.vocabulary,
     };
-    let worked = crate::correct::work_out(registry, &subject, words, &earlier)?;
+    let worked = work(&subject, &earlier)?;
     let (after, changed, kept_sensitive) =
         corrected(&before, &worked, words, contents.as_deref(), &text);
     let to = target_of(
@@ -318,6 +374,7 @@ pub fn prepare_filed(
         changed,
         kept_sensitive,
         dropped: Vec::new(),
+        by: OWNER.into(),
         pending: Pending::Filed {
             item,
             card_path,
@@ -325,6 +382,9 @@ pub fn prepare_filed(
         },
     })
 }
+
+/// Who a correction's words are from, unless [`Prepared::said_by`] says otherwise.
+const OWNER: &str = "Owner";
 
 /// Saves a prepared correction: a proposal back to the queue, or a filed item's card as one
 /// change, refiled when its collection changed, made as the writer `holder` gives. `holder` is
@@ -338,12 +398,44 @@ pub fn save<E: From<PrepareError>>(
     prepared: Prepared,
     holder: impl FnOnce() -> Result<Holder, E>,
 ) -> Result<Saved, E> {
-    let to = prepared.to().map(str::to_owned);
     match prepared.pending {
         Pending::Proposal(entry) => {
             ReviewQueue::of(archive)
                 .save(&entry)
                 .map_err(PrepareError::from)?;
+            Ok(Saved {
+                title: entry.card.title.clone(),
+                filed: false,
+                commit: None,
+                card: None,
+            })
+        }
+        Pending::Filed { .. } => {
+            let lease = DiskLock::for_archive(archive)
+                .acquire(holder()?, "correct", DEFAULT_LEASE)
+                .map_err(PrepareError::from)?;
+            let saved = save_holding(archive, prepared, &lease);
+            lease.release().map_err(PrepareError::from)?;
+            Ok(saved?)
+        }
+    }
+}
+
+/// Saves a prepared correction as [`save`] does, with the writer `lease` the caller already
+/// holds, so the change is marked as the lease marks it ([`WriterLease::act_as`]).
+///
+/// # Errors
+///
+/// [`PrepareError`] if it can't be written or committed.
+pub fn save_holding(
+    archive: &Archive,
+    prepared: Prepared,
+    lease: &WriterLease,
+) -> Result<Saved, PrepareError> {
+    let to = prepared.to().map(str::to_owned);
+    match prepared.pending {
+        Pending::Proposal(entry) => {
+            ReviewQueue::of(archive).save(&entry)?;
             Ok(Saved {
                 title: entry.card.title.clone(),
                 filed: false,
@@ -357,7 +449,6 @@ pub fn save<E: From<PrepareError>>(
             file,
         } => {
             let title = file.card().title.clone();
-            let holder = holder()?;
             let (card, commit) = save_filed(
                 archive,
                 Filing {
@@ -366,9 +457,10 @@ pub fn save<E: From<PrepareError>>(
                     target: to.as_deref(),
                     words: &prepared.words,
                     changed: &prepared.changed,
+                    by: &prepared.by,
                 },
                 *file,
-                holder,
+                lease,
             )?;
             Ok(Saved {
                 title,
@@ -448,6 +540,8 @@ struct Filing<'a> {
     target: Option<&'a str>,
     words: &'a str,
     changed: &'a [&'static str],
+    /// Who said the words.
+    by: &'a str,
 }
 
 /// Writes a filed item's corrected card, refiling it when it moves, as one change described
@@ -456,7 +550,7 @@ fn save_filed(
     archive: &Archive,
     filing: Filing<'_>,
     file: CardFile,
-    holder: Holder,
+    lease: &WriterLease,
 ) -> Result<(String, Option<String>), PrepareError> {
     let mut said: String = filing
         .words
@@ -467,34 +561,30 @@ fn save_filed(
         said = said.chars().take(200).collect::<String>() + "…";
     }
     let summary = format!(
-        "Correct “{}”: {}. Owner: {said}",
+        "Correct “{}”: {}. {}: {said}",
         file.card().title,
-        filing.changed.join(", ")
+        filing.changed.join(", "),
+        filing.by
     );
-    let lease = DiskLock::for_archive(archive).acquire(holder, "correct", DEFAULT_LEASE)?;
-    let result = (|| -> Result<(String, Option<String>), PrepareError> {
-        if let Some(to) = filing.target {
-            let moved = crate::rename::refile(archive, filing.item, to, file, &summary, &lease)
-                .map_err(|e| PrepareError::Refile(e.to_string()))?;
-            return Ok((moved.card, moved.commit));
-        }
-        let temp = filing.card_path.with_extension("md.tmp-correct");
-        std::fs::write(&temp, file.to_text()?)?;
-        std::fs::rename(&temp, filing.card_path)?;
-        let mut change = Change::new(
-            Operation::Edit,
-            summary,
-            lease.info().person,
-            lease.info().device,
-        );
-        change.items = vec![filing.item.id];
-        Ok((
-            filing.item.card.clone(),
-            History::open(archive)?.commit(archive, &change, &lease)?,
-        ))
-    })();
-    lease.release()?;
-    result
+    if let Some(to) = filing.target {
+        let moved = crate::rename::refile(archive, filing.item, to, file, &summary, lease)
+            .map_err(|e| PrepareError::Refile(e.to_string()))?;
+        return Ok((moved.card, moved.commit));
+    }
+    let temp = filing.card_path.with_extension("md.tmp-correct");
+    std::fs::write(&temp, file.to_text()?)?;
+    std::fs::rename(&temp, filing.card_path)?;
+    let mut change = Change::new(
+        Operation::Edit,
+        summary,
+        lease.info().person,
+        lease.info().device,
+    );
+    change.items = vec![filing.item.id];
+    Ok((
+        filing.item.card.clone(),
+        History::open(archive)?.commit(archive, &change, lease)?,
+    ))
 }
 
 /// The collection a correction sends a filed item to: one the owner named, or, when what it is

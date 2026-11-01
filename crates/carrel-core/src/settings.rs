@@ -20,6 +20,10 @@ pub enum Key {
     /// The model every device embeds with for search. It can be chosen once; switching
     /// models means re-embedding the archive (`docs/design/search.md`).
     EmbeddingModel,
+    /// Whether the librarian may make the changes it's sure of without asking.
+    LibrarianChanges,
+    /// How sure the librarian must be to make a change on its own.
+    LibrarianConfidence,
 }
 
 /// The embedding models an archive can choose: the catalog's, the default first.
@@ -31,12 +35,14 @@ const EMBEDDING_MODELS: [&str; 3] = [
 
 impl Key {
     /// Every setting, in the order they're shown.
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 7] = [
         Self::Originals,
         Self::CompressedFiles,
         Self::CrowdedItems,
         Self::OutsideEdits,
         Self::EmbeddingModel,
+        Self::LibrarianChanges,
+        Self::LibrarianConfidence,
     ];
 
     /// Its key in `settings.json`, as FORMAT.md §7.2 writes it.
@@ -48,6 +54,8 @@ impl Key {
             Self::OutsideEdits => "outside_edits",
             Self::CompressedFiles => "compressed_files",
             Self::EmbeddingModel => "embedding.model",
+            Self::LibrarianChanges => "librarian.changes",
+            Self::LibrarianConfidence => "librarian.confidence",
         }
     }
 
@@ -76,6 +84,12 @@ impl Key {
             Self::EmbeddingModel => {
                 "The model every device uses to search by meaning; chosen once, as switching re-embeds the archive"
             }
+            Self::LibrarianChanges => {
+                "Whether the librarian may refile items, correct cards, rename items and create collections on its own when it's sure, each change undoable; off, it only suggests them"
+            }
+            Self::LibrarianConfidence => {
+                "How sure the librarian must be, from 0.5 to 1, to make a change on its own"
+            }
         }
     }
 
@@ -87,7 +101,8 @@ impl Key {
             Self::OutsideEdits => Some(&["flag", "reconcile", "drift"]),
             Self::CompressedFiles => Some(&["expand", "keep", "ask"]),
             Self::EmbeddingModel => Some(&EMBEDDING_MODELS),
-            Self::CrowdedItems => None,
+            Self::LibrarianChanges => Some(&["off", "on"]),
+            Self::CrowdedItems | Self::LibrarianConfidence => None,
         }
     }
 
@@ -107,6 +122,13 @@ impl Key {
             },
             Self::CompressedFiles => settings.compressed_files.as_str().into(),
             Self::EmbeddingModel => settings.embedding_model().unwrap_or("none").to_owned(),
+            Self::LibrarianChanges => if settings.librarian.changes {
+                "on"
+            } else {
+                "off"
+            }
+            .into(),
+            Self::LibrarianConfidence => settings.librarian.confidence.to_string(),
         }
     }
 
@@ -119,6 +141,9 @@ impl Key {
         let value = value.trim();
         let wrong = || match self.choices() {
             Some(choices) => format!("{} is one of {}", self.as_str(), choices.join(", ")),
+            None if self == Self::LibrarianConfidence => {
+                format!("{} is a number from 0.5 to 1, such as 0.9", self.as_str())
+            }
             None => format!("{} is a whole number, at least 1", self.as_str()),
         };
         match self {
@@ -157,6 +182,20 @@ impl Key {
                     }
                     _ => settings.set_embedding_model(value),
                 }
+            }
+            Self::LibrarianChanges => {
+                settings.librarian.changes = match value {
+                    "on" => true,
+                    "off" => false,
+                    _ => return Err(wrong()),
+                };
+            }
+            Self::LibrarianConfidence => {
+                settings.librarian.confidence = value
+                    .parse::<f64>()
+                    .ok()
+                    .filter(|n| (0.5..=1.0).contains(n))
+                    .ok_or_else(wrong)?;
             }
         }
         Ok(())
@@ -313,5 +352,18 @@ mod tests {
         assert_eq!(Key::parse("embedding.model"), Some(Key::EmbeddingModel));
         assert_eq!(Key::parse("outside_edits"), Some(Key::OutsideEdits));
         assert_eq!(Key::parse("nope"), None);
+
+        assert_eq!(
+            Key::LibrarianChanges.get(&settings),
+            "off",
+            "off by default"
+        );
+        Key::LibrarianChanges.set(&mut settings, "on").unwrap();
+        assert!(settings.librarian.changes);
+        assert!(Key::LibrarianChanges.set(&mut settings, "yes").is_err());
+        assert_eq!(Key::LibrarianConfidence.get(&settings), "0.9");
+        Key::LibrarianConfidence.set(&mut settings, "0.75").unwrap();
+        assert!(Key::LibrarianConfidence.set(&mut settings, "0.2").is_err());
+        assert!(Key::LibrarianConfidence.set(&mut settings, "sure").is_err());
     }
 }
