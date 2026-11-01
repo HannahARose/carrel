@@ -1,26 +1,28 @@
-//! Restructure proposals (`docs/design/restructure.md`): a reviewable list of changes to one
-//! section of the archive, approved all, in part or not at all, and applied as one change in
-//! history that undo reverses as a unit.
+//! Restructure proposals (`docs/design/restructure.md`), and the groundwork they build on.
+//! Nothing in the groundwork moves a file.
 //!
-//! This module holds what every kind of proposal shares:
+//! - [`grouping::group_section`]: a section's items clustered by their card embeddings and the
+//!   tag and link graph ([`crate::graph`]), into candidate groups with literary warrant, each
+//!   with its cohesion and how invasive placing it would be.
+//! - [`findability::compare`]: whether a proposed tree is easier to navigate than the current
+//!   one, by having a text model find held-out cards by walking each tree from their summaries
+//!   alone.
+//! - [`Invasiveness`]: the design's ranking of changes, from rewriting to moving top-level
+//!   collections.
+//! - [`eagerness`]: how eager Carrel is to rearrange, archive-wide and per collection.
+//!
+//! What every kind of proposal shares:
 //!
 //! - the file format, [`Proposal`] and [`ProposedChange`], kept one file per proposal in
 //!   `_System/queue/proposals/` (FORMAT.md §7.9) through the same [`Queue`] the review queue
 //!   uses ([`ProposalQueue`]);
-//! - how invasive a change is ([`Invasiveness`]);
 //! - partial approval, which drops the changes that depend on rejected ones ([`select`]);
-//! - applying the approved changes as one `restructure` change in history ([`approve`]), and
-//!   rejecting a proposal ([`reject`]).
+//! - applying the approved changes as one `restructure` change in history ([`approve`],
+//!   [`approve_with_snapshot`]), and rejecting a proposal ([`reject`]).
 //!
-//! The groundwork whole-section proposals build on is here too: [`grouping::group_section`]
-//! clusters a section's items by their card embeddings and the tag and link graph
-//! ([`crate::graph`]), and [`findability::compare`] tests whether a proposed tree is easier to
-//! navigate than the current one.
-//!
-//! Each kind of change is an [`Edit`]. Tag restructuring ([`tags`]) is the first, and the
-//! cheapest: no files move. Whole-section proposals add their own [`Edit`] variants (moving
-//! items, creating, renaming, merging and splitting collections) and an arm in
-//! `apply_edit` for each, and reuse the rest.
+//! Each kind of change is an [`Edit`]. Tag restructuring ([`tags`]) is the cheapest: no files
+//! move. Whole-section proposals ([`section`]) create, rename and merge collections, move items
+//! and rewrite design documents ([`applying`]), with every move recorded so undo puts it back.
 
 pub mod applying;
 pub mod eagerness;
