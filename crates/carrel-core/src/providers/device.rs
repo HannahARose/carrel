@@ -16,6 +16,15 @@ use crate::local::Prefs;
 )))]
 mod discovered;
 
+#[cfg(not(any(
+    target_os = "ios",
+    target_os = "tvos",
+    target_os = "watchos",
+    target_os = "visionos"
+)))]
+#[doc(hidden)]
+pub use discovered::retry_after;
+
 /// A provider program found on this device.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Found {

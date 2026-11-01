@@ -368,6 +368,12 @@ fn rename(archive: &Archive, from: &str, to: &str, outcome: &mut Outcome) -> Res
     if !problems.is_empty() {
         return Err(format!("the new name {}", problems.join(" and ")));
     }
+    if super::hidden_name(name_of(to)) {
+        return Err(format!(
+            "{} starts with a dot or an underscore, which would hide the collection",
+            name_of(to)
+        ));
+    }
     let parent = folder_of(to);
     if !parent.is_empty()
         && !archive

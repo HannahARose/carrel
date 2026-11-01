@@ -835,6 +835,43 @@ mod tests {
         assert!(screen(&app, 140, 40).contains("3 providers, 1 couldn't start"));
     }
 
+    /// Ctrl-R on Settings returns at once while another thread (the preview thread, the
+    /// librarian, the background `Here`) is finding the providers, here held up by a
+    /// provider that never answers `initialize`.
+    #[cfg(unix)]
+    #[test]
+    fn ctrl_r_never_waits_for_another_threads_discovery() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let (_dir, mut app) = sample(false);
+        let programs = tempfile::tempdir().unwrap();
+        let hung = programs.path().join("carrel-provider-hungforctrlr");
+        std::fs::write(&hung, "#!/bin/sh\nexec sleep 30\n").unwrap();
+        std::fs::set_permissions(&hung, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let folders = [programs.path().to_owned()];
+        app.here = Some(Here::default());
+        app.key(key(KeyCode::Char('8')));
+        // Stands in for a find under way, so this test starts no other providers.
+        let (_send, finding) = std::sync::mpsc::channel();
+        app.finding_here = Some(finding);
+
+        std::thread::scope(|scope| {
+            scope.spawn(|| {
+                drop(carrel_core::providers::device::registry_with(
+                    &folders,
+                    &carrel_core::local::Prefs::default(),
+                ));
+            });
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            let started = std::time::Instant::now();
+            app.key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL));
+            let took = started.elapsed();
+            assert!(
+                took < std::time::Duration::from_secs(2),
+                "the key thread waited {took:?}"
+            );
+        });
+    }
+
     #[test]
     fn the_index_row_says_how_to_get_a_model_here_not_at_the_command_line() {
         let (_dir, mut app) = sample(false);

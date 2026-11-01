@@ -399,7 +399,7 @@ impl<'a> Librarian<'a> {
     ///
     /// A final answer gets more room than a step naming a tool. When the model runs out of
     /// room anyway, as when its JSON is cut off, the step is asked again with room for a whole
-    /// answer, then briefly ([`Self::ask_again_after_failing`]); when its context overflows,
+    /// answer, then briefly ([`Self::ask_again_after_cut_off`]); when its context overflows,
     /// it's asked again once with what's been done shortened further.
     fn ask_model(
         &self,
@@ -408,10 +408,14 @@ impl<'a> Librarian<'a> {
         left: usize,
     ) -> Result<Asked, LibrarianError> {
         let answer_room = self.answer_room(asking.context);
+        // The conversation so far takes at most a quarter of the context, so a long one
+        // still leaves room for the question, what's been done and the answer.
+        let earlier = fit_earlier(asking.earlier, asking.context / 4);
+        let earlier = earlier.as_slice();
         let fixed = estimate_tokens(asking.system)
             + estimate_tokens(&prompts::step(
                 asking.setting,
-                asking.earlier,
+                earlier,
                 asking.question,
                 &[],
                 left,
@@ -423,7 +427,7 @@ impl<'a> Librarian<'a> {
                 / share
         };
         let done = fit_done(&work.done, room(answer_room, 1));
-        let prompt = prompts::step(asking.setting, asking.earlier, asking.question, &done, left);
+        let prompt = prompts::step(asking.setting, earlier, asking.question, &done, left);
         let needed = estimate_tokens(asking.system) + estimate_tokens(&prompt);
         if work.tokens + needed > self.limits.tokens {
             return Ok(Asked::OutOfTokens);
@@ -450,14 +454,16 @@ impl<'a> Librarian<'a> {
             }),
         };
         let completion = match self.complete(&request) {
-            Err(LibrarianError::Model(ProviderError::Failed(why))) => {
+            // A reply cut off before its JSON ended is asked for again; a model that failed for
+            // any other reason fails the question, to ask again.
+            Err(LibrarianError::Model(ProviderError::Failed(why))) if cut_off(&why) => {
                 work.tokens += needed;
                 let again = Again {
                     answer_room,
                     must_answer,
                     needed,
                 };
-                match self.ask_again_after_failing(&mut request, &again, why, &mut work.tokens)? {
+                match self.ask_again_after_cut_off(&mut request, &again, &mut work.tokens)? {
                     Some(completion) => completion,
                     None => return Ok(Asked::OutOfTokens),
                 }
@@ -466,8 +472,7 @@ impl<'a> Librarian<'a> {
                 work.tokens += needed;
                 let done = fit_done(&work.done, room(answer_room, 2));
                 request.prompt =
-                    prompts::step(asking.setting, asking.earlier, asking.question, &done, left)
-                        + nearly;
+                    prompts::step(asking.setting, earlier, asking.question, &done, left) + nearly;
                 self.complete(&request)?
             }
             other => other?,
@@ -483,35 +488,30 @@ impl<'a> Librarian<'a> {
         ))
     }
 
-    /// Asks again for a step whose reply failed, with `why`, adding the tokens each failed
-    /// try took to `tokens`. A reply that had less than the whole room gets it. One that's cut
+    /// Asks again for a step whose reply was cut off, adding the tokens each failed try took
+    /// to `tokens`. A reply that had less than the whole room gets it. One that's cut
     /// off with the whole room is asked for once more, briefly ([`prompts::CUT_OFF`]): the
     /// items and a few sentences, without passages or suggestions. Cut off even then, it's
     /// `None`, and the question ends as out of room, keeping what was found (#401).
-    fn ask_again_after_failing(
+    fn ask_again_after_cut_off(
         &self,
         request: &mut CompletionRequest,
         again: &Again,
-        mut why: String,
         tokens: &mut u64,
     ) -> Result<Option<crate::providers::Completion>, LibrarianError> {
         if request.max_tokens < Some(again.answer_room) {
             request.max_tokens = Some(again.answer_room);
             match self.complete(request) {
-                Err(LibrarianError::Model(ProviderError::Failed(failed))) if cut_off(&failed) => {
+                Err(LibrarianError::Model(ProviderError::Failed(why))) if cut_off(&why) => {
                     *tokens += again.needed;
-                    why = failed;
                 }
                 other => return other.map(Some),
             }
         }
-        if !cut_off(&why) {
-            return Err(LibrarianError::Model(ProviderError::Failed(why)));
-        }
         request.schema = Some(prompts::brief_schema(again.must_answer));
         request.prompt.push_str(prompts::CUT_OFF);
         match self.complete(request) {
-            Err(LibrarianError::Model(ProviderError::Failed(failed))) if cut_off(&failed) => {
+            Err(LibrarianError::Model(ProviderError::Failed(why))) if cut_off(&why) => {
                 *tokens += again.needed;
                 Ok(None)
             }
@@ -718,17 +718,55 @@ impl Work {
     }
 }
 
-/// A tool call, as far as telling a repeat: the tool, and its input lowercased with its white
-/// space run together.
+/// A tool call, as far as telling a repeat: the tool, and its input with its white space run
+/// together, lowercased only for the tools that read it regardless of case. An item's card or
+/// contents path is matched as written, so a call that corrects a path's case is a new call.
 fn call_key(tool: &str, input: &str) -> String {
-    let words: Vec<String> = input.split_whitespace().map(str::to_lowercase).collect();
-    format!("{tool} {}", words.join(" "))
+    let words: Vec<&str> = input.split_whitespace().collect();
+    let input = words.join(" ");
+    match tool {
+        "search" | "collection" => format!("{tool} {}", input.to_lowercase()),
+        _ => format!("{tool} {input}"),
+    }
 }
 
-/// Whether a model's failure says its reply was cut off before it ended, as the llama.cpp and
+/// Whether a model's failure says its answer was cut off before it ended, as the llama.cpp and
 /// MLX providers say when it runs out of room.
 fn cut_off(why: &str) -> bool {
     why.contains("was cut off")
+}
+
+/// The newest of `earlier`'s questions and answers that fit in `room` tokens, oldest first:
+/// older ones are left out first, then the newest answer is cut short.
+fn fit_earlier(earlier: &[(String, String)], room: u64) -> Vec<(String, String)> {
+    let size = |(q, a): &(String, String)| estimate_tokens(q) + estimate_tokens(a) + 8;
+    let mut kept: Vec<(String, String)> = Vec::new();
+    let mut used = 0;
+    for pair in earlier.iter().rev() {
+        if used + size(pair) > room {
+            if kept.is_empty() {
+                // Even the newest is too long: keep its start.
+                let (question, answer) = pair;
+                let left = room.saturating_sub(estimate_tokens(question) + 16);
+                let keep = usize::try_from(left * 3)
+                    .unwrap_or(usize::MAX)
+                    .min(answer.len());
+                let mut cut = keep;
+                while !answer.is_char_boundary(cut) {
+                    cut -= 1;
+                }
+                kept.push((
+                    question.clone(),
+                    format!("{}… (cut short, to fit)", &answer[..cut]),
+                ));
+            }
+            break;
+        }
+        used += size(pair);
+        kept.push(pair.clone());
+    }
+    kept.reverse();
+    kept
 }
 
 /// `done` shortened to take at most `room` tokens, so the prompt fits the model's context
