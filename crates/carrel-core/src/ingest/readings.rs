@@ -242,6 +242,15 @@ fn doubts(readings: &[Reading]) -> String {
         .join("; ")
 }
 
+/// Which of `entry`'s readings its card shows now, counting from 0: the one whose title and
+/// summary the card has, if any does.
+#[must_use]
+pub fn on_card(entry: &ReviewEntry) -> Option<usize> {
+    entry.readings.iter().position(|r| {
+        r.title == entry.card.title && Some(&r.summary) == entry.card.summary.as_ref()
+    })
+}
+
 /// The number of the reading `words` pick, counting from 1, when they're a pick: `reading: 2`
 /// or `reading 2`.
 #[must_use]

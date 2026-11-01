@@ -55,7 +55,8 @@ fn working(words: &str) {
             )
         })
     });
-    if !lines && std::io::stderr().is_terminal() {
+    let picking = carrel_core::ingest::readings::picked(words).is_some();
+    if !lines && !picking && std::io::stderr().is_terminal() {
         eprintln!("Working out what that changes…");
     }
 }
