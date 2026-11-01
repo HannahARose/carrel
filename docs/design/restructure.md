@@ -1,6 +1,6 @@
 # Design: restructure proposals (v0.7)
 
-Status: proposed 2026-11-01. Issue #34, with #154 (crawlers).
+Status: accepted 2026-11-01, with the five recommendations below and the owner's amendment to decision 2 (a setting for how eager Carrel is to rearrange). Issue #34, with #154 (crawlers); built in #322, #323, #324, #325, #154, #326, #327 and #328.
 
 ## What this adds
 
@@ -30,9 +30,25 @@ The spec sets the shape. Restructuring "proposes a reorganization of one section
 - **Only when the benefit clearly beats the cost:**
   - **Costs:** moves to check (and possibly undo); data moved between drives; links rewritten; a section restructured recently (a stability penalty, so the archive doesn't churn).
   - **Benefits:** similar items closer together (measured with the embedding index); Holding and low-confidence placements resolved; collections of a sensible size; and above all, a findability gain.
-  - **The bar is a setting** (`restructure.margin`), with a conservative default.
+  - **How eager Carrel is** is yours to set (below).
 - **The findability test:** a sample of cards is held out, and a model tries to find each one by walking the proposed tree from its summary alone, then the current tree. The proposal goes forward only if the new tree is found more often. It's the same idea as v0.4's findability benchmark, used on your own archive.
 - **Asked for, or offered:** `restructure propose` builds one on demand for any section. Otherwise, when the signals for a section cross the bar, Status says a restructure is worth looking at, and builds it when you ask. It's never built or applied unprompted.
+
+## How eager to rearrange
+
+People feel differently about an archive that moves. Some want Carrel to keep refining the organization even when that means moving a lot; others have learned where things are and would rather it stayed put. One setting, `restructure.eagerness`, says which, for the whole archive or per collection (in its `_collection.md`, so a collection you know by heart can stay still while a messy one gets tidied):
+
+| | Settled | Balanced (default) | Eager |
+| --- | --- | --- | --- |
+| How much better a proposal must be | a large, clear gain | a clear gain | any real gain |
+| The stability penalty on recently changed sections | heavy, for a year | moderate, for a few months | light |
+| Moves a proposal may make | few; prefers renaming and design-document edits | as many as the gain justifies | many, including splitting and merging freely |
+| How often Status offers a restructure | rarely, only for strong signals | when signals cross the bar | whenever a better shape is found |
+| Crawler pace | Holding and low-confidence items only | the full order, slowly | the full order, steadily |
+
+- **It changes how readily Carrel proposes, never whether it asks.** Every restructure still waits for your approval, at every setting.
+- **It doesn't override the findability test:** even Eager won't propose a shape that's harder to navigate.
+- **The numbers behind it** (the margin, the penalty, the move budget) are settings too, for anyone who wants to tune them directly; the three levels are presets.
 
 ## How a proposal is built
 
@@ -66,6 +82,7 @@ v0.6 left the tag and link graph for now, since it needs the same data as restru
 | Proposals | `carrel restructure propose [COLLECTION]`, `list`, `show`, `approve [--only …]`, `reject`; `carrel restructure tags`; `--json` | A Restructure section in Review: the change list beside a before-and-after tree, approving all or part | A proposal view: before and after trees side by side, each change with its reason, approve all or part |
 | Crawler | `carrel crawl status`, its findings as proposals in `carrel review`; `crawler.changes` in settings | Its findings in Review; its changes on Status and in History | The same, and its activity in the menu bar list |
 | Signals | The Structure section of `carrel status` | Status | Status |
+| Eagerness | `carrel settings set restructure.eagerness settled\|balanced\|eager`, and per collection in its design document | Settings, and a collection's view in Browse | Settings, and a collection's inspector |
 | Graph | `carrel discover graph`, as a list of connections and `--json` | A text view of the strongest connections | A drawn graph in Discover |
 
 ## Measuring it
@@ -79,16 +96,17 @@ v0.6 left the tag and link graph for now, since it needs the same data as restru
 2. Grouping and the findability test in the core.
 3. Proposals: building, the file format (FORMAT.md), partial approval, applying as one change with one snapshot, and undo; `carrel restructure`.
 4. Tag restructuring.
-5. Crawlers in the worker and the agent, with the optional undoable moves; `carrel crawl`.
-6. The interactive mode's Restructure section and graph view.
-7. The Mac app's proposal view and graph.
-8. The restructure and crawler benchmarks.
-9. The user guide, then the gate checklist.
+5. `restructure.eagerness`, archive-wide and per collection, and its presets.
+6. Crawlers in the worker and the agent, with the optional undoable moves; `carrel crawl`.
+7. The interactive mode's Restructure section and graph view.
+8. The Mac app's proposal view and graph.
+9. The restructure and crawler benchmarks.
+10. The user guide, then the gate checklist.
 
-## Decisions
+## Decisions (accepted 2026-11-01)
 
 1. **A restructure proposal covers one section, is a reviewable list of changes approved all, in part or not at all, never enters sealed bundles or touches checked-out items, and runs as one change with one snapshot, undone as a unit.** Recommended: it's the spec's design, and it keeps even large reorganizations safe to try.
-2. **Proposals are offered only when the benefit clearly beats the cost, judged by a findability test on your own archive, and never built or applied without your asking.** Recommended: the archive stays stable, and every reorganization has to show it makes things easier to find. The alternative, proposing on a schedule, would churn.
+2. **Proposals are offered only when the benefit beats the cost by the margin your eagerness setting asks for (Settled, Balanced or Eager, archive-wide or per collection), judged by a findability test on your own archive, and never built or applied without your asking.** Accepted with the owner's amendment adding the eagerness setting: some people want the organization refined even if it means moving a lot, others want a familiar archive left alone. At every level the findability test still applies and every restructure still asks.
 3. **Grouping is numerical, from the embedding index and tag co-occurrence, and the strongest model on the device names groups and writes the design documents and reasons, validated like filing's output.** Recommended: numbers decide what belongs together, so the result doesn't hinge on one model's whim, and the model does what it's good at.
 4. **Crawlers reassess placements in the background, item by item, as move proposals in Review, with an option (off by default) to make the moves they're sure of themselves, each undoable. Whole-section restructures always wait for you.** Recommended: it follows your amendment to the librarian (autonomy only where it can be undone) and the spec's limit on restructuring.
 5. **The tag and link graph is built once, in the core, for restructuring and as a discovery view, and everything is in every interface.** Recommended: one implementation serves both, and it completes what v0.6 left for now.
