@@ -77,7 +77,7 @@ pub struct BenchArgs {
     pub mode: BenchMode,
     /// With `--search`: title and summarize each item's card as a model drafted it in an
     /// earlier run's `results.json`, instead of by its file name; repeat for more.
-    #[arg(long, value_name = "RESULTS", requires = "search", conflicts_with_all = ["librarian", "questions"])]
+    #[arg(long, value_name = "RESULTS", requires = "search", conflicts_with_all = ["librarian", "questions", "crawl"])]
     pub cards: Vec<PathBuf>,
 }
 
@@ -103,6 +103,12 @@ pub struct BenchMode {
     /// `questions/` in `--out`.
     #[arg(long, conflicts_with_all = ["compare", "second"])]
     pub questions: bool,
+    /// Measure the crawler instead of filing: file the test set into a muddled copy of its
+    /// archive (`muddle.yaml`), have each text model judge every item there as the crawler
+    /// does, and score how many misplaced items it finds and where it would put them. Writes
+    /// `results.json` and `report.md` to `crawl/` in `--out`.
+    #[arg(long, conflicts_with_all = ["compare", "second"])]
+    pub crawl: bool,
 }
 
 /// `carrel bench`.
@@ -118,6 +124,8 @@ pub fn bench(args: &BenchArgs, json: bool) -> Result<Report, Failure> {
         crate::bench_librarian::librarian_bench(args, json)
     } else if args.mode.questions {
         crate::bench_questions::question_value_bench(args, json)
+    } else if args.mode.crawl {
+        crate::bench_crawl::crawl_bench(args, json)
     } else {
         filing(args, json)
     }

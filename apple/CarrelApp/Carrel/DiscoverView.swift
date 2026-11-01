@@ -212,6 +212,14 @@ private struct WanderStepView: View {
                     AskAboutButton(model: window, item: item)
                 }
             }
+            // Now and then, Carrel's question about the step's item.
+            if let question = step.question {
+                GroupBox("A question about it") {
+                    AskedQuestionView(question: question, window: window)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .id(question.id)
+            }
         }
     }
 }

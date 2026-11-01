@@ -177,6 +177,9 @@ final class ArchiveWindowModel {
             review = ReviewModel(archive: archive)
             review?.filed = { [weak self] in await self?.refreshItems() }
             questions = QuestionsModel(archive: archive)
+            questions?.answerItem = { [weak self] question, answer in
+                self?.answerItemQuestion(question, with: answer)
+            }
             backups = BackupsModel(archive: archive)
             restructure = RestructureModel(archive: archive)
             restructure?.didChange = { [weak self] in await self?.refreshItems() }

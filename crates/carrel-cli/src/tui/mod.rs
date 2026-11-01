@@ -18,6 +18,8 @@ mod model_changes;
 mod option_lines;
 mod preview;
 mod review;
+mod review_crawler;
+mod review_restructure;
 mod screens;
 mod search;
 mod settings;
@@ -473,6 +475,7 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
         }
         effect @ (Effect::Download(_)
         | Effect::ModelChange(_)
+        | Effect::Restructure(_)
         | Effect::Index(_)
         | Effect::OpenArchive(_)
         | Effect::CreateArchive(_)
@@ -528,10 +531,12 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
     Some(receive)
 }
 
-/// The work for downloading a model, the index and switching archives: downloads and the
-/// index's in the background, and switching at once, since the app is replaced.
+/// The work for restructuring and the crawler, downloading a model, the index and switching
+/// archives: all in the background but switching, which happens at once, since the app is
+/// replaced.
 fn switch_or_index_work(app: &mut App, root: PathBuf, effect: Effect) -> Option<(String, Work)> {
     match effect {
+        Effect::Restructure(action) => Some(review_restructure::restructure_work(root, action)),
         Effect::Download(name) => {
             // What the providers offer changes once it's here.
             app.here = None;

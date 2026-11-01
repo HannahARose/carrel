@@ -53,6 +53,7 @@ struct StatusView: View {
             }
             StatusArchiveSections(model: model)
             StatusDiscoverySections(model: model)
+            StatusQuestionsSection(window: model)
         }
         .formStyle(.grouped)
         .overlay {

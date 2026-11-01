@@ -19,6 +19,7 @@ use carrel_core::search::texts::TextCache;
 use jiff::civil::Date;
 
 use crate::records::Sensitivity;
+use crate::review::Question;
 use crate::{ArchiveHandle, CarrelError, ItemKind};
 
 /// An item, as the views list it: enough to show it and open it.
@@ -138,6 +139,8 @@ pub struct WanderStep {
     pub tags: Vec<String>,
     /// The start of its text; never for a restricted item.
     pub preview: Option<String>,
+    /// Now and then, a question about the item, put in the queue to answer.
+    pub question: Option<Question>,
 }
 
 /// A walk through the stacks, one step at a time. The walk the app takes is also kept as the
@@ -145,6 +148,8 @@ pub struct WanderStep {
 #[derive(Debug, uniffi::Object)]
 pub struct Wander {
     walk: Mutex<Walk>,
+    /// The step the last question was asked at on this walk, if one was.
+    asked_at: Mutex<Option<usize>>,
 }
 
 #[uniffi::export]
@@ -389,6 +394,7 @@ impl ArchiveHandle {
         let visits = Visits::load(&self.visits_path(&archive)?);
         Ok(Arc::new(Wander {
             walk: Mutex::new(Walk::new(seed, start).remembering(&visits)),
+            asked_at: Mutex::new(None),
         }))
     }
 
@@ -409,6 +415,7 @@ impl ArchiveHandle {
         if let Some(near) = &near {
             around = around.with_near(near);
         }
+        let asked_at = &walk.asked_at;
         let mut walk = walk
             .walk
             .lock()
@@ -416,6 +423,14 @@ impl ArchiveHandle {
         let Some(step) = walk.step(&catalog, &around) else {
             return Ok(None);
         };
+        let question = asked_at.lock().ok().and_then(|mut last| {
+            if !carrel_core::questions::moments::wander_asks(step.number, *last) {
+                return None;
+            }
+            let asked = crate::questions::ask_about(&archive, step.item.id)?;
+            *last = Some(step.number);
+            Some(asked)
+        });
         let today = jiff::Zoned::now().date();
         self.with_visits(&archive, |visits| {
             visits.open(&step.item.collection, today);
@@ -458,6 +473,7 @@ impl ArchiveHandle {
             summary: step.summary,
             tags: step.tags,
             preview: step.preview,
+            question,
         }))
     }
 

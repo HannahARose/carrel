@@ -204,6 +204,8 @@ final class DiscoverModel {
         do {
             if let next = try await archive.call({ try $0.wanderStep(walk: walk) }) {
                 steps.append(next)
+                // Its question is in the queue now, for Questions and the badge.
+                if next.question != nil { try? await archive.refreshQuestions() }
             } else {
                 walkIsDone = true
             }
