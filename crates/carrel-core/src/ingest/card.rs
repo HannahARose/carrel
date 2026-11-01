@@ -302,7 +302,11 @@ fn describe(candidate: &Candidate, text: &ItemText) -> String {
             _ => "a file".to_owned(),
         },
     };
-    format!("Name: {name}\nWhat it is: {kind}\n")
+    let mut described = format!("Name: {name}\nWhat it is: {kind}\n");
+    if let Some(context) = &candidate.context {
+        writeln!(described, "The owner's note about it: {context}").unwrap();
+    }
+    described
 }
 
 /// Checks a model's answer. Returns the problems a retry should fix, and fills `draft` with

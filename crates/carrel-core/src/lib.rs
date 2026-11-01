@@ -82,6 +82,7 @@ pub mod formats;
 pub mod frontmatter;
 pub mod graph;
 pub mod history;
+pub mod inbox;
 pub mod index;
 pub mod ingest;
 pub mod intake;
