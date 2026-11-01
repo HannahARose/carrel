@@ -7,7 +7,7 @@
 //! Also here: the librarian's changes on `carrel status`, and `carrel undo --librarian`.
 
 use std::fmt::Write as _;
-use std::io::{BufRead as _, IsTerminal as _, Write as _};
+use std::io::{IsTerminal as _, Write as _};
 use std::path::Path;
 
 use carrel_core::archive::Archive;
@@ -17,6 +17,8 @@ use carrel_core::librarian::changes::{self, Outcome, Suggestion};
 use carrel_core::librarian::{Answer, Conversation, Librarian, Stopped, journal, model};
 use carrel_core::providers::Registry;
 use carrel_core::providers::device::AvailableModel;
+use carrel_core::questions::QuestionEntry;
+use carrel_core::questions::moments::{self, Conversing};
 use serde_json::{Value, json};
 
 use crate::commands::{holder, locate, log_line, plural};
@@ -90,12 +92,25 @@ pub fn ask(
         Librarian::new(&archive, &registry, model, &providers)?.with_changes_for(holder(&identity));
     let mut conversation = Conversation::default();
     let mut text = String::new();
+    let mut asked: Vec<Option<QuestionEntry>> = Vec::new();
+    let mut conversing = Conversing::default();
     if question.trim().is_empty() {
-        converse(&archive, &registry, &librarian, &mut conversation, json)?;
+        converse(
+            &archive,
+            &registry,
+            &librarian,
+            (&mut conversation, &mut conversing, &mut asked),
+            json,
+        )?;
     } else {
         working(&librarian, json);
-        let answer = librarian.ask(&mut conversation, question)?;
-        text = describe(answer);
+        let answer = librarian.ask(&mut conversation, question)?.clone();
+        text = describe(&answer);
+        let question = question_after(&archive, &mut conversing, &answer);
+        if let Some(question) = &question {
+            text.push_str(&question_later(question));
+        }
+        asked.push(question);
     }
     let saved = if save && !conversation.answers.is_empty() {
         let lease = DiskLock::for_archive(&archive).acquire(
@@ -111,7 +126,19 @@ pub fn ask(
     } else {
         None
     };
-    let answers: Vec<Value> = conversation.answers.iter().map(answer_json).collect();
+    let answers: Vec<Value> = conversation
+        .answers
+        .iter()
+        .zip(asked.iter().chain(std::iter::repeat(&None)))
+        .map(|(answer, question)| {
+            let mut value = answer_json(answer);
+            value["question"] = question.as_ref().map_or(
+                Value::Null,
+                |q| json!({"id": q.id, "question": q.question, "subject": q.subject}),
+            );
+            value
+        })
+        .collect();
     let mut value = if conversation.answers.len() == 1 && !question.trim().is_empty() {
         answers.into_iter().next().unwrap_or(Value::Null)
     } else {
@@ -136,7 +163,11 @@ fn converse(
     archive: &Archive,
     registry: &Registry,
     librarian: &Librarian<'_>,
-    conversation: &mut Conversation,
+    (conversation, conversing, asked): (
+        &mut Conversation,
+        &mut Conversing,
+        &mut Vec<Option<QuestionEntry>>,
+    ),
     json: bool,
 ) -> Result<(), Failure> {
     let terminal = std::io::stdin().is_terminal() && std::io::stderr().is_terminal();
@@ -146,8 +177,16 @@ fn converse(
             librarian.model().label
         );
     }
-    let stdin = std::io::stdin();
-    let mut lines = stdin.lock().lines();
+    // Read a line at a time, without holding standard input, so answering a question can
+    // read from it too.
+    let mut lines = std::iter::from_fn(|| {
+        let mut line = String::new();
+        match std::io::stdin().read_line(&mut line) {
+            Ok(0) => None,
+            Ok(_) => Some(Ok(line.trim_end_matches(['\n', '\r']).to_owned())),
+            Err(e) => Some(Err(e)),
+        }
+    });
     loop {
         if terminal && !json {
             eprint!("\n> ");
@@ -160,12 +199,19 @@ fn converse(
         }
         working(librarian, json);
         let answer = librarian.ask(conversation, line.trim())?.clone();
+        let question = question_after(archive, conversing, &answer);
+        asked.push(question.clone());
         if json {
             continue;
         }
         println!("\n{}", describe(&answer));
         if terminal {
             confirm(archive, registry, &answer, &mut lines)?;
+            if let Some(question) = &question {
+                answer_now(archive, question, &mut lines)?;
+            }
+        } else if let Some(question) = &question {
+            print!("{}", question_later(question));
         }
     }
     Ok(())
@@ -206,6 +252,69 @@ fn confirm(
             Ok(None) => eprintln!("Nothing needed changing."),
             Err(why) => eprintln!("Couldn't: {why}"),
         }
+    }
+    Ok(())
+}
+
+/// The question the librarian asks after `answer`, now and then, about an item it came up
+/// with ([`Conversing`]), added to the queue.
+fn question_after(
+    archive: &Archive,
+    conversing: &mut Conversing,
+    answer: &Answer,
+) -> Option<QuestionEntry> {
+    let items: Vec<_> = answer.items.iter().map(|i| i.id).collect();
+    let question = conversing
+        .after(archive, &items, crate::discover::today())
+        .ok()
+        .flatten()?;
+    moments::ask(archive, question).ok()
+}
+
+/// The librarian's question, for answering later with `carrel questions answer`.
+fn question_later(question: &QuestionEntry) -> String {
+    format!(
+        "\nWhile we're here, about “{}”:\n{}Answer with `carrel questions answer {}`.\n",
+        question.subject,
+        crate::asking::question_text(question, "  "),
+        carrel_core::review::short_id(question.id)
+    )
+}
+
+/// Asks the librarian's question in a conversation at the terminal; an answer goes through
+/// the corrections path, as `carrel questions answer` does, and an empty line leaves it for
+/// later.
+fn answer_now(
+    archive: &Archive,
+    question: &QuestionEntry,
+    lines: &mut impl Iterator<Item = std::io::Result<String>>,
+) -> Result<(), Failure> {
+    eprint!(
+        "\nWhile we're here, about “{}”:\n{}Your answer (a number picks one; Enter leaves it for later): ",
+        question.subject,
+        crate::asking::question_text(question, "  ")
+    );
+    let _ = std::io::stderr().flush();
+    let Some(line) = lines.next() else {
+        return Ok(());
+    };
+    let line = line?;
+    if line.trim().is_empty() {
+        eprintln!("It waits in Questions.");
+        return Ok(());
+    }
+    let options = crate::questions::Options {
+        ask: true,
+        ..crate::questions::Options::default()
+    };
+    match crate::questions::answer(
+        Some(archive.root()),
+        &question.id.to_string(),
+        &[line.trim().to_owned()],
+        options,
+    ) {
+        Ok(report) => eprint!("{}", report.text),
+        Err(Failure(e)) => eprintln!("Couldn't answer it: {e}"),
     }
     Ok(())
 }

@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use carrel_core::archive::Archive;
 use carrel_core::discover::visits::Visits;
 use carrel_core::questions::QuestionEntry;
-use carrel_core::questions::moments::Daily;
+use carrel_core::questions::moments::{self, Daily};
 use carrel_core::review::short_id;
 use serde_json::{Value, json};
 
@@ -129,5 +129,52 @@ pub fn daily_section(archive: &Archive, records: &mut Records) -> (String, Value
         )
         .unwrap();
     }
+    (text, value)
+}
+
+/// A question about the item whose card is at `card`, for a wander step or the librarian,
+/// added to the queue so it can be answered by its identifier; none when there's none open.
+pub fn question_on(archive: &Archive, card: &str) -> Option<QuestionEntry> {
+    let item = archive.items().ok()?.into_iter().find(|i| i.card == card)?;
+    let question = moments::about_item(archive, &item, crate::discover::today())
+        .ok()?
+        .into_iter()
+        .next()?;
+    moments::ask(archive, question).ok()
+}
+
+/// A wander step's question, under the step.
+pub fn wander_question_text(question: &QuestionEntry) -> String {
+    format!(
+        "   A question about it:\n{}   Answer with `carrel questions answer {}`.\n",
+        question_text(question, "   "),
+        short_id(question.id)
+    )
+}
+
+/// The part of `carrel show` that says what Carrel would ask about the item whose card is at
+/// `card`, without adding anything to the queue, and the same for programs.
+pub fn show_section(archive: &Archive, card: &str) -> (String, Value) {
+    let Some(item) = archive
+        .items()
+        .ok()
+        .and_then(|items| items.into_iter().find(|i| i.card == card))
+    else {
+        return (String::new(), json!([]));
+    };
+    let open = moments::about_item(archive, &item, crate::discover::today()).unwrap_or_default();
+    let value = json!(open.iter().map(|q| q.question.clone()).collect::<Vec<_>>());
+    if open.is_empty() {
+        return (String::new(), json!([]));
+    }
+    let mut text = String::from("\nCarrel asks:\n");
+    for question in &open {
+        writeln!(text, "  {}", question.question).unwrap();
+    }
+    writeln!(
+        text,
+        "  `carrel questions about \"{card}\"` asks them, with likely answers"
+    )
+    .unwrap();
     (text, value)
 }

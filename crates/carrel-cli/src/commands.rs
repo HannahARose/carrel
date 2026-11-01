@@ -697,6 +697,8 @@ pub fn show(archive: Option<&Path>, query: &str) -> Result<Report, Failure> {
         .and_then(|index| crate::related::nearest(&archive, &index, &shown));
     let mut text = std::mem::take(&mut shown.text);
     text.push_str(&related_section(&shown.links, &near));
+    let (asks_text, asks) = crate::asking::show_section(&archive, &shown.card_path);
+    text.push_str(&asks_text);
     let history = match History::open(&archive) {
         Ok(history) => Some(history.item_log(shown.id)?),
         Err(HistoryError::NotInitialized) => None,
@@ -706,6 +708,7 @@ pub fn show(archive: Option<&Path>, query: &str) -> Result<Report, Failure> {
         text.push_str(&item_history_section(entries));
     }
     let mut json = shown.json;
+    json["questions"] = asks;
     json["history"] = history.map_or(Value::Null, |entries| {
         Value::Array(entries.iter().map(entry_json).collect())
     });
