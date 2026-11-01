@@ -4182,3 +4182,31 @@ fn ingest_url_files_a_web_address_with_its_note_and_goes_to_the_inbox_while_anot
     assert!(inbox.starts_with(&inboxes), "{}", inbox.display());
     assert!(inbox.is_file());
 }
+
+#[test]
+fn tui_and_gui_take_the_same_screens() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    for command in ["tui", "gui"] {
+        let help = sandbox.ok(&root, &[command, "--help"]);
+        for screen in ["status", "librarian", "discover:wander", "discover:graph"] {
+            assert!(help.contains(screen), "{command}: {help}");
+        }
+        let wrong = sandbox.run_in(&root, &[command, "restructure"]);
+        assert!(!wrong.status.success());
+        let stderr = String::from_utf8_lossy(&wrong.stderr);
+        assert!(stderr.contains("invalid value 'restructure'"), "{stderr}");
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+#[test]
+fn gui_points_to_the_interactive_mode_off_macos() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    let out = sandbox.run_in(&root, &["gui", "review"]);
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("only on macOS"), "{stderr}");
+    assert!(stderr.contains("carrel tui"), "{stderr}");
+}

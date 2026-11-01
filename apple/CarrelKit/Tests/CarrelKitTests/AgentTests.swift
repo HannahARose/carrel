@@ -353,4 +353,39 @@ func realPath(_ path: String) -> String {
         #expect(action.url.absoluteString.contains("action=return"))
         #expect(AgentLink(URL(string: "https://open?archive=/a")!) == nil)
     }
+
+    @Test func aLinkCarriesTheScreenByTheCLIsName() throws {
+        let archive = URL(filePath: "/Users/me/Tax & Bills")
+        let wander = AgentLink(archive: archive, screen: .discover(.wander))
+        #expect(wander.url.absoluteString.contains("screen=discover:wander"))
+        #expect(AgentLink(wander.url) == wander)
+        #expect(AgentLink(wander.url)?.archive.path(percentEncoded: false) == "/Users/me/Tax & Bills")
+        let questions = AgentLink(archive: archive, item: "0193", screen: .questions)
+        #expect(AgentLink(questions.url) == questions)
+    }
+
+    @Test func aLinkFromTheCLIReadsItsScreen() throws {
+        // As `carrel gui` builds it, with the path percent-encoded.
+        let url = URL(
+            string: "carrel://open?archive=/Users/me/Tax%20%26%20Bills&item=0193&screen=backups")!
+        let link = try #require(AgentLink(url))
+        #expect(link.archive.path(percentEncoded: false) == "/Users/me/Tax & Bills")
+        #expect(link.item == "0193")
+        #expect(link.screen == .backups)
+        for (name, screen) in [
+            ("discover", AgentLink.Screen.discover(nil)), ("discover:map", .discover(.map)),
+            ("librarian", .librarian), ("settings", .settings),
+        ] {
+            #expect(AgentLink.Screen(name: name) == screen)
+            #expect(screen.name == name)
+        }
+    }
+
+    @Test func anUnknownScreenIsIgnored() throws {
+        for screen in ["restructure", "discover:nowhere", ""] {
+            let url = URL(string: "carrel://open?archive=/a&screen=\(screen)")!
+            let link = try #require(AgentLink(url))
+            #expect(link.screen == nil)
+        }
+    }
 }

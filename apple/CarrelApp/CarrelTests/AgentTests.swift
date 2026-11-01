@@ -93,4 +93,37 @@ final class AgentLinkTests: XCTestCase {
         await model.start(.checkOut, on: item.id)
         XCTAssertEqual(model.activeScreen?.checkingOut?.item, item.id)
     }
+
+    func testALinkFromTheCLILeavesItsScreenForTheWindow() throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "carrel-tests-\(UUID().uuidString)"))
+        let app = AppModel(recents: RecentArchives(defaults: defaults))
+        let link = AgentLink(archive: sampleArchive, screen: .discover(.wander))
+        var shown: [URL] = []
+        app.open(link: link.url) { shown.append($0) }
+        let pending = try XCTUnwrap(app.takePendingLink(for: shown[0]))
+        XCTAssertEqual(pending.screen, .discover(.wander))
+        XCTAssertNil(pending.item)
+
+        app.open(link: AgentLink(archive: sampleArchive).url) { shown.append($0) }
+        XCTAssertNil(app.takePendingLink(for: shown[1]), "nothing for the window to do")
+    }
+
+    func testTheWindowShowsTheScreenALinkNames() async throws {
+        let model = try await SampleWindow().model
+        let screens: [(AgentLink.Screen, Screen?)] = [
+            (.review, .review), (.questions, .questions), (.active, .active),
+            (.history, .history), (.backups, .backups), (.discover(.map), .discover(.map)),
+            (.discover(nil), .discover(.today)), (.ingest, .status), (.status, .status),
+        ]
+        for (linked, screen) in screens {
+            model.show(linked: linked)
+            XCTAssertEqual(model.screen, screen, "\(linked)")
+        }
+        model.show(linked: .browse)
+        guard case .collection = model.screen else {
+            return XCTFail("Browse shows a collection, not \(String(describing: model.screen))")
+        }
+        model.show(linked: .librarian)
+        XCTAssertEqual(model.librarian?.isShown, true)
+    }
 }

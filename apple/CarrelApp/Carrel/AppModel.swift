@@ -47,7 +47,8 @@ final class AppModel {
     let recents: RecentArchives
     /// The root of the archive whose window was last in front, which Settings shows.
     var activeArchive: URL?
-    /// An item for its archive's window to choose, from a link the agent's menu opened.
+    /// An item for its archive's window to choose, or a screen to show, from a link the
+    /// agent's menu or `carrel gui` opened.
     var pendingLink: AgentLink?
     /// A screen for an archive's window to show, such as Backups from Settings.
     var pendingScreen: PendingScreen?
@@ -89,11 +90,15 @@ final class AppModel {
         }
     }
 
-    /// Opens the archive a link from the agent names, then has its window choose the item.
+    /// Opens the archive a link from the agent or `carrel gui` names, then has its window
+    /// show the screen and choose the item.
     func open(link url: URL, then show: (URL) -> Void) {
         guard let link = AgentLink(url) else { return }
         open(link.archive) { root in
-            pendingLink = link.item.map { AgentLink(archive: root, item: $0, action: link.action) }
+            pendingLink =
+                link.item == nil && link.screen == nil
+                ? nil
+                : AgentLink(archive: root, item: link.item, action: link.action, screen: link.screen)
             show(root)
         }
     }
