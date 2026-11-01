@@ -108,22 +108,35 @@ struct CollectionQuery: EntityStringQuery {
 struct AddToArchiveIntent: AppIntent {
     static let title: LocalizedStringResource = "Add to Archive"
     static let description = IntentDescription(
-        "Adds files to the archive's intake queue, to be drafted and filed.")
+        "Adds files or web addresses to the archive's intake queue, with an optional note.")
 
-    @Parameter(title: "Files") var files: [IntentFile]
+    @Parameter(title: "Files") var files: [IntentFile]?
+    @Parameter(title: "Web Addresses") var urls: [URL]?
+    @Parameter(title: "Note") var note: String?
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
+        var requests: [AgentRequest] = (files ?? []).map { file in
+            if let url = file.fileURL {
+                .addFiles(
+                    archive: nil, paths: [url.path(percentEncoded: false)], each: false,
+                    whole: true, note: note)
+            } else {
+                .addData(archive: nil, name: file.filename, data: file.data, note: note)
+            }
+        }
+        requests += (urls ?? []).map {
+            .addURL(archive: nil, url: $0.absoluteString, title: nil, note: note)
+        }
         var added = 0
-        for file in files {
-            let request: AgentRequest =
-                if let url = file.fileURL {
-                    .addFiles(
-                        archive: nil, paths: [url.path(percentEncoded: false)], each: false,
-                        whole: true)
-                } else {
-                    .addData(archive: nil, name: file.filename, data: file.data)
-                }
-            added += try await answer(request).items.count
+        var inbox = false
+        for request in requests {
+            let reply = try await answer(request)
+            added += reply.items.count
+            inbox = inbox || reply.message.contains("inbox")
+        }
+        if inbox && added == 0 {
+            return .result(
+                dialog: "Another device is the writer, so they went into this Mac’s inbox.")
         }
         return .result(dialog: "Added \(added) to the intake queue.")
     }

@@ -1862,6 +1862,17 @@ public protocol ArchiveHandleProtocol: AnyObject, Sendable {
     func skippedQuestions() throws  -> [Question]
     
     /**
+     * Keeps a drawing of each of the archive's STEP, IGES and 3MF items in `store`, for Quick
+     * Look, drawing those not drawn yet with this device's providers. Restricted items are
+     * left out. Returns the drawings' keys, for [`prune_quick_look_drawings`].
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the archive can't be read or the store written.
+     */
+    func keepQuickLookDrawings(store: String) throws  -> [String]
+    
+    /**
      * The identifiers of the waiting proposals drafted here whose card or collection
      * couldn't be settled, which Draft Again All drafts again.
      *
@@ -2268,6 +2279,29 @@ public protocol ArchiveHandleProtocol: AnyObject, Sendable {
      * [`CarrelError::Failed`] if the archive can't be read.
      */
     func settings() throws  -> [Setting]
+    
+    /**
+     * Adds the files and folders at `paths` to the intake queue, as
+     * [`queue`](ArchiveHandle::queue) does, with the owner's `note` for their drafts and cards.
+     * While another device is the writer, they go into this device's inbox instead.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if a path is missing, or the queue or inbox can't be written.
+     */
+    func sharePaths(paths: [String], each: Bool, whole: Bool, note: String?) throws  -> Shared
+    
+    /**
+     * Adds the web address `url` to the intake queue, to be filed as a `url` item drafted
+     * from the address, its `title` and the owner's `note`; nothing is fetched. While another
+     * device is the writer, it goes into this device's inbox instead.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if it isn't an `http` or `https` address, or
+     * [`CarrelError::Failed`] if the queue or inbox can't be written.
+     */
+    func shareUrl(url: String, title: String?, note: String?) throws  -> Shared
     
     /**
      * Everything Spotlight should find in the archive, by its `spotlight.index` setting:
@@ -4335,6 +4369,25 @@ open func skippedQuestions()throws  -> [Question]  {
 }
     
     /**
+     * Keeps a drawing of each of the archive's STEP, IGES and 3MF items in `store`, for Quick
+     * Look, drawing those not drawn yet with this device's providers. Restricted items are
+     * left out. Returns the drawings' keys, for [`prune_quick_look_drawings`].
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the archive can't be read or the store written.
+     */
+open func keepQuickLookDrawings(store: String)throws  -> [String]  {
+    return try  FfiConverterSequenceString.lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_keep_quick_look_drawings(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(store),uniffiCallStatus
+    )
+})
+}
+    
+    /**
      * The identifiers of the waiting proposals drafted here whose card or collection
      * couldn't be settled, which Draft Again All drafts again.
      *
@@ -5052,6 +5105,50 @@ open func settings()throws  -> [Setting]  {
         uniffiCallStatus in
     uniffi_carrel_ffi_fn_method_archivehandle_settings(
             self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Adds the files and folders at `paths` to the intake queue, as
+     * [`queue`](ArchiveHandle::queue) does, with the owner's `note` for their drafts and cards.
+     * While another device is the writer, they go into this device's inbox instead.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if a path is missing, or the queue or inbox can't be written.
+     */
+open func sharePaths(paths: [String], each: Bool, whole: Bool, note: String?)throws  -> Shared  {
+    return try  FfiConverterTypeShared_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_share_paths(
+            self.uniffiCloneHandle(),
+        FfiConverterSequenceString.lower(paths),
+        FfiConverterBool.lower(each),
+        FfiConverterBool.lower(whole),
+        FfiConverterOptionString.lower(note),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Adds the web address `url` to the intake queue, to be filed as a `url` item drafted
+     * from the address, its `title` and the owner's `note`; nothing is fetched. While another
+     * device is the writer, it goes into this device's inbox instead.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if it isn't an `http` or `https` address, or
+     * [`CarrelError::Failed`] if the queue or inbox can't be written.
+     */
+open func shareUrl(url: String, title: String?, note: String?)throws  -> Shared  {
+    return try  FfiConverterTypeShared_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_share_url(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(url),
+        FfiConverterOptionString.lower(title),
+        FfiConverterOptionString.lower(note),uniffiCallStatus
     )
 })
 }
@@ -15850,6 +15947,305 @@ public func FfiConverterTypeQueued_lower(_ value: Queued) -> RustBuffer {
 
 
 /**
+ * A card laid out as the app's inspector shows it. A restricted card has its title only.
+ */
+public struct QuickLookCard: Equatable, Hashable {
+    /**
+     * The item's title.
+     */
+    public var title: String
+    /**
+     * The item's kind, such as `file`; empty for a restricted card.
+     */
+    public var kind: String
+    /**
+     * Its summary, when it has one.
+     */
+    public var summary: String?
+    /**
+     * Its other fields.
+     */
+    public var fields: [QuickLookField]
+    /**
+     * Its tags.
+     */
+    public var tags: [String]
+    /**
+     * Its collection, as `Parent / Child`; empty at the archive's root.
+     */
+    public var collection: String
+    /**
+     * The owner's notes, as Markdown.
+     */
+    public var notes: String
+    /**
+     * Its history, newest first.
+     */
+    public var history: [QuickLookEntry]
+    /**
+     * Whether it's restricted.
+     */
+    public var restricted: Bool
+    /**
+     * What a restricted card says in place of the rest: "Restricted: open in Carrel to see
+     * it". Empty otherwise.
+     */
+    public var restrictedNote: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The item's title.
+         */title: String, 
+        /**
+         * The item's kind, such as `file`; empty for a restricted card.
+         */kind: String, 
+        /**
+         * Its summary, when it has one.
+         */summary: String?, 
+        /**
+         * Its other fields.
+         */fields: [QuickLookField], 
+        /**
+         * Its tags.
+         */tags: [String], 
+        /**
+         * Its collection, as `Parent / Child`; empty at the archive's root.
+         */collection: String, 
+        /**
+         * The owner's notes, as Markdown.
+         */notes: String, 
+        /**
+         * Its history, newest first.
+         */history: [QuickLookEntry], 
+        /**
+         * Whether it's restricted.
+         */restricted: Bool, 
+        /**
+         * What a restricted card says in place of the rest: "Restricted: open in Carrel to see
+         * it". Empty otherwise.
+         */restrictedNote: String) {
+        self.title = title
+        self.kind = kind
+        self.summary = summary
+        self.fields = fields
+        self.tags = tags
+        self.collection = collection
+        self.notes = notes
+        self.history = history
+        self.restricted = restricted
+        self.restrictedNote = restrictedNote
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension QuickLookCard: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeQuickLookCard: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> QuickLookCard {
+        return
+            try QuickLookCard(
+                title: FfiConverterString.read(from: &buf), 
+                kind: FfiConverterString.read(from: &buf), 
+                summary: FfiConverterOptionString.read(from: &buf), 
+                fields: FfiConverterSequenceTypeQuickLookField.read(from: &buf), 
+                tags: FfiConverterSequenceString.read(from: &buf), 
+                collection: FfiConverterString.read(from: &buf), 
+                notes: FfiConverterString.read(from: &buf), 
+                history: FfiConverterSequenceTypeQuickLookEntry.read(from: &buf), 
+                restricted: FfiConverterBool.read(from: &buf), 
+                restrictedNote: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: QuickLookCard, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterString.write(value.kind, into: &buf)
+        FfiConverterOptionString.write(value.summary, into: &buf)
+        FfiConverterSequenceTypeQuickLookField.write(value.fields, into: &buf)
+        FfiConverterSequenceString.write(value.tags, into: &buf)
+        FfiConverterString.write(value.collection, into: &buf)
+        FfiConverterString.write(value.notes, into: &buf)
+        FfiConverterSequenceTypeQuickLookEntry.write(value.history, into: &buf)
+        FfiConverterBool.write(value.restricted, into: &buf)
+        FfiConverterString.write(value.restrictedNote, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeQuickLookCard_lift(_ buf: RustBuffer) throws -> QuickLookCard {
+    return try FfiConverterTypeQuickLookCard.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeQuickLookCard_lower(_ value: QuickLookCard) -> RustBuffer {
+    return FfiConverterTypeQuickLookCard.lower(value)
+}
+
+
+/**
+ * One history entry in a card's preview.
+ */
+public struct QuickLookEntry: Equatable, Hashable {
+    /**
+     * Its heading: the date, how long and what wrote it.
+     */
+    public var heading: String
+    /**
+     * Whether it waits for the owner's approval.
+     */
+    public var pending: Bool
+    /**
+     * Its text.
+     */
+    public var text: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Its heading: the date, how long and what wrote it.
+         */heading: String, 
+        /**
+         * Whether it waits for the owner's approval.
+         */pending: Bool, 
+        /**
+         * Its text.
+         */text: String) {
+        self.heading = heading
+        self.pending = pending
+        self.text = text
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension QuickLookEntry: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeQuickLookEntry: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> QuickLookEntry {
+        return
+            try QuickLookEntry(
+                heading: FfiConverterString.read(from: &buf), 
+                pending: FfiConverterBool.read(from: &buf), 
+                text: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: QuickLookEntry, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.heading, into: &buf)
+        FfiConverterBool.write(value.pending, into: &buf)
+        FfiConverterString.write(value.text, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeQuickLookEntry_lift(_ buf: RustBuffer) throws -> QuickLookEntry {
+    return try FfiConverterTypeQuickLookEntry.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeQuickLookEntry_lower(_ value: QuickLookEntry) -> RustBuffer {
+    return FfiConverterTypeQuickLookEntry.lower(value)
+}
+
+
+/**
+ * A labeled field of a card's preview.
+ */
+public struct QuickLookField: Equatable, Hashable {
+    /**
+     * The field's name, for people.
+     */
+    public var label: String
+    /**
+     * Its value.
+     */
+    public var value: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The field's name, for people.
+         */label: String, 
+        /**
+         * Its value.
+         */value: String) {
+        self.label = label
+        self.value = value
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension QuickLookField: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeQuickLookField: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> QuickLookField {
+        return
+            try QuickLookField(
+                label: FfiConverterString.read(from: &buf), 
+                value: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: QuickLookField, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.label, into: &buf)
+        FfiConverterString.write(value.value, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeQuickLookField_lift(_ buf: RustBuffer) throws -> QuickLookField {
+    return try FfiConverterTypeQuickLookField.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeQuickLookField_lower(_ value: QuickLookField) -> RustBuffer {
+    return FfiConverterTypeQuickLookField.lower(value)
+}
+
+
+/**
  * A file type this device reads, and the providers that read it, best first.
  */
 public struct ReadType: Equatable, Hashable {
@@ -18491,6 +18887,85 @@ public func FfiConverterTypeSettingChanged_lift(_ buf: RustBuffer) throws -> Set
 #endif
 public func FfiConverterTypeSettingChanged_lower(_ value: SettingChanged) -> RustBuffer {
     return FfiConverterTypeSettingChanged.lower(value)
+}
+
+
+/**
+ * What sharing something with the archive did.
+ */
+public struct Shared: Equatable, Hashable {
+    /**
+     * What joined this device's intake queue, and what was left out.
+     */
+    public var added: Added
+    /**
+     * The inbox entry it went into instead, while another device is the writer.
+     */
+    public var inbox: String?
+    /**
+     * That device, when it did.
+     */
+    public var writer: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * What joined this device's intake queue, and what was left out.
+         */added: Added, 
+        /**
+         * The inbox entry it went into instead, while another device is the writer.
+         */inbox: String?, 
+        /**
+         * That device, when it did.
+         */writer: String?) {
+        self.added = added
+        self.inbox = inbox
+        self.writer = writer
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension Shared: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeShared: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Shared {
+        return
+            try Shared(
+                added: FfiConverterTypeAdded.read(from: &buf), 
+                inbox: FfiConverterOptionString.read(from: &buf), 
+                writer: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: Shared, into buf: inout [UInt8]) {
+        FfiConverterTypeAdded.write(value.added, into: &buf)
+        FfiConverterOptionString.write(value.inbox, into: &buf)
+        FfiConverterOptionString.write(value.writer, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeShared_lift(_ buf: RustBuffer) throws -> Shared {
+    return try FfiConverterTypeShared.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeShared_lower(_ value: Shared) -> RustBuffer {
+    return FfiConverterTypeShared.lower(value)
 }
 
 
@@ -23979,6 +24454,56 @@ fileprivate struct FfiConverterSequenceTypeQueued: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeQuickLookEntry: FfiConverterRustBuffer {
+    typealias SwiftType = [QuickLookEntry]
+
+    public static func write(_ value: [QuickLookEntry], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeQuickLookEntry.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [QuickLookEntry] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [QuickLookEntry]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeQuickLookEntry.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeQuickLookField: FfiConverterRustBuffer {
+    typealias SwiftType = [QuickLookField]
+
+    public static func write(_ value: [QuickLookField], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeQuickLookField.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [QuickLookField] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [QuickLookField]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeQuickLookField.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeReadType: FfiConverterRustBuffer {
     typealias SwiftType = [ReadType]
 
@@ -24440,6 +24965,49 @@ public func thumbnailPixels() -> UInt32  {
 })
 }
 /**
+ * Deletes the drawings in `store` but those named in `keep`, which
+ * [`ArchiveHandle::keep_quick_look_drawings`] returned for each archive followed.
+ */
+public func pruneQuickLookDrawings(store: String, keep: [String])  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_func_prune_quick_look_drawings(
+        FfiConverterString.lower(store),
+        FfiConverterSequenceString.lower(keep),uniffiCallStatus
+    )
+}
+}
+/**
+ * The preview of the card at `path` whose full text is `text`. `roots` are the archives the
+ * agent follows, to name its collection by; outside them, it's the card's folder.
+ *
+ * # Errors
+ *
+ * [`CarrelError::Invalid`] if `text` isn't a card, such as Markdown that isn't Carrel's.
+ */
+public func quickLookCard(text: String, path: String, roots: [String])throws  -> QuickLookCard  {
+    return try  FfiConverterTypeQuickLookCard_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_func_quick_look_card(
+        FfiConverterString.lower(text),
+        FfiConverterString.lower(path),
+        FfiConverterSequenceString.lower(roots),uniffiCallStatus
+    )
+})
+}
+/**
+ * Where the drawing of the file at `path` is kept in `store`, whether or not it's there.
+ * `None` when the file isn't there.
+ */
+public func quickLookDrawing(store: String, path: String) -> String?  {
+    return try!  FfiConverterOptionString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_func_quick_look_drawing(
+        FfiConverterString.lower(store),
+        FfiConverterString.lower(path),uniffiCallStatus
+    )
+})
+}
+/**
  * This device's decision log preferences.
  *
  * # Errors
@@ -24511,6 +25079,15 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_func_thumbnail_pixels() != 32344) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_func_prune_quick_look_drawings() != 4683) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_func_quick_look_card() != 5739) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_func_quick_look_drawing() != 11005) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_func_decision_log_settings() != 63067) {
@@ -24828,6 +25405,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_carrel_ffi_checksum_method_archivehandle_skipped_questions() != 2080) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_keep_quick_look_drawings() != 23381) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_failed_drafts() != 63838) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -24943,6 +25523,12 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_settings() != 47688) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_share_paths() != 49218) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_share_url() != 27328) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_spotlight_entries() != 62104) {

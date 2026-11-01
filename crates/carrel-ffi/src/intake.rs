@@ -257,6 +257,10 @@ impl ArchiveHandle {
             holder: self.holder()?,
             backups: backups.as_deref(),
             status: Some(file_in(&folder, &archive, "json")),
+            received: self
+                .config_dir()
+                .ok()
+                .map(|dir| dir.join("received").join(archive.info().id.to_string())),
         };
         let mut reporting = Reporting {
             progress,

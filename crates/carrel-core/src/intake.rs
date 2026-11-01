@@ -17,7 +17,7 @@ use crate::card::{DateOrTime, Extra, Id};
 use crate::coordinator::Holder;
 use crate::ingest::card::Glossary;
 use crate::ingest::questions::ask;
-use crate::ingest::run::{Progress, Run, run_with_progress};
+use crate::ingest::run::{Progress, Run, run_with_context};
 use crate::ingest::{Candidate, IngestError, IntakeOptions, Skipped, plan};
 use crate::providers::Registry;
 use crate::questions::QuestionEntry;
@@ -38,7 +38,7 @@ pub struct IntakeEntry {
     pub format: crate::FormatVersion,
     /// The entry's identifier, which also orders entries added at different times.
     pub id: Id,
-    /// The item's absolute path on its device.
+    /// The item's absolute path on its device. For a web address, the address.
     pub path: PathBuf,
     /// The device that has the item.
     pub device: Id,
@@ -53,6 +53,17 @@ pub struct IntakeEntry {
     /// Why the last attempt failed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub failure: Option<String>,
+    /// A web address to file as a `url` item, drafted from the address and `title` alone:
+    /// nothing is fetched.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    /// The title it came with, such as a shared page's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// What the owner said about it when adding it, such as a share sheet's note: given to the
+    /// model drafting its card, and kept in the card's body once it's filed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
     /// Keys this version doesn't know.
     #[serde(flatten)]
     pub extra: Extra,
@@ -177,6 +188,9 @@ pub fn preview(
             order: 0,
             attempts: 0,
             failure: None,
+            url: None,
+            title: None,
+            note: None,
             extra: Extra::new(),
         });
     }
@@ -206,6 +220,107 @@ pub fn add(
     }
     Ok(queued)
 }
+
+/// [`add`], with the owner's `note` about the items, which their drafts are given and their
+/// cards keep.
+///
+/// # Errors
+///
+/// As [`add`].
+pub fn add_with_note(
+    archive: &Archive,
+    paths: &[PathBuf],
+    options: IntakeOptions,
+    device: Id,
+    note: Option<&str>,
+) -> Result<Queued, ActionError> {
+    let mut queued = preview(archive, paths, options, device)?;
+    let note = cleaned(note);
+    let queue = IntakeQueue::of(archive);
+    for entry in &mut queued.added {
+        entry.note.clone_from(&note);
+        queue.save(entry)?;
+    }
+    Ok(queued)
+}
+
+/// `text` trimmed, or `None` when there's nothing in it.
+fn cleaned(text: Option<&str>) -> Option<String> {
+    text.map(str::trim)
+        .filter(|t| !t.is_empty())
+        .map(str::to_owned)
+}
+
+/// Adds the web address `url` to the queue for `device`, to be filed as a `url` item drafted
+/// from the address, its `title` and the owner's `note`. Nothing is fetched. Returns `None`
+/// when it's already queued on this device or waiting for review.
+///
+/// # Errors
+///
+/// [`ActionError::Invalid`] if `url` isn't an `http` or `https` address, or [`ActionError`]
+/// if the queue can't be read or written.
+pub fn add_url(
+    archive: &Archive,
+    url: &str,
+    title: Option<&str>,
+    note: Option<&str>,
+    device: Id,
+) -> Result<Option<IntakeEntry>, ActionError> {
+    let url = url.trim();
+    let scheme = url.split_once("://").map(|(s, _)| s.to_ascii_lowercase());
+    let host = url.split_once("://").map_or("", |(_, rest)| rest);
+    if !matches!(scheme.as_deref(), Some("http" | "https")) || host.is_empty() {
+        return Err(ActionError::Invalid(format!(
+            "{url} isn't a web address; it should start with https:// or http://"
+        )));
+    }
+    let (queued, _) = IntakeQueue::of(archive).list()?;
+    let (proposed, _) = ReviewQueue::of(archive).list()?;
+    let waiting = queued
+        .iter()
+        .any(|q| q.device == device && q.url.as_deref() == Some(url))
+        || proposed
+            .iter()
+            .any(|p| p.state.is_open() && url_of(&p.extra).as_deref() == Some(url));
+    if waiting {
+        return Ok(None);
+    }
+    let entry = IntakeEntry {
+        carrel: IntakeMarker::Intake,
+        format: crate::FORMAT_VERSION,
+        id: Id::new_v7(),
+        path: PathBuf::from(url),
+        device,
+        added: now(),
+        order: 0,
+        attempts: 0,
+        failure: None,
+        url: Some(url.to_owned()),
+        title: cleaned(title),
+        note: cleaned(note),
+        extra: Extra::new(),
+    };
+    IntakeQueue::of(archive).save(&entry)?;
+    Ok(Some(entry))
+}
+
+/// The web address a proposal files as a `url` item, kept in its review entry's `url`.
+#[must_use]
+pub fn url_of(extra: &Extra) -> Option<String> {
+    extra.get(URL_KEY)?.as_str().map(str::to_owned)
+}
+
+/// The owner's note a proposal's card keeps in its body, kept in its review entry's `note`.
+#[must_use]
+pub fn note_of(extra: &Extra) -> Option<String> {
+    extra.get(NOTE_KEY)?.as_str().map(str::to_owned)
+}
+
+/// The review entry key holding a `url` item's address (FORMAT.md §7.9).
+pub const URL_KEY: &str = "url";
+
+/// The review entry key holding the owner's note (FORMAT.md §7.9).
+pub const NOTE_KEY: &str = "note";
 
 /// Moves the waiting entry `id` to the front of this device's queue.
 ///
@@ -320,20 +435,35 @@ pub fn process(
         each: false,
         whole: true,
     };
-    let run = match missing(&entry.path).map_or_else(
-        || {
-            run_with_progress(
-                archive,
-                registry,
-                std::slice::from_ref(&entry.path),
-                one,
-                holder.device,
-                progress,
-            )
-            .map_err(|e: IngestError| e.to_string())
+    let shared = entry
+        .url
+        .as_deref()
+        .map(|url| shared_page(url, entry.title.as_deref()));
+    let run = match shared.as_ref().map_or_else(
+        || missing(&entry.path).map_or(Ok(entry.path.clone()), Err),
+        |page| {
+            page.as_ref()
+                .map(|(_, path)| path.clone())
+                .map_err(ToString::to_string)
         },
-        Err,
     ) {
+        Ok(path) => run_with_context(
+            archive,
+            registry,
+            std::slice::from_ref(&path),
+            one,
+            holder.device,
+            entry.note.as_deref(),
+            progress,
+        )
+        .map_err(|e: IngestError| e.to_string()),
+        Err(failure) => Err(failure),
+    };
+    // The page's text was only for drafting; a `url` item keeps no file.
+    if let Some(Ok((folder, _))) = &shared {
+        let _ = std::fs::remove_dir_all(folder);
+    }
+    let run = match run {
         Ok(run) => run,
         Err(failure) => {
             entry.attempts += 1;
@@ -348,6 +478,17 @@ pub fn process(
         }
     };
     let mut run = run;
+    for proposal in run.entries.iter_mut().flatten() {
+        if let Some(url) = &entry.url {
+            proposal.kind = crate::card::Kind::Url;
+            proposal.sealed = None;
+            proposal.compressed = None;
+            proposal.extra.insert(URL_KEY.into(), url.clone().into());
+        }
+        if let Some(note) = &entry.note {
+            proposal.extra.insert(NOTE_KEY.into(), note.clone().into());
+        }
+    }
     if let Some(card) = crate::desk::carried_card(&entry.extra) {
         for proposal in run.entries.iter_mut().flatten() {
             crate::desk::carry(proposal, &card);
@@ -377,6 +518,29 @@ pub fn process(
         questions,
         filed,
     })
+}
+
+/// A shared web page as text to draft its card from: its title and address, in a file named
+/// for it in a temporary folder of its own, which the caller removes. Nothing is fetched.
+fn shared_page(url: &str, title: Option<&str>) -> std::io::Result<(PathBuf, PathBuf)> {
+    let host = url
+        .split_once("://")
+        .map_or(url, |(_, rest)| rest)
+        .split(['/', '?', '#'])
+        .next()
+        .unwrap_or(url);
+    let name = crate::names::portable(title.unwrap_or(host));
+    let folder = std::env::temp_dir().join(format!("carrel-shared-{}", Id::new_v7()));
+    std::fs::create_dir_all(&folder)?;
+    let path = folder.join(format!("{name}.txt"));
+    let text = match title {
+        Some(title) => {
+            format!("A web page, saved by its address.\nTitle: {title}\nAddress: {url}\n")
+        }
+        None => format!("A web page, saved by its address.\nAddress: {url}\n"),
+    };
+    std::fs::write(&path, text)?;
+    Ok((folder, path))
 }
 
 /// Why `path` can't be ingested now, if it's gone.

@@ -312,3 +312,61 @@ pub fn at_eagerness(
     std::fs::write(&path, text).map_err(|e| format!("{}: {e}", path.display()))?;
     crate::archive::Archive::open(archive.root()).map_err(|e| e.to_string())
 }
+
+/// The device the benchmark's crawler verdicts are kept for.
+const BENCH_DEVICE: Id = Id(uuid::Uuid::from_u128(
+    0x0000_7e57_c4a7_4000_8000_0000_0000_0001,
+));
+
+/// Gives the muddled `archive` the crawler verdicts a crawler benchmark run gave, as a device
+/// that had crawled it would have them: `judged` is `model`'s judgments by file name, `files`
+/// names each item, and `places` says where each is. Judgments it couldn't give are left out.
+/// With none, the archive has no crawler verdicts, so the proposal rests on the numbers alone.
+///
+/// # Errors
+///
+/// A message if the verdicts can't be written or removed.
+pub fn use_crawler_verdicts(
+    archive: &crate::archive::Archive,
+    files: &BTreeMap<Id, String>,
+    places: &BTreeMap<String, (String, Option<Misplaced>)>,
+    judged: Option<(&str, &BTreeMap<String, super::crawl::Judged>)>,
+) -> Result<(), String> {
+    use crate::crawl::verdicts::{Verdict, Verdicts};
+    let path = Verdicts::path(archive, BENCH_DEVICE);
+    let Some((model, judged)) = judged else {
+        return match std::fs::remove_file(&path) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                Err(format!("{}: {e}", path.display()))
+            }
+            _ => Ok(()),
+        };
+    };
+    let judged_at = jiff::Timestamp::now().to_string();
+    let mut verdicts = Verdicts::default();
+    for (id, file) in files {
+        let (Some(gave), Some((place, _))) = (judged.get(file), places.get(file)) else {
+            continue;
+        };
+        let Some(fits) = gave.fits else {
+            continue;
+        };
+        verdicts.items.insert(
+            *id,
+            Verdict {
+                collection: place.clone(),
+                fits,
+                better: gave.better.clone().filter(|_| !fits),
+                confidence: gave.confidence,
+                reason: gave.reason.clone(),
+                model: model.to_owned(),
+                judged: judged_at.clone(),
+                declined: Vec::new(),
+                extra: crate::card::Extra::new(),
+            },
+        );
+    }
+    verdicts
+        .save(archive, BENCH_DEVICE)
+        .map_err(|e| format!("{}: {e}", path.display()))
+}

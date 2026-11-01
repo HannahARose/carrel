@@ -1,7 +1,9 @@
 // The agent's side of the extensions' requests (docs/design/macos-integration.md): each one runs
 // through the core, off the main thread, exactly as the matching CLI command does, against an
 // archive the agent follows. The core takes the writer lease for each change; when another
-// writer holds it, the request is refused with the core's reason, never queued silently.
+// writer holds it, the request is refused with the core's reason, never queued silently. What's
+// added is the exception: while another device is the writer, it goes into this Mac's inbox
+// (FORMAT §7.8), which that device applies, and the answer says so.
 
 import Foundation
 
@@ -75,15 +77,20 @@ public final class AgentRequestHandler {
         -> AgentReply
     {
         switch request {
-        case .addFiles(_, let paths, let each, let whole):
-            return try await addFiles(paths, each: each, whole: whole, on: handle)
-        case .addText(_, let text, let title):
+        case .addFiles(_, let paths, let each, let whole, let note):
+            return try await addFiles(paths, each: each, whole: whole, note: note, on: handle)
+        case .addText(_, let text, let title, let note):
             let name = Self.fileName(title ?? Self.firstWords(of: text), extension: "md")
             let file = try keep(Data(text.utf8), as: name)
-            return try await addFiles([file], each: false, whole: true, on: handle)
-        case .addData(_, let name, let data):
+            return try await addFiles([file], each: false, whole: true, note: note, on: handle)
+        case .addData(_, let name, let data, let note):
             let file = try keep(data, as: Self.fileName(name, extension: nil))
-            return try await addFiles([file], each: false, whole: true, on: handle)
+            return try await addFiles([file], each: false, whole: true, note: note, on: handle)
+        case .addURL(_, let url, let title, let note):
+            let shared = try await Task.detached {
+                try handle.shareUrl(url: url, title: title, note: note)
+            }.value
+            return Self.reply(to: shared, named: { _ in title ?? url })
         case .checkOut(_, let item, let folder, let due):
             let item = try await resolve(item, in: root)
             let out = try await Task.detached {
@@ -146,16 +153,29 @@ public final class AgentRequestHandler {
         }
     }
 
-    private func addFiles(_ paths: [String], each: Bool, whole: Bool, on handle: ArchiveHandle)
-        async throws -> AgentReply
-    {
-        let added = try await Task.detached {
-            try handle.queue(paths: paths, each: each, whole: whole)
+    private func addFiles(
+        _ paths: [String], each: Bool, whole: Bool, note: String?, on handle: ArchiveHandle
+    ) async throws -> AgentReply {
+        let shared = try await Task.detached {
+            try handle.sharePaths(paths: paths, each: each, whole: whole, note: note)
         }.value
+        return Self.reply(to: shared, named: { URL(filePath: $0).lastPathComponent })
+    }
+
+    /// The answer to sharing what became `shared`: what joined the queue, what was left out,
+    /// or that it went into this Mac's inbox while another device is the writer. `named`
+    /// names an entry by its path.
+    static func reply(to shared: Shared, named: (String) -> String) -> AgentReply {
+        if let writer = shared.writer {
+            return AgentReply(
+                .done,
+                "Another device (\(writer.prefix(8))) is the writer, so this went into this Mac’s "
+                    + "inbox; that device adds it to its queue.")
+        }
+        let added = shared.added
         // Until they're drafted, what's added is known by its intake entry.
         let items = added.added.map {
-            AgentFoundItem(
-                id: $0.id, title: URL(filePath: $0.path).lastPathComponent, path: $0.path)
+            AgentFoundItem(id: $0.id, title: named($0.path), path: $0.path)
         }
         let leftOut = added.leftOut.map {
             "\(URL(filePath: $0.path).lastPathComponent): \($0.reason)"

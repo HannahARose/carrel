@@ -4205,3 +4205,60 @@ fn questions_name_the_path_of_what_they_ask_about() {
     let text = sandbox.ok(&root, &["questions"]);
     assert!(text.contains(&format!(": {path}")), "{text}");
 }
+
+#[test]
+fn ingest_url_files_a_web_address_with_its_note_and_goes_to_the_inbox_while_another_writes() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.path("shared");
+    sandbox.ok(
+        sandbox.dir.path(),
+        &["init", root.to_str().unwrap(), "--name", "Shared"],
+    );
+    let url = "https://example.org/prc";
+    let ingested = sandbox.json(
+        &root,
+        &[
+            "ingest",
+            "--url",
+            url,
+            "--title",
+            "Phase response curves",
+            "--note",
+            "For chapter two",
+            "--wait",
+        ],
+    );
+    let proposal = ingested["proposals"][0]["id"].as_str().unwrap().to_owned();
+    let wrong = sandbox.run_in(&root, &["ingest", "--url", "example.org"]);
+    assert!(!wrong.status.success());
+    assert!(String::from_utf8_lossy(&wrong.stderr).contains("isn't a web address"));
+    sandbox.ok(&root, &["review", "hold", &proposal]);
+    let card = std::fs::read_dir(root.join("Holding"))
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .find(|p| {
+            std::fs::read_to_string(p).is_ok_and(|t| t.contains("kind: url") && t.contains(url))
+        })
+        .expect("a url card in Holding");
+    let text = std::fs::read_to_string(&card).unwrap();
+    assert!(text.contains("kind: url"), "{text}");
+    assert!(text.contains("For chapter two"), "{text}");
+
+    // Another device holds the writer lease: what's added goes into this device's inbox.
+    let lock = serde_json::json!({
+        "token": "019a2b3c-4d5e-7f60-8a1b-2c3d4e5f6a7b",
+        "person": "01928f39-eeee-7fff-8000-000000000005",
+        "device": "01928f3a-0000-7000-8000-00000000d002",
+        "purpose": "ingest",
+        "program": "carrel 0.1.0",
+        "acquired": "2026-10-29T14:02:11-07:00",
+        "expires": "2999-01-01T00:00:00Z",
+    });
+    std::fs::write(root.join("_System/writer.lock"), lock.to_string()).unwrap();
+    let sent = sandbox.json(&root, &["ingest", "--url", "https://example.org/other"]);
+    assert_eq!(sent["writer"], "01928f3a-0000-7000-8000-00000000d002");
+    let inbox = std::path::PathBuf::from(sent["inbox"].as_str().unwrap());
+    let inboxes = root.canonicalize().unwrap().join("_System/inbox");
+    assert!(inbox.starts_with(&inboxes), "{}", inbox.display());
+    assert!(inbox.is_file());
+}

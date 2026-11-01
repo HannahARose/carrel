@@ -311,6 +311,35 @@ struct RequestSample {
         #expect(read.outcome == .done)
     }
 
+    @Test func webAddressesAndNotesAreQueuedAndGoToTheInboxWhileAnotherDeviceWrites()
+        async throws
+    {
+        let test = try await RequestSample()
+        let url = await test.handler.handle(
+            .addURL(
+                archive: nil, url: "https://example.org/prc", title: "Phase response curves",
+                note: "For chapter two"))
+        #expect(url.outcome == .done, "\(url.message)")
+        #expect(url.items.map(\.title) == ["Phase response curves"])
+        let wrong = await test.handler.handle(
+            .addURL(archive: nil, url: "example.org", title: nil))
+        #expect(wrong.outcome == .failed)
+
+        let noted = await test.handler.handle(
+            .addText(archive: nil, text: "Lamp ideas", title: nil, note: "From the sketchbook"))
+        #expect(noted.outcome == .done, "\(noted.message)")
+        #expect(try test.handle.intake().waiting.count == 2)
+
+        try test.holdLeaseElsewhere()
+        let sent = await test.handler.handle(
+            .addURL(archive: nil, url: "https://example.org/other", title: nil))
+        #expect(sent.outcome == .done, "\(sent.message)")
+        #expect(sent.message.contains("inbox"))
+        #expect(try test.handle.intake().waiting.count == 2, "it waits for the writer")
+        let inbox = test.sample.root.appending(path: "_System/inbox")
+        #expect(FileManager.default.fileExists(atPath: inbox.path(percentEncoded: false)))
+    }
+
     @Test func anotherWritersLeaseIsRefusedWithItsReason() async throws {
         let test = try await RequestSample()
         try test.holdLeaseElsewhere()

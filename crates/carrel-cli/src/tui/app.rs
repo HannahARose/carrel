@@ -345,6 +345,10 @@ pub enum Effect {
         paths: Vec<std::path::PathBuf>,
         /// How folders among them are read.
         options: carrel_core::ingest::IntakeOptions,
+        /// A web address to add instead, as a `url` item.
+        url: Option<String>,
+        /// The owner's note, for the drafts and the cards.
+        note: Option<String>,
     },
     /// Take this item off the intake queue.
     Unqueue(Id),

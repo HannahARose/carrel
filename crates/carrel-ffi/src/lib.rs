@@ -21,10 +21,12 @@
 //! | [`settings`] | The archive's settings and this device's model choices |
 //! | [`models`] | The model catalog, providers, and downloads |
 //! | [`intake`] | The intake queue |
+//! | [`sharing`] | Adding from a Mac's share sheet: notes, web addresses, and the inbox while another device writes |
 //! | [`backups`](mod@backups) | Backups: setting up a repository, the snapshots, taking one, verifying, restoring |
 //! | [`agent`] | The Mac app's agent: its claim on an archive, work sessions and scheduled snapshots |
 //! | [`librarian`] | The librarian: a conversation, saving it to the Journal, and its own changes |
 //! | [`discover`] | Discovery: on this day, wander, the timeline, the archive map, activity, resurfacing |
+//! | [`quick_look`] | Quick Look: cards laid out for the preview extension, and the drawings the agent keeps for it |
 //! | [`spotlight`] | Spotlight on the Mac: what the agent indexes, by `spotlight.index` |
 //! | [`creating`] | Creating an archive with a chosen embedding model |
 //!
@@ -68,6 +70,7 @@ pub mod models;
 pub mod previews;
 pub mod question_subjects;
 pub mod questions;
+pub mod quick_look;
 pub mod records;
 pub mod redraft;
 pub mod reminders;
@@ -75,6 +78,7 @@ pub mod restructure;
 pub mod review;
 pub mod search;
 pub mod settings;
+pub mod sharing;
 pub mod spotlight;
 pub mod usage_report;
 pub mod working_copy;

@@ -1217,6 +1217,9 @@ fn draw_ingest(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
             .style(Style::new().add_modifier(Modifier::BOLD)),
         ];
         lines.extend(plan.lines.iter().map(|l| Line::from(l.as_str())));
+        if let Some(note) = &plan.note {
+            lines.push(Line::from(format!("Note: {note}")));
+        }
         lines.push(Line::from(""));
         if let Some(problem) = &plan.problem {
             lines.push(Line::from(problem.as_str()));
@@ -1225,7 +1228,7 @@ fn draw_ingest(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
         lines.push(Line::from(Span::styled(
             "Enter adds them to the queue; a worker drafts each in the background, and its \
              proposal appears in Review when it's ready. e reads folders entry by entry, w as \
-             one item.",
+             one item; n adds a note for their cards.",
             theme.dim(),
         )));
         frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), area);

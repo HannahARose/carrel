@@ -100,7 +100,10 @@ public struct AgentPlan: Sendable, Equatable {
         guard relative == "_System" || relative.hasPrefix("_System/") else {
             return relative.isEmpty ? .ignored : .filed
         }
-        if relative.hasPrefix("_System/queue/intake") { return .queue }
+        // Another device's inbox: the worker applies it when this Mac is the writer.
+        if relative.hasPrefix("_System/queue/intake") || relative.hasPrefix("_System/inbox/") {
+            return .queue
+        }
         if relative.hasPrefix("_System/devices/") && relative.hasSuffix("/desk.json") {
             return .active
         }

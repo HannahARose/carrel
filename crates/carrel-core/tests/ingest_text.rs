@@ -16,6 +16,7 @@ use carrel_core::providers::{
 
 fn candidate(path: &std::path::Path, kind: Kind) -> Candidate {
     Candidate {
+        context: None,
         path: path.to_owned(),
         kind,
         sealed: None,

@@ -24,7 +24,8 @@ fn copy_dir(from: &Path, to: &Path) {
 }
 
 /// A copy of the sample archive with history and six notes in Reading that belong together,
-/// and its own configuration folder, so tests never touch the real one.
+/// more than a collection holds before it's crowded here, and its own configuration folder, so
+/// tests never touch the real one.
 struct Sandbox {
     dir: tempfile::TempDir,
 }
@@ -52,6 +53,9 @@ impl Sandbox {
             .unwrap();
         }
         sandbox.ok(&["init", "."]);
+        // Reading's ten items count as crowded here, so its bird walks are worth a
+        // subcollection of their own.
+        sandbox.ok(&["settings", "set", "signals.crowded_items", "8"]);
         sandbox
     }
 
@@ -177,10 +181,17 @@ fn approving_part_says_what_was_dropped_and_undo_reverses_it_all() {
     // All of it, then undone as one change.
     sandbox.ok(&["undo", &latest(&sandbox)]);
     assert!(!root.join("Reading/Birds/_collection.md").exists());
-    // Reading was just restructured, so at Balanced the stability penalty holds it back.
+    // Reading was just restructured, so a heavy stability penalty holds it back.
+    sandbox.ok(&["settings", "set", "restructure.stability_penalty", "0.5"]);
     let recent = sandbox.json(&["restructure", "propose", "Reading", "--no-model"]);
     assert!(recent["proposal"].is_null(), "{recent}");
     assert_eq!(recent["assessment"]["recently_restructured"], true);
+    sandbox.ok(&[
+        "settings",
+        "set",
+        "restructure.stability_penalty",
+        "default",
+    ]);
     sandbox.ok(&["settings", "set", "restructure.eagerness", "eager"]);
     let proposal = sandbox.propose();
     let approved = sandbox.json(&["restructure", "approve", proposal["id"].as_str().unwrap()]);

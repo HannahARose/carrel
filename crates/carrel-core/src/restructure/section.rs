@@ -11,12 +11,15 @@
 //! is [`super::applying`].
 //!
 //! Each candidate group becomes either a new collection its items move into (subdividing a
-//! collection, gathering Holding's items, or gathering items from several branches), or, when
+//! collection, gathering Holding's items, or gathering items from several branches); or, when
 //! the group is a small collection's every item plus items of one other collection, merging
-//! the small one into the other. A rewrite of the home collection's design document, naming
-//! its new subcollections, depends on the collections it names.
+//! the small one into the other; or, when it belongs in a collection that's already there,
+//! moving the members with reason to leave into it ([`super::rehoming`]). Single items far more
+//! like another collection than their own, or that the crawler judged belong elsewhere, move on
+//! their own. A rewrite of the home collection's design document, naming its new
+//! subcollections, depends on the collections it names.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt::Write as _;
 
 use serde::{Deserialize, Serialize};
@@ -25,6 +28,7 @@ use serde_json::{Value, json};
 use super::eagerness::{self, Eagerness, Source, Thresholds};
 use super::findability::{self, Tree};
 use super::grouping::{CandidateGroup, GroupingOptions, group_section};
+use super::rehoming::{self, CrawlerMove, CrawlerSignals};
 use super::{
     Edit, Invasiveness, Proposal, ProposalKind, ProposedChange, RestructureError, Touched,
 };
@@ -152,6 +156,11 @@ enum Shape {
         /// The collection it joins.
         into: String,
     },
+    /// Its items moved into `to`, a collection that's already there.
+    Into {
+        /// The collection.
+        to: String,
+    },
 }
 
 /// A candidate group, judged.
@@ -163,6 +172,9 @@ struct Plan {
     benefit: f64,
     cost: f64,
     required: f64,
+    /// For items moving into an existing collection, how much more similar they are to its
+    /// items than to those where they are, from 0 to 1.
+    improvement: f64,
     /// Items that would leave a collection the owner knows, for the move budget.
     known_moves: usize,
     name: String,
@@ -186,6 +198,13 @@ impl Plan {
                 self.group.members.len()
             ),
             Shape::Merge { from, into } => format!("merging {from} into {into}"),
+            Shape::Into { to } if self.group.members.len() == 1 => {
+                format!(
+                    "moving an item from {} into {to}",
+                    self.group.sources[0].collection
+                )
+            }
+            Shape::Into { to } => format!("moving {} items into {to}", self.group.members.len()),
         }
     }
 
@@ -208,6 +227,8 @@ struct Survey<'a> {
     graph: Graph,
     /// Items with a placement filing wasn't sure of.
     unsure: BTreeSet<Id>,
+    /// What the crawler judged of items still where it judged them.
+    crawler: CrawlerSignals,
     crowded_items: usize,
     /// Collections restructured within each level's stability period, by the time of their
     /// latest restructure (seconds since 1970).
@@ -226,15 +247,18 @@ impl<'a> Survey<'a> {
             .map(|e| e.item.id)
             .collect();
         let restructured = recent_restructures(archive);
+        let collections = archive.collections()?;
+        let crawler = rehoming::crawler_signals(archive, &graph, &collections);
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX));
         Ok(Self {
             archive,
-            collections: archive.collections()?,
+            collections,
             catalog,
             graph,
             unsure,
+            crawler,
             crowded_items: usize::try_from(archive.settings().signals.crowded_items)
                 .unwrap_or(usize::MAX),
             restructured,
@@ -259,6 +283,15 @@ impl<'a> Survey<'a> {
         self.collections
             .iter()
             .any(|c| c.path != path && is_within(&c.path, path))
+    }
+
+    /// Each item's collection, by identifier.
+    fn collection_of(&self) -> HashMap<Id, &str> {
+        self.graph
+            .items
+            .iter()
+            .map(|i| (i.id, i.collection.as_str()))
+            .collect()
     }
 
     fn has_checked_out(&self, path: &str) -> bool {
@@ -326,9 +359,58 @@ fn in_holding(collection: &str) -> bool {
     is_within(collection, HOLDING)
 }
 
-/// What `group` becomes: merging a small collection, when the group is all of one small
-/// collection's items and some of one other's; otherwise a new collection.
-fn shape_of(survey: &Survey, group: &CandidateGroup, warrant: usize) -> (Shape, Invasiveness) {
+/// What `group` becomes, in `section`: merging a small collection, when the group is all of one
+/// small collection's items and some of one other's; moving the members with reason to leave
+/// where they are into an existing collection, when it belongs there
+/// ([`rehoming::existing_home`]); otherwise a new collection. Returns the group as narrowed to
+/// the members that move.
+fn shape_of(
+    survey: &Survey,
+    section: &str,
+    group: CandidateGroup,
+    options: &GroupingOptions,
+) -> (CandidateGroup, Shape, Invasiveness) {
+    if let Some(merge) = merge_shape(survey, &group, options.warrant) {
+        return (group, merge.0, merge.1);
+    }
+    let collection_of = survey.collection_of();
+    let exists = |path: &str| {
+        survey.collections.iter().any(|c| c.path == path)
+            && is_within(path, section)
+            && !in_holding(path)
+            && !survey.has_checked_out(path)
+    };
+    if let Some((to, members)) = rehoming::existing_home(
+        &group,
+        &collection_of,
+        &survey.crawler,
+        &|id| survey.unsure.contains(id) || survey.crawler.misfits.contains(id),
+        &exists,
+        options,
+    ) {
+        let group = rehoming::narrowed(&group, members, &to, &collection_of);
+        let invasiveness = group.invasiveness;
+        return (group, Shape::Into { to }, invasiveness);
+    }
+    let invasiveness = if group.home.is_empty()
+        && group.sources.iter().any(|s| !in_holding(&s.collection))
+        && group.invasiveness >= Invasiveness::BetweenBranches
+    {
+        Invasiveness::TopLevel
+    } else {
+        group.invasiveness
+    };
+    let home = group.home.clone();
+    (group, Shape::New { home }, invasiveness)
+}
+
+/// Merging a small collection, when `group` is all of one small collection's items and some
+/// of one other's.
+fn merge_shape(
+    survey: &Survey,
+    group: &CandidateGroup,
+    warrant: usize,
+) -> Option<(Shape, Invasiveness)> {
     if let [a, b] = group.sources.as_slice() {
         // The smaller joins the larger: sources come most items first.
         for (small, other) in [(b, a), (a, b)] {
@@ -346,30 +428,17 @@ fn shape_of(survey: &Survey, group: &CandidateGroup, warrant: usize) -> (Shape, 
                 } else {
                     Invasiveness::BetweenBranches
                 };
-                return (
+                return Some((
                     Shape::Merge {
                         from: small.collection.clone(),
                         into: other.collection.clone(),
                     },
                     invasiveness,
-                );
+                ));
             }
         }
     }
-    let invasiveness = if group.home.is_empty()
-        && group.sources.iter().any(|s| !in_holding(&s.collection))
-        && group.invasiveness >= Invasiveness::BetweenBranches
-    {
-        Invasiveness::TopLevel
-    } else {
-        group.invasiveness
-    };
-    (
-        Shape::New {
-            home: group.home.clone(),
-        },
-        invasiveness,
-    )
+    None
 }
 
 /// The thresholds that apply to a plan: the least eager of where it goes and every collection
@@ -383,6 +452,7 @@ fn plan_thresholds(survey: &Survey, group: &CandidateGroup, shape: &Shape) -> Th
     match shape {
         Shape::New { home } => places.push(home),
         Shape::Merge { into, .. } => places.push(into),
+        Shape::Into { to } => places.push(to),
     }
     let all: Vec<Thresholds> = places.iter().map(|p| survey.thresholds(p)).collect();
     let mut strictest = all[0];
@@ -402,59 +472,124 @@ fn plan_thresholds(survey: &Survey, group: &CandidateGroup, shape: &Shape) -> Th
     strictest
 }
 
-/// Judges `group`: what it becomes, what it's worth and what it costs.
+/// Judges `group`, in `section`: what it becomes, what it's worth and what it costs.
 ///
-/// - **Benefit:** how much more alike its items are to each other than to the rest of the
-///   collections they'd leave, past what grouping needed (half of it), the
-///   share of them that leave Holding or a placement filing wasn't sure of (0.3), and 0.2 when
-///   it subdivides a crowded collection.
+/// - **Benefit:**
+///   - the share of its items that have reason to leave where they are (0.5): those it
+///     gathers from elsewhere that don't fit there ([`CandidateGroup::misfits`]), unless the
+///     crawler judged they do; those in Holding or a placement filing wasn't sure of; the
+///     crawler's misfits; and a merged collection's, too small to stand alone. Subdividing
+///     needs most of them to have one, since the numbers can't tell a subtopic from items that
+///     don't belong;
+///   - how much more alike its items are to each other than to the rest of the collections
+///     they'd leave, for the share of the items it moves that it gathers from elsewhere (0.3);
+///     all of them when it subdivides a crowded collection;
+///   - for items going into an existing collection, how much more alike they are to its items
+///     than to those where they are (0.3);
+///   - and 0.2 when it subdivides a crowded collection.
 /// - **Cost:** each item moved out of a collection the owner knows, weighted by how invasive
 ///   the change is, plus the stability penalty when the section was restructured recently.
+fn judge(survey: &Survey, section: &str, group: CandidateGroup, options: &GroupingOptions) -> Plan {
+    let (group, shape, invasiveness) = shape_of(survey, section, group, options);
+    // How alike the items are on average to the rest of where they are now.
+    let apart = group.cohesion - group.separation;
+    let improvement = match (&shape, &group.nearest) {
+        (Shape::Into { to }, Some((nearest, likeness))) if nearest == to => {
+            (likeness - apart).clamp(0.0, 1.0)
+        }
+        _ => 0.0,
+    };
+    weigh(survey, group, shape, invasiveness, improvement)
+}
+
+/// Judges a single item's move into another existing collection.
+fn judge_move(survey: &Survey, item: rehoming::ItemMove) -> Plan {
+    weigh(
+        survey,
+        item.group,
+        Shape::Into { to: item.to },
+        Invasiveness::BetweenBranches,
+        item.improvement,
+    )
+}
+
+/// What `group`, becoming `shape`, is worth and costs; see [`judge`].
 #[allow(clippy::cast_precision_loss)] // item counts
-fn judge(survey: &Survey, group: CandidateGroup, options: &GroupingOptions) -> Plan {
-    let (shape, invasiveness) = shape_of(survey, &group, options.warrant);
+fn weigh(
+    survey: &Survey,
+    group: CandidateGroup,
+    shape: Shape,
+    invasiveness: Invasiveness,
+    improvement: f64,
+) -> Plan {
     let thresholds = plan_thresholds(survey, &group, &shape);
     let members = group.members.len().max(1) as f64;
-    let collection_of: HashMap<Id, &str> = survey
-        .graph
-        .items
-        .iter()
-        .map(|i| (i.id, i.collection.as_str()))
-        .collect();
+    let collection_of = survey.collection_of();
     let destination = match &shape {
         Shape::New { .. } => None,
         Shape::Merge { into, .. } => Some(into.as_str()),
+        Shape::Into { to } => Some(to.as_str()),
     };
     let moving: Vec<&Id> = group
         .members
         .iter()
         .filter(|id| collection_of.get(id).copied() != destination)
         .collect();
-    let resolved = moving
+    // The numbers can't tell a subtopic from items that don't belong, since both are unlike
+    // the rest of their collection: for a new collection they count only the misfits it
+    // gathers from elsewhere, not those of the collection most of it comes from.
+    let main = match &shape {
+        Shape::New { .. } => group.sources.first().map(|s| s.collection.as_str()),
+        _ => None,
+    };
+    let small = match &shape {
+        Shape::Merge { from, .. } => Some(from.as_str()),
+        _ => None,
+    };
+    let mut fixes = moving
         .iter()
         .filter(|id| {
-            survey.unsure.contains(id) || collection_of.get(id).is_some_and(|c| in_holding(c))
+            (group.misfits.contains(id)
+                && collection_of.get(id).copied() != main
+                && !survey.crawler.fitting.contains(id))
+                || (small.is_some() && collection_of.get(id).copied() == small)
+                || survey.unsure.contains(id)
+                || survey.crawler.misfits.contains(id)
+                || collection_of.get(id).is_some_and(|c| in_holding(c))
         })
         .count();
+    // Subdividing says a group as a whole doesn't belong with the rest of its collection: a
+    // few doubtful members don't make that case.
+    if invasiveness == Invasiveness::Subdividing && fixes * 2 <= moving.len() {
+        fixes = 0;
+    }
     let known_moves = moving
         .iter()
         .filter(|id| collection_of.get(id).is_some_and(|c| !in_holding(c)))
         .count();
-    // Items already together with others like them gain little from moving.
-    let tightness = ((group.separation - options.threshold) / (1.0 - options.threshold).max(1e-9))
-        .clamp(0.0, 1.0);
     let crowded = matches!(&shape, Shape::New { home } if invasiveness == Invasiveness::Subdividing
         && survey.items_in(home) > survey.crowded_items);
-    let benefit =
-        0.5 * tightness + 0.3 * resolved as f64 / members + if crowded { 0.2 } else { 0.0 };
-    let touched: Vec<&str> = group
+    // The share of the items it moves that it gathers from elsewhere, to join the rest; all
+    // of them when it subdivides a crowded collection, putting like items together away from
+    // the crowd.
+    let gathered = if crowded {
+        1.0
+    } else {
+        let main = group.sources.first().map(|s| s.collection.as_str());
+        moving
+            .iter()
+            .filter(|id| collection_of.get(id).copied() != main)
+            .count() as f64
+            / moving.len().max(1) as f64
+    };
+    let benefit = 0.5 * fixes as f64 / members
+        + 0.3 * group.separation * gathered
+        + 0.3 * improvement
+        + if crowded { 0.2 } else { 0.0 };
+    let recent = group
         .sources
         .iter()
-        .map(|s| s.collection.as_str())
-        .collect();
-    let recent = touched
-        .iter()
-        .any(|c| survey.recently(c, thresholds.stability_days));
+        .any(|s| survey.recently(&s.collection, thresholds.stability_days));
     let cost = move_weight(invasiveness) * known_moves as f64 / members
         + if recent {
             thresholds.stability_penalty
@@ -468,6 +603,7 @@ fn judge(survey: &Survey, group: CandidateGroup, options: &GroupingOptions) -> P
         benefit,
         cost,
         required: thresholds.required_gain(invasiveness),
+        improvement,
         known_moves: if Thresholds::counts_against_budget(invasiveness) {
             known_moves
         } else {
@@ -479,19 +615,25 @@ fn judge(survey: &Survey, group: CandidateGroup, options: &GroupingOptions) -> P
     }
 }
 
-/// Keeps the plans whose gain beats what their eagerness asks, best first, within the move
-/// budget; the rest are held back, with why.
+/// Adds to `chosen` the plans whose gain beats what their eagerness asks, best first, within
+/// the move budget left; the rest are held back, with why.
 fn choose(
     survey: &Survey,
     section: &str,
     mut plans: Vec<Plan>,
+    chosen: &mut Vec<Plan>,
     held: &mut Vec<HeldBack>,
-) -> Vec<Plan> {
+) {
     plans.sort_by(|a, b| b.gain().total_cmp(&a.gain()));
     let budget = survey.thresholds(section).move_budget;
-    let mut spent = 0;
+    let mut spent: usize = chosen.iter().map(|p| p.known_moves).sum();
     let mut merged: BTreeSet<String> = BTreeSet::new();
-    let mut chosen = Vec::new();
+    for plan in chosen.iter() {
+        if let Shape::Merge { from, into } = &plan.shape {
+            merged.insert(from.clone());
+            merged.insert(into.clone());
+        }
+    }
     for plan in plans {
         if plan.gain() <= plan.required {
             let why = if plan.required > 0.0 {
@@ -528,7 +670,6 @@ fn choose(
         spent += plan.known_moves;
         chosen.push(plan);
     }
-    chosen
 }
 
 /// Builds a restructure proposal for `section` (a collection's path, or empty for the whole
@@ -550,7 +691,7 @@ pub fn propose_section<S: std::hash::BuildHasher>(
     options: &SectionOptions,
 ) -> Result<Proposal, RestructureError> {
     let section = section.trim().trim_matches('/');
-    let survey = Survey::read(archive)?;
+    let mut survey = Survey::read(archive)?;
     let section = match survey
         .collections
         .iter()
@@ -581,12 +722,13 @@ pub fn propose_section<S: std::hash::BuildHasher>(
         without_vectors: grouping.without_vectors,
         held_back: Vec::new(),
     };
-    let plans: Vec<Plan> = grouping
-        .groups
-        .into_iter()
-        .map(|g| judge(&survey, g, &options.grouping))
-        .collect();
-    let mut chosen = choose(&survey, &section, plans, &mut assessment.held_back);
+    let mut chosen = choose_plans(
+        &mut survey,
+        &section,
+        grouping,
+        &options.grouping,
+        &mut assessment.held_back,
+    );
     let wording = registry.and_then(|r| ask_for_wording(r, &survey, &section, &chosen));
     let renames = name_plans(&survey, &section, &mut chosen, wording.as_ref());
     assessment.worded_by_model = wording.is_some();
@@ -635,6 +777,59 @@ pub fn propose_section<S: std::hash::BuildHasher>(
         .unwrap_or_else(|| rationale(&section, &proposal, &assessment));
     proposal.assessment = Some(assessment);
     Ok(proposal)
+}
+
+/// The plans worth proposing for `grouping`'s groups, then for single items the chosen groups
+/// don't move; the rest are held back, with why. The crawler's verdicts the numbers disagree
+/// with are set aside first.
+fn choose_plans(
+    survey: &mut Survey,
+    section: &str,
+    grouping: super::grouping::Grouping,
+    options: &GroupingOptions,
+    held: &mut Vec<HeldBack>,
+) -> Vec<Plan> {
+    survey
+        .crawler
+        .set_aside_where_the_numbers_disagree(&grouping.fits);
+    let survey = &*survey;
+    let plans: Vec<Plan> = grouping
+        .groups
+        .into_iter()
+        .map(|g| judge(survey, section, g, options))
+        .collect();
+    let mut chosen = Vec::new();
+    choose(survey, section, plans, &mut chosen, held);
+    choose_item_moves(survey, section, &grouping.fits, options, &mut chosen, held);
+    chosen
+}
+
+/// Adds to `chosen` the single items worth moving on their own ([`rehoming::item_moves`]),
+/// among those in `fits` the chosen plans don't move already, as [`choose`] does.
+fn choose_item_moves(
+    survey: &Survey,
+    section: &str,
+    fits: &[super::grouping::ItemFit],
+    options: &GroupingOptions,
+    chosen: &mut Vec<Plan>,
+    held: &mut Vec<HeldBack>,
+) {
+    let grouped: HashSet<Id> = chosen
+        .iter()
+        .flat_map(|p| p.group.members.iter().copied())
+        .collect();
+    let crawler: HashMap<Id, CrawlerMove> = survey
+        .crawler
+        .moves
+        .iter()
+        .filter(|(_, v)| is_within(&v.to, section))
+        .map(|(id, v)| (*id, v.clone()))
+        .collect();
+    let moves = rehoming::item_moves(fits, &crawler, &survey.crawler.fitting, &grouped, options)
+        .into_iter()
+        .map(|m| judge_move(survey, m))
+        .collect();
+    choose(survey, section, moves, chosen, held);
 }
 
 /// Runs the findability test on the chosen plans, if a text model and cards with summaries
@@ -691,6 +886,7 @@ fn proposed_tree(survey: &Survey, chosen: &[Plan]) -> Tree {
                 }
                 into.clone()
             }
+            Shape::Into { to } => to.clone(),
         };
         for id in &plan.group.members {
             tree.place(*id, &to);
@@ -902,10 +1098,14 @@ fn name_plans(
 ) -> Vec<(String, String, String)> {
     let mut taken: BTreeSet<String> = BTreeSet::new();
     for (n, plan) in chosen.iter_mut().enumerate() {
-        let worded = wording.and_then(|w| w.plans.get(&n));
+        // Items going into an existing collection keep its name, and their reason is the
+        // numbers' and the crawler's.
+        let worded = wording
+            .and_then(|w| w.plans.get(&n))
+            .filter(|_| !matches!(plan.shape, Shape::Into { .. }));
         let home = match &plan.shape {
             Shape::New { home } => home.clone(),
-            Shape::Merge { .. } => String::new(),
+            Shape::Merge { .. } | Shape::Into { .. } => String::new(),
         };
         let base = worded
             .map(|(name, _, _)| name.clone())
@@ -924,7 +1124,10 @@ fn name_plans(
             || plain_description(&plan.group),
             |(_, description, _)| description.clone(),
         );
-        plan.reason = worded.map_or_else(|| plain_reason(plan), |(_, _, reason)| reason.clone());
+        plan.reason = worded.map_or_else(
+            || plain_reason(survey, plan),
+            |(_, _, reason)| reason.clone(),
+        );
     }
     let Some(wording) = wording else {
         return Vec::new();
@@ -953,6 +1156,7 @@ fn touches(plan: &Plan, path: &str) -> bool {
     plan.group.sources.iter().any(|s| s.collection == path)
         || matches!(&plan.shape, Shape::Merge { from, into } if from == path || into == path)
         || matches!(&plan.shape, Shape::New { home } if home == path)
+        || matches!(&plan.shape, Shape::Into { to } if to == path)
 }
 
 fn plain_description(group: &CandidateGroup) -> String {
@@ -967,7 +1171,7 @@ fn plain_description(group: &CandidateGroup) -> String {
     }
 }
 
-fn plain_reason(plan: &Plan) -> String {
+fn plain_reason(survey: &Survey, plan: &Plan) -> String {
     let n = plan.group.members.len();
     let why = format!(
         "these {n} items are alike (cohesion {:.2}) and belong together",
@@ -986,7 +1190,52 @@ fn plain_reason(plan: &Plan) -> String {
                 .collect();
             format!("{}; they're now {}", capitalize(&why), sources.join(", "))
         }
+        Shape::Into { to } => into_reason(survey, plan, to),
     }
+}
+
+/// Why items go into the existing collection `to`: what the numbers say, and what the crawler
+/// said.
+fn into_reason(survey: &Survey, plan: &Plan, to: &str) -> String {
+    let n = plan.group.members.len();
+    let (them, are) = if n == 1 {
+        ("it", "is")
+    } else {
+        ("they", "are")
+    };
+    let mut why = Vec::new();
+    if plan.improvement > 0.0 {
+        why.push(format!(
+            "{them} {are} more like {to}'s items than those where {them} {are} (by {:.2})",
+            plan.improvement
+        ));
+    }
+    let sent = plan
+        .group
+        .members
+        .iter()
+        .filter(|id| survey.crawler.moves.get(id).is_some_and(|v| v.to == to))
+        .count();
+    if sent > 0 {
+        why.push(if n == 1 {
+            format!("the crawler judged it belongs in {to}")
+        } else {
+            format!("the crawler judged {sent} of them belong in {to}")
+        });
+    }
+    if why.is_empty() {
+        why.push(if n == 1 {
+            format!("it doesn't fit where it is, and belongs with {to}")
+        } else {
+            format!("they don't fit where they are, and belong with {to}")
+        });
+    }
+    let what = if n == 1 {
+        "This item belongs elsewhere".to_owned()
+    } else {
+        format!("These {n} items belong elsewhere")
+    };
+    format!("{what}: {}", why.join("; "))
 }
 
 fn capitalize(text: &str) -> String {
@@ -1095,6 +1344,16 @@ fn changes(
             Shape::Merge { from, into } => {
                 let merge = merge_change(survey, plan, from, into, list.len() + 1);
                 list.push(merge);
+            }
+            Shape::Into { to } => {
+                let mut moves = change(
+                    &next(&list),
+                    Edit::MoveItems { to: to.clone() },
+                    plan.reason.clone(),
+                    plan.invasiveness,
+                );
+                moves.items = touched(survey, &plan.group.members);
+                list.push(moves);
             }
         }
     }
