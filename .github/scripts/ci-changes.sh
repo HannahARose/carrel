@@ -104,7 +104,7 @@ area cad "${core[@]}" 'crates/carrel-provider-cad/*' 'crates/carrel-provider-ext
 area extract "${core[@]}" 'crates/carrel-provider-extract/*'
 area kopia "${core[@]}"
 area editors 'editors/*' 'crates/carrel-cli/*'
-area deny Cargo.toml Cargo.lock 'crates/*/Cargo.toml' deny.toml
+area deny Cargo.toml Cargo.lock 'crates/*/Cargo.toml' deny.toml about.toml .github/scripts/check-license-lists.py
 area workflows '.github/*'
 
 cache=true
