@@ -198,6 +198,35 @@ fn a_conversation_remembers_the_earlier_questions() {
 }
 
 #[test]
+fn it_says_how_far_it_has_got_as_each_step_starts() {
+    let (_dir, archive, _) = sample();
+    let (registry, _) = scripted(vec![
+        tool("search", "oscillators"),
+        answer("The note.", &[NOTE], json!([]), json!([])),
+    ]);
+    let seen = std::sync::Mutex::new(Vec::new());
+    let progress = |p: carrel_core::librarian::Progress<'_>| {
+        seen.lock()
+            .unwrap()
+            .push((p.step, p.steps, p.did.map(str::to_owned)));
+    };
+    let librarian = Librarian::new(&archive, &registry, the_model(), &providers)
+        .unwrap()
+        .with_progress(&progress);
+    librarian
+        .ask(&mut Conversation::default(), "Oscillators?")
+        .unwrap();
+    let seen = seen.into_inner().unwrap();
+    assert_eq!(seen.len(), 2);
+    assert_eq!((seen[0].0, seen[0].1, seen[0].2.as_deref()), (1, 8, None));
+    assert_eq!(seen[1].0, 2);
+    assert!(
+        seen[1].2.is_some(),
+        "the second step says what the search did"
+    );
+}
+
+#[test]
 fn it_stops_at_its_limit_of_steps_and_must_answer_on_the_last() {
     let (_dir, archive, _) = sample();
     let (registry, asked) = scripted(vec![

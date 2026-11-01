@@ -487,6 +487,22 @@ fileprivate struct FfiConverterUInt8: FfiConverterPrimitive {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterInt16: FfiConverterPrimitive {
+    typealias FfiType = Int16
+    typealias SwiftType = Int16
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Int16 {
+        return try lift(readInt(&buf))
+    }
+
+    public static func write(_ value: Int16, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterUInt32: FfiConverterPrimitive {
     typealias FfiType = UInt32
     typealias SwiftType = UInt32
@@ -561,6 +577,22 @@ fileprivate struct FfiConverterFloat: FfiConverterPrimitive {
 
     public static func write(_ value: Float, into buf: inout [UInt8]) {
         writeFloat(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterDouble: FfiConverterPrimitive {
+    typealias FfiType = Double
+    typealias SwiftType = Double
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Double {
+        return try lift(readDouble(&buf))
+    }
+
+    public static func write(_ value: Double, into buf: inout [UInt8]) {
+        writeDouble(&buf, lower(value))
     }
 }
 
@@ -1148,6 +1180,90 @@ public protocol ArchiveHandleProtocol: AnyObject, Sendable {
     func saveCorrection(correction: Correction) throws  -> SavedCorrection
     
     /**
+     * Filing and work sessions by day, from `from` to `to` (`YYYY-MM-DD`; the last year to
+     * today when `None`).
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] for dates that can't be read or are the wrong way round, or
+     * [`CarrelError::Failed`] if the archive can't be read.
+     */
+    func activity(from: String?, to: String?) throws  -> ArchiveActivity
+    
+    /**
+     * The archive map: collections by total size and number of items.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the archive can't be read.
+     */
+    func archiveMap() throws  -> ArchiveMap
+    
+    /**
+     * What was made, filed or worked on on `date` (`YYYY-MM-DD`, today when `None`) in
+     * other years.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] for a date that can't be read, or [`CarrelError::Failed`] if
+     * the archive can't be.
+     */
+    func onThisDay(date: String?) throws  -> OnThisDay
+    
+    /**
+     * Records on this device that the collection `collection` was opened today, as showing
+     * an item does, so wander and resurfacing know it's been seen.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the configuration folder can't be found.
+     */
+    func recordOpened(collection: String) throws 
+    
+    /**
+     * Now and then, a collection not opened in a long time, with an item or two from it, as
+     * `carrel status` mentions one; the same one all day once it's chosen.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the archive can't be read.
+     */
+    func resurfaced() throws  -> Resurfaced?
+    
+    /**
+     * A new walk through the stacks, from the item `start` or from a collection not opened
+     * in a while, reproducible with `seed` (a new one when `None`).
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if `start` names no item.
+     */
+    func startWander(start: String?, seed: UInt64?) throws  -> Wander
+    
+    /**
+     * Items by date, grouped `per` year, month or day, going `by` when they were `created`,
+     * `filed` or `worked` on (`None` for each item's own date), narrowed by `query` as
+     * search narrows (words and filters such as `tag:receipts`; empty for every item).
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] for a query, `by` or `per` that can't be read, or
+     * [`CarrelError::Failed`] if the archive can't be.
+     */
+    func timeline(query: String, by: String?, per: String) throws  -> DiscoveryTimeline
+    
+    /**
+     * The next step of `walk`: a related item, a link, a neighbour in its collection, or a
+     * jump somewhere not visited in a while. `None` when it has visited every item it can
+     * reach. The step's collection counts as opened on this device.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the archive can't be read.
+     */
+    func wanderStep(walk: Wander) throws  -> WanderStep?
+    
+    /**
      * Saves `fields` to the filed item `item`'s card, checked as `carrel edit` checks
      * them, as one change undone from History. The card's body is kept exactly.
      *
@@ -1335,6 +1451,74 @@ public protocol ArchiveHandleProtocol: AnyObject, Sendable {
      * What the worker for this archive on this device is doing, if one is running.
      */
     func workerStatus()  -> WorkerStatus?
+    
+    /**
+     * Asks the librarian `question` in `conversation`, adding its answer there, on `model`
+     * or, when that's `None`, this device's ([`ArchiveHandle::librarian_model_label`]).
+     * `memory_gb` is this device's memory, which the strongest model has to fit in.
+     * `progress` is told as each step starts: the step, of the most it may take, and what
+     * the last one did. With `librarian.changes` on, the librarian makes the changes it's
+     * sure of, as this device's owner; the rest are left in the answer to confirm.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if there's no model, or [`CarrelError::Failed`] if the
+     * archive can't be read or the model fails.
+     */
+    func askLibrarian(conversation: LibrarianConversation, question: String, model: ModelProvider?, memoryGb: UInt64?, progress: ProgressListener?) throws  -> LibrarianAnswer
+    
+    /**
+     * The changes the librarian made on its own at or after `since` (seconds since the Unix
+     * epoch) that haven't been undone, newest first.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the history can't be read.
+     */
+    func librarianChanges(since: Int64) throws  -> [Change]
+    
+    /**
+     * Whether the archive lets the librarian make the changes it's sure of on its own
+     * (`librarian.changes`).
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the archive can't be read.
+     */
+    func librarianMakesChanges() throws  -> Bool
+    
+    /**
+     * The model the librarian would answer with, for people, as
+     * [`ArchiveHandle::ask_librarian`] chooses it.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if there's no text model, or `librarian.model` names one that
+     * isn't available.
+     */
+    func librarianModelLabel(model: ModelProvider?, memoryGb: UInt64?) throws  -> String
+    
+    /**
+     * Saves `conversation` to this month's Journal, as one history change.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if it has no answers, [`CarrelError::Busy`] if another
+     * writer holds the archive, or [`CarrelError::Failed`].
+     */
+    func saveConversation(conversation: LibrarianConversation) throws  -> SavedConversation
+    
+    /**
+     * Undoes every change the librarian made on its own at or after `since`, newest first,
+     * as `carrel undo --librarian` does. One that can't be undone is reported, and the rest
+     * are still undone.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Busy`] if another writer holds the archive, or [`CarrelError::Failed`]
+     * if the history can't be read.
+     */
+    func undoLibrarianChanges(since: Int64) throws  -> LibrarianUndone
     
     /**
      * Downloads the catalog model `name` into this device's models folder through the
@@ -1625,13 +1809,14 @@ public protocol ArchiveHandleProtocol: AnyObject, Sendable {
     func modelChoices() throws  -> ModelChoices
     
     /**
-     * Sets this device's `picker` or `editor` to `value`, as `carrel settings set` does; an
-     * empty value, `default` or `None` clears it, so Carrel chooses.
+     * Sets this device's `picker`, `editor` or `librarian.model` to `value`, as
+     * `carrel settings set` does; an empty value, `default` or `None` clears it, so Carrel
+     * chooses. A librarian model must be one that's available.
      *
      * # Errors
      *
-     * [`CarrelError::Invalid`] for another key, or [`CarrelError::Failed`] if the
-     * preferences can't be saved.
+     * [`CarrelError::Invalid`] for another key or a model that isn't available, or
+     * [`CarrelError::Failed`] if the preferences can't be saved.
      */
     func setDeviceSetting(key: String, value: String?) throws  -> DeviceSettings
     
@@ -2448,6 +2633,155 @@ open func saveCorrection(correction: Correction)throws  -> SavedCorrection  {
 }
     
     /**
+     * Filing and work sessions by day, from `from` to `to` (`YYYY-MM-DD`; the last year to
+     * today when `None`).
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] for dates that can't be read or are the wrong way round, or
+     * [`CarrelError::Failed`] if the archive can't be read.
+     */
+open func activity(from: String?, to: String?)throws  -> ArchiveActivity  {
+    return try  FfiConverterTypeArchiveActivity_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_activity(
+            self.uniffiCloneHandle(),
+        FfiConverterOptionString.lower(from),
+        FfiConverterOptionString.lower(to),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * The archive map: collections by total size and number of items.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the archive can't be read.
+     */
+open func archiveMap()throws  -> ArchiveMap  {
+    return try  FfiConverterTypeArchiveMap_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_archive_map(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * What was made, filed or worked on on `date` (`YYYY-MM-DD`, today when `None`) in
+     * other years.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] for a date that can't be read, or [`CarrelError::Failed`] if
+     * the archive can't be.
+     */
+open func onThisDay(date: String?)throws  -> OnThisDay  {
+    return try  FfiConverterTypeOnThisDay_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_on_this_day(
+            self.uniffiCloneHandle(),
+        FfiConverterOptionString.lower(date),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Records on this device that the collection `collection` was opened today, as showing
+     * an item does, so wander and resurfacing know it's been seen.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the configuration folder can't be found.
+     */
+open func recordOpened(collection: String)throws   {try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_record_opened(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(collection),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * Now and then, a collection not opened in a long time, with an item or two from it, as
+     * `carrel status` mentions one; the same one all day once it's chosen.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the archive can't be read.
+     */
+open func resurfaced()throws  -> Resurfaced?  {
+    return try  FfiConverterOptionTypeResurfaced.lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_resurfaced(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * A new walk through the stacks, from the item `start` or from a collection not opened
+     * in a while, reproducible with `seed` (a new one when `None`).
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if `start` names no item.
+     */
+open func startWander(start: String?, seed: UInt64?)throws  -> Wander  {
+    return try  FfiConverterTypeWander_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_start_wander(
+            self.uniffiCloneHandle(),
+        FfiConverterOptionString.lower(start),
+        FfiConverterOptionUInt64.lower(seed),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Items by date, grouped `per` year, month or day, going `by` when they were `created`,
+     * `filed` or `worked` on (`None` for each item's own date), narrowed by `query` as
+     * search narrows (words and filters such as `tag:receipts`; empty for every item).
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] for a query, `by` or `per` that can't be read, or
+     * [`CarrelError::Failed`] if the archive can't be.
+     */
+open func timeline(query: String, by: String?, per: String)throws  -> DiscoveryTimeline  {
+    return try  FfiConverterTypeDiscoveryTimeline_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_timeline(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(query),
+        FfiConverterOptionString.lower(by),
+        FfiConverterString.lower(per),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * The next step of `walk`: a related item, a link, a neighbour in its collection, or a
+     * jump somewhere not visited in a while. `None` when it has visited every item it can
+     * reach. The step's collection counts as opened on this device.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the archive can't be read.
+     */
+open func wanderStep(walk: Wander)throws  -> WanderStep?  {
+    return try  FfiConverterOptionTypeWanderStep.lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_wander_step(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeWander_lower(walk),uniffiCallStatus
+    )
+})
+}
+    
+    /**
      * Saves `fields` to the filed item `item`'s card, checked as `carrel edit` checks
      * them, as one change undone from History. The card's body is kept exactly.
      *
@@ -2779,6 +3113,126 @@ open func workerStatus() -> WorkerStatus?  {
         uniffiCallStatus in
     uniffi_carrel_ffi_fn_method_archivehandle_worker_status(
             self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Asks the librarian `question` in `conversation`, adding its answer there, on `model`
+     * or, when that's `None`, this device's ([`ArchiveHandle::librarian_model_label`]).
+     * `memory_gb` is this device's memory, which the strongest model has to fit in.
+     * `progress` is told as each step starts: the step, of the most it may take, and what
+     * the last one did. With `librarian.changes` on, the librarian makes the changes it's
+     * sure of, as this device's owner; the rest are left in the answer to confirm.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if there's no model, or [`CarrelError::Failed`] if the
+     * archive can't be read or the model fails.
+     */
+open func askLibrarian(conversation: LibrarianConversation, question: String, model: ModelProvider?, memoryGb: UInt64?, progress: ProgressListener?)throws  -> LibrarianAnswer  {
+    return try  FfiConverterTypeLibrarianAnswer_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_ask_librarian(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeLibrarianConversation_lower(conversation),
+        FfiConverterString.lower(question),
+        FfiConverterOptionTypeModelProvider.lower(model),
+        FfiConverterOptionUInt64.lower(memoryGb),
+        FfiConverterOptionTypeProgressListener.lower(progress),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * The changes the librarian made on its own at or after `since` (seconds since the Unix
+     * epoch) that haven't been undone, newest first.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the history can't be read.
+     */
+open func librarianChanges(since: Int64)throws  -> [Change]  {
+    return try  FfiConverterSequenceTypeChange.lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_librarian_changes(
+            self.uniffiCloneHandle(),
+        FfiConverterInt64.lower(since),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Whether the archive lets the librarian make the changes it's sure of on its own
+     * (`librarian.changes`).
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the archive can't be read.
+     */
+open func librarianMakesChanges()throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_librarian_makes_changes(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * The model the librarian would answer with, for people, as
+     * [`ArchiveHandle::ask_librarian`] chooses it.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if there's no text model, or `librarian.model` names one that
+     * isn't available.
+     */
+open func librarianModelLabel(model: ModelProvider?, memoryGb: UInt64?)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_librarian_model_label(
+            self.uniffiCloneHandle(),
+        FfiConverterOptionTypeModelProvider.lower(model),
+        FfiConverterOptionUInt64.lower(memoryGb),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Saves `conversation` to this month's Journal, as one history change.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if it has no answers, [`CarrelError::Busy`] if another
+     * writer holds the archive, or [`CarrelError::Failed`].
+     */
+open func saveConversation(conversation: LibrarianConversation)throws  -> SavedConversation  {
+    return try  FfiConverterTypeSavedConversation_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_save_conversation(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeLibrarianConversation_lower(conversation),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Undoes every change the librarian made on its own at or after `since`, newest first,
+     * as `carrel undo --librarian` does. One that can't be undone is reported, and the rest
+     * are still undone.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Busy`] if another writer holds the archive, or [`CarrelError::Failed`]
+     * if the history can't be read.
+     */
+open func undoLibrarianChanges(since: Int64)throws  -> LibrarianUndone  {
+    return try  FfiConverterTypeLibrarianUndone_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_undo_librarian_changes(
+            self.uniffiCloneHandle(),
+        FfiConverterInt64.lower(since),uniffiCallStatus
     )
 })
 }
@@ -3304,13 +3758,14 @@ open func modelChoices()throws  -> ModelChoices  {
 }
     
     /**
-     * Sets this device's `picker` or `editor` to `value`, as `carrel settings set` does; an
-     * empty value, `default` or `None` clears it, so Carrel chooses.
+     * Sets this device's `picker`, `editor` or `librarian.model` to `value`, as
+     * `carrel settings set` does; an empty value, `default` or `None` clears it, so Carrel
+     * chooses. A librarian model must be one that's available.
      *
      * # Errors
      *
-     * [`CarrelError::Invalid`] for another key, or [`CarrelError::Failed`] if the
-     * preferences can't be saved.
+     * [`CarrelError::Invalid`] for another key or a model that isn't available, or
+     * [`CarrelError::Failed`] if the preferences can't be saved.
      */
 open func setDeviceSetting(key: String, value: String?)throws  -> DeviceSettings  {
     return try  FfiConverterTypeDeviceSettings_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
@@ -3533,6 +3988,148 @@ public func FfiConverterTypeCorrection_lift(_ handle: UInt64) throws -> Correcti
 #endif
 public func FfiConverterTypeCorrection_lower(_ value: Correction) -> UInt64 {
     return FfiConverterTypeCorrection.lower(value)
+}
+
+
+
+
+
+
+/**
+ * A conversation with the librarian, kept in memory only, until it's saved to the Journal or
+ * dropped.
+ */
+public protocol LibrarianConversationProtocol: AnyObject, Sendable {
+    
+    /**
+     * The answers so far, oldest first.
+     */
+    func answers()  -> [LibrarianAnswer]
+    
+}
+/**
+ * A conversation with the librarian, kept in memory only, until it's saved to the Journal or
+ * dropped.
+ */
+open class LibrarianConversation: LibrarianConversationProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_carrel_ffi_fn_clone_librarianconversation(self.handle, $0) }
+    }
+    /**
+     * An empty conversation.
+     */
+public convenience init() {
+    let handle =
+        try! rustCall() {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_constructor_librarianconversation_new(uniffiCallStatus
+    )
+}
+    self.init(unsafeFromHandle: handle)
+}
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_carrel_ffi_fn_free_librarianconversation(handle, $0) }
+    }
+
+    
+
+    
+    /**
+     * The answers so far, oldest first.
+     */
+open func answers() -> [LibrarianAnswer]  {
+    return try!  FfiConverterSequenceTypeLibrarianAnswer.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_librarianconversation_answers(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeLibrarianConversation: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = LibrarianConversation
+
+    public static func lift(_ handle: UInt64) throws -> LibrarianConversation {
+        return LibrarianConversation(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: LibrarianConversation) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> LibrarianConversation {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: LibrarianConversation, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLibrarianConversation_lift(_ handle: UInt64) throws -> LibrarianConversation {
+    return try FfiConverterTypeLibrarianConversation.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLibrarianConversation_lower(_ value: LibrarianConversation) -> UInt64 {
+    return FfiConverterTypeLibrarianConversation.lower(value)
 }
 
 
@@ -4198,6 +4795,154 @@ public func FfiConverterTypeTextModel_lower(_ value: TextModel) -> UInt64 {
 
 
 
+
+
+/**
+ * A walk through the stacks, one step at a time. The walk the app takes is also kept as the
+ * device's last, so `carrel discover wander --next` goes on with it.
+ */
+public protocol WanderProtocol: AnyObject, Sendable {
+    
+    /**
+     * The walk's seed, which makes it reproducible.
+     */
+    func seed()  -> UInt64
+    
+    /**
+     * How many items it has visited.
+     */
+    func visited()  -> UInt32
+    
+}
+/**
+ * A walk through the stacks, one step at a time. The walk the app takes is also kept as the
+ * device's last, so `carrel discover wander --next` goes on with it.
+ */
+open class Wander: WanderProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_carrel_ffi_fn_clone_wander(self.handle, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_carrel_ffi_fn_free_wander(handle, $0) }
+    }
+
+    
+
+    
+    /**
+     * The walk's seed, which makes it reproducible.
+     */
+open func seed() -> UInt64  {
+    return try!  FfiConverterUInt64.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_wander_seed(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * How many items it has visited.
+     */
+open func visited() -> UInt32  {
+    return try!  FfiConverterUInt32.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_wander_visited(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeWander: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = Wander
+
+    public static func lift(_ handle: UInt64) throws -> Wander {
+        return Wander(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: Wander) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Wander {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: Wander, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWander_lift(_ handle: UInt64) throws -> Wander {
+    return try FfiConverterTypeWander.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWander_lower(_ value: Wander) -> UInt64 {
+    return FfiConverterTypeWander.lower(value)
+}
+
+
+
+
 /**
  * An item being worked on.
  */
@@ -4348,6 +5093,95 @@ public func FfiConverterTypeActiveItem_lower(_ value: ActiveItem) -> RustBuffer 
 
 
 /**
+ * One day's activity.
+ */
+public struct ActivityDay: Equatable, Hashable {
+    /**
+     * The day, as `YYYY-MM-DD`.
+     */
+    public var date: String
+    /**
+     * Items filed.
+     */
+    public var filed: UInt32
+    /**
+     * Work sessions.
+     */
+    public var sessions: UInt32
+    /**
+     * How busy, from 0 for nothing to 4 for as busy as the busiest day.
+     */
+    public var level: UInt8
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The day, as `YYYY-MM-DD`.
+         */date: String, 
+        /**
+         * Items filed.
+         */filed: UInt32, 
+        /**
+         * Work sessions.
+         */sessions: UInt32, 
+        /**
+         * How busy, from 0 for nothing to 4 for as busy as the busiest day.
+         */level: UInt8) {
+        self.date = date
+        self.filed = filed
+        self.sessions = sessions
+        self.level = level
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension ActivityDay: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeActivityDay: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ActivityDay {
+        return
+            try ActivityDay(
+                date: FfiConverterString.read(from: &buf), 
+                filed: FfiConverterUInt32.read(from: &buf), 
+                sessions: FfiConverterUInt32.read(from: &buf), 
+                level: FfiConverterUInt8.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ActivityDay, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.date, into: &buf)
+        FfiConverterUInt32.write(value.filed, into: &buf)
+        FfiConverterUInt32.write(value.sessions, into: &buf)
+        FfiConverterUInt8.write(value.level, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeActivityDay_lift(_ buf: RustBuffer) throws -> ActivityDay {
+    return try FfiConverterTypeActivityDay.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeActivityDay_lower(_ value: ActivityDay) -> RustBuffer {
+    return FfiConverterTypeActivityDay.lower(value)
+}
+
+
+/**
  * What adding to the queue did.
  */
 public struct Added: Equatable, Hashable {
@@ -4494,6 +5328,184 @@ public func FfiConverterTypeAnswered_lift(_ buf: RustBuffer) throws -> Answered 
 #endif
 public func FfiConverterTypeAnswered_lower(_ value: Answered) -> RustBuffer {
     return FfiConverterTypeAnswered.lower(value)
+}
+
+
+/**
+ * When things were filed and worked on, by day, for a heatmap.
+ */
+public struct ArchiveActivity: Equatable, Hashable {
+    /**
+     * The first day, as `YYYY-MM-DD`.
+     */
+    public var from: String
+    /**
+     * The last day.
+     */
+    public var to: String
+    /**
+     * The days with anything, oldest first; the rest had nothing.
+     */
+    public var days: [ActivityDay]
+    /**
+     * The most on any one day.
+     */
+    public var busiest: UInt32
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The first day, as `YYYY-MM-DD`.
+         */from: String, 
+        /**
+         * The last day.
+         */to: String, 
+        /**
+         * The days with anything, oldest first; the rest had nothing.
+         */days: [ActivityDay], 
+        /**
+         * The most on any one day.
+         */busiest: UInt32) {
+        self.from = from
+        self.to = to
+        self.days = days
+        self.busiest = busiest
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension ArchiveActivity: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeArchiveActivity: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ArchiveActivity {
+        return
+            try ArchiveActivity(
+                from: FfiConverterString.read(from: &buf), 
+                to: FfiConverterString.read(from: &buf), 
+                days: FfiConverterSequenceTypeActivityDay.read(from: &buf), 
+                busiest: FfiConverterUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ArchiveActivity, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.from, into: &buf)
+        FfiConverterString.write(value.to, into: &buf)
+        FfiConverterSequenceTypeActivityDay.write(value.days, into: &buf)
+        FfiConverterUInt32.write(value.busiest, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeArchiveActivity_lift(_ buf: RustBuffer) throws -> ArchiveActivity {
+    return try FfiConverterTypeArchiveActivity.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeArchiveActivity_lower(_ value: ArchiveActivity) -> RustBuffer {
+    return FfiConverterTypeArchiveActivity.lower(value)
+}
+
+
+/**
+ * Collections by size and number of items.
+ */
+public struct ArchiveMap: Equatable, Hashable {
+    /**
+     * The collections, largest first among those with one parent.
+     */
+    public var regions: [MapRegion]
+    /**
+     * Every item.
+     */
+    public var totalItems: UInt64
+    /**
+     * Their size in bytes.
+     */
+    public var totalSize: UInt64
+    /**
+     * How many items have no recorded size.
+     */
+    public var withoutSize: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The collections, largest first among those with one parent.
+         */regions: [MapRegion], 
+        /**
+         * Every item.
+         */totalItems: UInt64, 
+        /**
+         * Their size in bytes.
+         */totalSize: UInt64, 
+        /**
+         * How many items have no recorded size.
+         */withoutSize: UInt64) {
+        self.regions = regions
+        self.totalItems = totalItems
+        self.totalSize = totalSize
+        self.withoutSize = withoutSize
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension ArchiveMap: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeArchiveMap: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ArchiveMap {
+        return
+            try ArchiveMap(
+                regions: FfiConverterSequenceTypeMapRegion.read(from: &buf), 
+                totalItems: FfiConverterUInt64.read(from: &buf), 
+                totalSize: FfiConverterUInt64.read(from: &buf), 
+                withoutSize: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ArchiveMap, into buf: inout [UInt8]) {
+        FfiConverterSequenceTypeMapRegion.write(value.regions, into: &buf)
+        FfiConverterUInt64.write(value.totalItems, into: &buf)
+        FfiConverterUInt64.write(value.totalSize, into: &buf)
+        FfiConverterUInt64.write(value.withoutSize, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeArchiveMap_lift(_ buf: RustBuffer) throws -> ArchiveMap {
+    return try FfiConverterTypeArchiveMap.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeArchiveMap_lower(_ value: ArchiveMap) -> RustBuffer {
+    return FfiConverterTypeArchiveMap.lower(value)
 }
 
 
@@ -5325,6 +6337,11 @@ public struct Change: Equatable, Hashable {
      * The change it undid, if it's an undo.
      */
     public var reverts: String?
+    /**
+     * Who made it on the owner's behalf without asking, such as `librarian`, when someone
+     * did (`Carrel-Agent`, FORMAT.md §8.2).
+     */
+    public var agent: String?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -5355,7 +6372,11 @@ public struct Change: Equatable, Hashable {
          */snapshot: String?, 
         /**
          * The change it undid, if it's an undo.
-         */reverts: String?) {
+         */reverts: String?, 
+        /**
+         * Who made it on the owner's behalf without asking, such as `librarian`, when someone
+         * did (`Carrel-Agent`, FORMAT.md §8.2).
+         */agent: String?) {
         self.id = id
         self.summary = summary
         self.operation = operation
@@ -5365,6 +6386,7 @@ public struct Change: Equatable, Hashable {
         self.device = device
         self.snapshot = snapshot
         self.reverts = reverts
+        self.agent = agent
     }
 
     
@@ -5391,7 +6413,8 @@ public struct FfiConverterTypeChange: FfiConverterRustBuffer {
                 items: FfiConverterSequenceString.read(from: &buf), 
                 device: FfiConverterOptionString.read(from: &buf), 
                 snapshot: FfiConverterOptionString.read(from: &buf), 
-                reverts: FfiConverterOptionString.read(from: &buf)
+                reverts: FfiConverterOptionString.read(from: &buf), 
+                agent: FfiConverterOptionString.read(from: &buf)
         )
     }
 
@@ -5405,6 +6428,7 @@ public struct FfiConverterTypeChange: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.device, into: &buf)
         FfiConverterOptionString.write(value.snapshot, into: &buf)
         FfiConverterOptionString.write(value.reverts, into: &buf)
+        FfiConverterOptionString.write(value.agent, into: &buf)
     }
 }
 
@@ -6248,6 +7272,85 @@ public func FfiConverterTypeCreatedCollection_lower(_ value: CreatedCollection) 
 
 
 /**
+ * One earlier year's items on this day.
+ */
+public struct DayInYear: Equatable, Hashable {
+    /**
+     * The year.
+     */
+    public var year: Int16
+    /**
+     * How many years ago.
+     */
+    public var yearsAgo: Int16
+    /**
+     * What happened then.
+     */
+    public var items: [Happened]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The year.
+         */year: Int16, 
+        /**
+         * How many years ago.
+         */yearsAgo: Int16, 
+        /**
+         * What happened then.
+         */items: [Happened]) {
+        self.year = year
+        self.yearsAgo = yearsAgo
+        self.items = items
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension DayInYear: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeDayInYear: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> DayInYear {
+        return
+            try DayInYear(
+                year: FfiConverterInt16.read(from: &buf), 
+                yearsAgo: FfiConverterInt16.read(from: &buf), 
+                items: FfiConverterSequenceTypeHappened.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: DayInYear, into buf: inout [UInt8]) {
+        FfiConverterInt16.write(value.year, into: &buf)
+        FfiConverterInt16.write(value.yearsAgo, into: &buf)
+        FfiConverterSequenceTypeHappened.write(value.items, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDayInYear_lift(_ buf: RustBuffer) throws -> DayInYear {
+    return try FfiConverterTypeDayInYear.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDayInYear_lower(_ value: DayInYear) -> RustBuffer {
+    return FfiConverterTypeDayInYear.lower(value)
+}
+
+
+/**
  * A desk item.
  */
 public struct DeskItem: Equatable, Hashable {
@@ -6350,6 +7453,11 @@ public struct DeviceSettings: Equatable, Hashable {
      * The editor for cards, before `$VISUAL` and `$EDITOR`.
      */
     public var editor: String?
+    /**
+     * The text model the librarian answers with, as `provider/offer`; `None` for the
+     * strongest this device has.
+     */
+    public var librarianModel: String?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -6360,9 +7468,14 @@ public struct DeviceSettings: Equatable, Hashable {
          */picker: String?, 
         /**
          * The editor for cards, before `$VISUAL` and `$EDITOR`.
-         */editor: String?) {
+         */editor: String?, 
+        /**
+         * The text model the librarian answers with, as `provider/offer`; `None` for the
+         * strongest this device has.
+         */librarianModel: String?) {
         self.picker = picker
         self.editor = editor
+        self.librarianModel = librarianModel
     }
 
     
@@ -6382,13 +7495,15 @@ public struct FfiConverterTypeDeviceSettings: FfiConverterRustBuffer {
         return
             try DeviceSettings(
                 picker: FfiConverterOptionString.read(from: &buf), 
-                editor: FfiConverterOptionString.read(from: &buf)
+                editor: FfiConverterOptionString.read(from: &buf), 
+                librarianModel: FfiConverterOptionString.read(from: &buf)
         )
     }
 
     public static func write(_ value: DeviceSettings, into buf: inout [UInt8]) {
         FfiConverterOptionString.write(value.picker, into: &buf)
         FfiConverterOptionString.write(value.editor, into: &buf)
+        FfiConverterOptionString.write(value.librarianModel, into: &buf)
     }
 }
 
@@ -6405,6 +7520,194 @@ public func FfiConverterTypeDeviceSettings_lift(_ buf: RustBuffer) throws -> Dev
 #endif
 public func FfiConverterTypeDeviceSettings_lower(_ value: DeviceSettings) -> RustBuffer {
     return FfiConverterTypeDeviceSettings.lower(value)
+}
+
+
+/**
+ * An item, as the views list it: enough to show it and open it.
+ */
+public struct DiscoveredItem: Equatable, Hashable {
+    /**
+     * Its identifier.
+     */
+    public var id: String
+    /**
+     * Its card's title.
+     */
+    public var title: String
+    /**
+     * Its card, relative to the archive root.
+     */
+    public var card: String
+    /**
+     * Its contents, relative to the archive root; card-only items have none.
+     */
+    public var item: String?
+    /**
+     * The collection it's in.
+     */
+    public var collection: String
+    /**
+     * Its kind.
+     */
+    public var kind: ItemKind
+    /**
+     * How sensitive it is.
+     */
+    public var sensitivity: Sensitivity
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Its identifier.
+         */id: String, 
+        /**
+         * Its card's title.
+         */title: String, 
+        /**
+         * Its card, relative to the archive root.
+         */card: String, 
+        /**
+         * Its contents, relative to the archive root; card-only items have none.
+         */item: String?, 
+        /**
+         * The collection it's in.
+         */collection: String, 
+        /**
+         * Its kind.
+         */kind: ItemKind, 
+        /**
+         * How sensitive it is.
+         */sensitivity: Sensitivity) {
+        self.id = id
+        self.title = title
+        self.card = card
+        self.item = item
+        self.collection = collection
+        self.kind = kind
+        self.sensitivity = sensitivity
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension DiscoveredItem: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeDiscoveredItem: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> DiscoveredItem {
+        return
+            try DiscoveredItem(
+                id: FfiConverterString.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                card: FfiConverterString.read(from: &buf), 
+                item: FfiConverterOptionString.read(from: &buf), 
+                collection: FfiConverterString.read(from: &buf), 
+                kind: FfiConverterTypeItemKind.read(from: &buf), 
+                sensitivity: FfiConverterTypeSensitivity.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: DiscoveredItem, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterString.write(value.card, into: &buf)
+        FfiConverterOptionString.write(value.item, into: &buf)
+        FfiConverterString.write(value.collection, into: &buf)
+        FfiConverterTypeItemKind.write(value.kind, into: &buf)
+        FfiConverterTypeSensitivity.write(value.sensitivity, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDiscoveredItem_lift(_ buf: RustBuffer) throws -> DiscoveredItem {
+    return try FfiConverterTypeDiscoveredItem.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDiscoveredItem_lower(_ value: DiscoveredItem) -> RustBuffer {
+    return FfiConverterTypeDiscoveredItem.lower(value)
+}
+
+
+/**
+ * Items by date.
+ */
+public struct DiscoveryTimeline: Equatable, Hashable {
+    /**
+     * The periods that have items, oldest first.
+     */
+    public var periods: [TimelinePeriod]
+    /**
+     * How many items have no date of the kind it goes by, and so aren't on it.
+     */
+    public var undated: UInt32
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The periods that have items, oldest first.
+         */periods: [TimelinePeriod], 
+        /**
+         * How many items have no date of the kind it goes by, and so aren't on it.
+         */undated: UInt32) {
+        self.periods = periods
+        self.undated = undated
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension DiscoveryTimeline: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeDiscoveryTimeline: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> DiscoveryTimeline {
+        return
+            try DiscoveryTimeline(
+                periods: FfiConverterSequenceTypeTimelinePeriod.read(from: &buf), 
+                undated: FfiConverterUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: DiscoveryTimeline, into buf: inout [UInt8]) {
+        FfiConverterSequenceTypeTimelinePeriod.write(value.periods, into: &buf)
+        FfiConverterUInt32.write(value.undated, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDiscoveryTimeline_lift(_ buf: RustBuffer) throws -> DiscoveryTimeline {
+    return try FfiConverterTypeDiscoveryTimeline.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDiscoveryTimeline_lower(_ value: DiscoveryTimeline) -> RustBuffer {
+    return FfiConverterTypeDiscoveryTimeline.lower(value)
 }
 
 
@@ -7441,6 +8744,85 @@ public func FfiConverterTypeGlossaryFact_lower(_ value: GlossaryFact) -> RustBuf
 
 
 /**
+ * Something that happened to an item on this day in another year.
+ */
+public struct Happened: Equatable, Hashable {
+    /**
+     * The item.
+     */
+    public var item: DiscoveredItem
+    /**
+     * What happened: `created`, `filed` or `worked`.
+     */
+    public var what: [String]
+    /**
+     * Its card's summary.
+     */
+    public var summary: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The item.
+         */item: DiscoveredItem, 
+        /**
+         * What happened: `created`, `filed` or `worked`.
+         */what: [String], 
+        /**
+         * Its card's summary.
+         */summary: String?) {
+        self.item = item
+        self.what = what
+        self.summary = summary
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension Happened: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeHappened: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Happened {
+        return
+            try Happened(
+                item: FfiConverterTypeDiscoveredItem.read(from: &buf), 
+                what: FfiConverterSequenceString.read(from: &buf), 
+                summary: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: Happened, into buf: inout [UInt8]) {
+        FfiConverterTypeDiscoveredItem.write(value.item, into: &buf)
+        FfiConverterSequenceString.write(value.what, into: &buf)
+        FfiConverterOptionString.write(value.summary, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHappened_lift(_ buf: RustBuffer) throws -> Happened {
+    return try FfiConverterTypeHappened.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHappened_lower(_ value: Happened) -> RustBuffer {
+    return FfiConverterTypeHappened.lower(value)
+}
+
+
+/**
  * How a rebuild or a switch left the index.
  */
 public struct IndexBuilt: Equatable, Hashable {
@@ -8358,6 +9740,560 @@ public func FfiConverterTypeLeftOut_lower(_ value: LeftOut) -> RustBuffer {
 
 
 /**
+ * The librarian's answer to one question.
+ */
+public struct LibrarianAnswer: Equatable, Hashable {
+    /**
+     * The question.
+     */
+    public var question: String
+    /**
+     * The answer, then anything it suggests looking at.
+     */
+    public var text: String
+    /**
+     * The items it's about.
+     */
+    public var items: [LibrarianItem]
+    /**
+     * The passages it read and used.
+     */
+    public var passages: [LibrarianPassage]
+    /**
+     * The changes it suggested.
+     */
+    public var suggestions: [LibrarianSuggestion]
+    /**
+     * The tools it used, in order.
+     */
+    public var steps: [LibrarianStep]
+    /**
+     * The model that answered, for people.
+     */
+    public var model: String
+    /**
+     * The tokens its prompts and answers took.
+     */
+    public var tokens: UInt64
+    /**
+     * Why it stopped before it could answer, when it did: `steps` or `tokens`.
+     */
+    public var stopped: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The question.
+         */question: String, 
+        /**
+         * The answer, then anything it suggests looking at.
+         */text: String, 
+        /**
+         * The items it's about.
+         */items: [LibrarianItem], 
+        /**
+         * The passages it read and used.
+         */passages: [LibrarianPassage], 
+        /**
+         * The changes it suggested.
+         */suggestions: [LibrarianSuggestion], 
+        /**
+         * The tools it used, in order.
+         */steps: [LibrarianStep], 
+        /**
+         * The model that answered, for people.
+         */model: String, 
+        /**
+         * The tokens its prompts and answers took.
+         */tokens: UInt64, 
+        /**
+         * Why it stopped before it could answer, when it did: `steps` or `tokens`.
+         */stopped: String?) {
+        self.question = question
+        self.text = text
+        self.items = items
+        self.passages = passages
+        self.suggestions = suggestions
+        self.steps = steps
+        self.model = model
+        self.tokens = tokens
+        self.stopped = stopped
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension LibrarianAnswer: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeLibrarianAnswer: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> LibrarianAnswer {
+        return
+            try LibrarianAnswer(
+                question: FfiConverterString.read(from: &buf), 
+                text: FfiConverterString.read(from: &buf), 
+                items: FfiConverterSequenceTypeLibrarianItem.read(from: &buf), 
+                passages: FfiConverterSequenceTypeLibrarianPassage.read(from: &buf), 
+                suggestions: FfiConverterSequenceTypeLibrarianSuggestion.read(from: &buf), 
+                steps: FfiConverterSequenceTypeLibrarianStep.read(from: &buf), 
+                model: FfiConverterString.read(from: &buf), 
+                tokens: FfiConverterUInt64.read(from: &buf), 
+                stopped: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: LibrarianAnswer, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.question, into: &buf)
+        FfiConverterString.write(value.text, into: &buf)
+        FfiConverterSequenceTypeLibrarianItem.write(value.items, into: &buf)
+        FfiConverterSequenceTypeLibrarianPassage.write(value.passages, into: &buf)
+        FfiConverterSequenceTypeLibrarianSuggestion.write(value.suggestions, into: &buf)
+        FfiConverterSequenceTypeLibrarianStep.write(value.steps, into: &buf)
+        FfiConverterString.write(value.model, into: &buf)
+        FfiConverterUInt64.write(value.tokens, into: &buf)
+        FfiConverterOptionString.write(value.stopped, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLibrarianAnswer_lift(_ buf: RustBuffer) throws -> LibrarianAnswer {
+    return try FfiConverterTypeLibrarianAnswer.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLibrarianAnswer_lower(_ value: LibrarianAnswer) -> RustBuffer {
+    return FfiConverterTypeLibrarianAnswer.lower(value)
+}
+
+
+/**
+ * An item an answer links to.
+ */
+public struct LibrarianItem: Equatable, Hashable {
+    /**
+     * Its identifier.
+     */
+    public var id: String
+    /**
+     * Its card's title.
+     */
+    public var title: String
+    /**
+     * Its card, relative to the archive root.
+     */
+    public var card: String
+    /**
+     * The collection it's in, by path.
+     */
+    public var collection: String
+    /**
+     * How sensitive it is.
+     */
+    public var sensitivity: Sensitivity
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Its identifier.
+         */id: String, 
+        /**
+         * Its card's title.
+         */title: String, 
+        /**
+         * Its card, relative to the archive root.
+         */card: String, 
+        /**
+         * The collection it's in, by path.
+         */collection: String, 
+        /**
+         * How sensitive it is.
+         */sensitivity: Sensitivity) {
+        self.id = id
+        self.title = title
+        self.card = card
+        self.collection = collection
+        self.sensitivity = sensitivity
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension LibrarianItem: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeLibrarianItem: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> LibrarianItem {
+        return
+            try LibrarianItem(
+                id: FfiConverterString.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                card: FfiConverterString.read(from: &buf), 
+                collection: FfiConverterString.read(from: &buf), 
+                sensitivity: FfiConverterTypeSensitivity.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: LibrarianItem, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterString.write(value.card, into: &buf)
+        FfiConverterString.write(value.collection, into: &buf)
+        FfiConverterTypeSensitivity.write(value.sensitivity, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLibrarianItem_lift(_ buf: RustBuffer) throws -> LibrarianItem {
+    return try FfiConverterTypeLibrarianItem.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLibrarianItem_lower(_ value: LibrarianItem) -> RustBuffer {
+    return FfiConverterTypeLibrarianItem.lower(value)
+}
+
+
+/**
+ * A passage the librarian read and used, word for word.
+ */
+public struct LibrarianPassage: Equatable, Hashable {
+    /**
+     * The item it's from.
+     */
+    public var item: LibrarianItem
+    /**
+     * The passage.
+     */
+    public var text: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The item it's from.
+         */item: LibrarianItem, 
+        /**
+         * The passage.
+         */text: String) {
+        self.item = item
+        self.text = text
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension LibrarianPassage: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeLibrarianPassage: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> LibrarianPassage {
+        return
+            try LibrarianPassage(
+                item: FfiConverterTypeLibrarianItem.read(from: &buf), 
+                text: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: LibrarianPassage, into buf: inout [UInt8]) {
+        FfiConverterTypeLibrarianItem.write(value.item, into: &buf)
+        FfiConverterString.write(value.text, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLibrarianPassage_lift(_ buf: RustBuffer) throws -> LibrarianPassage {
+    return try FfiConverterTypeLibrarianPassage.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLibrarianPassage_lower(_ value: LibrarianPassage) -> RustBuffer {
+    return FfiConverterTypeLibrarianPassage.lower(value)
+}
+
+
+/**
+ * A tool the librarian used on the way to an answer.
+ */
+public struct LibrarianStep: Equatable, Hashable {
+    /**
+     * The tool, such as `search` or `read`.
+     */
+    public var tool: String
+    /**
+     * What it was given.
+     */
+    public var input: String
+    /**
+     * What it did, in a few words.
+     */
+    public var did: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The tool, such as `search` or `read`.
+         */tool: String, 
+        /**
+         * What it was given.
+         */input: String, 
+        /**
+         * What it did, in a few words.
+         */did: String) {
+        self.tool = tool
+        self.input = input
+        self.did = did
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension LibrarianStep: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeLibrarianStep: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> LibrarianStep {
+        return
+            try LibrarianStep(
+                tool: FfiConverterString.read(from: &buf), 
+                input: FfiConverterString.read(from: &buf), 
+                did: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: LibrarianStep, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.tool, into: &buf)
+        FfiConverterString.write(value.input, into: &buf)
+        FfiConverterString.write(value.did, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLibrarianStep_lift(_ buf: RustBuffer) throws -> LibrarianStep {
+    return try FfiConverterTypeLibrarianStep.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLibrarianStep_lower(_ value: LibrarianStep) -> RustBuffer {
+    return FfiConverterTypeLibrarianStep.lower(value)
+}
+
+
+/**
+ * A change the librarian suggested, why, how sure it was, and what became of it.
+ */
+public struct LibrarianSuggestion: Equatable, Hashable {
+    /**
+     * The change.
+     */
+    public var change: SuggestedChange
+    /**
+     * The change, in words, such as “refile “Lease” to Home/Flat”.
+     */
+    public var description: String
+    /**
+     * Why, in the librarian's words.
+     */
+    public var why: String
+    /**
+     * How sure it was, from 0 to 1.
+     */
+    public var confidence: Double
+    /**
+     * What became of it.
+     */
+    public var outcome: SuggestionOutcome
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The change.
+         */change: SuggestedChange, 
+        /**
+         * The change, in words, such as “refile “Lease” to Home/Flat”.
+         */description: String, 
+        /**
+         * Why, in the librarian's words.
+         */why: String, 
+        /**
+         * How sure it was, from 0 to 1.
+         */confidence: Double, 
+        /**
+         * What became of it.
+         */outcome: SuggestionOutcome) {
+        self.change = change
+        self.description = description
+        self.why = why
+        self.confidence = confidence
+        self.outcome = outcome
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension LibrarianSuggestion: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeLibrarianSuggestion: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> LibrarianSuggestion {
+        return
+            try LibrarianSuggestion(
+                change: FfiConverterTypeSuggestedChange.read(from: &buf), 
+                description: FfiConverterString.read(from: &buf), 
+                why: FfiConverterString.read(from: &buf), 
+                confidence: FfiConverterDouble.read(from: &buf), 
+                outcome: FfiConverterTypeSuggestionOutcome.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: LibrarianSuggestion, into buf: inout [UInt8]) {
+        FfiConverterTypeSuggestedChange.write(value.change, into: &buf)
+        FfiConverterString.write(value.description, into: &buf)
+        FfiConverterString.write(value.why, into: &buf)
+        FfiConverterDouble.write(value.confidence, into: &buf)
+        FfiConverterTypeSuggestionOutcome.write(value.outcome, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLibrarianSuggestion_lift(_ buf: RustBuffer) throws -> LibrarianSuggestion {
+    return try FfiConverterTypeLibrarianSuggestion.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLibrarianSuggestion_lower(_ value: LibrarianSuggestion) -> RustBuffer {
+    return FfiConverterTypeLibrarianSuggestion.lower(value)
+}
+
+
+/**
+ * What undoing the librarian's changes did.
+ */
+public struct LibrarianUndone: Equatable, Hashable {
+    /**
+     * The changes undone, by summary.
+     */
+    public var undone: [String]
+    /**
+     * Those that couldn't be undone, each with why.
+     */
+    public var failed: [String]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The changes undone, by summary.
+         */undone: [String], 
+        /**
+         * Those that couldn't be undone, each with why.
+         */failed: [String]) {
+        self.undone = undone
+        self.failed = failed
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension LibrarianUndone: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeLibrarianUndone: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> LibrarianUndone {
+        return
+            try LibrarianUndone(
+                undone: FfiConverterSequenceString.read(from: &buf), 
+                failed: FfiConverterSequenceString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: LibrarianUndone, into buf: inout [UInt8]) {
+        FfiConverterSequenceString.write(value.undone, into: &buf)
+        FfiConverterSequenceString.write(value.failed, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLibrarianUndone_lift(_ buf: RustBuffer) throws -> LibrarianUndone {
+    return try FfiConverterTypeLibrarianUndone.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLibrarianUndone_lower(_ value: LibrarianUndone) -> RustBuffer {
+    return FfiConverterTypeLibrarianUndone.lower(value)
+}
+
+
+/**
  * An item another links to.
  */
 public struct LinkedItem: Equatable, Hashable {
@@ -8443,6 +10379,136 @@ public func FfiConverterTypeLinkedItem_lift(_ buf: RustBuffer) throws -> LinkedI
 #endif
 public func FfiConverterTypeLinkedItem_lower(_ value: LinkedItem) -> RustBuffer {
     return FfiConverterTypeLinkedItem.lower(value)
+}
+
+
+/**
+ * A collection on the archive map. The map is a flat list, each region after its parent,
+ * so the app can lay out a treemap at any depth.
+ */
+public struct MapRegion: Equatable, Hashable {
+    /**
+     * Its folder.
+     */
+    public var path: String
+    /**
+     * Its title.
+     */
+    public var title: String
+    /**
+     * The collection it's inside, if any.
+     */
+    public var parent: String?
+    /**
+     * How deep it is: 0 for a collection at the top.
+     */
+    public var depth: UInt32
+    /**
+     * The items directly in it.
+     */
+    public var items: UInt64
+    /**
+     * Their size in bytes, where cards record one.
+     */
+    public var size: UInt64
+    /**
+     * The items in it and the collections inside it.
+     */
+    public var totalItems: UInt64
+    /**
+     * Their size in bytes.
+     */
+    public var totalSize: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Its folder.
+         */path: String, 
+        /**
+         * Its title.
+         */title: String, 
+        /**
+         * The collection it's inside, if any.
+         */parent: String?, 
+        /**
+         * How deep it is: 0 for a collection at the top.
+         */depth: UInt32, 
+        /**
+         * The items directly in it.
+         */items: UInt64, 
+        /**
+         * Their size in bytes, where cards record one.
+         */size: UInt64, 
+        /**
+         * The items in it and the collections inside it.
+         */totalItems: UInt64, 
+        /**
+         * Their size in bytes.
+         */totalSize: UInt64) {
+        self.path = path
+        self.title = title
+        self.parent = parent
+        self.depth = depth
+        self.items = items
+        self.size = size
+        self.totalItems = totalItems
+        self.totalSize = totalSize
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension MapRegion: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeMapRegion: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MapRegion {
+        return
+            try MapRegion(
+                path: FfiConverterString.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                parent: FfiConverterOptionString.read(from: &buf), 
+                depth: FfiConverterUInt32.read(from: &buf), 
+                items: FfiConverterUInt64.read(from: &buf), 
+                size: FfiConverterUInt64.read(from: &buf), 
+                totalItems: FfiConverterUInt64.read(from: &buf), 
+                totalSize: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: MapRegion, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.path, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterOptionString.write(value.parent, into: &buf)
+        FfiConverterUInt32.write(value.depth, into: &buf)
+        FfiConverterUInt64.write(value.items, into: &buf)
+        FfiConverterUInt64.write(value.size, into: &buf)
+        FfiConverterUInt64.write(value.totalItems, into: &buf)
+        FfiConverterUInt64.write(value.totalSize, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMapRegion_lift(_ buf: RustBuffer) throws -> MapRegion {
+    return try FfiConverterTypeMapRegion.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMapRegion_lower(_ value: MapRegion) -> RustBuffer {
+    return FfiConverterTypeMapRegion.lower(value)
 }
 
 
@@ -9008,6 +11074,75 @@ public func FfiConverterTypeNotFiled_lift(_ buf: RustBuffer) throws -> NotFiled 
 #endif
 public func FfiConverterTypeNotFiled_lower(_ value: NotFiled) -> RustBuffer {
     return FfiConverterTypeNotFiled.lower(value)
+}
+
+
+/**
+ * On this day: what was made, filed or worked on on this date in other years.
+ */
+public struct OnThisDay: Equatable, Hashable {
+    /**
+     * The day, as `YYYY-MM-DD`.
+     */
+    public var date: String
+    /**
+     * The earlier years with anything, latest first.
+     */
+    public var years: [DayInYear]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The day, as `YYYY-MM-DD`.
+         */date: String, 
+        /**
+         * The earlier years with anything, latest first.
+         */years: [DayInYear]) {
+        self.date = date
+        self.years = years
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension OnThisDay: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeOnThisDay: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> OnThisDay {
+        return
+            try OnThisDay(
+                date: FfiConverterString.read(from: &buf), 
+                years: FfiConverterSequenceTypeDayInYear.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: OnThisDay, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.date, into: &buf)
+        FfiConverterSequenceTypeDayInYear.write(value.years, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOnThisDay_lift(_ buf: RustBuffer) throws -> OnThisDay {
+    return try FfiConverterTypeOnThisDay.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOnThisDay_lower(_ value: OnThisDay) -> RustBuffer {
+    return FfiConverterTypeOnThisDay.lower(value)
 }
 
 
@@ -10356,6 +12491,105 @@ public func FfiConverterTypeRestored_lower(_ value: Restored) -> RustBuffer {
 
 
 /**
+ * A collection not opened in a long time, as Status mentions it now and then.
+ */
+public struct Resurfaced: Equatable, Hashable {
+    /**
+     * Its folder.
+     */
+    public var collection: String
+    /**
+     * Its title.
+     */
+    public var title: String
+    /**
+     * When it was last seen, as `YYYY-MM-DD`.
+     */
+    public var lastSeen: String
+    /**
+     * How many days ago that was.
+     */
+    public var days: Int32
+    /**
+     * An item or two from it.
+     */
+    public var items: [DiscoveredItem]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Its folder.
+         */collection: String, 
+        /**
+         * Its title.
+         */title: String, 
+        /**
+         * When it was last seen, as `YYYY-MM-DD`.
+         */lastSeen: String, 
+        /**
+         * How many days ago that was.
+         */days: Int32, 
+        /**
+         * An item or two from it.
+         */items: [DiscoveredItem]) {
+        self.collection = collection
+        self.title = title
+        self.lastSeen = lastSeen
+        self.days = days
+        self.items = items
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension Resurfaced: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeResurfaced: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Resurfaced {
+        return
+            try Resurfaced(
+                collection: FfiConverterString.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                lastSeen: FfiConverterString.read(from: &buf), 
+                days: FfiConverterInt32.read(from: &buf), 
+                items: FfiConverterSequenceTypeDiscoveredItem.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: Resurfaced, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.collection, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterString.write(value.lastSeen, into: &buf)
+        FfiConverterInt32.write(value.days, into: &buf)
+        FfiConverterSequenceTypeDiscoveredItem.write(value.items, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeResurfaced_lift(_ buf: RustBuffer) throws -> Resurfaced {
+    return try FfiConverterTypeResurfaced.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeResurfaced_lower(_ value: Resurfaced) -> RustBuffer {
+    return FfiConverterTypeResurfaced.lower(value)
+}
+
+
+/**
  * What returning an item would do, to show before the owner says yes.
  */
 public struct ReturnPreview: Equatable, Hashable {
@@ -10688,6 +12922,75 @@ public func FfiConverterTypeReviewList_lift(_ buf: RustBuffer) throws -> ReviewL
 #endif
 public func FfiConverterTypeReviewList_lower(_ value: ReviewList) -> RustBuffer {
     return FfiConverterTypeReviewList.lower(value)
+}
+
+
+/**
+ * A conversation saved to the Journal.
+ */
+public struct SavedConversation: Equatable, Hashable {
+    /**
+     * The Journal file it went into, relative to the archive root.
+     */
+    public var path: String
+    /**
+     * The history change.
+     */
+    public var commit: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The Journal file it went into, relative to the archive root.
+         */path: String, 
+        /**
+         * The history change.
+         */commit: String?) {
+        self.path = path
+        self.commit = commit
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension SavedConversation: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSavedConversation: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SavedConversation {
+        return
+            try SavedConversation(
+                path: FfiConverterString.read(from: &buf), 
+                commit: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SavedConversation, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.path, into: &buf)
+        FfiConverterOptionString.write(value.commit, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSavedConversation_lift(_ buf: RustBuffer) throws -> SavedConversation {
+    return try FfiConverterTypeSavedConversation.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSavedConversation_lower(_ value: SavedConversation) -> RustBuffer {
+    return FfiConverterTypeSavedConversation.lower(value)
 }
 
 
@@ -11626,6 +13929,154 @@ public func FfiConverterTypeStatusSummary_lower(_ value: StatusSummary) -> RustB
 
 
 /**
+ * One item on the timeline.
+ */
+public struct TimelineItem: Equatable, Hashable {
+    /**
+     * The item.
+     */
+    public var item: DiscoveredItem
+    /**
+     * The date it's placed by, as `YYYY-MM-DD`.
+     */
+    public var date: String
+    /**
+     * Which of its dates that is: `created`, `filed` or `worked`.
+     */
+    public var what: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The item.
+         */item: DiscoveredItem, 
+        /**
+         * The date it's placed by, as `YYYY-MM-DD`.
+         */date: String, 
+        /**
+         * Which of its dates that is: `created`, `filed` or `worked`.
+         */what: String) {
+        self.item = item
+        self.date = date
+        self.what = what
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension TimelineItem: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTimelineItem: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TimelineItem {
+        return
+            try TimelineItem(
+                item: FfiConverterTypeDiscoveredItem.read(from: &buf), 
+                date: FfiConverterString.read(from: &buf), 
+                what: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: TimelineItem, into buf: inout [UInt8]) {
+        FfiConverterTypeDiscoveredItem.write(value.item, into: &buf)
+        FfiConverterString.write(value.date, into: &buf)
+        FfiConverterString.write(value.what, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTimelineItem_lift(_ buf: RustBuffer) throws -> TimelineItem {
+    return try FfiConverterTypeTimelineItem.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTimelineItem_lower(_ value: TimelineItem) -> RustBuffer {
+    return FfiConverterTypeTimelineItem.lower(value)
+}
+
+
+/**
+ * One period of the timeline.
+ */
+public struct TimelinePeriod: Equatable, Hashable {
+    /**
+     * The period: `2025`, `2025-03` or `2025-03-14`.
+     */
+    public var period: String
+    /**
+     * Its items, oldest first.
+     */
+    public var items: [TimelineItem]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The period: `2025`, `2025-03` or `2025-03-14`.
+         */period: String, 
+        /**
+         * Its items, oldest first.
+         */items: [TimelineItem]) {
+        self.period = period
+        self.items = items
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension TimelinePeriod: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTimelinePeriod: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TimelinePeriod {
+        return
+            try TimelinePeriod(
+                period: FfiConverterString.read(from: &buf), 
+                items: FfiConverterSequenceTypeTimelineItem.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: TimelinePeriod, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.period, into: &buf)
+        FfiConverterSequenceTypeTimelineItem.write(value.items, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTimelinePeriod_lift(_ buf: RustBuffer) throws -> TimelinePeriod {
+    return try FfiConverterTypeTimelinePeriod.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTimelinePeriod_lower(_ value: TimelinePeriod) -> RustBuffer {
+    return FfiConverterTypeTimelinePeriod.lower(value)
+}
+
+
+/**
  * A desk item unchanged for a long time, to archive.
  */
 public struct ToArchive: Equatable, Hashable {
@@ -11889,6 +14340,115 @@ public func FfiConverterTypeUnreadType_lift(_ buf: RustBuffer) throws -> UnreadT
 #endif
 public func FfiConverterTypeUnreadType_lower(_ value: UnreadType) -> RustBuffer {
     return FfiConverterTypeUnreadType.lower(value)
+}
+
+
+/**
+ * One step of a walk through the stacks.
+ */
+public struct WanderStep: Equatable, Hashable {
+    /**
+     * Which step it is, from 1.
+     */
+    public var number: UInt32
+    /**
+     * The item.
+     */
+    public var item: DiscoveredItem
+    /**
+     * Why it came next.
+     */
+    public var reason: WanderReason
+    /**
+     * Its card's summary.
+     */
+    public var summary: String?
+    /**
+     * Its tags.
+     */
+    public var tags: [String]
+    /**
+     * The start of its text; never for a restricted item.
+     */
+    public var preview: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Which step it is, from 1.
+         */number: UInt32, 
+        /**
+         * The item.
+         */item: DiscoveredItem, 
+        /**
+         * Why it came next.
+         */reason: WanderReason, 
+        /**
+         * Its card's summary.
+         */summary: String?, 
+        /**
+         * Its tags.
+         */tags: [String], 
+        /**
+         * The start of its text; never for a restricted item.
+         */preview: String?) {
+        self.number = number
+        self.item = item
+        self.reason = reason
+        self.summary = summary
+        self.tags = tags
+        self.preview = preview
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension WanderStep: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeWanderStep: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> WanderStep {
+        return
+            try WanderStep(
+                number: FfiConverterUInt32.read(from: &buf), 
+                item: FfiConverterTypeDiscoveredItem.read(from: &buf), 
+                reason: FfiConverterTypeWanderReason.read(from: &buf), 
+                summary: FfiConverterOptionString.read(from: &buf), 
+                tags: FfiConverterSequenceString.read(from: &buf), 
+                preview: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: WanderStep, into buf: inout [UInt8]) {
+        FfiConverterUInt32.write(value.number, into: &buf)
+        FfiConverterTypeDiscoveredItem.write(value.item, into: &buf)
+        FfiConverterTypeWanderReason.write(value.reason, into: &buf)
+        FfiConverterOptionString.write(value.summary, into: &buf)
+        FfiConverterSequenceString.write(value.tags, into: &buf)
+        FfiConverterOptionString.write(value.preview, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWanderStep_lift(_ buf: RustBuffer) throws -> WanderStep {
+    return try FfiConverterTypeWanderStep.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWanderStep_lower(_ value: WanderStep) -> RustBuffer {
+    return FfiConverterTypeWanderStep.lower(value)
 }
 
 
@@ -13393,6 +15953,415 @@ public func FfiConverterTypeSensitivity_lower(_ value: Sensitivity) -> RustBuffe
 }
 
 
+
+/**
+ * A change the librarian suggested.
+ */
+
+public enum SuggestedChange: Equatable, Hashable {
+    
+    /**
+     * Move `item` to the collection `to`.
+     */
+    case refile(
+        /**
+         * The item.
+         */item: LibrarianItem, 
+        /**
+         * The collection, by path.
+         */to: String
+    )
+    /**
+     * Set `field` (`title`, `summary`, `created` or `tags`) of `item`'s card to `value`.
+     */
+    case correct(
+        /**
+         * The item.
+         */item: LibrarianItem, 
+        /**
+         * The field.
+         */field: String, 
+        /**
+         * The new value; for tags, `+add -remove`.
+         */value: String
+    )
+    /**
+     * Rename `item` and its card to `name`.
+     */
+    case rename(
+        /**
+         * The item.
+         */item: LibrarianItem, 
+        /**
+         * The new name.
+         */name: String
+    )
+    /**
+     * Create the collection `path`.
+     */
+    case collection(
+        /**
+         * Its path.
+         */path: String, 
+        /**
+         * What belongs in it.
+         */description: String
+    )
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension SuggestedChange: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSuggestedChange: FfiConverterRustBuffer {
+    typealias SwiftType = SuggestedChange
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SuggestedChange {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .refile(item: try FfiConverterTypeLibrarianItem.read(from: &buf), to: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 2: return .correct(item: try FfiConverterTypeLibrarianItem.read(from: &buf), field: try FfiConverterString.read(from: &buf), value: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 3: return .rename(item: try FfiConverterTypeLibrarianItem.read(from: &buf), name: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 4: return .collection(path: try FfiConverterString.read(from: &buf), description: try FfiConverterString.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: SuggestedChange, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .refile(item,to):
+            writeInt(&buf, Int32(1))
+            FfiConverterTypeLibrarianItem.write(item, into: &buf)
+            FfiConverterString.write(to, into: &buf)
+            
+        
+        case let .correct(item,field,value):
+            writeInt(&buf, Int32(2))
+            FfiConverterTypeLibrarianItem.write(item, into: &buf)
+            FfiConverterString.write(field, into: &buf)
+            FfiConverterString.write(value, into: &buf)
+            
+        
+        case let .rename(item,name):
+            writeInt(&buf, Int32(3))
+            FfiConverterTypeLibrarianItem.write(item, into: &buf)
+            FfiConverterString.write(name, into: &buf)
+            
+        
+        case let .collection(path,description):
+            writeInt(&buf, Int32(4))
+            FfiConverterString.write(path, into: &buf)
+            FfiConverterString.write(description, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSuggestedChange_lift(_ buf: RustBuffer) throws -> SuggestedChange {
+    return try FfiConverterTypeSuggestedChange.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSuggestedChange_lower(_ value: SuggestedChange) -> RustBuffer {
+    return FfiConverterTypeSuggestedChange.lower(value)
+}
+
+
+
+/**
+ * What became of a suggestion.
+ */
+
+public enum SuggestionOutcome: Equatable, Hashable {
+    
+    /**
+     * The librarian made it itself, as the history change `commit`, which undo reverses.
+     */
+    case made(
+        /**
+         * The history change.
+         */commit: String?
+    )
+    /**
+     * It's for the owner to confirm.
+     */
+    case proposed(
+        /**
+         * Why the librarian didn't make it itself.
+         */reason: String
+    )
+    /**
+     * It can't be made: it's against the librarian's rules or doesn't make sense.
+     */
+    case refused(
+        /**
+         * Why.
+         */reason: String
+    )
+    /**
+     * Making it failed; nothing changed.
+     */
+    case failed(
+        /**
+         * Why.
+         */reason: String
+    )
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension SuggestionOutcome: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSuggestionOutcome: FfiConverterRustBuffer {
+    typealias SwiftType = SuggestionOutcome
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SuggestionOutcome {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .made(commit: try FfiConverterOptionString.read(from: &buf)
+        )
+        
+        case 2: return .proposed(reason: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 3: return .refused(reason: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 4: return .failed(reason: try FfiConverterString.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: SuggestionOutcome, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .made(commit):
+            writeInt(&buf, Int32(1))
+            FfiConverterOptionString.write(commit, into: &buf)
+            
+        
+        case let .proposed(reason):
+            writeInt(&buf, Int32(2))
+            FfiConverterString.write(reason, into: &buf)
+            
+        
+        case let .refused(reason):
+            writeInt(&buf, Int32(3))
+            FfiConverterString.write(reason, into: &buf)
+            
+        
+        case let .failed(reason):
+            writeInt(&buf, Int32(4))
+            FfiConverterString.write(reason, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSuggestionOutcome_lift(_ buf: RustBuffer) throws -> SuggestionOutcome {
+    return try FfiConverterTypeSuggestionOutcome.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSuggestionOutcome_lower(_ value: SuggestionOutcome) -> RustBuffer {
+    return FfiConverterTypeSuggestionOutcome.lower(value)
+}
+
+
+
+/**
+ * Why a walk's step came next.
+ */
+
+public enum WanderReason: Equatable, Hashable {
+    
+    /**
+     * The walk's first step, into a collection not opened in a while.
+     */
+    case start(
+        /**
+         * The collection.
+         */collection: String
+    )
+    /**
+     * The item before links to it, or it links to the item before.
+     */
+    case linked(
+        /**
+         * The link's type, such as `related` or `version-of`.
+         */linkType: String, 
+        /**
+         * The item before's title.
+         */from: String, 
+        /**
+         * Whether it's this item that links to the one before.
+         */back: Bool
+    )
+    /**
+     * It's near the item before by meaning.
+     */
+    case near(
+        /**
+         * The item before's title.
+         */from: String, 
+        /**
+         * How near: 1 is the same direction.
+         */score: Float
+    )
+    /**
+     * It's in the same collection as the item before.
+     */
+    case neighbour(
+        /**
+         * The collection.
+         */collection: String
+    )
+    /**
+     * A jump to a collection not opened in a while.
+     */
+    case jump(
+        /**
+         * The collection.
+         */collection: String, 
+        /**
+         * When it was last seen, as `YYYY-MM-DD`, if ever.
+         */lastSeen: String?
+    )
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension WanderReason: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeWanderReason: FfiConverterRustBuffer {
+    typealias SwiftType = WanderReason
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> WanderReason {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .start(collection: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 2: return .linked(linkType: try FfiConverterString.read(from: &buf), from: try FfiConverterString.read(from: &buf), back: try FfiConverterBool.read(from: &buf)
+        )
+        
+        case 3: return .near(from: try FfiConverterString.read(from: &buf), score: try FfiConverterFloat.read(from: &buf)
+        )
+        
+        case 4: return .neighbour(collection: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 5: return .jump(collection: try FfiConverterString.read(from: &buf), lastSeen: try FfiConverterOptionString.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: WanderReason, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .start(collection):
+            writeInt(&buf, Int32(1))
+            FfiConverterString.write(collection, into: &buf)
+            
+        
+        case let .linked(linkType,from,back):
+            writeInt(&buf, Int32(2))
+            FfiConverterString.write(linkType, into: &buf)
+            FfiConverterString.write(from, into: &buf)
+            FfiConverterBool.write(back, into: &buf)
+            
+        
+        case let .near(from,score):
+            writeInt(&buf, Int32(3))
+            FfiConverterString.write(from, into: &buf)
+            FfiConverterFloat.write(score, into: &buf)
+            
+        
+        case let .neighbour(collection):
+            writeInt(&buf, Int32(4))
+            FfiConverterString.write(collection, into: &buf)
+            
+        
+        case let .jump(collection,lastSeen):
+            writeInt(&buf, Int32(5))
+            FfiConverterString.write(collection, into: &buf)
+            FfiConverterOptionString.write(lastSeen, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWanderReason_lift(_ buf: RustBuffer) throws -> WanderReason {
+    return try FfiConverterTypeWanderReason.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWanderReason_lower(_ value: WanderReason) -> RustBuffer {
+    return FfiConverterTypeWanderReason.lower(value)
+}
+
+
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
@@ -13684,6 +16653,54 @@ fileprivate struct FfiConverterOptionTypeIndexSwitch: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeResurfaced: FfiConverterRustBuffer {
+    typealias SwiftType = Resurfaced?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeResurfaced.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeResurfaced.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeWanderStep: FfiConverterRustBuffer {
+    typealias SwiftType = WanderStep?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeWanderStep.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeWanderStep.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeWorkerStatus: FfiConverterRustBuffer {
     typealias SwiftType = WorkerStatus?
 
@@ -13847,6 +16864,31 @@ fileprivate struct FfiConverterSequenceTypeActiveItem: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeActiveItem.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeActivityDay: FfiConverterRustBuffer {
+    typealias SwiftType = [ActivityDay]
+
+    public static func write(_ value: [ActivityDay], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeActivityDay.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ActivityDay] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [ActivityDay]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeActivityDay.read(from: &buf))
         }
         return seq
     }
@@ -14055,6 +17097,56 @@ fileprivate struct FfiConverterSequenceTypeComparison: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeDayInYear: FfiConverterRustBuffer {
+    typealias SwiftType = [DayInYear]
+
+    public static func write(_ value: [DayInYear], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeDayInYear.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [DayInYear] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [DayInYear]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeDayInYear.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeDiscoveredItem: FfiConverterRustBuffer {
+    typealias SwiftType = [DiscoveredItem]
+
+    public static func write(_ value: [DiscoveredItem], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeDiscoveredItem.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [DiscoveredItem] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [DiscoveredItem]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeDiscoveredItem.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeDuplicate: FfiConverterRustBuffer {
     typealias SwiftType = [Duplicate]
 
@@ -14147,6 +17239,31 @@ fileprivate struct FfiConverterSequenceTypeFiledItem: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeFiledItem.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeHappened: FfiConverterRustBuffer {
+    typealias SwiftType = [Happened]
+
+    public static func write(_ value: [Happened], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeHappened.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [Happened] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [Happened]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeHappened.read(from: &buf))
         }
         return seq
     }
@@ -14255,6 +17372,131 @@ fileprivate struct FfiConverterSequenceTypeLeftOut: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeLibrarianAnswer: FfiConverterRustBuffer {
+    typealias SwiftType = [LibrarianAnswer]
+
+    public static func write(_ value: [LibrarianAnswer], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeLibrarianAnswer.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [LibrarianAnswer] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [LibrarianAnswer]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeLibrarianAnswer.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeLibrarianItem: FfiConverterRustBuffer {
+    typealias SwiftType = [LibrarianItem]
+
+    public static func write(_ value: [LibrarianItem], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeLibrarianItem.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [LibrarianItem] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [LibrarianItem]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeLibrarianItem.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeLibrarianPassage: FfiConverterRustBuffer {
+    typealias SwiftType = [LibrarianPassage]
+
+    public static func write(_ value: [LibrarianPassage], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeLibrarianPassage.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [LibrarianPassage] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [LibrarianPassage]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeLibrarianPassage.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeLibrarianStep: FfiConverterRustBuffer {
+    typealias SwiftType = [LibrarianStep]
+
+    public static func write(_ value: [LibrarianStep], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeLibrarianStep.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [LibrarianStep] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [LibrarianStep]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeLibrarianStep.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeLibrarianSuggestion: FfiConverterRustBuffer {
+    typealias SwiftType = [LibrarianSuggestion]
+
+    public static func write(_ value: [LibrarianSuggestion], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeLibrarianSuggestion.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [LibrarianSuggestion] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [LibrarianSuggestion]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeLibrarianSuggestion.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeLinkedItem: FfiConverterRustBuffer {
     typealias SwiftType = [LinkedItem]
 
@@ -14272,6 +17514,31 @@ fileprivate struct FfiConverterSequenceTypeLinkedItem: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeLinkedItem.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeMapRegion: FfiConverterRustBuffer {
+    typealias SwiftType = [MapRegion]
+
+    public static func write(_ value: [MapRegion], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeMapRegion.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [MapRegion] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [MapRegion]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeMapRegion.read(from: &buf))
         }
         return seq
     }
@@ -14655,6 +17922,56 @@ fileprivate struct FfiConverterSequenceTypeSetting: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeTimelineItem: FfiConverterRustBuffer {
+    typealias SwiftType = [TimelineItem]
+
+    public static func write(_ value: [TimelineItem], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeTimelineItem.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [TimelineItem] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [TimelineItem]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeTimelineItem.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeTimelinePeriod: FfiConverterRustBuffer {
+    typealias SwiftType = [TimelinePeriod]
+
+    public static func write(_ value: [TimelinePeriod], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeTimelinePeriod.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [TimelinePeriod] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [TimelinePeriod]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeTimelinePeriod.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeToArchive: FfiConverterRustBuffer {
     typealias SwiftType = [ToArchive]
 
@@ -14909,6 +18226,30 @@ private let initializationResult: InitializationResult = {
     if (uniffi_carrel_ffi_checksum_method_archivehandle_save_correction() != 28820) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_activity() != 27389) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_archive_map() != 38408) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_on_this_day() != 47663) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_record_opened() != 40580) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_resurfaced() != 48783) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_start_wander() != 60842) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_timeline() != 34232) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_wander_step() != 8914) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_edit_card() != 19413) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -14964,6 +18305,24 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_worker_status() != 53926) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_ask_librarian() != 58024) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_librarian_changes() != 3059) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_librarian_makes_changes() != 38367) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_librarian_model_label() != 9489) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_save_conversation() != 58546) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_undo_librarian_changes() != 45212) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_download_model() != 29926) {
@@ -15053,7 +18412,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_carrel_ffi_checksum_method_archivehandle_model_choices() != 3817) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_carrel_ffi_checksum_method_archivehandle_set_device_setting() != 1315) {
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_set_device_setting() != 28620) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_set_setting() != 60699) {
@@ -15077,6 +18436,15 @@ private let initializationResult: InitializationResult = {
     if (uniffi_carrel_ffi_checksum_method_modelprovider_complete() != 7807) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_carrel_ffi_checksum_method_wander_seed() != 47151) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_wander_visited() != 34858) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_librarianconversation_answers() != 19406) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_carrel_ffi_checksum_constructor_archivehandle_create() != 24558) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -15084,6 +18452,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_constructor_archivehandle_open_with() != 38695) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_constructor_librarianconversation_new() != 19750) {
         return InitializationResult.apiChecksumMismatch
     }
 

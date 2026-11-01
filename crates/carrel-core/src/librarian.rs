@@ -188,6 +188,18 @@ pub struct Librarian<'a> {
     providers: &'a dyn Fn() -> Registry,
     limits: Limits,
     rights: Option<Rights>,
+    progress: Option<&'a dyn Fn(Progress<'_>)>,
+}
+
+/// How far the librarian has got with an answer, for an interface to show while it works.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Progress<'p> {
+    /// The step it's starting, from 1.
+    pub step: usize,
+    /// The most steps it may take.
+    pub steps: usize,
+    /// What its last step did, in a few words; `None` before the first.
+    pub did: Option<&'p str>,
 }
 
 impl<'a> Librarian<'a> {
@@ -220,6 +232,7 @@ impl<'a> Librarian<'a> {
             providers,
             limits: Limits::default(),
             rights: None,
+            progress: None,
         })
     }
 
@@ -227,6 +240,13 @@ impl<'a> Librarian<'a> {
     #[must_use]
     pub fn with_limits(mut self, limits: Limits) -> Self {
         self.limits = limits;
+        self
+    }
+
+    /// Tells `progress` as each step starts, so a slow model can be watched.
+    #[must_use]
+    pub fn with_progress(mut self, progress: &'a dyn Fn(Progress<'_>)) -> Self {
+        self.progress = Some(progress);
         self
     }
 
@@ -319,6 +339,13 @@ impl<'a> Librarian<'a> {
         let system = prompts::system(self.rights.is_some());
         for step in 0..self.limits.steps {
             let left = self.limits.steps - step;
+            if let Some(progress) = self.progress {
+                progress(Progress {
+                    step: step + 1,
+                    steps: self.limits.steps,
+                    did: work.steps.last().map(|s| s.did.as_str()),
+                });
+            }
             let prompt = prompts::step(setting, earlier, question, &work.done, left);
             let needed = estimate_tokens(&system) + estimate_tokens(&prompt);
             if work.tokens + needed > self.limits.tokens {
