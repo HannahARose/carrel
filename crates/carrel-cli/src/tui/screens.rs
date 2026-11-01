@@ -52,6 +52,10 @@ pub enum InputPurpose {
     },
     /// What's wrong with this card, in words or `field: value` lines.
     Correct(Correcting),
+    /// The path of an archive to open, or of any folder in it.
+    OpenArchive,
+    /// The folder for a new archive.
+    CreateArchive,
     /// The folder to check the item being checked out to.
     CheckoutFolder,
     /// When the item being checked out is due back, if ever.
@@ -108,6 +112,8 @@ impl Input {
             InputPurpose::BackupRepository => "the backup folder (drop it here)",
             InputPurpose::BackupPassword { .. } => "the password",
             InputPurpose::RestoreItem { .. } => "the item to restore",
+            InputPurpose::OpenArchive => "the archive's folder (drop it here)",
+            InputPurpose::CreateArchive => "the new archive's folder; it's named after it",
             InputPurpose::Correct(_) => {
                 "what's wrong (\"it's from 2019\"), or field: value lines such as created: 2019-03-31"
             }
@@ -244,6 +250,17 @@ impl App {
                     InputPurpose::BackupPassword { .. } => {
                         // A password is taken as typed, spaces and all.
                         return self.backup_input(input.purpose, input.text);
+                    }
+                    purpose @ (InputPurpose::OpenArchive | InputPurpose::CreateArchive) => {
+                        let Some(path) = super::archives::typed_path(&text) else {
+                            self.message = Some("No folder given; nothing changed".into());
+                            return None;
+                        };
+                        return Some(if purpose == InputPurpose::OpenArchive {
+                            Effect::OpenArchive(path)
+                        } else {
+                            Effect::CreateArchive(path)
+                        });
                     }
                     purpose @ (InputPurpose::BackupRepository
                     | InputPurpose::RestoreItem { .. }) => {

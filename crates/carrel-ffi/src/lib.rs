@@ -46,9 +46,11 @@ use carrel_core::providers::Registry;
 
 pub mod active;
 pub mod agent;
+pub mod browse;
 pub mod correct;
 pub mod edit;
 pub mod history;
+pub mod index;
 pub mod intake;
 pub mod models;
 pub mod previews;

@@ -29,6 +29,7 @@ struct ArchiveWindow: View {
             Inspector(model: model)
         }
         .activeAndHistorySheets(model)
+        .browseSheets(model.browse)
         .navigationTitle(model.name)
         .navigationSubtitle(
             model.isReadOnly ? "\(model.screenTitle) · Read only" : model.screenTitle
@@ -177,7 +178,9 @@ private struct Inspector: View {
                     if let previews = model.previews {
                         ItemPreviewView(item: item, store: previews)
                     }
-                    ItemCardView(item: item, card: model.card(for: item), root: model.root)
+                    ItemCardView(item: item, card: model.card(for: item), root: model.root) {
+                        ItemActions(model: model, item: item)
+                    }
                 }
                 .id(item.id)
             }

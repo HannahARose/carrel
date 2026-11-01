@@ -21,6 +21,7 @@
 
 pub mod chunk;
 pub mod half;
+pub mod manage;
 pub mod related;
 pub mod switch;
 

@@ -96,6 +96,9 @@ final class ArchiveWindowModel {
     private(set) var activeScreen: ActiveScreenModel?
     private(set) var historyScreen: HistoryScreenModel?
 
+    // Browse's actions: new collections, renaming and expanding (#268).
+    private(set) var browse: BrowseActionsModel?
+
     // Previews and the grid (#256).
     private(set) var previews: PreviewStore?
     /// Browse's list or grid, kept for every window.
@@ -156,6 +159,11 @@ final class ArchiveWindowModel {
             historyScreen = HistoryScreenModel(archive: archive) { [weak self] in
                 await self?.refreshItems()
             }
+            let browse = BrowseActionsModel(archive: archive) { [weak self] in
+                await self?.refreshItems()
+            }
+            browse.created = { [weak self] path in self?.screen = .collection(path) }
+            self.browse = browse
             let previews = PreviewStore(handle: loaded.0)
             self.previews = previews
             await previews.reload()

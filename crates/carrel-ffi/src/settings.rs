@@ -1,7 +1,7 @@
 //! Settings, as the app's Settings window shows them (`docs/design/mac-app.md`): the
 //! archive's shared settings, each change recorded in the history as `carrel settings set`
-//! records it ([`carrel_core::settings`]), and this device's choice of models, kept in its
-//! preferences.
+//! records it ([`carrel_core::settings`]), and this device's preferences: its choice of
+//! models, and the file picker and editor the command line and the interactive mode use.
 
 use carrel_core::coordinator::{Coordinator as _, DEFAULT_LEASE, DiskLock};
 use carrel_core::providers::device::{resolve_model, second_model, text_models};
@@ -47,6 +47,17 @@ pub struct ModelChoices {
     pub second_in_use: Option<String>,
     /// The text models available, best first, as `provider/offer`.
     pub available: Vec<String>,
+}
+
+/// This device's preferences for the command line and the interactive mode, which
+/// `carrel settings set` changes too. `None` lets Carrel choose.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct DeviceSettings {
+    /// The file picker for choosing what to ingest: a known picker's name, any command (with
+    /// `{out}` for the file to write paths to), or `builtin`.
+    pub picker: Option<String>,
+    /// The editor for cards, before `$VISUAL` and `$EDITOR`.
+    pub editor: Option<String>,
 }
 
 impl From<carrel_core::settings::SettingsError> for CarrelError {
@@ -163,5 +174,49 @@ impl ArchiveHandle {
         };
         prefs.save_to(&dir)?;
         self.model_choices()
+    }
+
+    /// This device's file picker and editor.
+    ///
+    /// # Errors
+    ///
+    /// [`CarrelError::Failed`] if the preferences can't be read.
+    pub fn device_settings(&self) -> Result<DeviceSettings, CarrelError> {
+        let prefs = self.prefs()?;
+        Ok(DeviceSettings {
+            picker: prefs.picker,
+            editor: prefs.editor,
+        })
+    }
+
+    /// Sets this device's `picker` or `editor` to `value`, as `carrel settings set` does; an
+    /// empty value, `default` or `None` clears it, so Carrel chooses.
+    ///
+    /// # Errors
+    ///
+    /// [`CarrelError::Invalid`] for another key, or [`CarrelError::Failed`] if the
+    /// preferences can't be saved.
+    pub fn set_device_setting(
+        &self,
+        key: String,
+        value: Option<String>,
+    ) -> Result<DeviceSettings, CarrelError> {
+        let dir = self.config_dir()?;
+        let mut prefs = self.prefs()?;
+        let value = value
+            .map(|v| v.trim().to_owned())
+            .filter(|v| !v.is_empty() && v != "default");
+        match key.as_str() {
+            "picker" => prefs.picker = value,
+            "editor" => prefs.editor = value,
+            _ => {
+                return Err(CarrelError::invalid(format!(
+                    "no device setting {key}; they're picker and editor (choose models with \
+                     choose_models)"
+                )));
+            }
+        }
+        prefs.save_to(&dir)?;
+        self.device_settings()
     }
 }
