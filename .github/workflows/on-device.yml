@@ -43,7 +43,7 @@ jobs:
   tests:
     name: On-device tests
     if: >-
-      github.repository == 'HannahARose/carrel' &&
+      github.repository == 'Horizon-Labs/carrel' &&
       (github.event_name == 'push' ||
        (github.event_name == 'workflow_dispatch' && inputs.job == 'tests'))
     runs-on: [self-hosted, macOS, ARM64, carrel-on-device]
@@ -57,7 +57,7 @@ jobs:
   benchmark:
     name: Benchmark
     if: >-
-      github.repository == 'HannahARose/carrel' &&
+      github.repository == 'Horizon-Labs/carrel' &&
       (github.event_name == 'schedule' ||
        (github.event_name == 'workflow_dispatch' && inputs.job == 'benchmark'))
     runs-on: [self-hosted, macOS, ARM64, carrel-on-device]

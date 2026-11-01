@@ -30,11 +30,13 @@ mod progress;
 mod providers;
 mod questions;
 mod related;
+mod restructure;
 mod review;
 mod search;
 mod sessions;
 mod settings;
 mod tui;
+mod usage_report;
 mod worker;
 
 use std::path::{Path, PathBuf};
@@ -133,6 +135,16 @@ enum Command {
     Providers,
     /// List the file types this device reads, and those it couldn't read so far.
     Formats,
+    /// How well Carrel is doing on this device and what to tweak, from its decision log: no
+    /// titles, text, names or searches, so it can be shared.
+    Report {
+        /// The period: a span such as 14d or 2w, `today`, or a date such as 2026-10-01.
+        #[arg(long, value_name = "WHEN", default_value = usage_report::DEFAULT_SINCE)]
+        since: String,
+        /// Show collections by path rather than identifier, for your eyes only.
+        #[arg(long)]
+        names: bool,
+    },
     /// Add files and folders to the intake queue. A worker drafts each one's card and
     /// destination in the background, saving proposals for `carrel review` as they're ready.
     /// Nothing is moved until a proposal is approved.
@@ -278,6 +290,13 @@ enum Command {
         #[command(subcommand)]
         action: Option<QuestionsAction>,
     },
+    /// Restructure proposals: changes to how the archive is organized, reviewed and approved
+    /// all, in part or not at all, and undone as one change. `tags` merges synonym tags,
+    /// splits overloaded ones and retires rare ones, with no files moved.
+    Restructure {
+        #[command(subcommand)]
+        action: RestructureAction,
+    },
     /// Measure text models on the benchmark's test set, for choosing defaults
     /// (`docs/design/benchmark.md`).
     #[command(hide = true)]
@@ -287,6 +306,41 @@ enum Command {
     Models {
         #[command(subcommand)]
         action: Option<ModelsAction>,
+    },
+}
+
+#[derive(Debug, Clone, Subcommand)]
+enum RestructureAction {
+    /// Tag proposals: merge tags that mean the same thing, split a tag spread over items that
+    /// don't belong together, and retire tags hardly used. Tags you wrote yourself stay.
+    /// Without a subcommand, makes a proposal.
+    Tags {
+        #[command(subcommand)]
+        action: Option<RestructureTagsAction>,
+    },
+}
+
+#[derive(Debug, Clone, Subcommand)]
+enum RestructureTagsAction {
+    /// Make a proposal from the archive's tags and meaning index, replacing any waiting one.
+    Propose,
+    /// Show the waiting proposal: each change, why, and the items it touches.
+    Show {
+        /// The proposal, if more than one is waiting: its identifier, or its start or end.
+        id: Option<String>,
+    },
+    /// Apply the proposal, or only some of its changes, as one change undo reverses.
+    Approve {
+        /// The proposal, if more than one is waiting.
+        id: Option<String>,
+        /// Only these changes, by number, such as 1,3.
+        #[arg(long, value_name = "N,…", value_delimiter = ',')]
+        only: Vec<String>,
+    },
+    /// Drop the proposal, changing nothing.
+    Reject {
+        /// The proposal, if more than one is waiting.
+        id: Option<String>,
     },
 }
 
@@ -951,6 +1005,9 @@ fn without_command(archive: Option<&std::path::Path>, json: bool) -> ExitCode {
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+    if !matches!(cli.command, Some(Command::Bench(_))) {
+        carrel_core::decisions::start();
+    }
     let Some(command) = cli.command else {
         return without_command(cli.archive.as_deref(), cli.json);
     };
@@ -990,6 +1047,9 @@ fn main() -> ExitCode {
         } => commands::log(cli.archive.as_deref(), max_count, librarian),
         Command::Providers => Ok(providers::list()),
         Command::Formats => Ok(formats::list()),
+        Command::Report { since, names } => {
+            usage_report::report(cli.archive.as_deref(), &since, names)
+        }
         Command::Ingest(args) => {
             ingest::command(cli.archive.as_deref(), &args.into_request(), cli.json)
         }
@@ -1032,6 +1092,7 @@ fn main() -> ExitCode {
         Command::Backup { action } => backup_command(cli.archive.as_deref(), action),
         Command::Questions { action } => questions_command(cli.archive.as_deref(), action),
         Command::Discover { action } => discover_command(cli.archive.as_deref(), action, cli.json),
+        Command::Restructure { action } => restructure_command(cli.archive.as_deref(), action),
         Command::Bench(args) => bench::bench(&args, cli.json),
         Command::Models { action } => models_command(
             action.unwrap_or(ModelsAction::List),
@@ -1174,6 +1235,22 @@ fn discover_command(
     }
 }
 
+/// `carrel restructure` and its subcommands.
+fn restructure_command(
+    archive: Option<&std::path::Path>,
+    action: RestructureAction,
+) -> Result<Report, Failure> {
+    let RestructureAction::Tags { action } = action;
+    match action.unwrap_or(RestructureTagsAction::Propose) {
+        RestructureTagsAction::Propose => restructure::propose_tags(archive),
+        RestructureTagsAction::Show { id } => restructure::show_tags(archive, id.as_deref()),
+        RestructureTagsAction::Approve { id, only } => {
+            restructure::approve_tags(archive, id.as_deref(), &only)
+        }
+        RestructureTagsAction::Reject { id } => restructure::reject_tags(archive, id.as_deref()),
+    }
+}
+
 /// `carrel models` and its subcommands.
 fn models_command(
     action: ModelsAction,
@@ -1202,6 +1279,9 @@ fn changes_archive(command: &Command) -> bool {
         | Command::Return { .. }
         | Command::Collection { .. } => true,
         Command::Settings { action } => matches!(action, Some(SettingsAction::Set { .. })),
+        Command::Restructure {
+            action: RestructureAction::Tags { action },
+        } => matches!(action, Some(RestructureTagsAction::Approve { .. })),
         Command::Review { action, .. } => !matches!(
             action,
             None | Some(ReviewAction::List { .. } | ReviewAction::Show { .. })

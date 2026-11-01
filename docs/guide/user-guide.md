@@ -403,6 +403,20 @@ Every change Carrel makes to the archive is recorded: filing a batch, renaming, 
 - Changes the librarian made on its own are marked **by the librarian**; `carrel undo --librarian SINCE` undoes them all together (see [What the librarian may change](#what-the-librarian-may-change)).
 - Rejecting a proposal isn't a change to the archive, so it isn't undone this way; ingest the file again instead.
 
+### Tidying tags
+
+Over time an archive's tags drift: `receipt` on some cards and `receipts` on others, a `photo` that's sometimes `Photo`, one tag covering two things that have nothing to do with each other, or a tag used once and never again. `carrel restructure tags` proposes tidying them, with no files moved:
+
+- **Merging** tags that mean the same thing: capitals and punctuation, plurals, near spellings whose items are close in meaning (`colour` and `color`), and tags the meaning index puts very close that rarely share an item. The merged tag is the one the vocabularies define, else the one used most.
+- **Splitting** a tag whose items fall into groups far apart in meaning and mostly in different collections, each group getting a narrower tag (`apple` into `apple-recipes` and `apple-hardware`), named after a tag or collection that sets the group apart.
+- **Retiring** a tag used once or twice that no vocabulary defines.
+
+Each change says why and which items it changes. **Tags you wrote yourself stay as you wrote them**, and so do those of checked-out items, until they're returned; the proposal lists each such item and says why it's left alone. Without the meaning index (`carrel index status`), only tags written differently and rare tags are proposed.
+
+Approve it all with `carrel restructure tags approve`, part of it with `--only 1,3` (the changes' numbers), or none with `carrel restructure tags reject`. Approving rewrites the cards and the vocabularies in `ARCHIVE.md` and each `_collection.md` (noting it in the collection's changelog) as **one change in History**, so `carrel undo` puts everything back at once. A vocabulary keeps a tag that items left alone still use. Changes are applied to the archive as it is when you approve: a card you've changed since is left alone and reported.
+
+The proposal waits in `_System/queue/proposals/` until you decide, and proposing again replaces it. Restructuring whole sections, moving items and collections, comes next in v0.7, as do tag proposals in the interactive mode (#326) and the Mac app (#327).
+
 ### Writing safely
 
 Only one program changes an archive at a time: it holds the **writer lock** (`_System/writer.lock`) while it writes, and `carrel status` shows who holds it. A lock file is only safe while one device uses the archive, so Carrel warns when the archive is in iCloud Drive, Dropbox, OneDrive or Google Drive. Syncing between devices comes with the Mac app's CloudKit lock (v0.9).
@@ -451,6 +465,7 @@ The Settings screen (`8`), or `carrel settings`, shows two kinds:
 - **Librarian model** (`librarian.model`), the model `carrel ask` runs on, as `provider/offer`, or `default` for the strongest this device has.
 - **Model** that drafts cards, routes and rates items, as `provider/offer` (such as `llama/qwen3.5-4b`), or `default` to let Carrel choose: Apple's on-device model where there is one, then local models. If the chosen model isn't available, for example because its file was removed, Carrel uses the next best. `carrel settings` shows which is in use.
 - **Previews** in the interactive mode's Browse: `auto` shows them when the terminal is known to draw images, `off` never does, and `kitty`, `iterm2` or `sixel` uses that protocol whatever the terminal (see [Finding things](#finding-things)). Change it with `carrel settings set previews VALUE`.
+- **Decision log** (`report.log`, `on` or `off`) and how long it keeps (`report.keep_days`, 90 days by default), for [How Carrel is doing](#how-carrel-is-doing).
 - **Agent**, the background agent (see [Keeping work noticed without the app](#keeping-work-noticed-without-the-app)): `Enter` installs it for this archive, `x` uninstalls it.
 - **Providers** and **File types**, shown only: what `carrel providers` and `carrel formats` list.
 
@@ -470,6 +485,27 @@ Changing an archive setting is a change in history, so it can be undone.
 
 The Settings screen also shows the **Archive** it's on, which `Enter` (or `Ctrl-O` on any screen) switches, and the **Search index**, which stands in for `embedding.model`: `Enter` rebuilds the index, switches the archive's model, or downloads an embedding model after asking (see [Searching by meaning](#searching-by-meaning)).
 
+## How Carrel is doing
+
+After using Carrel for a few days or weeks, `carrel report` shows how well it's working for you and what to tweak. The interactive mode shows the same at the bottom of Status (`1`), and the Mac app will have a Report view.
+
+It's made from a **decision log** each device keeps in its own folder (see [What Carrel keeps on this device](#what-carrel-keeps-on-this-device)), never in the archive. The log records, by identifier:
+
+- each review decision: approved as proposed, moved before approval, held, rejected, and the choices for compressed files and duplicates;
+- each correction: which fields, whether it changed one field or several, and the model that wrote them;
+- each question's outcome: answered, skipped or dismissed, its kind, and how many items the answer settled;
+- each search: whether by words, by words and meaning, or by filters, how many results, and where the result you opened ranked;
+- how long each item waited to be drafted, drafting took, and the proposal waited for you;
+- once a day, how many items are in Holding and the counts of Status's structure signals.
+
+It records item and collection identifiers, kinds of item, file extensions, model names, counts and times. **It never records titles, summaries, text, names, file names, paths or what you searched for.** The librarian's changes and how many you undid come from the archive's history, and the file types not read from `unreadable.json`.
+
+The report covers the last 30 days, or `--since 14d`, `--since 2w` or a date. It shows, for each model, the share of its proposals you accepted as proposed, moved, held or rejected, which fields you corrected and for which types of file, and how long it took; the collections items were most often moved out of and into, and routing rules that misfire; Holding and the structure signals over time; how questions of each kind ended; how often a search found something you opened, and at what rank; the librarian's changes and how many you undid; and the file types not read. Then come **recommendations**, each naming the setting or command that acts on it: switch a model, describe or subdivide a collection, narrow a rule, read a file type, rest questions longer.
+
+**To share it**, for example to have Claude analyze it, run `carrel report --json > report.json` and send the file. Collections are named by identifier, so the report says nothing about what's in them; `carrel report --names` shows their paths, for you alone, and isn't for sharing.
+
+**To turn the log off**, `carrel settings set report.log off`, or **Decision log** in Settings; nothing more is recorded on this device until you turn it on again. What's older than `report.keep_days` (90 days unless you set it) is removed as Carrel starts. Deleting the `decisions/` folder removes the log.
+
 ## What Carrel keeps on this device
 
 Outside any archive, in `~/Library/Application Support/Carrel` on macOS, `%APPDATA%\Carrel` on Windows, or `~/.config/carrel` elsewhere (or `CARREL_CONFIG_DIR`):
@@ -484,6 +520,8 @@ Outside any archive, in `~/Library/Application Support/Carrel` on macOS, `%APPDA
 | `sessions/` | When each archive's checked-out and desk items were last looked at for work sessions |
 | `discover/` | For each archive, which collections this device opened when, the collection Status last resurfaced, and the last walk through the stacks |
 | `questions/` | For each archive, the day's few questions Status names, so they stay the same all day |
+| `decisions/` | The decision log for `carrel report`, a file per month, by identifier only (see [How Carrel is doing](#how-carrel-is-doing)) |
+| `unreadable.json` | The file types this device couldn't read, by type and extension only |
 | `logs/network.log` | Every request `carrel-fetch` made |
 
 ## Troubleshooting

@@ -95,6 +95,8 @@ pub enum InputPurpose {
         /// Its name now.
         from: String,
     },
+    /// One of the commands' options, asked for along the way.
+    Option(super::option_lines::OptionLine),
 }
 
 /// What a correction is for.
@@ -138,6 +140,7 @@ impl Input {
             InputPurpose::CollectionDescription { .. } => "what belongs there, or nothing",
             InputPurpose::CollectionTags { .. } => "name=meaning; …, or nothing",
             InputPurpose::Rename { .. } => "the new name",
+            InputPurpose::Option(line) => line.prompt(),
         }
     }
 
@@ -370,16 +373,16 @@ impl App {
                             self.message = Some("No folder given; nothing changed".into());
                             return None;
                         };
-                        return Some(if purpose == InputPurpose::OpenArchive {
-                            Effect::OpenArchive(path)
-                        } else {
-                            Effect::CreateArchive(path)
-                        });
+                        if purpose == InputPurpose::OpenArchive {
+                            return Some(Effect::OpenArchive(path));
+                        }
+                        self.ask_option(super::option_lines::OptionLine::EmbeddingModel { path });
                     }
                     purpose @ (InputPurpose::BackupRepository
                     | InputPurpose::RestoreItem { .. }) => {
                         return self.backup_input(purpose, text);
                     }
+                    InputPurpose::Option(line) => return self.option_entered(line, text),
                     purpose => return self.action_input(purpose, text),
                 }
             }
@@ -450,7 +453,8 @@ impl App {
 
     /// Handles a key on the Browse screen: ←→ move between collections, items and the chosen
     /// item's view, `e` and `c` edit or correct the chosen item, `o`, `r` and `z` check it out,
-    /// rename or expand it, `n` creates a collection, `/` searches, and Esc clears a search.
+    /// rename or expand it, `a` answers Carrel's question about it and `A` asks for them, `w`
+    /// wanders from it, `n` creates a collection, `/` searches, and Esc clears a search.
     pub(super) fn browse_key(&mut self, key: KeyEvent) -> Handled {
         if self.browse_pane == Pane::Item
             && let Handled::Yes(effect) = self.item_key(key)
@@ -468,7 +472,10 @@ impl App {
                     self.browse_pane = Pane::Items;
                     self.load_card();
                 }
-                Pane::Items if self.item.card.is_some() => self.browse_pane = Pane::Item,
+                Pane::Items if self.item.card.is_some() => {
+                    self.browse_pane = Pane::Item;
+                    self.note_search_result_opened();
+                }
                 _ => {}
             },
             KeyCode::Left | KeyCode::Char('h') => {
@@ -493,6 +500,16 @@ impl App {
                 Some(question) => self.answer_moment(&question),
                 None => self.message = Some("Carrel has no question about this item".into()),
             },
+            KeyCode::Char('A') if on_item => {
+                if let Some((card, _)) = self.browse_items.get(self.browse_item) {
+                    return Handled::Yes(Some(Effect::QuestionsAbout(card.clone())));
+                }
+            }
+            KeyCode::Char('w') if on_item => {
+                if let Some((card, _)) = self.browse_items.get(self.browse_item).cloned() {
+                    self.wander_from(&card);
+                }
+            }
             KeyCode::Char('/') => {
                 self.input = Some(Input {
                     purpose: InputPurpose::Search,

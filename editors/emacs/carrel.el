@@ -7,7 +7,7 @@
 ;; Version: 0.3.0
 ;; Package-Requires: ((emacs "27.1"))
 ;; Keywords: files, matching
-;; URL: https://github.com/HannahARose/carrel
+;; URL: https://github.com/Horizon-Labs/carrel
 
 ;; This file is not part of GNU Emacs.
 
@@ -38,7 +38,7 @@
   "Search a Carrel archive and show its cards."
   :group 'files
   :prefix "carrel-"
-  :link '(url-link "https://github.com/HannahARose/carrel"))
+  :link '(url-link "https://github.com/Horizon-Labs/carrel"))
 
 (defcustom carrel-program "carrel"
   "The `carrel' program: a name on the variable `exec-path', or a path."

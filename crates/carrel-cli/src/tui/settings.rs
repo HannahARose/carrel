@@ -31,6 +31,8 @@ pub enum Row {
     Providers,
     /// The file types this device reads and those it couldn't, as `carrel formats` lists them.
     Formats,
+    /// This device's decision log for `carrel report`, `report.log` or `report.keep_days`.
+    Report(&'static str),
     /// The archive shown, which the archive switcher changes.
     Archive,
     /// The embedding index search uses.
@@ -68,6 +70,7 @@ pub fn is_device(row: Row) -> bool {
             | Row::Agent
             | Row::Providers
             | Row::Formats
+            | Row::Report(_)
     )
 }
 
@@ -86,6 +89,8 @@ impl App {
             self.agent_row(),
             self.providers_row(),
             self.formats_row(),
+            report_row(&prefs, "report.log"),
+            report_row(&prefs, "report.keep_days"),
             self.archive_row(),
             self.index_row(),
         ];
@@ -297,6 +302,20 @@ impl App {
                     });
                 }
             },
+            Row::Report("report.log") => {
+                self.picker = Some(Picker {
+                    collections: vec!["on".into(), "off".into()],
+                    filter: String::new(),
+                    chosen: 0,
+                    purpose: Purpose::Setting("report.log".into()),
+                });
+            }
+            Row::Report(key) => {
+                self.input = Some(Input {
+                    purpose: InputPurpose::Setting(key.into()),
+                    text: shown.value.clone(),
+                });
+            }
             Row::Archive => self.archive_picker(),
             Row::Index => self.index_picker(),
             Row::Worker | Row::Agent | Row::Backups | Row::Providers | Row::Formats => {}
@@ -442,6 +461,32 @@ fn models_row() -> Shown {
                 lines
             },
         ),
+    }
+}
+
+/// A row for one of the decision log's preferences, `key`.
+fn report_row(prefs: &crate::config::Prefs, key: &'static str) -> Shown {
+    let (on, days) = crate::usage_report::preference_values(prefs);
+    let (value, what) = if key == "report.log" {
+        (
+            on,
+            "Whether this device keeps its decision log for the report: what was decided in Review, corrected, answered and found, by identifier only, never titles, text, names or searches. Enter to turn it on or off.",
+        )
+    } else {
+        (
+            days,
+            "How many days the decision log keeps. Enter to change it.",
+        )
+    };
+    Shown {
+        row: Row::Report(key),
+        label: key.into(),
+        value,
+        detail: vec![
+            what.into(),
+            String::new(),
+            "The Report section on Status, and `carrel report`, show what it says.".into(),
+        ],
     }
 }
 

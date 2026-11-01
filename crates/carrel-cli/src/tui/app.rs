@@ -141,6 +141,10 @@ pub enum Confirm {
         title: String,
         /// What changed and the history entry it adds, as `carrel return` shows them.
         changes: String,
+        /// Where the working copy is now, when it moved, as `carrel return --from` says.
+        from: Option<std::path::PathBuf>,
+        /// Whether backups are set up, so `t` can forget the checkout's session snapshots.
+        snapshots: bool,
     },
     /// Cancelling this checkout, leaving the working copy's changes out.
     CancelCheckout {
@@ -180,7 +184,7 @@ pub enum Confirm {
         due: Option<String>,
     },
     /// Putting this file or folder on the desk, as `carrel desk add` does.
-    DeskAdd(std::path::PathBuf),
+    DeskAdd(super::option_lines::DeskCard),
     /// Taking this desk item off the desk: `y` keeps its card, `d` deletes it too.
     DeskRemove {
         /// The desk item.
@@ -334,8 +338,8 @@ pub enum Effect {
     },
     /// Download this catalog model.
     Download(String),
-    /// Return this checkout, as `carrel return --yes` does.
-    Return(Id),
+    /// Return this checkout, as `carrel return --yes [--from] [--trim-snapshots]` does.
+    Return(super::active::Returning),
     /// Cancel this checkout, as `carrel return --discard --yes` does.
     CancelCheckout(Id),
     /// Open this working copy or desk item in the system's own app for it.
@@ -358,8 +362,8 @@ pub enum Effect {
         /// When it's due back, as YYYY-MM-DD.
         due: Option<String>,
     },
-    /// Put this file or folder on the desk, as `carrel desk add` does.
-    DeskAdd(std::path::PathBuf),
+    /// Put this file or folder on the desk, as `carrel desk add [--title] [--summary]` does.
+    DeskAdd(super::option_lines::DeskCard),
     /// Take this desk item off the desk, as `carrel desk remove [--delete-card]` does.
     DeskRemove {
         /// The desk item.
@@ -387,14 +391,16 @@ pub enum Effect {
     },
     /// Take a backup snapshot now.
     BackupNow,
-    /// Check the backups, reading back a share of the files.
-    BackupVerify,
-    /// Restore an item as of a change's snapshot, beside the archive.
+    /// Check the backups, reading back this percentage of the files.
+    BackupVerify(u8),
+    /// Restore an item as of a change's snapshot, beside the archive or in a chosen folder.
     BackupRestore {
         /// The item: its identifier, or its card's or contents' path.
         item: String,
         /// The history commit whose snapshot to restore from.
         at: String,
+        /// The folder to restore into, as `--to` says; beside the archive when none.
+        to: Option<std::path::PathBuf>,
     },
     /// Create or connect to a backup repository.
     BackupSetup {
@@ -402,13 +408,19 @@ pub enum Effect {
         repository: std::path::PathBuf,
         /// Its password, handed to Kopia, which keeps it in the keychain.
         password: super::backups::Secret,
+        /// The repository's name, as `--description` gives it; the default when none.
+        description: Option<String>,
     },
     /// Rebuild the embedding index, or switch the archive's model, as `carrel index` does.
     Index(super::embedding::Embedding),
     /// Show the archive at this path instead, as `carrel open` does.
     OpenArchive(std::path::PathBuf),
-    /// Create an archive at this path, as `carrel init` does, and show it.
-    CreateArchive(std::path::PathBuf),
+    /// Create an archive, as `carrel init --embedding-model` does, and show it.
+    CreateArchive(super::archives::NewArchive),
+    /// Start history for the existing archive at this path, as `carrel init` does there.
+    StartHistory(std::path::PathBuf),
+    /// Ask Carrel for its questions about the item at this card, as `carrel questions about`.
+    QuestionsAbout(String),
     /// Ask the librarian this, in the conversation on the Librarian screen.
     Ask(String),
     /// Save the conversation to the Journal, as `carrel ask --save` does.
@@ -664,6 +676,8 @@ impl App {
         self.archive = Archive::open(self.archive.root())?;
         self.status = lines(&crate::commands::status_on(&self.archive, &mut self.records)?.text);
         self.status.extend(self.index_status());
+        self.status
+            .extend(crate::usage_report::status_lines(&self.archive));
         self.history = match History::open(&self.archive) {
             Ok(history) => history.log()?,
             Err(HistoryError::NotInitialized) => Vec::new(),
@@ -747,14 +761,7 @@ impl App {
             return vec![("y", "save"), ("n", "discard")];
         }
         if let Some(confirm) = &self.confirm {
-            if matches!(confirm, Confirm::DeskRemove { .. }) {
-                return vec![
-                    ("y", "keep its card"),
-                    ("d", "delete its card"),
-                    ("n", "no"),
-                ];
-            }
-            return vec![("y", "yes"), ("n", "no")];
+            return confirm_keys(confirm);
         }
         // Typing comes before any screen's keys: they don't apply while a line is open.
         if let Some(input) = &self.input {
@@ -1051,13 +1058,30 @@ impl App {
 }
 
 /// The work a confirmation's answer starts: `y` says yes, and `d` takes a desk item off the
-/// desk with its card. Any other key changes nothing.
+/// desk with its card, and `t` returns a checkout and trims its session snapshots. Any other
+/// key changes nothing.
 fn confirmed(confirm: Confirm, key: KeyCode) -> Option<Effect> {
     if let (Confirm::DeskRemove { path, .. }, KeyCode::Char('d' | 'D')) = (&confirm, key) {
         return Some(Effect::DeskRemove {
             path: path.clone(),
             delete_card: true,
         });
+    }
+    if let (
+        Confirm::Return {
+            id,
+            from,
+            snapshots: true,
+            ..
+        },
+        KeyCode::Char('t' | 'T'),
+    ) = (&confirm, key)
+    {
+        return Some(Effect::Return(super::active::Returning {
+            id: *id,
+            from: from.clone(),
+            trim: true,
+        }));
     }
     if let (Confirm::Rule { id, answer, .. }, KeyCode::Char('n' | 'N')) = (&confirm, key) {
         return Some(Effect::Answer {
@@ -1079,7 +1103,11 @@ fn confirmed(confirm: Confirm, key: KeyCode) -> Option<Effect> {
         Confirm::Reject(ids) => Effect::Reject(ids),
         Confirm::Download { name, .. } => Effect::Download(name),
         Confirm::Agent(change) => Effect::Agent(change),
-        Confirm::Return { id, .. } => Effect::Return(id),
+        Confirm::Return { id, from, .. } => Effect::Return(super::active::Returning {
+            id,
+            from,
+            trim: false,
+        }),
         Confirm::CancelCheckout { id, .. } => Effect::CancelCheckout(id),
         Confirm::Learn { about, fact } => Effect::Correction(Step::Learn { about, fact }),
         Confirm::Checkout { card, to, due, .. } => Effect::Checkout {
@@ -1087,7 +1115,7 @@ fn confirmed(confirm: Confirm, key: KeyCode) -> Option<Effect> {
             to,
             due,
         },
-        Confirm::DeskAdd(path) => Effect::DeskAdd(path),
+        Confirm::DeskAdd(card) => Effect::DeskAdd(card),
         Confirm::DeskRemove { path, .. } => Effect::DeskRemove {
             path,
             delete_card: false,
@@ -1104,6 +1132,21 @@ fn confirmed(confirm: Confirm, key: KeyCode) -> Option<Effect> {
         },
         Confirm::UndoLibrarian(_) => Effect::UndoLibrarian,
     })
+}
+
+/// The keys a confirmation answers to, for the help line.
+fn confirm_keys(confirm: &Confirm) -> Vec<(&'static str, &'static str)> {
+    match confirm {
+        Confirm::DeskRemove { .. } => vec![
+            ("y", "keep its card"),
+            ("d", "delete its card"),
+            ("n", "no"),
+        ],
+        Confirm::Return {
+            snapshots: true, ..
+        } => vec![("y", "yes"), ("t", "and trim snapshots"), ("n", "no")],
+        _ => vec![("y", "yes"), ("n", "no")],
+    }
 }
 
 /// `index` moved by `delta` within `len` items.

@@ -690,6 +690,7 @@ pub(crate) fn describe(archive: &Archive, query: &str) -> Result<Shown, Failure>
 pub fn show(archive: Option<&Path>, query: &str) -> Result<Report, Failure> {
     let archive = locate(archive)?;
     let mut shown = describe(&archive, query)?;
+    carrel_core::decisions::opened(&archive, shown.id);
     if let Some((collection, _)) = shown.card_path.rsplit_once('/') {
         crate::discover::opened(&archive, collection);
     }

@@ -80,6 +80,19 @@ With `--json`, `carrel search` prints `{"root", "query", "total", "meaning", "re
 
 Identifiers can be shortened to their last eight characters, as the list shows them.
 
+## Restructure
+
+See [Tidying tags](user-guide.md#tidying-tags).
+
+| Command | What it does |
+| --- | --- |
+| `carrel restructure tags [propose]` | Proposes merging tags that mean the same thing, splitting a tag spread over unrelated items and retiring rare tags, each change with why and the items it changes. Tags you wrote yourself stay, and the proposal says so. It replaces any tag proposal waiting. |
+| `carrel restructure tags show [ID]` | Shows the waiting proposal. |
+| `carrel restructure tags approve [ID] [--only N,…]` | Applies the proposal, or only the numbered changes, to the cards and vocabularies as one history change that `carrel undo` reverses. |
+| `carrel restructure tags reject [ID]` | Drops the proposal, changing nothing. |
+
+`ID` is needed only when more than one tag proposal is waiting. With `--json`, `propose` prints `{"proposal", "replaced", "note"}` (`proposal` is `null` when there's nothing to change) and `show` prints `{"proposal"}`, the proposal as it's stored: `{"id", "kind", "section", "created", "by", "invasiveness", "rationale", "changes"}`, each change `{"id", "change", "reason", "invasiveness", "items", "held", "documents", "depends_on"}`, where `change.kind` is `merge-tags` (`from`, `into`), `split-tag` (`tag`, `into`: each `{"tag", "description", "items"}`) or `retire-tag` (`tag`), items are `{"id", "card", "title"}` and held items add `why`. `approve` prints `{"proposal", "approved"}`, `approved` being `{"selection", "outcomes", "summary", "commit"}`, and `reject` prints `{"rejected"}`.
+
 ## Questions
 
 | Command | What it does |
@@ -122,6 +135,7 @@ Backups need [Kopia](https://kopia.io), beside `carrel` or on `PATH`.
 | Command | What it does |
 | --- | --- |
 | `carrel providers` | Lists the providers on this device (text models, text extraction, embedding models) and which Carrel uses for each. |
+| `carrel report [--since WHEN] [--names] [--json]` | How Carrel is doing on this device, from its decision log: each model's proposals accepted, moved, held and rejected, corrections, routing, Holding and the structure signals, questions, search, ingest times, the librarian's changes undone, and file types not read, then recommendations, each naming the setting or command that acts on it. `--since` takes `14d`, `2w`, `today` or a date (default 30 days). It holds no titles, text, names or searches, so `--json` is safe to share; `--names` shows collections by path, for you alone. |
 | `carrel formats` | Lists the file types this device reads and which provider reads each, then the types it couldn't read so far, most frequent first, with what would read them when Carrel knows. |
 | `carrel models` | Lists the models Carrel can download, with size, memory needed and license, and the models already downloaded. Text models come first, then the embedding models for search. |
 | `carrel models download NAME [--format mlx] [--yes]` | Downloads a model after showing its size and license and asking; `--yes` skips the question. Every file is checked against the checksum Carrel ships with. `--format mlx` downloads the MLX build, a folder, for the MLX provider. |
@@ -133,7 +147,7 @@ Backups need [Kopia](https://kopia.io), beside `carrel` or on `PATH`.
 | Command | What it does |
 | --- | --- |
 | `carrel settings` | Lists this device's preferences and the archive's shared settings. |
-| `carrel settings set KEY VALUE` | Changes one. `picker`, `editor`, `model`, `second_model` and `librarian.model` are this device's (an empty value, or `default`, clears them); `model` takes `provider/offer`, the offer alone, or a provider such as `apple`, and must be one that's available; `second_model` also takes `off`. `librarian.model` takes a model as `model` does. `ingest.originals`, `compressed_files`, `signals.crowded_items`, `questions.skip_days`, `outside_edits`, `embedding.model`, `librarian.changes` (`on` or `off`) and `librarian.confidence` (0.5 to 1) are shared by every device, and each change can be undone from History. `embedding.model` can only be chosen once here; switch models with `carrel index model NAME`, which re-embeds the archive first. |
+| `carrel settings set KEY VALUE` | Changes one. `picker`, `editor`, `model`, `second_model`, `librarian.model`, `report.log` (`on` or `off`) and `report.keep_days` are this device's (an empty value, or `default`, clears them); `model` takes `provider/offer`, the offer alone, or a provider such as `apple`, and must be one that's available; `second_model` also takes `off`. `librarian.model` takes a model as `model` does. `ingest.originals`, `compressed_files`, `signals.crowded_items`, `questions.skip_days`, `outside_edits`, `embedding.model`, `librarian.changes` (`on` or `off`) and `librarian.confidence` (0.5 to 1) are shared by every device, and each change can be undone from History. `embedding.model` can only be chosen once here; switch models with `carrel index model NAME`, which re-embeds the archive first. |
 
 ## The interactive mode
 
