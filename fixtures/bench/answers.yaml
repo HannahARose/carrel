@@ -436,3 +436,182 @@ items:
     sensitivity: personal
     date: null
     tags: [3d-printing]
+
+  # Items that raise questions, for the question-value benchmark (#357): names sharing an
+  # unknown term, senders and groups with no collection yet, and placements that aren't sure.
+  "ORCA kickoff minutes.md":
+    destinations: [Work]
+    sensitivity: personal
+    date: 2026-02-09
+    tags: [meetings]
+  "ORCA sensor budget.txt":
+    destinations: [Work]
+    sensitivity: personal
+    date: 2026-02-20
+    may: [meetings]
+  "ORCA site visit report.txt":
+    destinations: [Work]
+    sensitivity: personal
+    date: 2026-03-12
+    may: [meetings]
+  "QPCR plate layout.txt":
+    destinations: [Research]
+    sensitivity: personal
+    date: 2026-01-15
+    tags: [notes]
+  "QPCR melt curve check.md":
+    destinations: [Research]
+    sensitivity: personal
+    date: 2026-01-22
+    tags: [notes]
+  "ISA transfer form.txt":
+    destinations: [Finances]
+    sensitivity: personal
+    date: 2026-04-02
+    tags: [bank]
+  "ISA interest summary.txt":
+    destinations: [Finances]
+    sensitivity: sensitive
+    date: 2026-04-10
+    tags: [bank]
+  "DnD campaign notes.md":
+    destinations: [Projects]
+    sensitivity: personal
+    date: null
+    tags: [writing]
+  "DnD session recap.md":
+    destinations: [Projects]
+    sensitivity: personal
+    date: 2026-03-01
+    tags: [writing]
+  "LIGO detector primer.txt":
+    destinations: [Reading]
+    sensitivity: personal
+    date: null
+    tags: [physics]
+    may: [articles]
+  "LIGO open data tutorial.md":
+    destinations: [Reading]
+    sensitivity: personal
+    date: null
+    tags: [physics]
+    may: [articles]
+  "EHIC renewal reminder.txt":
+    destinations: [Health, Travel]
+    ambiguous: true
+    sensitivity: personal
+    date: 2026-05-04
+  "EHIC application confirmation.txt":
+    destinations: [Health, Travel]
+    ambiguous: true
+    sensitivity: personal
+    date: 2026-05-11
+  "BrewLog sensor wiring.md":
+    destinations: [Projects]
+    sensitivity: personal
+    date: null
+    tags: [electronics]
+  "BrewLog firmware changelog.md":
+    destinations: [Projects]
+    sensitivity: personal
+    date: null
+    tags: [code]
+  "CNC spindle setup.md":
+    destinations: [Projects]
+    sensitivity: personal
+    date: null
+    may: [electronics]
+  "CNC toolpath settings.txt":
+    destinations: [Projects]
+    sensitivity: personal
+    date: null
+    may: [code]
+  "PhD funding letter.txt":
+    destinations: [Research]
+    sensitivity: personal
+    date: 2026-01-30
+    may: [drafts]
+  "PhD thesis outline.md":
+    destinations: [Research]
+    sensitivity: personal
+    date: null
+    tags: [drafts]
+  "OSM footpath edits.md":
+    destinations: [Projects]
+    sensitivity: personal
+    date: null
+    tags: [code]
+  "OSM import script notes.md":
+    destinations: [Projects]
+    sensitivity: personal
+    date: null
+    tags: [code]
+  "Calder Building Society savings statement.txt":
+    destinations: [Finances]
+    sensitivity: sensitive
+    date: 2026-01-31
+    tags: [bank]
+  "Calder Building Society rate change.txt":
+    destinations: [Finances]
+    sensitivity: personal
+    date: 2026-02-14
+    tags: [bank]
+  "Calder Building Society branch closure.txt":
+    destinations: [Finances, Letters]
+    ambiguous: true
+    sensitivity: personal
+    date: 2026-03-03
+  "Calder Building Society travel money card.txt":
+    destinations: [Finances, Travel]
+    ambiguous: true
+    sensitivity: personal
+    date: 2026-04-18
+  "Mariner Travel booking Bergen.txt":
+    destinations: [Travel]
+    sensitivity: personal
+    date: 2026-06-02
+    tags: [hotels]
+    may: [trains]
+  "Mariner Travel invoice.txt":
+    destinations: [Travel, Receipts]
+    ambiguous: true
+    sensitivity: personal
+    date: 2026-06-02
+  "Mariner Travel cancellation terms.txt":
+    destinations: [Travel]
+    sensitivity: personal
+    date: 2026-06-02
+  "Allotment plot licence.txt":
+    destinations: [Home]
+    sensitivity: sensitive
+    date: 2026-03-20
+  "Allotment planting plan.md":
+    destinations: [Home, Projects]
+    ambiguous: true
+    sensitivity: personal
+    date: null
+  "Allotment seed order.txt":
+    destinations: [Home, Receipts]
+    ambiguous: true
+    sensitivity: personal
+    date: 2026-02-27
+  "Allotment committee newsletter.txt":
+    destinations: [Home, Letters]
+    ambiguous: true
+    sensitivity: personal
+    date: 2026-04-01
+  "Larkspur Road inventory.txt":
+    destinations: [Home]
+    ambiguous: true
+    sensitivity: personal
+    date: 2023-07-30
+  "Larkspur Road keys handover.txt":
+    destinations: [Home, Letters]
+    ambiguous: true
+    sensitivity: personal
+    date: 2023-07-31
+  "Larkspur Road deposit return.txt":
+    destinations: [Home, Finances]
+    ambiguous: true
+    sensitivity: personal
+    date: 2023-08-14

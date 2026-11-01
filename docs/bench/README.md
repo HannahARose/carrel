@@ -189,7 +189,14 @@ It writes `bench-results/questions/results.json` and `report.md`, with every que
 
 ### Question value: not run yet
 
-No real model has been measured. The test set's file names were written for filing, so they raise few questions; if the first run shows too few to rank, the next step is a handful of items whose names share a term or a sender.
+No real model has been measured. The test set's first 81 items were written for filing, and on 2026-11-01 they raised no questions for any model. So 35 items were added for this benchmark (#357), each with its known answer in `answers.yaml`:
+
+- **names sharing an unknown term:** two or three items each for ORCA, QPCR, ISA, DnD, LIGO, EHIC, BrewLog, CNC, PhD and OSM. These raise a term question whatever the model does;
+- **a sender with no collection:** Calder Building Society and Mariner Travel, three or four items each, across collections;
+- **a group that would make a collection:** four Allotment items;
+- **uncertain placements:** three Larkspur Road items from an old flat, each fitting more than one collection.
+
+The senders, the group and the uncertain placements raise a group question when the model splits them or isn't sure of them. The filing, findability and librarian benchmarks see the added items too, so their totals from 2026-11-01 on aren't comparable with earlier runs item for item.
 
 ## Running it again
 

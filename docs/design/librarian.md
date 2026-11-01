@@ -22,7 +22,7 @@ The spec sets the shape. The librarian is "a chat panel that searches cards thro
   - `collection` (a collection's design document and items);
   - `on_this_day` and `timeline` (the discovery data, below).
 
-  The model picks a tool by answering in a fixed JSON form, the core runs it and hands back the result, and so on, up to a limit per answer. This works with every text provider Carrel has, since all of them can answer to a schema, and it needs no tool-calling support from the model.
+  The model picks a tool by answering in a fixed JSON form, the core runs it and hands back the result, and so on, up to a limit per answer. This works with every text provider Carrel has, since all of them can answer to a schema, and it needs no tool-calling support from the model. The final answer gets more room than a step naming a tool, and a step whose reply was cut off is asked again with that room. A tool call the model already made isn't run again or counted as a step: it gets the earlier result back, marked as already done. What the tools returned is trimmed to fit the model's context, the oldest results first.
 - **By default it changes nothing itself.** When it suggests a change, such as "this receipt looks misfiled" or "these five items could be a collection", the suggestion becomes a proposal or a correction you confirm, through the paths that already exist: review, `docs/design/corrections.md`, and restructuring once v0.7 adds it.
 - **Optionally, it may make changes that can be undone.** A setting, off unless you turn it on (`librarian.changes`), lets it make the changes it's sure of without asking first:
   - refiling an item, correcting a card's fields, renaming an item, and creating a collection;

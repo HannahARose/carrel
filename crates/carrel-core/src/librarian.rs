@@ -366,7 +366,7 @@ impl<'a> Librarian<'a> {
                     did: work.steps.last().map(|s| s.did.as_str()),
                 });
             }
-            let Some(reply) = self.ask_model(&asking, work, left)? else {
+            let Asked::Replied(reply) = self.ask_model(&asking, work, left)? else {
                 work.stopped = Some(Stopped::Tokens);
                 return Ok(None);
             };
@@ -395,8 +395,7 @@ impl<'a> Librarian<'a> {
         Ok(None)
     }
 
-    /// Asks the model for one step, with what's been done fitted to its context. `None` when
-    /// the step wouldn't fit in what's left of the tokens; otherwise its reply, if usable.
+    /// Asks the model for one step, with what's been done fitted to its context.
     ///
     /// A final answer gets more room than a step naming a tool. When the model runs out of
     /// room anyway, as when its JSON is cut off, the step is asked again once with room for
@@ -407,7 +406,7 @@ impl<'a> Librarian<'a> {
         asking: &Asking<'_>,
         work: &mut Work,
         left: usize,
-    ) -> Result<Option<Option<Reply>>, LibrarianError> {
+    ) -> Result<Asked, LibrarianError> {
         let answer_room = self.answer_room(asking.context);
         let fixed = estimate_tokens(asking.system)
             + estimate_tokens(&prompts::step(
@@ -427,7 +426,7 @@ impl<'a> Librarian<'a> {
         let prompt = prompts::step(asking.setting, asking.earlier, asking.question, &done, left);
         let needed = estimate_tokens(asking.system) + estimate_tokens(&prompt);
         if work.tokens + needed > self.limits.tokens {
-            return Ok(None);
+            return Ok(Asked::OutOfTokens);
         }
         let must_answer = left == 1
             || work.tokens
@@ -472,7 +471,7 @@ impl<'a> Librarian<'a> {
             || needed + estimate_tokens(&completion.text),
             |u| u.input_tokens + u.output_tokens,
         );
-        Ok(Some(
+        Ok(Asked::Replied(
             completion
                 .json
                 .and_then(|j| serde_json::from_value::<Reply>(j).ok()),
@@ -584,6 +583,14 @@ impl<'a> Librarian<'a> {
             .collect();
         answer
     }
+}
+
+/// What asking the model for a step came to.
+enum Asked {
+    /// The step wouldn't fit in what's left of the tokens.
+    OutOfTokens,
+    /// Its reply, if it was usable.
+    Replied(Option<Reply>),
 }
 
 /// What each step's prompt is made from, besides what's been done.
