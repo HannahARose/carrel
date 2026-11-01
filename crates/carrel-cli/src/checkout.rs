@@ -6,6 +6,7 @@ use std::io::IsTerminal as _;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
+use carrel_core::after_return::AfterReturn;
 use carrel_core::archive::{Archive, ItemRef};
 use carrel_core::backup::{Backups as _, Kopia, Snapshot};
 use carrel_core::card::DateOrTime;
@@ -126,9 +127,29 @@ pub fn list(archive: Option<&Path>) -> Result<Report, Failure> {
 
 pub use carrel_core::checkout::compared;
 
-/// `carrel return ITEM [--from PATH] [--yes] [--trim-snapshots]`, or `--discard` to cancel:
-/// shows what changed and the history entry it adds, asks, then brings the working copy back.
-/// With backups, it then offers to forget the checkout's session snapshots.
+/// What to do with a working copy once it's returned, given on the command line.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum WorkingCopy {
+    /// Put it in the system Trash, where it can be recovered.
+    Trash,
+    /// Leave it where it is.
+    Keep,
+}
+
+impl From<WorkingCopy> for AfterReturn {
+    fn from(choice: WorkingCopy) -> Self {
+        match choice {
+            WorkingCopy::Trash => Self::Trash,
+            WorkingCopy::Keep => Self::Keep,
+        }
+    }
+}
+
+/// `carrel return ITEM [--from PATH] [--yes] [--trim-snapshots] [--working-copy trash|keep]`,
+/// or `--discard` to cancel: shows what changed and the history entry it adds, asks, then
+/// brings the working copy back. With backups, it then offers to forget the checkout's session
+/// snapshots. The working copy is then trashed, kept or asked about, by `--working-copy` or
+/// `checkout.after_return`; with `--yes`, asking keeps it.
 ///
 /// # Errors
 ///
@@ -137,9 +158,9 @@ pub fn return_item(
     archive: Option<&Path>,
     query: &str,
     from: Option<&Path>,
-    yes: bool,
-    discard: bool,
+    (yes, discard): (bool, bool),
     trim: bool,
+    working_copy: Option<WorkingCopy>,
 ) -> Result<Report, Failure> {
     let archive = locate(archive)?;
     let items = archive.items()?;
@@ -178,7 +199,20 @@ pub fn return_item(
     if !crate::models::confirm("\nReturn it, replacing the archive copy?", yes)? {
         return Err(Failure::new("nothing returned"));
     }
-    let mut report = finish(&archive, &plan)?;
+    let after = working_copy.map_or_else(|| AfterReturn::of(archive.settings()), Into::into);
+    let mut report = finish(&archive, &plan, after)?;
+    if after == AfterReturn::Ask && plan.working.exists() {
+        let question = format!(
+            "Put the working copy at {} in the Trash?",
+            plan.working.display()
+        );
+        // With --yes nobody is asked, and keeping it is what changes nothing.
+        let trash =
+            !yes && std::io::stdin().is_terminal() && crate::models::confirm(&question, false)?;
+        let (text, state) = working_copy_after(&archive, &plan, trash);
+        report.text = text;
+        report.json["working_copy"] = state.into();
+    }
     if let Some(kopia) = backups.as_ref().filter(|_| !sessions.is_empty()) {
         let (trimmed, trimming) = trim_sessions(kopia, &plan, &sessions, trim, yes)?;
         report.text.push_str(&trimmed);
@@ -221,9 +255,11 @@ pub fn describe_return(plan: &ReturnPlan) -> String {
 }
 
 /// Returns the item `query` names, from where it was checked out to or from `from` if it
-/// moved, without asking: what `carrel return --yes [--from PATH] [--trim-snapshots]` does,
-/// and `r` on the Active screen once the owner has said yes. With `trim` and backups, the
-/// checkout's session snapshots are forgotten once the returned version is snapshotted.
+/// moved, without asking: what `carrel return --yes [--from PATH] [--trim-snapshots]
+/// [--working-copy]` does, and `r` on the Active screen once the owner has said yes. With
+/// `trim` and backups, the checkout's session snapshots are forgotten once the returned
+/// version is snapshotted. The working copy is trashed or kept by `after`, or by
+/// `checkout.after_return` without it, where asking keeps it for the caller to ask.
 ///
 /// # Errors
 ///
@@ -233,6 +269,7 @@ pub fn return_now(
     query: &str,
     from: Option<&Path>,
     trim: bool,
+    after: Option<AfterReturn>,
 ) -> Result<Report, Failure> {
     let archive = locate(archive)?;
     let items = archive.items()?;
@@ -245,7 +282,8 @@ pub fn return_now(
         .filter(|_| trim)
         .map(|kopia| session_snapshots(&archive, item, kopia))
         .unwrap_or_default();
-    let mut report = finish(&archive, &plan)?;
+    let after = after.unwrap_or_else(|| AfterReturn::of(archive.settings()));
+    let mut report = finish(&archive, &plan, after)?;
     if let Some(kopia) = backups.as_ref().filter(|_| !sessions.is_empty()) {
         let (trimmed, trimming) = trim_sessions(kopia, &plan, &sessions, true, true)?;
         report.text.push_str(&trimmed);
@@ -280,8 +318,9 @@ fn cancel(archive: &Archive, item: &ItemRef) -> Result<Report, Failure> {
     ))
 }
 
-/// Brings the working copy back by `plan`, holding the writer lease.
-fn finish(archive: &Archive, plan: &ReturnPlan) -> Result<Report, Failure> {
+/// Brings the working copy back by `plan`, holding the writer lease, then trashes the working
+/// copy if `after` says to.
+fn finish(archive: &Archive, plan: &ReturnPlan, after: AfterReturn) -> Result<Report, Failure> {
     let identity = Identity::load_or_create()?;
     let (backups, _) = crate::backup::for_batch(archive);
     let lease =
@@ -297,13 +336,11 @@ fn finish(archive: &Archive, plan: &ReturnPlan) -> Result<Report, Failure> {
     lease.release()?;
     let returned = result?;
     let d = &plan.diff;
+    let (text, state) = working_copy_after(archive, plan, after == AfterReturn::Trash);
     Ok(Report::new(
-        format!(
-            "Returned “{}”. The working copy is still at {}; delete it when you're ready.\n",
-            plan.title,
-            plan.working.display()
-        ),
+        text,
         json!({
+            "working_copy": state,
             "item": plan.item,
             "commit": returned.commit,
             "snapshot": returned.snapshot,
@@ -313,6 +350,30 @@ fn finish(archive: &Archive, plan: &ReturnPlan) -> Result<Report, Failure> {
             "commits": plan.commits,
         }),
     ))
+}
+
+/// Trashes the returned working copy if `trash` says to, and says where it is now: the
+/// report's text, and `trashed` or `kept` for its JSON.
+fn working_copy_after(archive: &Archive, plan: &ReturnPlan, trash: bool) -> (String, &'static str) {
+    let kept = format!(
+        "Returned “{}”. The working copy is still at {}; delete it when you're ready.\n",
+        plan.title,
+        plan.working.display()
+    );
+    if !trash {
+        return (kept, "kept");
+    }
+    match carrel_core::after_return::trash_working_copy(archive.root(), &plan.working) {
+        Ok(()) => (
+            format!(
+                "Returned “{}”. The working copy from {} is in the Trash.\n",
+                plan.title,
+                plan.working.display()
+            ),
+            "trashed",
+        ),
+        Err(e) => (format!("{kept}({e})\n"), "kept"),
+    }
 }
 
 /// The session snapshots taken of `item`'s working copy, where it was checked out to, since

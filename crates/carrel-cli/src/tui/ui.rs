@@ -480,6 +480,7 @@ fn draw_confirm(frame: &mut Frame, confirm: &Confirm, theme: Theme, area: Rect) 
             changes.trim_end().to_owned(),
             " return it   ",
         ),
+        Confirm::TrashWorkingCopy(working) => super::active::trash_working_copy_confirm(working),
         Confirm::CancelCheckout { title, .. } => (
             " Cancel checkout ",
             format!("Cancel the checkout of “{title}”?"),

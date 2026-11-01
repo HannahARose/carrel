@@ -204,13 +204,7 @@ fn event_loop(
             && let Ok(result) = done.try_recv()
         {
             running = None;
-            app.busy = None;
-            if let Ok(mut progress) = app.progress.lock() {
-                *progress = None;
-            }
-            finished(app, result);
-            // After a download, Settings finds what the providers offer again.
-            app.settings_shown();
+            work_done(app, result);
         }
         draw(terminal, app, theme, &mut painter)?;
         if !event::poll(Duration::from_millis(100))
@@ -305,6 +299,19 @@ fn answer_work(root: PathBuf, id: Id, answer: String, learn: bool) -> (String, W
 }
 
 /// Shows how work went and reads everything again.
+/// Background work has finished with `result`: says so, and asks what follows it.
+fn work_done(app: &mut App, result: Result<String, String>) {
+    app.busy = None;
+    if let Ok(mut progress) = app.progress.lock() {
+        *progress = None;
+    }
+    let succeeded = result.is_ok();
+    finished(app, result);
+    app.ask_about_working_copy(succeeded);
+    // After a download, Settings finds what the providers offer again.
+    app.settings_shown();
+}
+
 fn finished(app: &mut App, result: Result<String, String>) {
     let text = match result {
         Ok(text) | Err(text) => text,
@@ -470,9 +477,10 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
             finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
             return None;
         }
-        effect @ (Effect::Return(_) | Effect::CancelCheckout(_) | Effect::Entries { .. }) => {
-            active_work(root, effect)
-        }
+        effect @ (Effect::Return(_)
+        | Effect::TrashWorkingCopy(_)
+        | Effect::CancelCheckout(_)
+        | Effect::Entries { .. }) => active_work(root, effect),
         effect @ (Effect::Download(_)
         | Effect::Index(_)
         | Effect::OpenArchive(_)
@@ -662,9 +670,11 @@ fn active_work(root: PathBuf, effect: Effect) -> (String, Work) {
                     &returning.id.to_string(),
                     returning.from.as_deref(),
                     returning.trim,
+                    None,
                 )
             }),
         ),
+        Effect::TrashWorkingCopy(working) => active::trash_working_copy_work(root, working),
         Effect::CancelCheckout(id) => (
             "Cancelling the checkout…".into(),
             Box::new(move || crate::checkout::cancel_now(Some(&root), &id.to_string())),
