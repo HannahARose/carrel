@@ -67,11 +67,11 @@ pub struct Judgment {
 /// The crawler's instructions.
 #[must_use]
 pub fn system() -> String {
-    "You keep a personal archive in order. Each item is described by a card and filed in a collection, whose design document says what belongs in it. You check one item at a time: whether it still fits its collection, where it would fit better if not, and whether its card could be better.\n\n\
-     - Judge fit against the design document and the list of collections. Most items are where they belong. Say it fits when its collection is a reasonable place for it, even if another would do as well; say it doesn't fit only when it plainly belongs somewhere else, or nowhere in the list. Holding is for items waiting for a home, so an item there never fits.\n\
-     - When it doesn't fit, name the collection it belongs in, from the list, exactly as written, or leave it empty when none is right.\n\
+    "You keep a personal archive in order. Each item is described by a card and filed in a collection, whose design document says what belongs in it. You check one item at a time: which collection it belongs in, and whether its card could be better.\n\n\
+     - Name the collection the item belongs in, from the list, exactly as written. The collection it's in now is on the list: name it when it's a reasonable place for the item, even if another would do as well. Name another only when the item plainly belongs there instead. Leave it empty only when no collection on the list is right.\n\
+     - Judge the item by what it is, against each collection's purpose, not by which collection's words its card happens to share.\n\
      - Then read the card again. Suggest a clearer title, a better summary of at most two sentences, the date it was made when the text gives one the card lacks, and up to five tags it's missing. Leave a field empty when the card's is fine, as it usually is. Only suggest what the text and card show; don't guess.\n\
-     - Give how sure you are, from 0 to 1, and why, in one short sentence.\n"
+     - Give how sure you are of the collection you named, from 0 to 1, and why, in one sentence of at most 20 words.\n"
         .to_owned()
 }
 
@@ -127,6 +127,14 @@ pub fn prompt(item: &Item<'_>, places: &[Place]) -> String {
         Some(body) => writeln!(text, "\nIts text:\n{}", shorten(body, TEXT_CHARS)).unwrap(),
         None => text.push_str("\nNo text could be read from it.\n"),
     }
+    // The question last, naming where it is, so the model judges that collection and not
+    // whichever it read about last.
+    writeln!(
+        text,
+        "\nWhich collection does this item belong in? It's in {} now.",
+        item.collection
+    )
+    .unwrap();
     text
 }
 
@@ -139,9 +147,12 @@ fn shorten(text: &str, chars: usize) -> String {
     cut
 }
 
-/// The JSON Schema the model answers to, the collection one of `paths` or empty. Every field is
-/// required, with an empty value for none, since models constrained by a grammar otherwise stop
-/// early; the tags are capped, so a small model can't list them until it runs out of room.
+/// The JSON Schema the model answers to: the collection the item belongs in, one of `paths`
+/// (its own among them) or empty for none, first, so the verdict comes before anything long.
+/// It's asked where the item belongs rather than whether it fits, since small models judged
+/// "fits" against whichever collection they had in mind. Every field is required, with an
+/// empty value for none, since models constrained by a grammar otherwise stop early; the tags
+/// are capped, so a small model can't list them until it runs out of room.
 #[must_use]
 pub fn schema(paths: &[String]) -> Value {
     let mut collections: Vec<&str> = vec![""];
@@ -149,22 +160,23 @@ pub fn schema(paths: &[String]) -> Value {
     json!({
         "type": "object",
         "properties": {
-            "fits": {"type": "boolean", "description": "Whether it fits its collection"},
-            "collection": {"type": "string", "enum": collections, "description": "Where it belongs instead; empty when it fits"},
-            "confidence": {"type": "number", "description": "How sure you are, from 0 to 1"},
-            "reason": {"type": "string", "description": "Why, in a sentence"},
+            "collection": {"type": "string", "enum": collections, "description": "The collection it belongs in: the one it's in now when that's a reasonable place; empty only when none is right"},
+            "confidence": {"type": "number", "description": "How sure you are of that collection, from 0 to 1"},
+            "reason": {"type": "string", "description": "Why, in one sentence of at most 20 words"},
             "title": {"type": "string", "description": "A clearer title; empty when the card's is fine"},
             "summary": {"type": "string", "description": "A better summary; empty when the card's is fine"},
             "created": {"type": "string", "description": "When it was made, YYYY-MM-DD, if the text says and the card doesn't; else empty"},
             "tags": {"type": "array", "items": {"type": "string"}, "maxItems": MAX_TAGS, "description": "Tags it's missing; usually empty"}
         },
-        "required": ["fits", "collection", "confidence", "reason", "title", "summary", "created", "tags"]
+        "required": ["collection", "confidence", "reason", "title", "summary", "created", "tags"]
     })
 }
 
-/// The model's answer, read, against the card it's about and the collection it's in. `None`
-/// when it isn't in the form asked for. Suggestions that change nothing are dropped, and a
-/// misfit it's less sure of than [`MISFIT_CONFIDENCE`] counts as fitting.
+/// The model's answer, read, against the card it's about and the collection it's in. The item
+/// fits when the model names the collection it's in; an answer without a collection may say
+/// `fits` instead, as the crawler's first answers did. `None` when it's in neither form.
+/// Suggestions that change nothing are dropped, and a misfit it's less sure of than
+/// [`MISFIT_CONFIDENCE`] counts as fitting.
 #[must_use]
 pub fn read(answer: &Value, card: &Card, collection: &str) -> Option<Judgment> {
     // Its white space run together: a suggestion is one line, whatever the model wrote.
@@ -175,14 +187,24 @@ pub fn read(answer: &Value, card: &Card, collection: &str) -> Option<Judgment> {
             .map(|t| t.split_whitespace().collect::<Vec<_>>().join(" "))
             .filter(|t| !t.is_empty())
     };
-    let fits = answer.get("fits")?.as_bool()?;
+    let named = answer.get("collection").and_then(Value::as_str);
+    let said_fits = answer.get("fits").and_then(Value::as_bool);
+    let fits = match (named.map(str::trim).filter(|c| !c.is_empty()), said_fits) {
+        (Some(named), _) => named.eq_ignore_ascii_case(collection),
+        (None, Some(fits)) => fits,
+        // A collection left empty: nowhere on the list is right.
+        (None, None) => {
+            named?;
+            false
+        }
+    };
     let stated = answer
         .get("confidence")
         .and_then(Value::as_f64)
         .filter(|c| c.is_finite())
         .map(|c| c.clamp(0.0, 1.0));
     let confidence = stated.unwrap_or(0.0);
-    let better = text("collection").filter(|c| c != collection);
+    let better = text("collection").filter(|c| !c.eq_ignore_ascii_case(collection));
     let created = text("created").filter(|c| {
         crate::card::DateOrTime(c.clone()).is_valid()
             && card

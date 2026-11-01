@@ -263,7 +263,7 @@ That makes 18 misplaced items among 113 that count; Holding's own items don't, s
 - **placement:** of the misplaced items whose collection is there (14 of the 18), the share it would move to an acceptable collection. An item it missed counts as not placed;
 - **unusable answers and seconds per item.**
 
-As in the crawler, an item counts as flagged only when the model says it doesn't fit and is at least 0.5 sure; a less sure misfit counts as fitting.
+As in the crawler, the model is asked which collection the item belongs in, its current one among the choices, rather than whether it fits: the first runs showed small models judging "fits" against whichever collection they had in mind (#428). An item counts as flagged when the model names another collection, or none, and is at least 0.5 sure; a less sure misfit counts as fitting. The muddled archive's cards are summarized from `descriptions.yaml`, as drafted cards would be, so run with `--fresh` after upgrading from a version without summaries.
 
 ```bash
 carrel bench --crawl --out bench-results

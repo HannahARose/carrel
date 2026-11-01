@@ -642,3 +642,69 @@ fn a_declined_summary_isnt_proposed_again_in_other_words() {
         "the owner said no to a new summary"
     );
 }
+
+#[test]
+fn the_model_is_asked_where_an_item_belongs_and_it_fits_when_that_is_where_it_is() {
+    let (_dir, archive, holder) = sample(false);
+    let item = archive
+        .items()
+        .unwrap()
+        .into_iter()
+        .find(|i| i.card.starts_with("Reading/"))
+        .unwrap();
+    let ask = |answer: Value| {
+        let mut registry = Registry::with_built_ins();
+        let model = Scripted::new("scripted", 10, 8_000, vec![Ok(answer)]);
+        let asked = model.asked.clone();
+        registry.add(Box::new(model));
+        let judged = Crawler {
+            archive: &archive,
+            registry: &registry,
+            model: AvailableModel {
+                provider: "scripted".into(),
+                offer: "m".into(),
+                label: "scripted/m".into(),
+            },
+            holder,
+        }
+        .judge_item(&item)
+        .unwrap()
+        .unwrap();
+        let request = asked.lock().unwrap()[0].clone();
+        (judged, request)
+    };
+    let named = |collection: &str| {
+        json!({
+            "collection": collection,
+            "confidence": 0.9,
+            "reason": "It's a reference read.",
+            "title": "", "summary": "", "created": "", "tags": []
+        })
+    };
+    let (here, request) = ask(named("Reading"));
+    assert!(here.fits);
+    assert!(
+        request
+            .prompt
+            .trim_end()
+            .ends_with("Which collection does this item belong in? It's in Reading now."),
+        "{}",
+        request.prompt
+    );
+    let schema = request.schema.unwrap();
+    assert!(schema["properties"].get("fits").is_none());
+    assert_eq!(
+        schema["required"][0], "collection",
+        "the verdict comes first"
+    );
+
+    let (elsewhere, _) = ask(named("Projects"));
+    assert!(!elsewhere.fits);
+    assert_eq!(elsewhere.better.as_deref(), Some("Projects"));
+    let (nowhere, _) = ask(named(""));
+    assert!(!nowhere.fits, "no collection on the list is right");
+    assert_eq!(nowhere.better, None);
+    // An answer in the crawler's first form is still read.
+    let (first_form, _) = ask(verdict(true, "", 0.9));
+    assert!(first_form.fits);
+}
