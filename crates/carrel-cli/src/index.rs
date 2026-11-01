@@ -16,7 +16,8 @@ use carrel_core::coordinator::{
 use carrel_core::index::manage::{self, Built, Stage, SwitchStatus, Switched};
 use carrel_core::index::{Index, IndexError};
 use carrel_core::models::embedding_models;
-use carrel_core::providers::Registry;
+use carrel_core::providers::{ProviderError, Registry};
+use carrel_core::search::run::ModelSource;
 use serde_json::{Value, json};
 
 use crate::commands::{holder, locate, plural};
@@ -24,12 +25,39 @@ use crate::config::Identity;
 use crate::progress::Display;
 use crate::{Failure, Report};
 
-pub use carrel_core::search::run::how_to_get;
+/// How to get `model` here, in the command line's words: the command that downloads it, or
+/// the provider it comes with.
+pub fn how_to_get(model: &str) -> Option<String> {
+    Some(match carrel_core::search::run::how_to_get(model)? {
+        ModelSource::Download(found) => format!(
+            "{}; download it with `carrel models download {}`",
+            crate::ingest::human_size(found.size),
+            found.name
+        ),
+        comes_with @ ModelSource::ComesWith(_) => comes_with.to_string(),
+    })
+}
+
+/// ` Download it with `carrel models download NAME`, which asks first.` when `model` is a
+/// catalog model to download; nothing otherwise.
+pub fn download_command(model: &str) -> String {
+    match carrel_core::search::run::how_to_get(model) {
+        Some(ModelSource::Download(found)) => format!(
+            " Download it with `carrel models download {}`, which asks first.",
+            found.name
+        ),
+        _ => String::new(),
+    }
+}
 
 /// `error`, in words, with how to get `model` when no provider here has it.
 #[allow(clippy::needless_pass_by_value)] // `map_err` hands the error over.
 pub fn failure(error: IndexError, model: &str) -> Failure {
-    Failure::new(carrel_core::search::run::index_failure(&error, model))
+    let mut text = carrel_core::search::run::index_failure(&error, model);
+    if matches!(error, IndexError::Provider(ProviderError::Unavailable(_))) {
+        text.push_str(&download_command(model));
+    }
+    Failure::new(text)
 }
 
 /// The embedding models providers on this device offer, best first, each once, with the
@@ -313,7 +341,17 @@ pub fn switch_to(archive: Option<&Path>, model: &str, json: bool) -> Result<Repo
             DiskLock::for_archive(&archive).acquire(holder(&identity), "index model", DEFAULT_LEASE)
         },
         &mut shown(model, json),
-    )?;
+    )
+    .map_err(|Failure(e)| {
+        let offered = manage::offered_models(&registry)
+            .iter()
+            .any(|m| m.model == model);
+        Failure(if offered {
+            e
+        } else {
+            format!("{e}.{}", download_command(model))
+        })
+    })?;
     if let Some(replaced) = report.json["replaced"].as_str() {
         eprintln!("Gave up switching to {replaced}, and removed its index.");
     }

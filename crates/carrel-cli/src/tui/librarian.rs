@@ -101,16 +101,32 @@ pub fn ask_with(
     Ok(conversation)
 }
 
+/// Why the librarian on this device didn't answer.
+#[derive(Debug)]
+pub enum LibrarianUnanswered {
+    /// It has no model to run on, and this is what would let it.
+    NoModel(Box<carrel_core::librarian::model::NoModel>),
+    /// Something else went wrong, in words.
+    Failed(String),
+}
+
 /// Asks `question` on this device's librarian, in the background.
+///
+/// # Errors
+///
+/// [`LibrarianUnanswered`]: there's no model, or why it couldn't answer.
 pub fn ask_here(
     root: &std::path::Path,
     conversation: Conversation,
     question: &str,
     progress: &super::embedding::Shared,
-) -> Result<Conversation, String> {
+) -> Result<Conversation, LibrarianUnanswered> {
     let (registry, _) = crate::providers::registry();
-    let model = crate::ask::the_model(&registry).map_err(|Failure(e)| e)?;
-    let identity = crate::config::Identity::load_or_create().map_err(|e| e.to_string())?;
+    let model = crate::ask::explain_the_model(&registry)
+        .map_err(|Failure(e)| LibrarianUnanswered::Failed(e))?
+        .map_err(LibrarianUnanswered::NoModel)?;
+    let identity = crate::config::Identity::load_or_create()
+        .map_err(|e| LibrarianUnanswered::Failed(e.to_string()))?;
     ask_with(
         root,
         (&registry, model),
@@ -119,6 +135,7 @@ pub fn ask_here(
         identity.holder(),
         progress,
     )
+    .map_err(LibrarianUnanswered::Failed)
 }
 
 /// Saves `conversation` to this month's Journal, as `carrel ask --save` does.
@@ -242,6 +259,22 @@ impl App {
                 self.load_talk_item();
             }
             Err(e) => self.message = Some(e),
+        }
+    }
+
+    /// Says why the librarian has no model and what to do: the setting to clear, or, when
+    /// there's no text model at all, the model that suits this device, asking to download
+    /// it, as Settings does.
+    pub(super) fn librarian_has_no_model(
+        &mut self,
+        missing: &carrel_core::librarian::model::NoModel,
+    ) {
+        match missing.download {
+            Some(download) => {
+                self.answered(Err(missing.to_string()));
+                self.confirm_download(download.name);
+            }
+            None => self.answered(Err(crate::ask::what_to_do(missing))),
         }
     }
 
@@ -407,7 +440,7 @@ pub fn librarian_work(app: &mut App, effect: Effect) {
 /// The librarian answering in the background, for the run loop.
 #[derive(Default)]
 pub struct Asking {
-    answer: Option<std::sync::mpsc::Receiver<Result<Conversation, String>>>,
+    answer: Option<std::sync::mpsc::Receiver<Result<Conversation, LibrarianUnanswered>>>,
 }
 
 impl Asking {
@@ -448,7 +481,11 @@ impl Asking {
         if let Ok(mut progress) = app.progress.lock() {
             *progress = None;
         }
-        app.answered(result);
+        match result {
+            Ok(conversation) => app.answered(Ok(conversation)),
+            Err(LibrarianUnanswered::Failed(e)) => app.answered(Err(e)),
+            Err(LibrarianUnanswered::NoModel(missing)) => app.librarian_has_no_model(&missing),
+        }
     }
 }
 
@@ -745,5 +782,61 @@ pub(super) mod tests {
             vec![answer("Still this one.", &[&card], 0.5)],
         );
         assert!(app.talk.question.is_none());
+    }
+
+    #[test]
+    fn with_no_model_the_librarian_says_what_to_do_and_asks_to_download_one() {
+        use carrel_core::librarian::model::NoModel;
+        let (_dir, mut app) = sample(false);
+        app.key(key(KeyCode::Char('L')));
+        let qwen = carrel_core::models::find("qwen3.5-4b").unwrap();
+        app.librarian_has_no_model(&NoModel {
+            gone: None,
+            available: Vec::new(),
+            instead: None,
+            download: Some(qwen),
+            downloaded: Vec::new(),
+            memory_gb: Some(8),
+        });
+        let message = app.message.clone().unwrap();
+        assert!(message.contains("needs a text model"), "{message}");
+        assert!(message.contains("(qwen3.5-4b, 2.7 GB)"), "{message}");
+        assert!(
+            matches!(&app.confirm, Some(Confirm::Download { name, .. }) if name == "qwen3.5-4b")
+        );
+        assert_eq!(
+            app.key(key(KeyCode::Char('y'))),
+            Some(Effect::Download("qwen3.5-4b".into()))
+        );
+    }
+
+    #[test]
+    fn a_librarian_model_thats_gone_is_named_with_those_installed() {
+        use carrel_core::librarian::model::NoModel;
+        let (_dir, mut app) = sample(false);
+        let installed = AvailableModel {
+            provider: "llama".into(),
+            offer: "gemma-4-e4b".into(),
+            label: "llama/Gemma 4 E4B".into(),
+        };
+        app.librarian_has_no_model(&NoModel {
+            gone: Some("llama/gone-7b".into()),
+            available: vec![installed.clone()],
+            instead: Some(installed),
+            download: None,
+            downloaded: Vec::new(),
+            memory_gb: Some(16),
+        });
+        let message = app.message.clone().unwrap();
+        assert!(
+            message.contains("librarian.model names llama/gone-7b"),
+            "{message}"
+        );
+        assert!(message.contains("runs on llama/Gemma 4 E4B"), "{message}");
+        assert!(
+            message.contains("`carrel settings set librarian.model llama/gemma-4-e4b`"),
+            "{message}"
+        );
+        assert!(app.confirm.is_none());
     }
 }

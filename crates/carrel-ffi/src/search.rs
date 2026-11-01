@@ -156,6 +156,9 @@ pub struct SearchResults {
     pub behind: u64,
     /// Why it was by words only, when the query had words and meaning couldn't be used.
     pub words_only: Option<String>,
+    /// When that's because this device doesn't have the archive's embedding model, the
+    /// catalog model to download for it.
+    pub missing_model: Option<crate::models::CatalogModel>,
 }
 
 /// An item another links to.
@@ -238,7 +241,11 @@ fn parse(query: &str) -> Result<Query, CarrelError> {
 }
 
 /// `found` for Swift, with why it was by words only.
-fn results(found: &Results, words_only: Option<String>) -> SearchResults {
+fn results(
+    found: &Results,
+    words_only: Option<String>,
+    missing_model: Option<crate::models::CatalogModel>,
+) -> SearchResults {
     let (by_meaning, behind) = match found.meaning {
         Meaning::Off => (false, 0),
         Meaning::Current => (true, 0),
@@ -250,6 +257,7 @@ fn results(found: &Results, words_only: Option<String>) -> SearchResults {
         by_meaning,
         behind,
         words_only,
+        missing_model,
     }
 }
 
@@ -283,7 +291,17 @@ impl ArchiveHandle {
                 }
             },
         )?;
-        Ok(results(&searched.results, searched.words_only))
+        let missing_model = match searched.missing_model {
+            Some(carrel_core::search::run::ModelSource::Download(model)) => Some(
+                crate::models::catalog_model(model, self.models_dir().as_deref()),
+            ),
+            _ => None,
+        };
+        Ok(results(
+            &searched.results,
+            searched.words_only,
+            missing_model,
+        ))
     }
 
     /// Searches for `query` as [`ArchiveHandle::search`] does, by words alone: over the text
@@ -298,7 +316,7 @@ impl ArchiveHandle {
         let query = parse(&query)?;
         let archive = self.fresh()?;
         let found = Search::build(&archive)?.search(&query, limit as usize);
-        Ok(results(&found, None))
+        Ok(results(&found, None, None))
     }
 
     /// The filed item `id`: its card, links and history section.
