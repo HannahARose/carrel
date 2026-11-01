@@ -234,7 +234,9 @@ private struct AnswerView: View {
                 }
             }
             Text(footnote).font(.caption).foregroundStyle(.tertiary)
-                .help(answer.steps.map { "\($0.tool) \($0.input): \($0.did)" }.joined(separator: "\n"))
+                .help(
+                    answer.steps.map { "\($0.tool) \($0.input): \($0.did)" }.joined(separator: "\n")
+                )
         }
     }
 
@@ -325,7 +327,9 @@ private struct LibrarianChangesView: View {
         ) {
             Button("Undo All") { Task { await librarian.undoAll() } }
         } message: {
-            Text("Each is undone as a new change, newest first. Any that can’t be are left and listed.")
+            Text(
+                "Each is undone as a new change, newest first. Any that can’t be are left and listed."
+            )
         }
     }
 }

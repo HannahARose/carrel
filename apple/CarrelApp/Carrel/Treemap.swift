@@ -66,7 +66,9 @@ enum Treemap {
             for item in row {
                 let height = space.height * item.area / rowArea
                 tiles.append(
-                    TreemapTile(id: item.id, rect: CGRect(x: space.minX, y: y, width: width, height: height)))
+                    TreemapTile(
+                        id: item.id, rect: CGRect(x: space.minX, y: y, width: width, height: height)
+                    ))
                 y += height
             }
         } else {
@@ -75,7 +77,9 @@ enum Treemap {
             for item in row {
                 let width = space.width * item.area / rowArea
                 tiles.append(
-                    TreemapTile(id: item.id, rect: CGRect(x: x, y: space.minY, width: width, height: height)))
+                    TreemapTile(
+                        id: item.id, rect: CGRect(x: x, y: space.minY, width: width, height: height)
+                    ))
                 x += width
             }
         }

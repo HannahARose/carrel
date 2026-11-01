@@ -105,29 +105,48 @@ final class DiscoverModel {
         case .today: await refreshToday()
         case .wander: if walk == nil { await startWalk() }
         case .timeline: await refreshTimeline()
-        case .map: await read { try $0.archiveMap() } into: { self.map = $0 }
+        case .map:
+            await read {
+                try $0.archiveMap()
+            } into: {
+                self.map = $0
+            }
         case .activity:
-            await read { try $0.activity(from: nil, to: nil) } into: { self.activity = $0 }
+            await read {
+                try $0.activity(from: nil, to: nil)
+            } into: {
+                self.activity = $0
+            }
         }
     }
 
     func refreshToday() async {
         let date = Self.dayText(day)
-        await read { try $0.onThisDay(date: date) } into: { self.onThisDay = $0 }
+        await read {
+            try $0.onThisDay(date: date)
+        } into: {
+            self.onThisDay = $0
+        }
     }
 
     func refreshTimeline() async {
         let query = timelineQuery
         let by = timelineDate == .own ? nil : timelineDate.rawValue
         let per = timelineGrouping.rawValue
-        await read { try $0.timeline(query: query, by: by, per: per) } into: {
+        await read {
+            try $0.timeline(query: query, by: by, per: per)
+        } into: {
             self.timeline = $0
         }
     }
 
     /// Reads whether a collection has been forgotten, for Status.
     func refreshResurfaced() async {
-        await read { try $0.resurfaced() } into: { self.resurfaced = $0 }
+        await read {
+            try $0.resurfaced()
+        } into: {
+            self.resurfaced = $0
+        }
     }
 
     /// Starts a new walk, from the item `start` or from somewhere not visited in a while, and

@@ -57,7 +57,8 @@ struct ChangeInspector: View {
                     if let device = change.device { LabeledContent("Device", value: device) }
                     if let agent = change.agent {
                         LabeledContent(
-                            "Made by", value: agent == "librarian" ? "The librarian, on its own" : agent)
+                            "Made by",
+                            value: agent == "librarian" ? "The librarian, on its own" : agent)
                     }
                     LabeledContent("Change") {
                         Text(change.id.prefix(12)).monospaced().textSelection(.enabled)

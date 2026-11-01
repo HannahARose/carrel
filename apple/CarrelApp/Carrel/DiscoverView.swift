@@ -244,7 +244,8 @@ private struct TimelinePage: View {
                     Section {
                         ForEach(period.items, id: \.self) { placed in
                             DiscoveredRow(
-                                item: placed.item, detail: "\(placed.what.capitalized) \(placed.date)")
+                                item: placed.item,
+                                detail: "\(placed.what.capitalized) \(placed.date)")
                         }
                     } header: {
                         PeriodHeader(period: period, most: busiestPeriod)
@@ -262,8 +263,11 @@ private struct TimelinePage: View {
                 }
             }
             if let undated = discover.timeline?.undated, undated > 0 {
-                Text(undated == 1 ? "1 item has no such date." : "\(undated) items have no such date.")
-                    .font(.caption).foregroundStyle(.secondary).padding(6)
+                Text(
+                    undated == 1
+                        ? "1 item has no such date." : "\(undated) items have no such date."
+                )
+                .font(.caption).foregroundStyle(.secondary).padding(6)
             }
         }
         .onChange(of: discover.timelineDate) { Task { await discover.refreshTimeline() } }
@@ -288,7 +292,8 @@ private struct PeriodHeader: View {
                     .frame(
                         width: most > 0
                             ? geometry.size.width * CGFloat(period.items.count) / CGFloat(most) : 0,
-                        height: 5)
+                        height: 5
+                    )
                     .frame(maxHeight: .infinity)
             }
             Text(period.items.count, format: .number).monospacedDigit()
@@ -332,7 +337,8 @@ private struct ArchiveMapPage: View {
                     regions: map.regions(in: inside), measure: effectiveMeasure(map),
                     hasInside: { path in !map.regions(in: path).isEmpty },
                     zoom: { inside = $0 },
-                    open: { window.screen = .collection($0) })
+                    open: { window.screen = .collection($0) }
+                )
                 .padding([.horizontal, .bottom], 8)
             } else {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -343,7 +349,8 @@ private struct ArchiveMapPage: View {
                 ForEach(MapMeasure.allCases, id: \.self) { Text($0.title).tag($0) }
             }
             .pickerStyle(.segmented)
-            .help("Size the collections by how much space they take, or by how many items they hold")
+            .help(
+                "Size the collections by how much space they take, or by how many items they hold")
         }
     }
 
@@ -389,7 +396,10 @@ private struct TreemapView: View {
                 ForEach(tiles, id: \.id) { tile in
                     if let region = regions.first(where: { $0.path == tile.id }) {
                         tileView(region, color: color(for: region.path))
-                            .frame(width: max(tile.rect.width - 2, 0), height: max(tile.rect.height - 2, 0))
+                            .frame(
+                                width: max(tile.rect.width - 2, 0),
+                                height: max(tile.rect.height - 2, 0)
+                            )
                             .offset(x: tile.rect.minX + 1, y: tile.rect.minY + 1)
                     }
                 }
@@ -417,7 +427,9 @@ private struct TreemapView: View {
             .contentShape(.rect)
             .help("\(region.path): \(detail(region))")
             .onTapGesture(count: 2) { open(region.path) }
-            .onTapGesture { if hasInside(region.path) { zoom(region.path) } else { open(region.path) } }
+            .onTapGesture {
+                if hasInside(region.path) { zoom(region.path) } else { open(region.path) }
+            }
             .contextMenu {
                 Button("Show in Browse") { open(region.path) }
                 if hasInside(region.path) { Button("Zoom In") { zoom(region.path) } }
@@ -429,7 +441,8 @@ private struct TreemapView: View {
     }
 
     private func detail(_ region: MapRegion) -> String {
-        let size = ByteCountFormatter.string(fromByteCount: Int64(region.totalSize), countStyle: .file)
+        let size = ByteCountFormatter.string(
+            fromByteCount: Int64(region.totalSize), countStyle: .file)
         return region.totalItems == 1 ? "1 item · \(size)" : "\(region.totalItems) items · \(size)"
     }
 
@@ -482,7 +495,11 @@ struct ActivityHeatmap: View {
 
     static func cell(level: UInt8) -> some View {
         RoundedRectangle(cornerRadius: 2)
-            .fill(level == 0 ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.tint.opacity(0.2 + 0.2 * Double(level))))
+            .fill(
+                level == 0
+                    ? AnyShapeStyle(.quaternary)
+                    : AnyShapeStyle(.tint.opacity(0.2 + 0.2 * Double(level)))
+            )
             .frame(width: side, height: side)
     }
 

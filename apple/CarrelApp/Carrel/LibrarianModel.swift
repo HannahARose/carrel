@@ -172,7 +172,9 @@ final class LibrarianModel {
         guard !answers.isEmpty, !isAsking else { return }
         let conversation = conversation
         do {
-            let saved = try await archive.call { try $0.saveConversation(conversation: conversation) }
+            let saved = try await archive.call {
+                try $0.saveConversation(conversation: conversation)
+            }
             savedTo = saved.path
             await didChange()
         } catch {
@@ -197,7 +199,8 @@ final class LibrarianModel {
         do {
             let undone = try await archive.call { try $0.undoLibrarianChanges(since: since) }
             if !undone.failed.isEmpty {
-                problem = "Some changes couldn’t be undone: "
+                problem =
+                    "Some changes couldn’t be undone: "
                     + undone.failed.joined(separator: "; ")
             }
             try? await archive.refreshHistory()
