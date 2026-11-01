@@ -197,7 +197,7 @@ mod tests {
         assert_eq!(card.title, "oscillator-sim");
         assert_eq!(card.collection, "Projects");
         assert_eq!(card.history.len(), 2);
-        assert!(card.restricted_note.is_empty());
+        assert_eq!(card.restricted_note, "");
 
         let restricted = card_text.replace("sensitivity: personal", "sensitivity: restricted");
         let card = quick_look_card(restricted, text(&path), vec![text(&root)]).unwrap();
