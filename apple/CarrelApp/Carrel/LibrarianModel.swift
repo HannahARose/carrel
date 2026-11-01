@@ -45,6 +45,11 @@ final class LibrarianModel {
     private(set) var progress: LibrarianProgress?
     /// The model it answers with, for people, once known.
     private(set) var modelLabel: String?
+    /// Which model it answers with, or why there's none and what would let it.
+    private(set) var modelChoice: LibrarianModelChoice?
+    /// The model the owner asked to download for it, waiting for them to confirm, having
+    /// seen its size.
+    var confirmingDownload: CatalogModel?
     /// Whether it makes the changes it's sure of itself (`librarian.changes`).
     private(set) var makesChanges = false
     /// The changes it made itself this week, newest first.
@@ -93,10 +98,41 @@ final class LibrarianModel {
     /// Reads which model answers, whether the librarian makes changes, and what it changed
     /// this week.
     func refresh() async {
+        await refreshModel()
+        await refreshChanges()
+    }
+
+    /// Reads which model answers, or why there's none.
+    func refreshModel() async {
         let provider = provider
         let memory = memoryGB
-        modelLabel = try? await archive.handle.librarianModelLabelOffMain(provider, memory)
-        await refreshChanges()
+        modelChoice = try? await archive.handle.librarianModelChoiceOffMain(provider, memory)
+        modelLabel = modelChoice?.label
+    }
+
+    /// Downloads the model the owner confirmed, then answers with it.
+    func downloadConfirmed() async {
+        guard let model = confirmingDownload else { return }
+        confirmingDownload = nil
+        do {
+            _ = try await archive.download(model: model.name)
+            problem = nil
+        } catch {
+            take(error)
+        }
+        await refreshModel()
+    }
+
+    /// Clears a `librarian.model` naming a model that's gone, so the librarian answers with
+    /// the strongest one this Mac has.
+    func useStrongest() async {
+        do {
+            _ = try await archive.setDevice("librarian.model", to: nil)
+            problem = nil
+        } catch {
+            take(error)
+        }
+        await refreshModel()
     }
 
     /// Reads the librarian's changes this week again.
@@ -153,6 +189,7 @@ final class LibrarianModel {
             guard askToken == token else { return }
             draft = question
             take(error)
+            await refreshModel()
         }
     }
 
@@ -223,13 +260,13 @@ final class LibrarianModel {
 }
 
 extension ArchiveHandle {
-    /// The librarian's model label, worked out off the main thread: it looks at the
-    /// providers.
-    fileprivate func librarianModelLabelOffMain(
+    /// Which model the librarian answers with, worked out off the main thread: it looks at
+    /// the providers.
+    fileprivate func librarianModelChoiceOffMain(
         _ provider: ModelProvider?, _ memory: UInt64?
-    ) async throws -> String {
+    ) async throws -> LibrarianModelChoice {
         try await Task.detached(priority: .utility) {
-            try self.librarianModelLabel(model: provider, memoryGb: memory)
+            try self.librarianModelChoice(model: provider, memoryGb: memory)
         }.value
     }
 }

@@ -31,17 +31,7 @@ struct ModelsTab: View {
                 }
             }
         }
-        .confirmationDialog(
-            "Download \(model?.confirmingDownload?.name ?? "")?",
-            isPresented: confirming(\.confirmingDownload),
-            presenting: model?.confirmingDownload
-        ) { entry in
-            Button("Download \(size(entry.size))") { Task { await model?.downloadConfirmed() } }
-        } message: { entry in
-            Text(
-                "\(entry.title). \(size(entry.size)) from the internet, under the \(entry.license) license; it needs about \(entry.memoryGb) GB of memory."
-            )
-        }
+        .modelDownloadConfirmation(model)
         .confirmationDialog(
             "Delete \(model?.confirmingRemoval?.name ?? "")?",
             isPresented: confirming(\.confirmingRemoval),
@@ -59,6 +49,26 @@ struct ModelsTab: View {
         Binding(
             get: { model?[keyPath: path] != nil },
             set: { if !$0 { model?[keyPath: path] = nil } })
+    }
+}
+
+extension View {
+    /// Asks before downloading the model Settings is waiting to download, with its size and
+    /// license, as Models and Search both offer.
+    func modelDownloadConfirmation(_ model: SettingsModel?) -> some View {
+        confirmationDialog(
+            "Download \(model?.confirmingDownload?.name ?? "")?",
+            isPresented: Binding(
+                get: { model?.confirmingDownload != nil },
+                set: { if !$0 { model?.confirmingDownload = nil } }),
+            presenting: model?.confirmingDownload
+        ) { entry in
+            Button("Download \(size(entry.size))") { Task { await model?.downloadConfirmed() } }
+        } message: { entry in
+            Text(
+                "\(entry.title). \(size(entry.size)) from the internet, under the \(entry.license) license; it needs about \(entry.memoryGb) GB of memory."
+            )
+        }
     }
 }
 

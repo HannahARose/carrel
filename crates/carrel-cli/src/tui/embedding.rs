@@ -163,13 +163,7 @@ impl App {
         if let Some(here) = &self.here {
             let elsewhere: Vec<String> = carrel_core::models::embedding_models()
                 .filter(|m| !here.offers(m.name))
-                .filter_map(|m| {
-                    Some(format!(
-                        "  {}  ({})",
-                        m.name,
-                        crate::index::how_to_get(m.name)?
-                    ))
-                })
+                .filter_map(|m| Some(format!("  {}  ({})", m.name, how_to_get_here(m.name)?)))
                 .collect();
             if !elsewhere.is_empty() {
                 detail.push(String::new());
@@ -406,6 +400,18 @@ pub(super) fn index_work(
         result
     });
     (busy, run)
+}
+
+/// How to get the embedding model `model` here, in the interactive mode's words: Enter on
+/// the Search index row offers the download, after asking.
+fn how_to_get_here(model: &str) -> Option<String> {
+    Some(match carrel_core::search::run::how_to_get(model)? {
+        carrel_core::search::run::ModelSource::Download(found) => format!(
+            "{}; Enter, then download it",
+            crate::ingest::human_size(found.size)
+        ),
+        comes_with @ carrel_core::search::run::ModelSource::ComesWith(_) => comes_with.to_string(),
+    })
 }
 
 #[cfg(test)]
@@ -827,5 +833,25 @@ mod tests {
         }
         assert_eq!(app.here.as_ref().map(|h| h.provider_count), Some((3, 1)));
         assert!(screen(&app, 140, 40).contains("3 providers, 1 couldn't start"));
+    }
+
+    #[test]
+    fn the_index_row_says_how_to_get_a_model_here_not_at_the_command_line() {
+        let (_dir, mut app) = sample(false);
+        on_the_index_row(&mut app);
+        let detail = app.index_row().detail.join("\n");
+        assert!(!detail.contains("carrel models download"), "{detail}");
+        let gemma = carrel_core::models::find("embeddinggemma-300m").unwrap();
+        assert!(
+            detail.contains(&format!(
+                "embeddinggemma-300m  ({}; Enter, then download it)",
+                crate::ingest::human_size(gemma.size)
+            )),
+            "{detail}"
+        );
+        assert!(
+            detail.contains("apple-nl-sentence-en  (it comes with carrel-provider-apple"),
+            "{detail}"
+        );
     }
 }

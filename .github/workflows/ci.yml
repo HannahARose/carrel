@@ -14,10 +14,11 @@ name: CI
 #   later merge can't cancel the check of an earlier one.
 # - Caches are restored everywhere and saved only on dev, so pull requests don't evict them.
 #   Pull requests into main restore none: a release is checked from a clean build.
-# - While a pull request is a draft, only the Linux jobs run: the macOS and Windows ones (and
-#   their matrix entries) wait until it's marked ready, so a session's pushes while it works
-#   don't queue for the few macOS runners. A draft can't merge, so nothing unchecked lands.
-# - Coverage, which reports and never fails on a number, waits for a ready pull request too.
+# - A pull request into dev runs only the Linux jobs: the macOS and Windows ones (and their
+#   matrix entries) run once, in the merge queue's group, so a session's pushes and merges of
+#   dev don't queue for the few macOS runners. Nothing reaches dev without the queue, so
+#   nothing unchecked lands. A pull request into main still runs everything.
+# - Coverage, which reports and never fails on a number, waits for a ready pull request.
 #   Performance benchmarks are their own workflow (perf.yml), on dev only.
 # - "CI passed" is the required check. It passes when every job passed or was skipped because
 #   its area didn't change, and fails if "Changes" itself failed.
@@ -25,7 +26,7 @@ name: CI
 on:
   pull_request:
     branches: [dev, main]
-    # ready_for_review: a draft's macOS and Windows jobs run when it's marked ready.
+    # ready_for_review: Coverage runs when a draft is marked ready.
     types: [opened, synchronize, reopened, ready_for_review]
   # main gets only merges of dev that its pull request has already checked from scratch.
   push:
@@ -70,11 +71,11 @@ jobs:
       workflows: ${{ steps.areas.outputs.workflows }}
       cache: ${{ steps.areas.outputs.cache }}
       save: ${{ steps.areas.outputs.save }}
-      # "false" while a pull request is a draft: macOS and Windows jobs wait for it to be ready.
+      # "false" for a pull request into dev: its macOS and Windows jobs run in the merge queue.
       heavy: ${{ steps.weight.outputs.heavy }}
-      # Matrix entries to leave out while a draft: macOS and Windows.
+      # Matrix entries to leave out for a pull request into dev: macOS and Windows.
       light-exclude: ${{ steps.weight.outputs.exclude }}
-      # The platforms for jobs that run on all three: only Linux while a draft.
+      # The platforms for jobs that run on all three: only Linux for a pull request into dev.
       oses: ${{ steps.weight.outputs.oses }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -93,9 +94,9 @@ jobs:
         run: .github/scripts/ci-changes.sh
       - id: weight
         env:
-          DRAFT: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft }}
+          INTO_DEV: ${{ github.event_name == 'pull_request' && github.base_ref == 'dev' }}
         run: |
-          if [ "$DRAFT" = true ]; then
+          if [ "$INTO_DEV" = true ]; then
             {
               echo "heavy=false"
               echo 'exclude=[{"os":"macos-latest"},{"os":"windows-latest"}]'
@@ -185,8 +186,9 @@ jobs:
     name: Coverage
     needs: changes
     if: >-
-      needs.changes.outputs.rust == 'true' && needs.changes.outputs.heavy == 'true'
-      && (github.event_name == 'pull_request' || needs.changes.outputs.save == 'true')
+      needs.changes.outputs.rust == 'true'
+      && ((github.event_name == 'pull_request' && !github.event.pull_request.draft)
+        || needs.changes.outputs.save == 'true')
     runs-on: ubuntu-latest
     env:
       # cargo-llvm-cov's release, checked against its checksum.
