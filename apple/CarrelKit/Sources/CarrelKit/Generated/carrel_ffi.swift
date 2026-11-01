@@ -1485,6 +1485,44 @@ public protocol ArchiveHandleProtocol: AnyObject, Sendable {
     func unflagItem(item: String) throws  -> FlagChange
     
     /**
+     * The issue draft for gap `number`, with the owner's `added` words if any. Nothing is
+     * sent: the app opens its address for the owner to submit.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if there's no such gap.
+     */
+    func gapIssueDraft(number: UInt32, added: String?) throws  -> GapIssueDraft
+    
+    /**
+     * This device's gaps, most items first.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if there's no configuration folder.
+     */
+    func gaps() throws  -> [GapRecord]
+    
+    /**
+     * Records that gap `number` was reported at `address`, or clears it when empty.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if there's no such gap or the address isn't one.
+     */
+    func markGapReported(number: UInt32, address: String) throws  -> GapRecord
+    
+    /**
+     * Records a missing feature the owner reports in their own `words`, about the item `id`
+     * when given: its type is recorded, never its name.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if `words` are empty or there's no such item.
+     */
+    func reportMissingFeature(id: String?, words: String) throws  -> GapRecord
+    
+    /**
      * The tag and link graph, as `carrel discover graph` lists it: every collection, and at
      * most `limit` of the strongest connections between collections and of the strongest
      * ties between items in different collections.
@@ -3755,6 +3793,78 @@ open func unflagItem(item: String)throws  -> FlagChange  {
     uniffi_carrel_ffi_fn_method_archivehandle_unflag_item(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(item),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * The issue draft for gap `number`, with the owner's `added` words if any. Nothing is
+     * sent: the app opens its address for the owner to submit.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if there's no such gap.
+     */
+open func gapIssueDraft(number: UInt32, added: String?)throws  -> GapIssueDraft  {
+    return try  FfiConverterTypeGapIssueDraft_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_gap_issue_draft(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt32.lower(number),
+        FfiConverterOptionString.lower(added),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * This device's gaps, most items first.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if there's no configuration folder.
+     */
+open func gaps()throws  -> [GapRecord]  {
+    return try  FfiConverterSequenceTypeGapRecord.lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_gaps(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Records that gap `number` was reported at `address`, or clears it when empty.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if there's no such gap or the address isn't one.
+     */
+open func markGapReported(number: UInt32, address: String)throws  -> GapRecord  {
+    return try  FfiConverterTypeGapRecord_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_mark_gap_reported(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt32.lower(number),
+        FfiConverterString.lower(address),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Records a missing feature the owner reports in their own `words`, about the item `id`
+     * when given: its type is recorded, never its name.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if `words` are empty or there's no such item.
+     */
+open func reportMissingFeature(id: String?, words: String)throws  -> GapRecord  {
+    return try  FfiConverterTypeGapRecord_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_report_missing_feature(
+            self.uniffiCloneHandle(),
+        FfiConverterOptionString.lower(id),
+        FfiConverterString.lower(words),uniffiCallStatus
     )
 })
 }
@@ -11783,6 +11893,266 @@ public func FfiConverterTypeFormats_lift(_ buf: RustBuffer) throws -> Formats {
 #endif
 public func FfiConverterTypeFormats_lower(_ value: Formats) -> RustBuffer {
     return FfiConverterTypeFormats.lower(value)
+}
+
+
+/**
+ * An issue draft for a gap, for the owner to read before it opens in the browser.
+ */
+public struct GapIssueDraft: Equatable, Hashable {
+    /**
+     * The issue's title.
+     */
+    public var title: String
+    /**
+     * Its body, in Markdown.
+     */
+    public var body: String
+    /**
+     * The prefilled new-issue address on GitHub, which the app opens.
+     */
+    public var url: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The issue's title.
+         */title: String, 
+        /**
+         * Its body, in Markdown.
+         */body: String, 
+        /**
+         * The prefilled new-issue address on GitHub, which the app opens.
+         */url: String) {
+        self.title = title
+        self.body = body
+        self.url = url
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension GapIssueDraft: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGapIssueDraft: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GapIssueDraft {
+        return
+            try GapIssueDraft(
+                title: FfiConverterString.read(from: &buf), 
+                body: FfiConverterString.read(from: &buf), 
+                url: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GapIssueDraft, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterString.write(value.body, into: &buf)
+        FfiConverterString.write(value.url, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGapIssueDraft_lift(_ buf: RustBuffer) throws -> GapIssueDraft {
+    return try FfiConverterTypeGapIssueDraft.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGapIssueDraft_lower(_ value: GapIssueDraft) -> RustBuffer {
+    return FfiConverterTypeGapIssueDraft.lower(value)
+}
+
+
+/**
+ * One gap: every sighting of the same kind, type and stage.
+ */
+public struct GapRecord: Equatable, Hashable {
+    /**
+     * Its number on this device.
+     */
+    public var number: UInt32
+    /**
+     * Its kind's name, such as `unread-format`.
+     */
+    public var kind: String
+    /**
+     * It in one line, such as `no reader for the file type: .3mf (model/3mf), at text
+     * extraction`.
+     */
+    public var summary: String
+    /**
+     * The items' media type; empty when there's no item.
+     */
+    public var mediaType: String
+    /**
+     * The items' extension, without the dot; empty if none.
+     */
+    public var `extension`: String
+    /**
+     * The provider or stage that failed.
+     */
+    public var stage: String
+    /**
+     * How many items it has affected.
+     */
+    public var items: UInt64
+    /**
+     * The day it was first seen, `YYYY-MM-DD`.
+     */
+    public var firstSeen: String
+    /**
+     * The day it was last seen.
+     */
+    public var lastSeen: String
+    /**
+     * The version of Carrel that last saw it.
+     */
+    public var lastVersion: String
+    /**
+     * The owner's own words, for a missing feature they reported.
+     */
+    public var words: String?
+    /**
+     * The address of the issue it was reported in.
+     */
+    public var reported: String?
+    /**
+     * Whether this Carrel is newer than the one that last saw it, so it may be addressed.
+     */
+    public var notSeenSinceUpdate: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Its number on this device.
+         */number: UInt32, 
+        /**
+         * Its kind's name, such as `unread-format`.
+         */kind: String, 
+        /**
+         * It in one line, such as `no reader for the file type: .3mf (model/3mf), at text
+         * extraction`.
+         */summary: String, 
+        /**
+         * The items' media type; empty when there's no item.
+         */mediaType: String, 
+        /**
+         * The items' extension, without the dot; empty if none.
+         */`extension`: String, 
+        /**
+         * The provider or stage that failed.
+         */stage: String, 
+        /**
+         * How many items it has affected.
+         */items: UInt64, 
+        /**
+         * The day it was first seen, `YYYY-MM-DD`.
+         */firstSeen: String, 
+        /**
+         * The day it was last seen.
+         */lastSeen: String, 
+        /**
+         * The version of Carrel that last saw it.
+         */lastVersion: String, 
+        /**
+         * The owner's own words, for a missing feature they reported.
+         */words: String?, 
+        /**
+         * The address of the issue it was reported in.
+         */reported: String?, 
+        /**
+         * Whether this Carrel is newer than the one that last saw it, so it may be addressed.
+         */notSeenSinceUpdate: Bool) {
+        self.number = number
+        self.kind = kind
+        self.summary = summary
+        self.mediaType = mediaType
+        self.`extension` = `extension`
+        self.stage = stage
+        self.items = items
+        self.firstSeen = firstSeen
+        self.lastSeen = lastSeen
+        self.lastVersion = lastVersion
+        self.words = words
+        self.reported = reported
+        self.notSeenSinceUpdate = notSeenSinceUpdate
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension GapRecord: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGapRecord: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GapRecord {
+        return
+            try GapRecord(
+                number: FfiConverterUInt32.read(from: &buf), 
+                kind: FfiConverterString.read(from: &buf), 
+                summary: FfiConverterString.read(from: &buf), 
+                mediaType: FfiConverterString.read(from: &buf), 
+                extension: FfiConverterString.read(from: &buf), 
+                stage: FfiConverterString.read(from: &buf), 
+                items: FfiConverterUInt64.read(from: &buf), 
+                firstSeen: FfiConverterString.read(from: &buf), 
+                lastSeen: FfiConverterString.read(from: &buf), 
+                lastVersion: FfiConverterString.read(from: &buf), 
+                words: FfiConverterOptionString.read(from: &buf), 
+                reported: FfiConverterOptionString.read(from: &buf), 
+                notSeenSinceUpdate: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GapRecord, into buf: inout [UInt8]) {
+        FfiConverterUInt32.write(value.number, into: &buf)
+        FfiConverterString.write(value.kind, into: &buf)
+        FfiConverterString.write(value.summary, into: &buf)
+        FfiConverterString.write(value.mediaType, into: &buf)
+        FfiConverterString.write(value.`extension`, into: &buf)
+        FfiConverterString.write(value.stage, into: &buf)
+        FfiConverterUInt64.write(value.items, into: &buf)
+        FfiConverterString.write(value.firstSeen, into: &buf)
+        FfiConverterString.write(value.lastSeen, into: &buf)
+        FfiConverterString.write(value.lastVersion, into: &buf)
+        FfiConverterOptionString.write(value.words, into: &buf)
+        FfiConverterOptionString.write(value.reported, into: &buf)
+        FfiConverterBool.write(value.notSeenSinceUpdate, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGapRecord_lift(_ buf: RustBuffer) throws -> GapRecord {
+    return try FfiConverterTypeGapRecord.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGapRecord_lower(_ value: GapRecord) -> RustBuffer {
+    return FfiConverterTypeGapRecord.lower(value)
 }
 
 
@@ -24163,6 +24533,31 @@ fileprivate struct FfiConverterSequenceTypeFlaggedThing: FfiConverterRustBuffer 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeGapRecord: FfiConverterRustBuffer {
+    typealias SwiftType = [GapRecord]
+
+    public static func write(_ value: [GapRecord], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeGapRecord.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [GapRecord] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [GapRecord]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeGapRecord.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeGraphCollection: FfiConverterRustBuffer {
     typealias SwiftType = [GraphCollection]
 
@@ -25801,6 +26196,18 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_unflag_item() != 64035) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_gap_issue_draft() != 25478) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_gaps() != 17942) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_mark_gap_reported() != 53054) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_report_missing_feature() != 33271) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_discovery_graph() != 3876) {

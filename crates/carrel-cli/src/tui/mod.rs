@@ -12,6 +12,7 @@ mod browser;
 mod discover;
 mod embedding;
 mod flagging;
+mod gaps;
 mod intake;
 mod item;
 mod librarian;

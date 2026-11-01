@@ -230,6 +230,7 @@ impl App {
                 ("o", "check out"),
                 ("r", "rename"),
                 ("f", "flag"),
+                ("M", "missing feature"),
             ]);
             if self.browsed_is_compressed() {
                 keys.push(("z", "expand"));

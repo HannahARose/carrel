@@ -61,6 +61,7 @@ pub mod creating;
 pub mod discover;
 pub mod edit;
 pub mod flags;
+pub mod gaps;
 pub mod graph;
 pub mod history;
 pub mod index;

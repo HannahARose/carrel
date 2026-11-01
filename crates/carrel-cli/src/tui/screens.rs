@@ -106,6 +106,8 @@ pub enum InputPurpose {
         /// Its title.
         title: String,
     },
+    /// Something about the gaps in Carrel (`super::gaps`).
+    Gap(super::gaps::GapInput),
 }
 
 /// What a correction is for.
@@ -152,6 +154,7 @@ impl Input {
             InputPurpose::Rename { .. } => "the new name",
             InputPurpose::Option(line) => line.prompt(),
             InputPurpose::FlagNote { .. } => "what needs work, or nothing",
+            InputPurpose::Gap(gap) => gap.prompt(),
         }
     }
 
@@ -387,6 +390,7 @@ impl App {
                         return self.backup_input(purpose, text);
                     }
                     InputPurpose::Option(line) => return self.option_entered(line, text),
+                    InputPurpose::Gap(gap) => self.gap_typed(gap, &text),
                     purpose => return self.action_input(purpose, text),
                 }
             }
@@ -520,6 +524,13 @@ impl App {
             KeyCode::Char('A') if on_item => {
                 if let Some((card, _)) = self.browse_items.get(self.browse_item) {
                     return Handled::Yes(Some(Effect::QuestionsAbout(card.clone())));
+                }
+            }
+            KeyCode::Char('M') if on_item => {
+                if let Some((card, _)) = self.browse_items.get(self.browse_item) {
+                    self.gap_input(super::gaps::GapInput::Missing {
+                        card: Some(card.clone()),
+                    });
                 }
             }
             KeyCode::Char('w') if on_item => {

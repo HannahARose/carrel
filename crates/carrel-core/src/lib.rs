@@ -81,6 +81,7 @@ pub mod finder;
 pub mod flags;
 pub mod formats;
 pub mod frontmatter;
+pub mod gaps;
 pub mod graph;
 pub mod history;
 pub mod inbox;
