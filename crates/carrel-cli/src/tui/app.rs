@@ -496,6 +496,8 @@ pub struct App {
     /// Whether the folder picking ends in is saved to this device's preferences, or only kept
     /// for this session, as in tests, which must never write the real configuration.
     pub preferences: Preferences,
+    /// Item previews in Browse, on terminals that draw images.
+    pub previews: super::preview::Previews,
     /// Whether every key is shown.
     pub help: bool,
     /// Whether to leave.
@@ -573,6 +575,7 @@ impl App {
             } else {
                 Preferences::Saved
             },
+            previews: super::preview::Previews::default(),
             help: false,
             quit: false,
         };

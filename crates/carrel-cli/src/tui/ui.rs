@@ -79,6 +79,8 @@ pub fn tab_starts() -> Vec<u16> {
 /// Draws the whole screen.
 pub fn draw(frame: &mut Frame, app: &App, theme: Theme) {
     let area = frame.area();
+    // Browse's item view leaves room for a picture again if it shows one.
+    app.previews.room.set(None);
     if area.width < MIN_SIZE.0 || area.height < MIN_SIZE.1 {
         let text = format!(
             "Carrel needs a terminal of at least {}×{}; this one is {}×{}.\nMake it larger, or press q to quit.",
@@ -916,6 +918,7 @@ fn draw_item(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
         lines.extend(why_lines(hit, theme));
     }
     lines.extend(view.text.iter().map(|l| Line::from(l.as_str())));
+    let card_area = draw_preview(frame, app, theme, card_area);
     frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), card_area);
     let highlight = if app.browse_pane == Pane::Item {
         theme.selected()
@@ -928,6 +931,41 @@ fn draw_item(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
         list_area,
         &mut state,
     );
+}
+
+/// The chosen item's preview, beside its card when there's room and above it when there
+/// isn't: a folder's listing, or room left for the picture the run loop draws after the
+/// frame. Returns what's left for the card.
+fn draw_preview(frame: &mut Frame, app: &App, theme: Theme, area: Rect) -> Rect {
+    let Some(ready) = app.previews.shown(app.item.card.as_deref()) else {
+        return area;
+    };
+    let (card, preview) = if area.width >= 60 {
+        let [card, preview] =
+            Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .areas(area);
+        (card, preview)
+    } else {
+        let [preview, card] =
+            Layout::vertical([Constraint::Percentage(40), Constraint::Percentage(60)]).areas(area);
+        (card, preview)
+    };
+    let block = Block::new()
+        .borders(ratatui::widgets::Borders::LEFT)
+        .title(Line::styled(" Preview ", theme.dim()));
+    let inner = block.inner(preview);
+    frame.render_widget(block, preview);
+    match ready {
+        super::preview::Ready::Listing(lines) => {
+            let lines: Vec<Line> = lines.iter().map(|l| Line::from(l.as_str())).collect();
+            frame.render_widget(Paragraph::new(lines), inner);
+        }
+        super::preview::Ready::Picture(_) if !app.covered() && inner.area() > 0 => {
+            app.previews.room.set(Some(inner));
+        }
+        _ => {}
+    }
+    card
 }
 
 fn draw_input(frame: &mut Frame, input: &Input, theme: Theme, area: Rect) {

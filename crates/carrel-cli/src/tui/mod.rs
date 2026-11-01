@@ -10,6 +10,7 @@ mod browser;
 mod embedding;
 mod intake;
 mod item;
+mod preview;
 mod review;
 mod screens;
 mod search;
@@ -56,6 +57,9 @@ pub fn run(archive: Option<&Path>) -> Result<Report, Failure> {
         prefs.save()?;
     }
     let mut app = App::new(archive)?;
+    app.previews = preview::Previews::detected();
+    // The item shown first gets its preview too.
+    app.load_card();
     let theme = ui::Theme::from_env();
     let mut terminal = enter();
     let result = event_loop(&mut terminal, &mut app, theme);
@@ -139,8 +143,10 @@ fn event_loop(
     let mut preparing: Option<Preparing> = None;
     let mut checked = std::time::Instant::now();
     let mut sessions = SessionLook::default();
+    let mut painter = preview::Painter::default();
     while !app.quit {
         sessions.tick(app);
+        app.previews.poll();
         // The worker runs in another process; see what it has done about once a second.
         if checked.elapsed() >= Duration::from_secs(1) {
             checked = std::time::Instant::now();
@@ -174,6 +180,14 @@ fn event_loop(
         terminal
             .draw(|frame| ui::draw(frame, app, theme))
             .map_err(|e| Failure::new(format!("couldn't draw: {e}")))?;
+        if painter.paint(app) {
+            // A picture was taken away: everything is drawn again, and the next one put in.
+            let _ = terminal.clear();
+            terminal
+                .draw(|frame| ui::draw(frame, app, theme))
+                .map_err(|e| Failure::new(format!("couldn't draw: {e}")))?;
+            painter.paint(app);
+        }
         if !event::poll(Duration::from_millis(100))
             .map_err(|e| Failure::new(format!("couldn't read the terminal: {e}")))?
         {
@@ -195,6 +209,7 @@ fn event_loop(
                 leave();
                 let result = crate::review::edit(Some(app.archive.root()), &id.to_string());
                 *terminal = enter();
+                painter = preview::Painter::default();
                 finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
             }
             Some(Effect::Open(path)) => {
@@ -212,6 +227,7 @@ fn event_loop(
                 leave();
                 let result = crate::edit::edit(Some(app.archive.root()), &card);
                 *terminal = enter();
+                painter = preview::Painter::default();
                 changed(app.archive.root(), &result);
                 finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
             }
@@ -220,6 +236,7 @@ fn event_loop(
                 leave();
                 let result = crate::sessions::edit(Some(app.archive.root()), &item, number);
                 *terminal = enter();
+                painter = preview::Painter::default();
                 finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
             }
             Some(Effect::Pick(words)) => {
@@ -227,6 +244,7 @@ fn event_loop(
                 leave();
                 let picked = crate::picker::run(&words, &app.start_folder);
                 *terminal = enter();
+                painter = preview::Painter::default();
                 picked_files(app, picked);
             }
             Some(effect) if running.is_none() => {

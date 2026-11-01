@@ -15,7 +15,21 @@ use crate::picker::{BUILT_IN, Choice, KNOWN, choose};
 use crate::{Failure, Report};
 
 /// This device's preferences that `carrel settings set` changes.
-pub const DEVICE_KEYS: [&str; 4] = ["picker", "editor", "model", "second_model"];
+pub const DEVICE_KEYS: [&str; 5] = ["picker", "editor", "model", "second_model", "previews"];
+
+/// The values of the `previews` preference: `auto` shows previews where the terminal is known
+/// to draw images, `off` never does, and a protocol's name uses it whatever the terminal.
+pub const PREVIEW_CHOICES: [&str; 5] = ["auto", "off", "kitty", "iterm2", "sixel"];
+
+/// How the interactive mode shows previews, for people.
+#[must_use]
+pub fn previews_line(setting: Option<&str>) -> String {
+    match setting {
+        None | Some("auto") => "auto (when the terminal is known to draw images)".into(),
+        Some("off") => "off".into(),
+        Some(protocol) => format!("{protocol} (chosen)"),
+    }
+}
 
 /// The text model in use, and why, for people. Starts the providers to find out.
 pub fn model_line(preference: Option<&str>) -> String {
@@ -79,6 +93,8 @@ pub fn list(archive: Option<&Path>) -> Result<Report, Failure> {
     writeln!(text, "  model   {model}").unwrap();
     let second = second_line(prefs.second_model.as_deref());
     writeln!(text, "  second  {second}").unwrap();
+    let previews = previews_line(prefs.previews.as_deref());
+    writeln!(text, "  previews {previews}").unwrap();
     let missing: Vec<String> = KNOWN
         .iter()
         .filter(|k| !k.installed())
@@ -108,6 +124,7 @@ pub fn list(archive: Option<&Path>) -> Result<Report, Failure> {
                 "model_in_use": model,
                 "second_model": prefs.second_model,
                 "second_in_use": second,
+                "previews": prefs.previews,
             },
             "archive": Key::ALL.iter().map(|k| (k.as_str().to_owned(), json!(k.get(settings)))).collect::<serde_json::Map<_, _>>(),
         }),
@@ -127,6 +144,19 @@ pub fn set(archive: Option<&Path>, key: &str, value: &str) -> Result<Report, Fai
         let mut stored = (!cleared).then(|| value.trim().to_owned());
         match key {
             "picker" => prefs.picker.clone_from(&stored),
+            "previews" => {
+                if let Some(value) = &stored {
+                    let value = value.to_lowercase();
+                    if !PREVIEW_CHOICES.contains(&value.as_str()) {
+                        return Err(Failure::new(format!(
+                            "previews is one of {}",
+                            PREVIEW_CHOICES.join(", ")
+                        )));
+                    }
+                    stored = (value != "auto").then_some(value);
+                }
+                prefs.previews.clone_from(&stored);
+            }
             "model" => {
                 if let Some(name) = &stored {
                     let (registry, _) = crate::providers::registry();

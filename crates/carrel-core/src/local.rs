@@ -193,6 +193,11 @@ pub struct Prefs {
     /// name, or `off`. Unset, a recommended model that's installed, if there is one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub second_model: Option<String>,
+    /// How the interactive mode shows item previews in the terminal: `off`, a protocol
+    /// (`kitty`, `iterm2` or `sixel`) for a terminal that isn't recognised, or unset (`auto`)
+    /// to show them when the terminal is known to draw images.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previews: Option<String>,
     /// The folder files were last picked from, where picking starts next time.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_folder: Option<PathBuf>,
