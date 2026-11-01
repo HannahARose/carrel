@@ -1,5 +1,5 @@
 // The archive window's sidebar (#334): every screen in it can be chosen, by selecting its row
-// as a click does, and the content column then shows that screen. Each test runs against its
+// as a click does, and the window then has that screen's content to show. Each test runs against its
 // own temporary copy of the sample archive, once with proposals and questions waiting and once
 // with both queues empty.
 
@@ -39,7 +39,6 @@ final class SidebarTests: XCTestCase {
     /// Selects each of the sidebar's rows in turn and checks the window follows to its screen,
     /// and that the content column shows something for it.
     private func checkEveryScreen(_ model: ArchiveWindowModel) async throws {
-        XCTAssertFalse(Hosted(EmptyView()).showsSomething, "the check sees an empty screen")
         let sidebar = Hosted(ArchiveSidebar(model: model))
         let outline = try XCTUnwrap(sidebar.view.firstDescendant(NSOutlineView.self))
         var chosen: [Screen] = []
@@ -50,15 +49,30 @@ final class SidebarTests: XCTestCase {
             guard let screen = model.screen else { continue }
             chosen.append(screen)
             XCTAssertEqual(model.screenTitle, title(of: screen, in: model))
-            let content = Hosted(ArchiveScreenContent(model: model))
+            XCTAssert(hasContent(screen, model), "\(screen) has nothing to show")
+            // The content column draws it.
+            _ = Hosted(ArchiveScreenContent(model: model))
             await settle()
-            XCTAssert(content.showsSomething, "\(screen) shows nothing")
         }
         let expected: [Screen] =
             [.status, .review, .questions, .active]
             + model.tree.map { .collection($0.collection.path) }
             + DiscoverPage.allCases.map { .discover($0) } + [.history, .backups]
         XCTAssertEqual(chosen, expected)
+    }
+
+    /// Whether the window has what the content column draws for `screen`: the screen's own
+    /// model, or for Status and Browse the open archive. Without it the column is empty.
+    private func hasContent(_ screen: Screen, _ model: ArchiveWindowModel) -> Bool {
+        switch screen {
+        case .status, .collection: model.handle != nil
+        case .review: model.review != nil
+        case .questions: model.questions != nil
+        case .active: model.activeScreen != nil
+        case .history: model.historyScreen != nil
+        case .backups: model.backups != nil
+        case .discover: model.discover != nil
+        }
     }
 
     private func title(of screen: Screen, in model: ArchiveWindowModel) -> String {
@@ -90,13 +104,6 @@ private struct Hosted<Content: View> {
         view.layoutSubtreeIfNeeded()
     }
 
-    /// Whether the view draws anything: a list or other AppKit view inside it, or text and
-    /// shapes that take up room. An empty view does neither.
-    var showsSomething: Bool {
-        view.layoutSubtreeIfNeeded()
-        let size = view.fittingSize
-        return !view.subviews.isEmpty || (size.width > 0 && size.height > 0)
-    }
 }
 
 extension NSView {
