@@ -312,6 +312,7 @@ impl Coordinator for DiskLock {
                     path: self.path.clone(),
                     info,
                     released: false,
+                    agent: None,
                 });
             }
             match self.read_settled()? {
@@ -337,6 +338,8 @@ pub struct WriterLease {
     path: PathBuf,
     info: LockInfo,
     released: bool,
+    /// The program acting for the holder on its own, such as the librarian, while it is.
+    agent: Option<String>,
 }
 
 impl WriterLease {
@@ -344,6 +347,19 @@ impl WriterLease {
     #[must_use]
     pub fn info(&self) -> &LockInfo {
         &self.info
+    }
+
+    /// Marks the changes made with this lease from now on as made by `agent` acting for the
+    /// holder on its own, such as `librarian`, or, with `None`, as the holder's own again.
+    /// History records it in each change's `Carrel-Agent` trailer (FORMAT.md §8.2).
+    pub fn act_as(&mut self, agent: Option<&str>) {
+        self.agent = agent.map(str::to_owned);
+    }
+
+    /// The program acting for the holder, when one is ([`WriterLease::act_as`]).
+    #[must_use]
+    pub fn agent(&self) -> Option<&str> {
+        self.agent.as_deref()
     }
 
     /// Confirms the lease is still this writer's: the lock file holds this lease's token and

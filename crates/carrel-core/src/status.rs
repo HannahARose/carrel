@@ -395,6 +395,7 @@ mod tests {
             items: Vec::new(),
             moves: Vec::new(),
             reverts: None,
+            agent: None,
             time,
         };
         let history = [

@@ -136,6 +136,9 @@ pub struct Change {
     pub items: Vec<Id>,
     /// Items moved by the change, in the order they were moved.
     pub moves: Vec<Move>,
+    /// The program that made the change on its own, acting for the person, such as
+    /// `librarian`. Unset, the lease's agent is used, if it has one ([`WriterLease::act_as`]).
+    pub agent: Option<String>,
 }
 
 impl Change {
@@ -151,6 +154,7 @@ impl Change {
             snapshot: None,
             items: Vec::new(),
             moves: Vec::new(),
+            agent: None,
         }
     }
 
@@ -170,6 +174,9 @@ impl Change {
         let _ = writeln!(msg, "Carrel-Operation: {}", self.operation.as_str());
         let _ = writeln!(msg, "Carrel-Person: {}", self.person);
         let _ = writeln!(msg, "Carrel-Device: {}", self.device);
+        if let Some(agent) = &self.agent {
+            let _ = writeln!(msg, "Carrel-Agent: {}", agent.trim());
+        }
         if let Some(snapshot) = &self.snapshot {
             let _ = writeln!(msg, "Carrel-Snapshot: {}", snapshot.trim());
         }
@@ -208,6 +215,9 @@ pub struct Entry {
     pub moves: Vec<Move>,
     /// The commit this one reverted, if it is an undo.
     pub reverts: Option<String>,
+    /// The program that made the change on its own, acting for the person, such as
+    /// `librarian`, if one did.
+    pub agent: Option<String>,
     /// When the commit was made, as seconds since the Unix epoch.
     pub time: i64,
 }
@@ -452,6 +462,13 @@ impl History {
         lease: &WriterLease,
     ) -> Result<Option<String>, HistoryError> {
         lease.check()?;
+        if change.agent.is_none()
+            && let Some(agent) = lease.agent()
+        {
+            let mut change = change.clone();
+            change.agent = Some(agent.to_owned());
+            return self.commit_with(archive, &change, None);
+        }
         self.commit_with(archive, change, None)
     }
 
@@ -709,6 +726,7 @@ fn entry_from(commit: &git2::Commit<'_>) -> Entry {
         items: Vec::new(),
         moves: Vec::new(),
         reverts: None,
+        agent: None,
         time: commit.time().seconds(),
     };
     let parse_id = |v: &str| uuid::Uuid::parse_str(v.trim()).ok().map(Id);
@@ -722,6 +740,7 @@ fn entry_from(commit: &git2::Commit<'_>) -> Entry {
                 "Carrel-Items" => entry.items.extend(parse_id(value)),
                 "Carrel-Move" => entry.moves.extend(serde_json::from_str(value.trim()).ok()),
                 "Carrel-Reverts" => entry.reverts = Some(value.trim().to_owned()),
+                "Carrel-Agent" => entry.agent = Some(value.trim().to_owned()),
                 _ => {}
             }
         }

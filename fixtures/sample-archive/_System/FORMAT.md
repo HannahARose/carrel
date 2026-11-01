@@ -754,6 +754,8 @@ Carrel-Items: 01928f3a-7c41-7d2e-9b6a-3f0c5e2a1b44
 
 `Carrel-Operation` is one of `create`, `ingest`, `approve`, `edit`, `move`, `checkout`, `return`, `session`, `restructure`, `deaccession`, `purge`, `outside-edit`, `migrate`, `inbox`. `Carrel-Snapshot` names the content backup taken with the change, when there is one. `Carrel-Items` may repeat.
 
+- **Agents:** a change a program made on its own, acting for the person rather than on their word, has a `Carrel-Agent` trailer naming it, such as `Carrel-Agent: librarian` for the librarian's optional changes (`docs/design/librarian.md`). `Carrel-Person` still names the person it acted for. Undoing such a change is the person's own change and has no `Carrel-Agent`.
+
 - **Moves:** each item a change moves is recorded, in the order it was moved, as a `Carrel-Move` trailer whose value is a one-line JSON object: `Carrel-Move: {"item":"01928f3a-…","from":"Research/Code/sim","to":"Research/Projects/sim"}`. Paths are the item's (not the card's), relative to the archive root. Git sees card moves itself; these trailers let undo move item contents, which history doesn't track.
 - **Empty changes** that leave every tracked file unchanged are not committed.
 - The commit author and committer are `Carrel <carrel@localhost>`; who made the change is in the trailers.

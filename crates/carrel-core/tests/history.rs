@@ -460,3 +460,34 @@ fn a_changed_setting_is_recorded_and_can_be_undone() {
     let undone = carrel_core::archive::Archive::open(&root).unwrap();
     assert_eq!(Key::Originals.get(undone.settings()), "move");
 }
+
+#[test]
+fn changes_made_while_the_lease_acts_as_an_agent_are_marked_as_its_own() {
+    let dir = tempfile::tempdir().unwrap();
+    let archive = Archive::init(dir.path(), &InitOptions::new("Agent test")).unwrap();
+    let (mut lease, person, _) = writer(&archive);
+    let history = History::init(&archive, &lease).unwrap();
+    let glossary = dir.path().join("_System/glossary.md");
+
+    lease.act_as(Some("librarian"));
+    std::fs::write(&glossary, "# Glossary\n\nOne.\n").unwrap();
+    let change = Change::new(Operation::Edit, "By the librarian", person, Id::new_v7());
+    let by_agent = history.commit(&archive, &change, &lease).unwrap().unwrap();
+
+    lease.act_as(None);
+    std::fs::write(&glossary, "# Glossary\n\nTwo.\n").unwrap();
+    let change = Change::new(Operation::Edit, "By the owner", person, Id::new_v7());
+    history.commit(&archive, &change, &lease).unwrap().unwrap();
+
+    let log = history.log().unwrap();
+    assert_eq!(log[0].agent, None, "the owner's own change");
+    assert_eq!(log[1].id, by_agent);
+    assert_eq!(log[1].agent.as_deref(), Some("librarian"));
+    assert_eq!(log[1].person, Some(person), "still made for the person");
+
+    // An undo is the owner's change, made with the lease no longer acting as the librarian.
+    let undo = history.undo(&archive, &log[0].id, &lease).unwrap();
+    let log = history.log().unwrap();
+    assert_eq!(log[0].id, undo);
+    assert_eq!(log[0].agent, None);
+}
