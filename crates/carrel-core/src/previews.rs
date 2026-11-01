@@ -27,6 +27,8 @@ use crate::archive::Archive;
 use crate::ingest::text::media_type;
 use crate::providers::{Capability, ExtractionRequest, Registry};
 
+pub mod png;
+
 /// The cache's folder, relative to the archive root.
 pub const PREVIEWS: &str = "_System/cache.nosync/previews";
 
@@ -83,6 +85,142 @@ impl PreviewCache {
         let _ = std::fs::remove_file(&picture);
         placed.ok().map(|()| kept)
     }
+
+    /// The thumbnail of the PNG at `path`, whose key is `key`: the kept one, or the picture
+    /// shrunk to at most [`THUMBNAIL`] pixels a side now and kept. `None` when it can't be
+    /// read or kept.
+    #[must_use]
+    pub fn shrink(&self, path: &Path, key: &str) -> Option<PathBuf> {
+        let kept = self.thumbnail(key);
+        if kept.is_file() {
+            return Some(kept);
+        }
+        let pixels = png::decode(&std::fs::read(path).ok()?)?;
+        let small = pixels.fit(THUMBNAIL, THUMBNAIL);
+        std::fs::create_dir_all(kept.parent()?).ok()?;
+        // Written beside it and renamed, so a half-written thumbnail is never read.
+        let partial = kept.with_extension("partial");
+        std::fs::write(&partial, small.encode()).ok()?;
+        std::fs::rename(&partial, &kept).ok()?;
+        Some(kept)
+    }
+}
+
+/// The most entries a folder's preview lists.
+pub const LISTED: usize = 200;
+
+/// What to show as an item's preview, from [`preview`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Preview {
+    /// A picture: a PNG when `png` is true, otherwise an image file in another format, which
+    /// only a viewer that reads that format can show.
+    Picture {
+        /// The file to show.
+        path: PathBuf,
+        /// Whether it's a PNG.
+        png: bool,
+    },
+    /// A folder or bundle's contents, as lines: folders end in `/`, and Carrel's own files
+    /// and hidden ones are left out.
+    Listing(Vec<String>),
+    /// Nothing: a restricted item, a card without a file, or a file this device has no
+    /// picture of.
+    Nothing,
+}
+
+/// What makes pictures for [`preview`] that aren't cached yet.
+#[derive(Clone, Copy)]
+pub struct Makers<'a> {
+    /// Draws STEP, IGES and 3MF files; `None` leaves them undrawn.
+    pub registry: Option<&'a Registry>,
+    /// Whether a PNG item's own thumbnail may be made and kept.
+    pub thumbnails: bool,
+}
+
+/// The preview of the item at `relative` in the archive at `root`, its picture made and kept
+/// in `cache` when it's an image or a drawing: a cached thumbnail, such as the Mac app makes
+/// with Quick Look; a drawing of a 3D model; a PNG's own thumbnail, shrunk here; another
+/// image file as it is; or a folder's listing. Nothing at all for a `restricted` item.
+///
+/// Slow for a large image or a model: run it in the background.
+#[must_use]
+pub fn preview(
+    root: &Path,
+    relative: &str,
+    restricted: bool,
+    cache: &PreviewCache,
+    makers: Makers<'_>,
+) -> Preview {
+    let path = root.join(relative);
+    if restricted || relative.is_empty() {
+        return Preview::Nothing;
+    }
+    if path.is_dir() {
+        return Preview::Listing(listing(&path));
+    }
+    let Some(key) = key(root, relative) else {
+        return Preview::Nothing;
+    };
+    let kept = cache.thumbnail(&key);
+    if kept.is_file() {
+        return Preview::Picture {
+            path: kept,
+            png: true,
+        };
+    }
+    if is_drawn(&path) {
+        return makers
+            .registry
+            .and_then(|registry| cache.draw(registry, &path, &key))
+            .map_or(Preview::Nothing, |path| Preview::Picture {
+                path,
+                png: true,
+            });
+    }
+    match media_type(&path).as_str() {
+        "image/png" => {
+            let shrunk = makers
+                .thumbnails
+                .then(|| cache.shrink(&path, &key))
+                .flatten();
+            Preview::Picture {
+                path: shrunk.unwrap_or(path),
+                png: true,
+            }
+        }
+        image if image.starts_with("image/") => Preview::Picture { path, png: false },
+        _ => Preview::Nothing,
+    }
+}
+
+/// The entries of the folder at `path`, sorted, folders marked with `/`, at most [`LISTED`]
+/// and a line saying how many more.
+fn listing(path: &Path) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(path)
+        .map(|entries| {
+            entries
+                .flatten()
+                .filter_map(|entry| {
+                    let name = entry.file_name().to_string_lossy().into_owned();
+                    if name.starts_with('.') || name.starts_with('_') {
+                        return None;
+                    }
+                    let folder = entry.file_type().is_ok_and(|t| t.is_dir());
+                    Some(if folder { format!("{name}/") } else { name })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    names.sort_by_key(|n| n.to_lowercase());
+    if names.is_empty() {
+        return vec!["(empty)".to_owned()];
+    }
+    if names.len() > LISTED {
+        let more = names.len() - LISTED;
+        names.truncate(LISTED);
+        names.push(format!("… and {more} more"));
+    }
+    names
 }
 
 /// The key of the item at `relative` (to the archive at `root`) in the cache: changes when the
@@ -209,6 +347,70 @@ mod tests {
                 }],
             })
         }
+    }
+
+    #[test]
+    fn previews_show_pictures_listings_and_nothing_for_restricted_items() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let cache = PreviewCache::at(&root.join(PREVIEWS));
+        let makers = Makers {
+            registry: None,
+            thumbnails: true,
+        };
+        let big = png::Pixels {
+            width: 1024,
+            height: 256,
+            rgba: vec![200; 1024 * 256 * 4],
+        };
+        std::fs::write(root.join("big.png"), big.encode()).unwrap();
+        std::fs::write(root.join("photo.jpg"), b"\xff\xd8\xff\xe0 jpeg").unwrap();
+        std::fs::write(root.join("notes.txt"), "words").unwrap();
+        std::fs::create_dir_all(root.join("folder/inner")).unwrap();
+        std::fs::write(root.join("folder/b.txt"), "").unwrap();
+        std::fs::write(root.join("folder/.hidden"), "").unwrap();
+
+        let Preview::Picture { path, png: true } = preview(root, "big.png", false, &cache, makers)
+        else {
+            panic!("no picture");
+        };
+        assert_eq!(path, cache.thumbnail(&key(root, "big.png").unwrap()));
+        let bytes = std::fs::read(&path).unwrap();
+        assert_eq!(png::size(&bytes), Some((THUMBNAIL, THUMBNAIL / 4)));
+        // Restricted: nothing, though a thumbnail is kept.
+        assert_eq!(
+            preview(root, "big.png", true, &cache, makers),
+            Preview::Nothing
+        );
+        assert_eq!(
+            preview(root, "photo.jpg", false, &cache, makers),
+            Preview::Picture {
+                path: root.join("photo.jpg"),
+                png: false
+            }
+        );
+        assert_eq!(
+            preview(root, "notes.txt", false, &cache, makers),
+            Preview::Nothing
+        );
+        assert_eq!(
+            preview(root, "gone.png", false, &cache, makers),
+            Preview::Nothing
+        );
+        assert_eq!(
+            preview(root, "folder", false, &cache, makers),
+            Preview::Listing(vec!["b.txt".into(), "inner/".into()])
+        );
+        // A thumbnail made elsewhere, such as by the Mac app, is used for any file.
+        let notes = key(root, "notes.txt").unwrap();
+        std::fs::write(cache.thumbnail(&notes), b"png").unwrap();
+        assert_eq!(
+            preview(root, "notes.txt", false, &cache, makers),
+            Preview::Picture {
+                path: cache.thumbnail(&notes),
+                png: true
+            }
+        );
     }
 
     #[test]

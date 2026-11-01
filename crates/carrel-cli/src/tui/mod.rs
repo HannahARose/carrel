@@ -3,6 +3,7 @@
 
 mod actions;
 mod active;
+mod agent;
 mod app;
 mod archives;
 mod backups;
@@ -10,6 +11,7 @@ mod browser;
 mod embedding;
 mod intake;
 mod item;
+mod preview;
 mod review;
 mod screens;
 mod search;
@@ -56,6 +58,9 @@ pub fn run(archive: Option<&Path>) -> Result<Report, Failure> {
         prefs.save()?;
     }
     let mut app = App::new(archive)?;
+    app.previews = preview::Previews::detected();
+    // The item shown first gets its preview too.
+    app.load_card();
     let theme = ui::Theme::from_env();
     let mut terminal = enter();
     let result = event_loop(&mut terminal, &mut app, theme);
@@ -129,6 +134,34 @@ impl SessionLook {
     }
 }
 
+/// Takes the terminal back after a program that needed it to itself, such as the editor,
+/// which leaves no picture behind.
+fn reenter(terminal: &mut ratatui::DefaultTerminal, painter: &mut preview::Painter) {
+    *terminal = enter();
+    *painter = preview::Painter::default();
+}
+
+/// Draws the screen, then the chosen item's picture, if it has one.
+fn draw(
+    terminal: &mut ratatui::DefaultTerminal,
+    app: &App,
+    theme: ui::Theme,
+    painter: &mut preview::Painter,
+) -> Result<(), Failure> {
+    terminal
+        .draw(|frame| ui::draw(frame, app, theme))
+        .map_err(|e| Failure::new(format!("couldn't draw: {e}")))?;
+    if painter.paint(app) {
+        // A picture was taken away: everything is drawn again, and the next one put in.
+        let _ = terminal.clear();
+        terminal
+            .draw(|frame| ui::draw(frame, app, theme))
+            .map_err(|e| Failure::new(format!("couldn't draw: {e}")))?;
+        painter.paint(app);
+    }
+    Ok(())
+}
+
 fn event_loop(
     terminal: &mut ratatui::DefaultTerminal,
     app: &mut App,
@@ -139,8 +172,10 @@ fn event_loop(
     let mut preparing: Option<Preparing> = None;
     let mut checked = std::time::Instant::now();
     let mut sessions = SessionLook::default();
+    let mut painter = preview::Painter::default();
     while !app.quit {
         sessions.tick(app);
+        app.previews.poll();
         // The worker runs in another process; see what it has done about once a second.
         if checked.elapsed() >= Duration::from_secs(1) {
             checked = std::time::Instant::now();
@@ -171,9 +206,7 @@ fn event_loop(
             // After a download, Settings finds what the providers offer again.
             app.settings_shown();
         }
-        terminal
-            .draw(|frame| ui::draw(frame, app, theme))
-            .map_err(|e| Failure::new(format!("couldn't draw: {e}")))?;
+        draw(terminal, app, theme, &mut painter)?;
         if !event::poll(Duration::from_millis(100))
             .map_err(|e| Failure::new(format!("couldn't read the terminal: {e}")))?
         {
@@ -194,7 +227,7 @@ fn event_loop(
                 // The editor needs the terminal to itself.
                 leave();
                 let result = crate::review::edit(Some(app.archive.root()), &id.to_string());
-                *terminal = enter();
+                reenter(terminal, &mut painter);
                 finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
             }
             Some(Effect::Open(path)) => {
@@ -211,7 +244,7 @@ fn event_loop(
                 // The editor needs the terminal to itself.
                 leave();
                 let result = crate::edit::edit(Some(app.archive.root()), &card);
-                *terminal = enter();
+                reenter(terminal, &mut painter);
                 changed(app.archive.root(), &result);
                 finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
             }
@@ -219,14 +252,14 @@ fn event_loop(
                 // The editor needs the terminal to itself.
                 leave();
                 let result = crate::sessions::edit(Some(app.archive.root()), &item, number);
-                *terminal = enter();
+                reenter(terminal, &mut painter);
                 finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
             }
             Some(Effect::Pick(words)) => {
                 // The picker needs the terminal to itself, as the editor does.
                 leave();
                 let picked = crate::picker::run(&words, &app.start_folder);
-                *terminal = enter();
+                reenter(terminal, &mut painter);
                 picked_files(app, picked);
             }
             Some(effect) if running.is_none() => {
@@ -416,6 +449,11 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
         | Effect::Open(_) => return None,
         effect @ (Effect::Dismiss(_) | Effect::Skip(_)) => {
             finished(app, settle_question(&root, &effect));
+            return None;
+        }
+        Effect::Agent(change) => {
+            let result = app.change_agent(&change);
+            finished(app, result);
             return None;
         }
         Effect::SetSetting { key, value } => {

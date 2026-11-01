@@ -67,6 +67,10 @@ pub struct ItemView {
     pub links_only: Option<String>,
     /// The chosen row: a change, then a related item.
     pub chosen: usize,
+    /// The item's file or folder, relative to the archive root, if it has one.
+    pub item: Option<String>,
+    /// Whether it's restricted, so it shows no preview.
+    pub restricted: bool,
 }
 
 impl ItemView {
@@ -112,6 +116,12 @@ impl ItemView {
             related: links.chain(nearby).collect(),
             links_only: near.err(),
             chosen: 0,
+            item: shown
+                .items
+                .iter()
+                .find(|i| i.card == shown.card_path)
+                .and_then(|i| i.item.clone()),
+            restricted: shown.card.sensitivity == Sensitivity::Restricted,
         }
     }
 
@@ -142,6 +152,7 @@ impl App {
             view.chosen = self.item.chosen.min(view.rows().len().saturating_sub(1));
         }
         self.item = view;
+        self.previews.want(&self.archive, &self.item);
     }
 
     /// Handles a key in an item's view: ↑↓ choose a change or related item, `u` undoes the
