@@ -1095,3 +1095,272 @@ fn a_merge_that_fails_part_way_leaves_each_item_whole_and_undoes_exactly() {
         assert_eq!(&after[path], contents, "{path} differs after undo");
     }
 }
+
+// Found reviewing #350: a section proposal stays in its section, never hides a collection,
+// and approving it is safe when changes fail, the lease runs out or a rename changes case.
+
+/// A text model that names no groups and suggests the renames it's given.
+struct Renamer {
+    offers: Vec<Offer>,
+    renames: Value,
+}
+
+impl Renamer {
+    fn registry(renames: Value) -> Registry {
+        let mut registry = Registry::new();
+        registry.add(Box::new(Self {
+            offers: vec![Offer {
+                capability: Capability::TextModel,
+                id: "renamer".into(),
+                label: None,
+                priority: 10,
+                available: true,
+                reason: None,
+                media_types: Vec::new(),
+                extra: serde_json::Map::new(),
+            }],
+            renames,
+        }));
+        registry
+    }
+}
+
+impl Provider for Renamer {
+    fn name(&self) -> &'static str {
+        "renamer"
+    }
+
+    fn offers(&self) -> &[Offer] {
+        &self.offers
+    }
+
+    fn complete(
+        &self,
+        _offer: &str,
+        _request: &CompletionRequest,
+    ) -> Result<Completion, ProviderError> {
+        let json = json!({"groups": [], "renames": self.renames, "rationale": "Tidier."});
+        Ok(Completion {
+            text: json.to_string(),
+            json: Some(json),
+            model: "renamer-1".into(),
+            usage: None,
+        })
+    }
+}
+
+/// `items()` without summaries, so the findability test has nothing to hold out and the
+/// proposal stands untested.
+fn items_without_summaries() -> Vec<Item> {
+    items()
+        .into_iter()
+        .map(|i| Item {
+            summary: String::new(),
+            ..i
+        })
+        .collect()
+}
+
+#[test]
+fn a_section_proposal_only_renames_collections_in_its_section() {
+    let setup = setup_with(
+        &items_without_summaries(),
+        &[("Reading", ""), ("Projects", ""), ("Notes", "")],
+    );
+    let registry = Renamer::registry(json!([
+        {"from": "Projects", "to": "Garden plots", "reason": "It's all the garden."}
+    ]));
+    let proposal = setup.propose_with(Some(&registry), "Reading");
+    assert_eq!(proposal.section, "Reading");
+    let outside: Vec<&Edit> = proposal
+        .changes
+        .iter()
+        .map(|c| &c.change)
+        .filter(|e| matches!(e, Edit::RenameCollection { from, .. } if from == "Projects"))
+        .collect();
+    assert!(
+        outside.is_empty(),
+        "a proposal for Reading renames a collection outside it: {outside:?}"
+    );
+}
+
+#[test]
+fn a_rename_never_hides_a_collection_behind_a_dot() {
+    let mut items = items_without_summaries();
+    let mut lone = item("Misc", "lone", &["odd"], [0.0, 0.0, 0.0, 1.0]);
+    lone.summary = String::new();
+    items.push(lone);
+    let setup = setup_with(
+        &items,
+        &[
+            ("Reading", ""),
+            ("Projects", ""),
+            ("Notes", ""),
+            ("Misc", ""),
+        ],
+    );
+    let registry = Renamer::registry(json!([
+        {"from": "Misc", "to": ".Misc", "reason": "Out of the way."}
+    ]));
+    let proposal = setup.propose_with(Some(&registry), "");
+    let archive = setup.archive();
+    let approved = restructure::approve(&archive, &proposal, None, setup.holder).unwrap();
+    let archive = setup.archive();
+    let ids: Vec<Id> = archive.items().unwrap().iter().map(|i| i.id).collect();
+    assert!(
+        ids.contains(&setup.ids["lone"]),
+        "the item in Misc is no longer in the archive; outcomes: {:#?}",
+        approved.outcomes
+    );
+}
+
+#[test]
+fn a_rename_that_only_changes_case_can_be_undone() {
+    let setup = setup();
+    let archive = setup.archive();
+    let before = tree(&setup.root);
+    let mut proposal = Proposal::new(ProposalKind::Section, "");
+    proposal.changes = vec![
+        serde_json::from_value(json!({
+            "id": "1",
+            "change": {"kind": "rename-collection", "from": "Projects", "to": "projects"},
+            "reason": "Lower case.",
+            "invasiveness": "renaming",
+        }))
+        .unwrap(),
+    ];
+    let approved = restructure::approve(&archive, &proposal, None, setup.holder).unwrap();
+    assert!(
+        approved.outcomes[0].not_applied.is_none(),
+        "{:?}",
+        approved.outcomes
+    );
+    let commit = approved.commit.unwrap();
+    let history = History::open(&archive).unwrap();
+    let lease = DiskLock::for_archive(&archive)
+        .acquire(setup.holder, "test", DEFAULT_LEASE)
+        .unwrap();
+    let undone = history.undo(&archive, &commit, &lease);
+    lease.release().unwrap();
+    undone.unwrap();
+    assert_eq!(tree(&setup.root), before);
+}
+
+#[test]
+fn a_change_whose_dependency_wasnt_applied_doesnt_run() {
+    let setup = setup();
+    let proposal = setup.propose();
+    // Since the proposal, something else named Birds turned up in Reading.
+    std::fs::create_dir(setup.root.join("Reading/birds")).unwrap();
+    std::fs::write(setup.root.join("Reading/birds/list.txt"), "owner's\n").unwrap();
+    let archive = setup.archive();
+    let approved = restructure::approve(&archive, &proposal, None, setup.holder).unwrap();
+    let create = creates(&proposal, "Reading/Birds");
+    let created = approved
+        .outcomes
+        .iter()
+        .find(|o| o.change == create)
+        .unwrap();
+    assert!(created.not_applied.is_some(), "{created:?}");
+    let design = std::fs::read_to_string(setup.root.join("Reading/_collection.md")).unwrap();
+    assert!(
+        !design.contains("- **Birds**"),
+        "Reading's design document names a subcollection that was never made:\n{design}"
+    );
+}
+
+/// Backups whose snapshot takes longer than the writer lease lasts.
+struct SlowSnapshots;
+
+impl carrel_core::backup::Backups for SlowSnapshots {
+    fn describe(&self) -> String {
+        "slow".into()
+    }
+    fn snapshot(
+        &self,
+        root: &Path,
+        description: &str,
+    ) -> Result<carrel_core::backup::Snapshot, carrel_core::backup::BackupError> {
+        // As if the snapshot took six minutes: the lease's expiry is now in the past.
+        let lock = root.join("_System/writer.lock");
+        let mut info: Value =
+            serde_json::from_str(&std::fs::read_to_string(&lock).unwrap()).unwrap();
+        info["expires"] = json!("2000-01-01T00:00:00Z");
+        std::fs::write(&lock, serde_json::to_string_pretty(&info).unwrap()).unwrap();
+        Ok(carrel_core::backup::Snapshot {
+            id: "k0002".into(),
+            time: "2026-11-01T12:00:00Z".into(),
+            description: Some(description.to_owned()),
+            pinned: true,
+            size: None,
+            files: None,
+        })
+    }
+    fn list(
+        &self,
+        _root: &Path,
+    ) -> Result<Vec<carrel_core::backup::Snapshot>, carrel_core::backup::BackupError> {
+        Ok(Vec::new())
+    }
+    fn verify(&self, _percent: u8) -> Result<String, carrel_core::backup::BackupError> {
+        Ok(String::new())
+    }
+    fn restore(
+        &self,
+        _snapshot: &str,
+        _path: &str,
+        _to: &Path,
+    ) -> Result<(), carrel_core::backup::BackupError> {
+        Ok(())
+    }
+    fn forget(&self, _snapshot: &str) -> Result<(), carrel_core::backup::BackupError> {
+        Ok(())
+    }
+}
+
+#[test]
+fn a_lease_that_runs_out_during_the_snapshot_changes_nothing() {
+    let setup = setup();
+    let before = tree(&setup.root);
+    let proposal = setup.propose();
+    let archive = setup.archive();
+    restructure::queue(&archive, &proposal).unwrap();
+    let result = restructure::approve_with_snapshot(
+        &archive,
+        &proposal,
+        None,
+        setup.holder,
+        Some(&SlowSnapshots),
+    );
+    let waiting = restructure::waiting(&archive, None).unwrap().len();
+    let after = tree(&setup.root);
+    assert!(
+        result.is_ok() || (after == before && waiting == 1),
+        "approve failed with {:?}, after moving files ({} paths gone) and taking the proposal \
+         off the queue ({waiting} waiting); nothing in history records it",
+        result.err().map(|e| e.to_string()),
+        before.keys().filter(|k| !after.contains_key(*k)).count()
+    );
+}
+
+#[test]
+fn renaming_one_top_level_collection_doesnt_make_the_whole_archive_recent() {
+    let setup = setup();
+    let archive = setup.archive();
+    let mut proposal = Proposal::new(ProposalKind::Section, "Projects");
+    proposal.changes = vec![
+        serde_json::from_value(json!({
+            "id": "1",
+            "change": {"kind": "rename-collection", "from": "Projects", "to": "Garden"},
+            "reason": "It's the garden.",
+            "invasiveness": "renaming",
+        }))
+        .unwrap(),
+    ];
+    restructure::approve(&archive, &proposal, None, setup.holder).unwrap();
+    let reading = setup.propose_with(None, "Reading");
+    assert!(
+        !reading.assessment.unwrap().recently_restructured,
+        "Reading was never restructured, but counts as recently restructured"
+    );
+}
