@@ -26,6 +26,7 @@
 //! | [`librarian`] | The librarian: a conversation, saving it to the Journal, and its own changes |
 //! | [`discover`] | Discovery: on this day, wander, the timeline, the archive map, activity, resurfacing |
 //! | [`quick_look`] | Quick Look: cards laid out for the preview extension, and the drawings the agent keeps for it |
+//! | [`spotlight`] | Spotlight on the Mac: what the agent indexes, by `spotlight.index` |
 //! | [`creating`] | Creating an archive with a chosen embedding model |
 //!
 //! [`TextModel`] and [`ModelProvider`](correct::ModelProvider) are implemented in Swift and called from Rust, as is
@@ -74,6 +75,7 @@ pub mod restructure;
 pub mod review;
 pub mod search;
 pub mod settings;
+pub mod spotlight;
 pub mod usage_report;
 pub mod working_copy;
 

@@ -276,6 +276,18 @@ Press Space on a card in Finder to see it as the app's inspector shows it: its t
 
 Carrel's own drawings of STEP, IGES and 3MF models show in Quick Look and Finder's previews too. The agent keeps them, so they appear for items in the archives it looks after, once it has drawn them, and never for restricted items. Drawing STEP and IGES needs the CAD provider ([3D models](../design/models-3d.md)).
 
+## Spotlight
+
+While the agent runs, Spotlight finds what's in the archives it looks after: each item's card (its title, summary, tags, collection, dates and kind), the collections and the glossary's facts. Choosing a result opens the item, or the archive, in Carrel. Spotlight already finds the files themselves where macOS can read them.
+
+Anyone using your Mac sees Spotlight, so **Settings → General → Spotlight finds** (`spotlight.index`) says how much goes in:
+
+- **standard,** the default: public and personal items in full, sensitive items by title only;
+- **all-but-restricted:** every item in full but restricted ones;
+- **off:** nothing.
+
+Restricted items are never in Spotlight. The index stays current as items are filed, edited and moved, and an archive's entries are removed when the agent stops looking after it, or when you turn the setting off.
+
 ## Working alongside the command line and the interactive mode
 
 The app, `carrel` and its interactive mode are three ways into the **same archive**, through the same core. Use whichever suits the moment; you can have all three open on one archive at once.

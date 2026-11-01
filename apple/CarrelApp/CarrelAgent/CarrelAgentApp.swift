@@ -12,6 +12,7 @@ import SwiftUI
 @main
 struct CarrelAgentApp: App {
     @State private var agent = AgentHost()
+    @NSApplicationDelegateAdaptor private var spotlightResults: SpotlightResultOpener
 
     var body: some Scene {
         // Without the menu bar list, the agent is managed from the app's Settings.
@@ -52,7 +53,8 @@ final class AgentHost {
         }
         agent = Agent(
             options: .app(helpers: Self.helpers), badges: AgentService.badgeStateFile,
-            reminders: notifications, quickLook: QuickLookStore.shared)
+            reminders: notifications, quickLook: QuickLookStore.shared,
+            spotlight: CoreSpotlightIndex())
         let override = environment[Self.archivesEnv].map {
             $0.split(separator: ":").map { URL(filePath: String($0)) }
         }

@@ -51,6 +51,8 @@ pub enum Key {
     CrawlerChanges,
     /// How much of the device's idle time the crawler uses.
     CrawlerPace,
+    /// How much of the archive Spotlight finds on a Mac.
+    SpotlightIndex,
 }
 
 /// The embedding models an archive can choose: the catalog's, the default first.
@@ -68,7 +70,7 @@ const DESKTOP: &str = "desktop";
 
 impl Key {
     /// Every setting, in the order they're shown.
-    pub const ALL: [Self; 19] = [
+    pub const ALL: [Self; 20] = [
         Self::Originals,
         Self::CompressedFiles,
         Self::CrowdedItems,
@@ -88,6 +90,7 @@ impl Key {
         Self::RestructureMoveBudget,
         Self::CrawlerChanges,
         Self::CrawlerPace,
+        Self::SpotlightIndex,
     ];
 
     /// Its key in `settings.json`, as FORMAT.md §7.2 writes it.
@@ -113,6 +116,7 @@ impl Key {
             Self::CheckoutAfterReturn => "checkout.after_return",
             Self::IdleMinutes => "sessions.idle_minutes",
             Self::Reminders => "reminders",
+            Self::SpotlightIndex => "spotlight.index",
         }
     }
 
@@ -139,6 +143,7 @@ impl Key {
             Self::RestructureMoveBudget => "Items moved per proposal",
             Self::CrawlerChanges => "Crawler's own changes",
             Self::CrawlerPace => "Crawler's pace",
+            Self::SpotlightIndex => "Spotlight finds",
         }
     }
 
@@ -207,6 +212,9 @@ impl Key {
             Self::CrawlerPace => {
                 "How much of the device's idle time the crawler uses to recheck where items are filed: off, gentle, steady or brisk"
             }
+            Self::SpotlightIndex => {
+                "How much of the archive Spotlight finds on a Mac, since anyone using it sees Spotlight: standard finds public and personal items in full and sensitive ones by title only, all-but-restricted finds every item but restricted ones in full, and off finds nothing. Restricted items are never found"
+            }
         }
     }
 
@@ -256,6 +264,7 @@ impl Key {
             Self::LibrarianChanges | Self::CrawlerChanges => Some(&["off", "on"]),
             Self::RestructureEagerness => Some(&["settled", "balanced", "eager"]),
             Self::CrawlerPace => Some(&["off", "gentle", "steady", "brisk"]),
+            Self::SpotlightIndex => Some(&["standard", "all-but-restricted", "off"]),
             Self::CheckoutAfterReturn => Some(&["ask", "trash", "keep"]),
             Self::Reminders => Some(&REMINDERS),
             Self::CrowdedItems
@@ -311,6 +320,7 @@ impl Key {
             }
             .into(),
             Self::CrawlerPace => settings.crawler.pace.as_str().into(),
+            Self::SpotlightIndex => settings.spotlight.index.as_str().into(),
         }
     }
 
@@ -379,6 +389,10 @@ impl Key {
             }
             Self::CrawlerPace => {
                 settings.crawler.pace = crate::crawl::Pace::parse(value).ok_or_else(wrong)?;
+            }
+            Self::SpotlightIndex => {
+                settings.spotlight.index =
+                    crate::spotlight::SpotlightIndex::parse(value).ok_or_else(wrong)?;
             }
             Self::LibrarianConfidence => {
                 settings.librarian.confidence = value
@@ -739,6 +753,21 @@ mod tests {
         let unknown = Key::Reminders.set(&mut settings, "hourly").unwrap_err();
         assert!(unknown.contains("menu-bar, due-date"), "{unknown}");
         assert!(Key::Reminders.takes_several());
+
+        assert_eq!(Key::SpotlightIndex.get(&settings), "standard");
+        Key::SpotlightIndex
+            .set(&mut settings, "all-but-restricted")
+            .unwrap();
+        assert_eq!(
+            settings.spotlight.index,
+            crate::spotlight::SpotlightIndex::AllButRestricted
+        );
+        assert!(
+            Key::SpotlightIndex
+                .set(&mut settings, "everything")
+                .unwrap_err()
+                .contains("standard, all-but-restricted, off")
+        );
 
         for key in Key::ALL {
             assert_eq!(Key::parse(key.as_str()), Some(key));
