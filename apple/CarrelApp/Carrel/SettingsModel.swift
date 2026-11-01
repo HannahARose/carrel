@@ -101,8 +101,8 @@ final class SettingsModel {
             device = try await archive.call { try $0.deviceSettings() }
             choices = try await archive.call { try $0.modelChoices() }
             catalog = try await archive.call { $0.modelCatalog() }
-            let formats = try await archive.call { $0.modelFormats() }
-            modelFormats = Dictionary(formats.map { ($0.name, $0) }) { first, _ in first }
+            let inFormats = try await archive.call { $0.modelFormats() }
+            modelFormats = Dictionary(inFormats.map { ($0.name, $0) }) { first, _ in first }
             backups = try? await archive.backups()
             providers = try await archive.call { $0.providers() }
             formats = try await archive.call { $0.formats() }

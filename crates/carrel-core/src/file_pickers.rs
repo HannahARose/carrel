@@ -2,8 +2,6 @@
 //! of each this device uses and why, for every interface's Settings (`docs/design/tui-ingest.md`).
 //! The command line and the interactive mode run them; the app only shows and sets them.
 
-use crate::providers::process::{default_folders, find_program};
-
 /// What the `picker` preference names when the owner wants the built-in browser.
 pub const BUILT_IN: &str = "builtin";
 
@@ -78,10 +76,26 @@ pub const KNOWN: [Known; 6] = [
 ];
 
 impl Known {
-    /// Whether it's installed here.
+    /// Whether it's installed here. Never on iPhone and iPad, which run no programs.
     #[must_use]
     pub fn installed(&self) -> bool {
-        find_program(self.name, &default_folders()).is_some()
+        #[cfg(not(any(
+            target_os = "ios",
+            target_os = "tvos",
+            target_os = "watchos",
+            target_os = "visionos"
+        )))]
+        {
+            use crate::providers::process::{default_folders, find_program};
+            find_program(self.name, &default_folders()).is_some()
+        }
+        #[cfg(any(
+            target_os = "ios",
+            target_os = "tvos",
+            target_os = "watchos",
+            target_os = "visionos"
+        ))]
+        false
     }
 
     /// How to install it on this system, if it runs here.

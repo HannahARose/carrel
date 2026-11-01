@@ -522,3 +522,59 @@ pub fn set(key: &str, value: &str) -> Effect {
         value: value.to_owned(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use ratatui::crossterm::event::KeyCode;
+
+    use super::super::app::Effect;
+    use super::super::tests::{key, sample};
+    use super::Row;
+    use carrel_core::settings::Key;
+
+    #[test]
+    fn every_setting_has_a_row_saying_what_it_takes() {
+        let (_dir, mut app) = sample(false);
+        app.key(key(KeyCode::Char('8')));
+        let row = |app: &super::App, wanted: Row| {
+            app.settings.iter().position(|s| s.row == wanted).unwrap()
+        };
+        for wanted in [Row::LibrarianModel, Row::Previews] {
+            row(&app, wanted);
+        }
+        for setting in Key::ALL.into_iter().filter(|k| *k != Key::EmbeddingModel) {
+            row(&app, Row::Shared(setting));
+        }
+        let confidence = &app.settings[row(&app, Row::Shared(Key::LibrarianConfidence))];
+        assert!(
+            confidence
+                .detail
+                .iter()
+                .any(|l| l.contains("from 0.5 to 1")),
+            "{:?}",
+            confidence.detail
+        );
+
+        app.settings_chosen = row(&app, Row::Previews);
+        app.key(key(KeyCode::Enter));
+        let picker = app.picker.clone().expect("a choice of previews");
+        assert_eq!(picker.collections, crate::settings::PREVIEW_CHOICES);
+        app.key(key(KeyCode::Down));
+        assert_eq!(
+            app.key(key(KeyCode::Enter)),
+            Some(Effect::SetSetting {
+                key: "previews".into(),
+                value: "off".into(),
+            })
+        );
+
+        // The reminders take several at once, so they're typed rather than picked.
+        app.settings_chosen = row(&app, Row::Shared(Key::Reminders));
+        app.key(key(KeyCode::Enter));
+        assert!(app.picker.is_none());
+        assert_eq!(
+            app.input.as_ref().map(|i| i.text.as_str()),
+            Some("idle, weekly, menu-bar")
+        );
+    }
+}
