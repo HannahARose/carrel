@@ -3,6 +3,7 @@
 
 mod actions;
 mod active;
+mod agent;
 mod app;
 mod archives;
 mod backups;
@@ -434,6 +435,11 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
         | Effect::Open(_) => return None,
         effect @ (Effect::Dismiss(_) | Effect::Skip(_)) => {
             finished(app, settle_question(&root, &effect));
+            return None;
+        }
+        Effect::Agent(change) => {
+            let result = app.change_agent(&change);
+            finished(app, result);
             return None;
         }
         Effect::SetSetting { key, value } => {

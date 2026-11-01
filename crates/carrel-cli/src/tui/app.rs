@@ -98,6 +98,8 @@ pub enum Picking {
 /// Something that waits for the owner to say yes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Confirm {
+    /// Installing or uninstalling the background agent.
+    Agent(super::agent::AgentChange),
     /// Undoing the change with this identifier and summary.
     Undo {
         /// The commit.
@@ -224,6 +226,8 @@ pub enum Step {
 /// Work the run loop does for the app: it needs the writer lease, which the app doesn't hold.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Effect {
+    /// Install or uninstall the background agent, as `carrel agent` does.
+    Agent(super::agent::AgentChange),
     /// Undo the change with this identifier.
     Undo(String),
     /// File these proposals where proposed, or in Holding.
@@ -496,6 +500,11 @@ pub struct App {
     /// Whether the folder picking ends in is saved to this device's preferences, or only kept
     /// for this session, as in tests, which must never write the real configuration.
     pub preferences: Preferences,
+    /// Where the background agent's service is read and installed: nowhere in tests, which
+    /// must never write the real home folder.
+    pub service: super::agent::Service,
+    /// What the last change to the agent did, line by line.
+    pub agent_done: Vec<String>,
     /// Item previews in Browse, on terminals that draw images.
     pub previews: super::preview::Previews,
     /// Whether every key is shown.
@@ -575,6 +584,12 @@ impl App {
             } else {
                 Preferences::Saved
             },
+            service: if cfg!(test) {
+                super::agent::Service::default()
+            } else {
+                super::agent::Service::here()
+            },
+            agent_done: Vec::new(),
             previews: super::preview::Previews::default(),
             help: false,
             quit: false,
@@ -980,6 +995,7 @@ fn confirmed(confirm: Confirm, key: KeyCode) -> Option<Effect> {
         Confirm::Undo { id, .. } => Effect::Undo(id),
         Confirm::Reject(ids) => Effect::Reject(ids),
         Confirm::Download { name, .. } => Effect::Download(name),
+        Confirm::Agent(change) => Effect::Agent(change),
         Confirm::Return { id, .. } => Effect::Return(id),
         Confirm::CancelCheckout { id, .. } => Effect::CancelCheckout(id),
         Confirm::Learn { about, fact } => Effect::Correction(Step::Learn { about, fact }),

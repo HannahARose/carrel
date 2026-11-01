@@ -25,6 +25,8 @@ pub enum Row {
     Models,
     /// The worker that drafts queued items.
     Worker,
+    /// The background agent, `carrel agent`, started at log-in.
+    Agent,
     /// The providers on this device, as `carrel providers` lists them.
     Providers,
     /// The file types this device reads and those it couldn't, as `carrel formats` lists them.
@@ -63,6 +65,7 @@ pub fn is_device(row: Row) -> bool {
             | Row::SecondModel
             | Row::Models
             | Row::Worker
+            | Row::Agent
             | Row::Providers
             | Row::Formats
     )
@@ -80,6 +83,7 @@ impl App {
             second_row(&prefs),
             models_row(),
             self.worker_row(),
+            self.agent_row(),
             self.providers_row(),
             self.formats_row(),
             self.archive_row(),
@@ -215,6 +219,9 @@ impl App {
 
     /// Handles a key on the Settings screen.
     pub(super) fn settings_key(&mut self, key: KeyEvent) -> Handled {
+        if self.settings.get(self.settings_chosen).map(|s| s.row) == Some(Row::Agent) {
+            return self.agent_key(key.code);
+        }
         if key.code != KeyCode::Enter {
             return Handled::No;
         }
@@ -292,7 +299,7 @@ impl App {
             },
             Row::Archive => self.archive_picker(),
             Row::Index => self.index_picker(),
-            Row::Worker | Row::Backups | Row::Providers | Row::Formats => {}
+            Row::Worker | Row::Agent | Row::Backups | Row::Providers | Row::Formats => {}
         }
         Handled::Yes(None)
     }

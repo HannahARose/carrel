@@ -396,6 +396,14 @@ fn draw_confirm(frame: &mut Frame, confirm: &Confirm, theme: Theme, area: Rect) 
                 .to_owned(),
             " undo   ",
         ),
+        Confirm::Agent(change) => {
+            let (question, about) = super::agent::confirm_text(change);
+            let yes = match change {
+                super::agent::AgentChange::Install(_) => " install   ",
+                super::agent::AgentChange::Uninstall => " uninstall   ",
+            };
+            (" Agent ", question, about, yes)
+        }
         Confirm::Download { name, about } => (
             " Download ",
             format!("Download {name}?"),
