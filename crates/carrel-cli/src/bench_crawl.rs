@@ -77,7 +77,14 @@ pub fn crawl_bench(args: &BenchArgs, json: bool) -> Result<Report, Failure> {
         ));
         let mut display =
             crate::progress::Display::new(format!("{} ({} of {count})", model.label, n + 1), json);
-        let saved = judge_all(&archive, &registry, &model, &todo, &saved_path, &mut display);
+        let saved = judge_all(
+            &archive,
+            &registry,
+            &model,
+            &todo,
+            &saved_path,
+            &mut display,
+        );
         display.finish();
         let saved = saved?;
         let items: Vec<(Judged, ItemScore)> = todo
@@ -85,7 +92,8 @@ pub fn crawl_bench(args: &BenchArgs, json: bool) -> Result<Report, Failure> {
             .filter_map(|(file, _)| {
                 let gave = saved.get(file)?.clone();
                 let (place, kind) = places.get(file)?;
-                let score = score_item(file, (place, *kind), &answers.items[file], &gave, &existing);
+                let score =
+                    score_item(file, (place, *kind), &answers.items[file], &gave, &existing);
                 Some((gave, score))
             })
             .collect();
@@ -165,8 +173,10 @@ fn judge_all(
     display: &mut crate::progress::Display,
 ) -> Result<BTreeMap<String, Judged>, Failure> {
     let mut saved = load_saved(saved_path);
-    let left: Vec<&(String, carrel_core::archive::ItemRef)> =
-        todo.iter().filter(|(file, _)| !saved.contains_key(file)).collect();
+    let left: Vec<&(String, carrel_core::archive::ItemRef)> = todo
+        .iter()
+        .filter(|(file, _)| !saved.contains_key(file))
+        .collect();
     let total = todo.len();
     if left.is_empty() {
         return Ok(saved);
@@ -337,7 +347,10 @@ fn report_markdown(judged: &[Judging]) -> String {
             } else if score.placed_right == Some(false) {
                 misplaced.push(format!("{} → {better}", score.item));
             } else if score.misplaced.is_none() && score.flagged {
-                alarms.push(format!("{} (in {}) → {better}: {}", score.item, score.place, gave.reason));
+                alarms.push(format!(
+                    "{} (in {}) → {better}: {}",
+                    score.item, score.place, gave.reason
+                ));
             }
         }
         for (title, list) in [

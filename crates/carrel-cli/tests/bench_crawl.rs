@@ -51,7 +51,10 @@ fn bench_crawl_judges_the_muddled_archive_and_carries_on_where_it_stopped() {
     std::fs::create_dir(&bin).unwrap();
     std::fs::copy(
         echo_provider(),
-        bin.join(format!("carrel-provider-echo{}", std::env::consts::EXE_SUFFIX)),
+        bin.join(format!(
+            "carrel-provider-echo{}",
+            std::env::consts::EXE_SUFFIX
+        )),
     )
     .unwrap();
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/bench");
@@ -81,7 +84,10 @@ fn bench_crawl_judges_the_muddled_archive_and_carries_on_where_it_stopped() {
     let report = std::fs::read_to_string(out.join("crawl/report.md")).unwrap();
     assert!(report.contains("# Crawler benchmark report"), "{report}");
     assert!(report.contains("Unusable:"), "{report}");
-    assert!(!out.join("crawl/archive/Recipes").exists(), "the missing collection");
+    assert!(
+        !out.join("crawl/archive/Recipes").exists(),
+        "the missing collection"
+    );
     let results: Value =
         serde_json::from_str(&std::fs::read_to_string(out.join("crawl/results.json")).unwrap())
             .unwrap();
