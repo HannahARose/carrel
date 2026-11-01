@@ -36,6 +36,12 @@ public enum AgentRequest: Codable, Sendable, Equatable {
     case ask(archive: String?, question: String)
     /// Takes a backup snapshot now, as `carrel backup now` does.
     case snapshot(archive: String?)
+    /// The items with these identifiers, as `carrel show` finds them, for Shortcuts' entities.
+    case items(archive: String?, ids: [String])
+    /// The collections, as `carrel collections` lists them.
+    case collections(archive: String?)
+    /// What's checked out and on the desk, as `carrel checkouts` and `carrel desk` list them.
+    case active(archive: String?)
 
     /// The archive the request names, if it names one.
     public var archive: String? {
@@ -44,7 +50,8 @@ public enum AgentRequest: Codable, Sendable, Equatable {
             .addData(let archive, _, _), .checkOut(let archive, _, _, _),
             .returnItem(let archive, _, _), .cancelCheckout(let archive, _),
             .open(let archive, _, _), .search(let archive, _, _), .ask(let archive, _),
-            .snapshot(let archive):
+            .snapshot(let archive), .items(let archive, _), .collections(let archive),
+            .active(let archive):
             archive
         }
     }
@@ -52,7 +59,7 @@ public enum AgentRequest: Codable, Sendable, Equatable {
     /// Whether it changes the archive, and so needs the agent's claim on it.
     public var writes: Bool {
         switch self {
-        case .open, .search, .ask: false
+        case .open, .search, .ask, .items, .collections, .active: false
         case .addFiles, .addText, .addData, .checkOut, .returnItem, .cancelCheckout, .snapshot: true
         }
     }
