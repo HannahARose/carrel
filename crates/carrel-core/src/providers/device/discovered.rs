@@ -86,8 +86,8 @@ fn models(dir: &std::path::Path) -> Vec<FileStamp> {
 
 /// The providers `found`: started, if they haven't been asked what they offer since they or
 /// the models changed, otherwise made from what they said.
-pub(super) fn providers(found: Vec<Found>) -> Vec<Result<ProcessProvider, Failed>> {
-    let stamp = Stamp::of(&found);
+pub(super) fn providers(found: &[Found]) -> Vec<Result<ProcessProvider, Failed>> {
+    let stamp = Stamp::of(found);
     // Held while the programs are asked, so another thread waits for these answers rather
     // than starting every program again at the same moment.
     let mut asked = FOUND.lock().unwrap_or_else(PoisonError::into_inner);
@@ -130,7 +130,7 @@ pub(super) fn providers(found: Vec<Found>) -> Vec<Result<ProcessProvider, Failed
 }
 
 /// Starts every program in `found` at once, so the slowest decides how long it takes.
-fn start_together(found: Vec<Found>) -> Vec<(Found, Result<ProcessProvider, ProviderError>)> {
+fn start_together(found: &[Found]) -> Vec<(Found, Result<ProcessProvider, ProviderError>)> {
     std::thread::scope(|scope| {
         let starting: Vec<_> = found
             .iter()

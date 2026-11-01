@@ -107,7 +107,7 @@ fn start_programs(registry: &mut Registry, folders: &[PathBuf]) -> Vec<Failed> {
     let mut all = folders.to_vec();
     all.extend(default_folders());
     let mut failed = Vec::new();
-    for provider in discovered::providers(discover(&all)) {
+    for provider in discovered::providers(&discover(&all)) {
         match provider {
             Ok(provider) => registry.add(Box::new(provider)),
             Err(failure) => failed.push(failure),
