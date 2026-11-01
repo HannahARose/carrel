@@ -49,6 +49,8 @@ The code documentation is built from `dev` on every merge, private items include
 | The question queue and glossary | [`QuestionEntry`](https://hrose.me/carrel/carrel_core/questions/struct.QuestionEntry.html), [`questions::add_fact`](https://hrose.me/carrel/carrel_core/questions/fn.add_fact.html) | `questions.rs` |
 | The owner's decisions, for every interface | [`actions`](https://hrose.me/carrel/carrel_core/actions/): `decide`, `move_to`, `reject`, `teach`, `apply_draft` | `actions.rs` |
 | Typed corrections: working them out, preparing and saving them | [`correct::work_out`](https://hrose.me/carrel/carrel_core/correct/fn.work_out.html), [`correct::prepare`](https://hrose.me/carrel/carrel_core/correct/prepare/) | `correct.rs`, `correct/prepare.rs` |
+| Restructure proposals: the format, partial approval, applying as one change | [`restructure`](https://hrose.me/carrel/carrel_core/restructure/): [`Proposal`](https://hrose.me/carrel/carrel_core/restructure/struct.Proposal.html), [`Edit`](https://hrose.me/carrel/carrel_core/restructure/enum.Edit.html), [`select`](https://hrose.me/carrel/carrel_core/restructure/fn.select.html), [`approve`](https://hrose.me/carrel/carrel_core/restructure/fn.approve.html) | `restructure.rs` |
+| Tag restructuring: merging, splitting and retiring tags | [`restructure::tags::propose`](https://hrose.me/carrel/carrel_core/restructure/tags/fn.propose.html) | `restructure/tags.rs` |
 | Restructure signals | [`signals::signals`](https://hrose.me/carrel/carrel_core/signals/fn.signals.html), [`Signal`](https://hrose.me/carrel/carrel_core/signals/enum.Signal.html) | `signals.rs` |
 
 ## Providers, models and backups

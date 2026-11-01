@@ -705,6 +705,49 @@ Programs **should** ask the questions whose answers would settle the most items 
 
 Once a question is answered or dismissed, programs remove it and clear the problem from its items, except a declined question, which stays with `declined` set. Items waiting on a term are drafted again with the new fact. Question files without the optional fields, as earlier programs wrote them, remain valid.
 
+#### Proposal entries
+
+A restructure proposal (`proposals/<id>.json`) is a reviewable list of changes to one section of the archive, approved all, in part or not at all:
+
+```json
+{
+  "carrel": "proposal",
+  "format": "1.0",
+  "id": "01a195c0-9858-7224-820f-7bc25e982e5a",
+  "kind": "tags",
+  "section": "",
+  "created": "2026-11-01T10:15:04-08:00",
+  "by": "carrel 0.7.0",
+  "invasiveness": "rewriting",
+  "rationale": "12 tags on 40 items: 1 merge and 1 retirement…",
+  "changes": [
+    {
+      "id": "1",
+      "change": {"kind": "merge-tags", "from": ["Receipt", "receipt"], "into": "receipts"},
+      "reason": "“receipts” is the plural of “receipt”, so they become “receipts”.",
+      "invasiveness": "rewriting",
+      "items": [{"id": "01928f3a-…", "card": "Finances/r3.md", "title": "Hardware store"}],
+      "held": [{"id": "01928f3a-…", "card": "Finances/r4.md", "title": "Lunch", "why": "you wrote its tags yourself, so they stay as you wrote them"}],
+      "documents": ["ARCHIVE.md"]
+    }
+  ]
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `kind` | `tags` (tags only, no files moved) or `section` (a section's items, collections, design documents and tags) |
+| `section` | The collection it covers, or empty for the whole archive |
+| `invasiveness` | The most invasive of its changes, least first: `rewriting` (design documents and tags), `subdividing`, `renaming`, `between-branches`, `top-level` |
+| `rationale` | Why the proposal as a whole is worth making |
+| `changes` | The changes in the order they'd apply. Each has a number (`id`) unique in the proposal, a `change`, a `reason`, its `invasiveness`, the `items` it changes, the items it concerns but leaves alone (`held`, each with `why`), the design `documents` it rewrites, and optionally the changes it `depends_on` |
+| `change` | What it does, by `kind`: `merge-tags` (`from`, `into`), `split-tag` (`tag`, and `into`: each new `tag` with its `description` and `items`) or `retire-tag` (`tag`). Later versions add kinds for moving items and collections |
+
+- **Owner fields:** a change never alters a field the owner set (§5.6): an item whose `generated.fields` doesn't list `tags` is held, as is a checked-out item (§9.1).
+- **Partial approval:** approving some changes leaves out the rest, and drops any chosen change that depends on one left out.
+- **Applying:** programs apply the approved changes to the archive as it is then (an item changed since is left alone and reported), update the vocabularies of the design documents named and their changelogs, remove the entry, and record it all as one `restructure` commit (§8.2), so undoing it reverses every part.
+- A rejected proposal is removed without changing anything else. A new proposal of the same kind for the same section replaces one waiting.
+
 ### 7.10 Devices
 
 `_System/devices/<device-id>/device.json` records a device's name, type and capability profile. `desk.json` lists the desk items tracked on that device with their local paths. Paths in `desk.json` are only meaningful on that device.
