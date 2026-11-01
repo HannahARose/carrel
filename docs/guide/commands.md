@@ -180,6 +180,13 @@ Backups need [Kopia](https://kopia.io), beside `carrel` or on `PATH`.
 
 `carrel` with no command (or `carrel tui`) opens it. The screens are numbered, the librarian and discovery have letters, and `?` shows every key.
 
+`carrel tui SCREEN` starts on that screen rather than Status, and `carrel gui SCREEN` opens the Mac app on it. `SCREEN` is `status`, `review`, `active`, `questions`, `browse`, `history`, `ingest`, `settings`, `backups`, `librarian` and `discover`, or one of Discover's views: `discover:today`, `discover:wander`, `discover:timeline`, `discover:map`, `discover:activity` and `discover:graph`.
+
+| Command | What it does |
+| --- | --- |
+| `carrel tui [SCREEN]` | Opens the interactive mode, on `SCREEN` when one is given. |
+| `carrel gui [SCREEN] [--item ITEM]` | Opens the Mac app on the archive commands would use, through a `carrel://open` link, showing `SCREEN` and choosing `ITEM` (its identifier, or the path of the item or its card, as for `carrel show`). With no archive found, the app opens on its Welcome window. The app has no Ingest or Librarian screen: `ingest` shows Status, where the intake queue is, `librarian` opens the Librarian panel, `settings` the Settings window, and `browse` the first collection. On Linux and Windows it fails, pointing to `carrel tui`, until the app comes to them. |
+
 | Key | Screen |
 | --- | --- |
 | `1` | **Status**: what `carrel status` shows, including Recent, what's waiting for you, the librarian's changes this week, a collection not opened in a while, today's few questions, and the search index, as `carrel index status` shows it |
