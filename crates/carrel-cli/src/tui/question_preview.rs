@@ -131,11 +131,15 @@ mod tests {
             .find(|i| i.card == "Projects/Hardware/lamp-build.md")
             .unwrap();
         ask(&mut app, question(&[lamp.id], &[]));
-        let text = screen(&app, 260, 30);
+        let text = screen(&app, 140, 30);
         assert!(text.contains("Preview"), "{text}");
         assert!(text.contains("arm.svg"), "the folder's listing: {text}");
-        let path = app.archive.root().join("Projects/Hardware/lamp-build");
-        assert!(text.contains(&path.display().to_string()), "{text}");
+        assert!(text.contains("Desk lamp build"), "{text}");
+        // The path is listed under it, wrapped as the pane's width allows.
+        assert_eq!(
+            app.question_subjects[0].path,
+            Some(app.archive.root().join("Projects/Hardware/lamp-build"))
+        );
         drop(dir);
     }
 
