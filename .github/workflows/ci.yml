@@ -1,12 +1,14 @@
 name: CI
 
-# Which jobs run when (docs/dev/development-setup.md, "Continuous integration"):
+# Which jobs run when (docs/dev/development-setup.md, "Which CI jobs run when"):
 #
 # - The "Changes" job (.github/scripts/ci-changes.sh) lists the files a pull request or push
 #   changes and says which areas they touch. Each job below runs only for its area: a docs-only
 #   change runs Format, Docs hygiene and nothing else. Format and Docs hygiene always run.
 # - Everything runs for a change to any workflow, the weekly schedule, a manual run and a pull
-#   request into main.
+#   request into main (or a merge queue's group into main).
+# - A merge queue's group (merge_group, #298) runs the jobs for what the group changes against
+#   its base, and "CI passed" reports on it, since the queue waits for that check.
 # - A push to dev (a merged pull request) runs the jobs for what that merge changed, which
 #   checks dev against merge skew and keeps the caches warm. Each push gets its own run, so a
 #   later merge can't cancel the check of an earlier one.
@@ -21,6 +23,8 @@ on:
   # main gets only merges of dev that its pull request has already checked from scratch.
   push:
     branches: [dev]
+  # The merge queue's combined commits, once the queue is on (#298).
+  merge_group:
   workflow_dispatch:
   # Weekly, so new security advisories against existing dependencies show up even when
   # nothing changes.
@@ -31,7 +35,8 @@ permissions:
   contents: read # check out the code
 
 concurrency:
-  # A pull request's newer push cancels its older run; every push to dev runs to the end.
+  # A pull request's newer push cancels its older run; every push to dev and every merge
+  # queue group runs to the end.
   group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
@@ -66,9 +71,11 @@ jobs:
       - id: areas
         env:
           EVENT: ${{ github.event_name }}
-          BASE_REF: ${{ github.base_ref }}
+          # A pull request's base branch, or a merge queue group's (refs/heads/...).
+          BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref }}
           REF: ${{ github.ref }}
           BEFORE: ${{ github.event.before }}
+          BASE_SHA: ${{ github.event.merge_group.base_sha }}
           SHA: ${{ github.sha }}
         run: .github/scripts/ci-changes.sh
 

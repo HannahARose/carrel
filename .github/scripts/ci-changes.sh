@@ -4,25 +4,37 @@
 #   cache=true|false  restore caches (false for pull requests into main: a clean build)
 #   save=true|false   save caches (only on dev, outside pull requests)
 #
-# Everything runs for the weekly schedule, a manual run, a pull request into main, a change to
-# any workflow, or when the changed files can't be worked out.
+# Everything runs for the weekly schedule, a manual run, a pull request or merge queue group
+# into main, a change to any workflow, or when the changed files can't be worked out.
 #
-# Reads EVENT (github.event_name), BASE_REF (github.base_ref), REF (github.ref), BEFORE
-# (github.event.before) and SHA (github.sha). Needs the full history checked out. To try it
+# Reads EVENT (github.event_name), BASE_REF (the pull request's or merge queue group's base
+# branch), REF (github.ref), BEFORE (github.event.before), BASE_SHA
+# (github.event.merge_group.base_sha) and SHA (github.sha). Needs the full history checked out. To try it
 # locally: EVENT=push BEFORE=<commit> SHA=HEAD .github/scripts/ci-changes.sh
 set -euo pipefail
 
 out=${GITHUB_OUTPUT:-/dev/null}
 all=false
 files=()
+# A merge queue names its base as refs/heads/<branch>.
+base=${BASE_REF:-}
+base=${base#refs/heads/}
+into_main=false
+if { [ "$EVENT" = pull_request ] || [ "$EVENT" = merge_group ]; } && [ "$base" = main ]; then
+  into_main=true
+fi
 
-if [ "$EVENT" = pull_request ] && [ "${BASE_REF:-}" = main ]; then
-  echo "A pull request into main: running everything, from a clean build."
+if [ "$into_main" = true ]; then
+  echo "A $EVENT into main: running everything, from a clean build."
   all=true
 elif [ "$EVENT" = pull_request ]; then
   # The checkout is GitHub's merge of the pull request into its base, so the first parent is
   # the base as merged against.
   range=(HEAD^1 HEAD)
+elif [ "$EVENT" = merge_group ] && [ -n "${BASE_SHA:-}" ] \
+  && git cat-file -e "$BASE_SHA^{commit}" 2> /dev/null; then
+  # The queue's combined commit, against the base branch it will land on.
+  range=("$BASE_SHA" "$SHA")
 elif [ "$EVENT" = push ] && [ -n "${BEFORE:-}" ] && [ "${BEFORE//0/}" != "" ] \
   && git cat-file -e "$BEFORE^{commit}" 2> /dev/null; then
   range=("$BEFORE" "$SHA")
@@ -96,9 +108,10 @@ area deny Cargo.toml Cargo.lock 'crates/*/Cargo.toml' deny.toml
 area workflows '.github/*'
 
 cache=true
-if [ "$EVENT" = pull_request ] && [ "${BASE_REF:-}" = main ]; then
+if [ "$into_main" = true ]; then
   cache=false
 fi
+# A merge queue group's ref is refs/heads/gh-readonly-queue/..., so it saves nothing either.
 save=false
 if [ "$EVENT" != pull_request ] && [ "${REF:-}" = refs/heads/dev ]; then
   save=true
