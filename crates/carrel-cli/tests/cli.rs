@@ -2882,14 +2882,12 @@ fn init_sample(sandbox: &Sandbox, root: &Path) {
 
 const LAMP_PROPOSAL: &str = "01a18701-0500-776a-9867-08f000000001";
 
-#[test]
-fn questions_are_ranked_skipped_and_answered_by_picking_a_suggestion() {
-    let sandbox = Sandbox::new();
-    let root = sandbox.sample();
-    init_sample(&sandbox, &root);
-    // A question as ingest wrote them before suggestions, skipping and the new kinds.
+/// Three questions about the sample's lamp proposal: a term, as ingest wrote them before
+/// suggestions, skipping and the new kinds; a group with suggestions; and the term again,
+/// written differently, which merges into the first.
+fn write_lamp_questions(root: &Path) {
     write_question(
-        &root,
+        root,
         &json!({
             "carrel": "question", "format": "1.0",
             "id": "01a18701-0500-776a-9867-08f0000000a1",
@@ -2900,7 +2898,7 @@ fn questions_are_ranked_skipped_and_answered_by_picking_a_suggestion() {
         }),
     );
     write_question(
-        &root,
+        root,
         &json!({
             "carrel": "question", "format": "1.0",
             "id": "01a18701-0500-776a-9867-08f0000000a2",
@@ -2915,9 +2913,8 @@ fn questions_are_ranked_skipped_and_answered_by_picking_a_suggestion() {
             ]
         }),
     );
-    // The same question again, written differently: it merges into the first.
     write_question(
-        &root,
+        root,
         &json!({
             "carrel": "question", "format": "1.0",
             "id": "01a18701-0500-776a-9867-08f0000000a3",
@@ -2926,6 +2923,14 @@ fn questions_are_ranked_skipped_and_answered_by_picking_a_suggestion() {
             "items": [LAMP_PROPOSAL]
         }),
     );
+}
+
+#[test]
+fn questions_are_ranked_skipped_and_answered_by_picking_a_suggestion() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    init_sample(&sandbox, &root);
+    write_lamp_questions(&root);
 
     let listed = sandbox.json(&root, &["questions"]);
     let ids: Vec<&str> = listed["questions"]

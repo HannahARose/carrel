@@ -263,7 +263,10 @@ fn a_recurring_sender_mostly_in_one_collection_asks_for_its_own() {
     assert!(sender.suggestions[1].no_change);
 
     // Too few, and nothing is asked.
-    assert!(about::senders(&named[..1], &proposals[..1], &context).is_empty());
+    assert_eq!(
+        about::senders(&named[..1], &proposals[..1], &context).len(),
+        0
+    );
 }
 
 #[test]
@@ -337,7 +340,7 @@ fn tidying_drops_what_the_glossary_answers_and_frees_its_proposals() {
         "{:?}",
         ranked.answered
     );
-    assert!(QuestionQueue::of(&archive).list().unwrap().0.is_empty());
+    assert_eq!(QuestionQueue::of(&archive).list().unwrap().0.len(), 0);
     let entry = review.find(&entries[0].id.to_string()).unwrap();
     assert_eq!(entry.state, State::Proposed, "{:?}", entry.problems);
 }
@@ -358,5 +361,8 @@ fn a_text_model_suggests_answers_and_none_means_no_suggestions() {
     let suggested = suggest::with_model(&registry, &question, "Title: IMG_2041");
     let answers: Vec<&str> = suggested.iter().map(|s| s.answer.as_str()).collect();
     assert_eq!(answers, ["Lake Annecy at dusk", "A lake in the Alps"]);
-    assert!(suggest::with_model(&Registry::new(), &question, "").is_empty());
+    assert_eq!(
+        suggest::with_model(&Registry::new(), &question, "").len(),
+        0
+    );
 }

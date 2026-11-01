@@ -400,16 +400,6 @@ fn draw_confirm(frame: &mut Frame, confirm: &Confirm, theme: Theme, area: Rect) 
             about.clone(),
             " download   ",
         ),
-        Confirm::Rule { subject, path, .. } => (
-            " Routing rule ",
-            format!("Gather “{subject}” in {path}, and file future items there too?"),
-            format!(
-                "Its items go to {path} now, each an undoable move, creating the collection if \
-                 it's new. Saying yes also adds a routing rule, so items named for “{subject}” \
-                 go there from now on."
-            ),
-            " with a rule   ",
-        ),
         Confirm::Learn { about, fact } => (
             " Glossary ",
             format!("Add “{about}” to the glossary?"),
@@ -659,6 +649,36 @@ fn draw_picker(frame: &mut Frame, picker: &Picker, theme: Theme, area: Rect) {
     );
 }
 
+/// A question's suggestions, numbered, each with why it's likely.
+fn suggestion_lines(
+    question: &carrel_core::questions::QuestionEntry,
+    theme: Theme,
+) -> Vec<Line<'static>> {
+    question
+        .suggestions
+        .iter()
+        .enumerate()
+        .map(|(i, suggestion)| {
+            let mut spans = vec![
+                Span::styled(format!("{}", i + 1), theme.key()),
+                Span::raw(format!("  {}", suggestion.answer)),
+            ];
+            let mut notes = Vec::new();
+            if suggestion.new_collection {
+                notes.push("new".to_owned());
+            }
+            notes.extend(suggestion.why.clone());
+            if !notes.is_empty() {
+                spans.push(Span::styled(
+                    format!("  ({})", notes.join("; ")),
+                    theme.dim(),
+                ));
+            }
+            Line::from(spans)
+        })
+        .collect()
+}
+
 fn draw_questions(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
     use carrel_core::questions::QuestionKind;
     if app.asked.is_empty() {
@@ -714,24 +734,7 @@ fn draw_questions(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
     }
     if !question.suggestions.is_empty() {
         lines.push(Line::from(""));
-        for (i, suggestion) in question.suggestions.iter().enumerate() {
-            let mut spans = vec![
-                Span::styled(format!("{}", i + 1), theme.key()),
-                Span::raw(format!("  {}", suggestion.answer)),
-            ];
-            let mut notes = Vec::new();
-            if suggestion.new_collection {
-                notes.push("new".to_owned());
-            }
-            notes.extend(suggestion.why.clone());
-            if !notes.is_empty() {
-                spans.push(Span::styled(
-                    format!("  ({})", notes.join("; ")),
-                    theme.dim(),
-                ));
-            }
-            lines.push(Line::from(spans));
-        }
+        lines.extend(suggestion_lines(question, theme));
     }
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(

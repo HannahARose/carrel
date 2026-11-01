@@ -226,7 +226,7 @@ impl App {
             });
         }
         match question.kind {
-            QuestionKind::Item => self.answer_item(question, &suggestion.answer),
+            QuestionKind::Item => Self::answer_item(question, &suggestion.answer),
             QuestionKind::Sender => {
                 self.confirm = Some(super::app::Confirm::Rule {
                     id: question.id,
@@ -245,7 +245,7 @@ impl App {
     }
 
     /// Answers the item `question` with `answer`, through the corrections pop-up.
-    fn answer_item(&mut self, question: &QuestionEntry, answer: &str) -> Option<Effect> {
+    fn answer_item(question: &QuestionEntry, answer: &str) -> Option<Effect> {
         use carrel_core::questions::answer::{Target, item_words, target};
         let target = match target(question)? {
             Target::Proposal(id) => Correcting::Proposal(id),
@@ -262,7 +262,7 @@ impl App {
     fn typed_answer(&mut self, id: Id, text: String) -> Option<Effect> {
         let question = self.asked.iter().find(|q| q.id == id)?.clone();
         match question.kind {
-            QuestionKind::Item => self.answer_item(&question, &text),
+            QuestionKind::Item => Self::answer_item(&question, &text),
             QuestionKind::Sender if !matches!(text.to_lowercase().as_str(), "no" | "n") => {
                 let path = if matches!(text.to_lowercase().as_str(), "yes" | "y") {
                     question

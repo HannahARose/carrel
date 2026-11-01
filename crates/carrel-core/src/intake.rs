@@ -407,7 +407,7 @@ pub fn ask_with_waiting(archive: &Archive, new: &[Id]) -> Result<Vec<QuestionEnt
             .into_iter()
             .filter(|q| q.items.iter().any(|id| new.contains(id))),
     );
-    Ok(crate::questions::answer::raise(archive, asked)?)
+    crate::questions::answer::raise(archive, asked)
 }
 
 fn now() -> DateOrTime {

@@ -12,6 +12,8 @@
 //! - Nothing here adds a glossary fact or a routing rule by itself: [`add_rule`] is called only
 //!   once the owner has said yes to the rule.
 
+use std::fmt::Write as _;
+
 use crate::actions::{ActionError, Moved, collection, waiting};
 use crate::archive::{Archive, Collection};
 use crate::card::Id;
@@ -130,6 +132,9 @@ pub fn place(
     })
 }
 
+/// The items refiled, each its title and history commit, and why others couldn't be.
+type Refiles = (Vec<(String, Option<String>)>, Vec<String>);
+
 /// Refiles `question`'s filed items into `target`, each as its own undoable move. Returns the
 /// items refiled, with their commits, and why others couldn't be.
 fn refile_all(
@@ -137,7 +142,7 @@ fn refile_all(
     question: &QuestionEntry,
     target: &Collection,
     holder: Holder,
-) -> Result<(Vec<(String, Option<String>)>, Vec<String>), ActionError> {
+) -> Result<Refiles, ActionError> {
     if question.about.is_empty() {
         return Ok((Vec::new(), Vec::new()));
     }
@@ -306,12 +311,14 @@ pub fn add_rule(
             text = "rules:".into();
         }
         let name = format!("{subject} → {}", target.path);
-        text.push_str(&format!(
+        write!(
+            text,
             "\n  - name: {}\n    match: {{ name: {} }}\n    collection: {}\n",
             quoted(&name),
             quoted(&name_pattern(subject)),
             target.doc.id
-        ));
+        )
+        .expect("writing to a string");
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(io)?;
         }

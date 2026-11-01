@@ -241,6 +241,30 @@ fn event_loop(
     Ok(())
 }
 
+/// Skips or dismisses a question, as `effect` says.
+fn settle_question(root: &Path, effect: &Effect) -> Result<String, String> {
+    let result = match effect {
+        Effect::Skip(id) => crate::questions::skip(Some(root), &id.to_string()),
+        Effect::Dismiss(id) => crate::questions::dismiss(Some(root), &id.to_string()),
+        _ => return Ok(String::new()),
+    };
+    result.map(|r| r.text).map_err(|Failure(e)| e)
+}
+
+/// Answering a question, in the background: a term's answer queues its items to be drafted
+/// again by the worker, and a sender's adds a routing rule if the owner said yes (`learn`).
+fn answer_work(root: PathBuf, id: Id, answer: String, learn: bool) -> (String, Work) {
+    let id = id.to_string();
+    let options = crate::questions::Options {
+        learn,
+        ..crate::questions::Options::default()
+    };
+    (
+        "Answering…".into(),
+        Box::new(move || crate::questions::answer(Some(&root), &id, &[answer], options)),
+    )
+}
+
 /// Shows how work went and reads everything again.
 fn finished(app: &mut App, result: Result<String, String>) {
     let text = match result {
@@ -390,9 +414,8 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
         | Effect::Pick(_)
         | Effect::Correction(_)
         | Effect::Open(_) => return None,
-        Effect::Dismiss(id) => {
-            let result = crate::questions::dismiss(Some(&root), &id.to_string());
-            finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
+        effect @ (Effect::Dismiss(_) | Effect::Skip(_)) => {
+            finished(app, settle_question(&root, &effect));
             return None;
         }
         Effect::SetSetting { key, value } => {
@@ -422,23 +445,7 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
             finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
             return None;
         }
-        Effect::Answer { id, answer, learn } => {
-            // A term's answer queues its items to be drafted again by the worker.
-            let id = id.to_string();
-            let options = crate::questions::Options {
-                learn,
-                ..crate::questions::Options::default()
-            };
-            (
-                "Answering…".into(),
-                Box::new(move || crate::questions::answer(Some(&root), &id, &[answer], options)),
-            )
-        }
-        Effect::Skip(id) => {
-            let result = crate::questions::skip(Some(&root), &id.to_string());
-            finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
-            return None;
-        }
+        Effect::Answer { id, answer, learn } => answer_work(root, id, answer, learn),
         Effect::Decide {
             ids: chosen,
             holding,

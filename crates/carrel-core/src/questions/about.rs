@@ -214,7 +214,7 @@ pub fn item(
         .filter(|p| !known.contains(&p.to_lowercase()))
     {
         let mut question = about_item(item, card, format!("Who is {person}?"));
-        question.subject = person.to_owned();
+        person.clone_into(&mut question.subject);
         questions.push(question);
     }
 
@@ -318,7 +318,7 @@ pub fn senders(
                 None => places.push((place, 1)),
             }
         }
-        places.sort_by(|a, b| b.1.cmp(&a.1));
+        places.sort_by_key(|p| std::cmp::Reverse(p.1));
         let Some(&(main, most)) = places.first() else {
             continue;
         };
