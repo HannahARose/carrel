@@ -119,7 +119,7 @@ What you're working on: items **checked out** to a working copy, and folders and
 | --- | --- | --- |
 | | Check Out… (⌥⌘C) | Checks out the item chosen in Browse: choose where the working copy goes and when it's due back. The archive copy is read only until you return it |
 | | Add to Desk… (⌥⌘D) | Puts a folder or file on the desk, to work on where it is |
-| `r` | Return… (⌥⌘R) | Shows what comes back, and the entry it adds, then returns it |
+| `r` | Return… (⌥⌘R) | Shows what comes back, and the entry it adds, then returns it. The working copy then goes to the Trash, stays, or you're asked, as Settings → General's “After a return” says |
 | `x` | Cancel Checkout… (⌥⌘⌫) | Asks first, then unlocks the archive copy as it was. Changes in the working copy aren't brought back, and the working copy stays where it is |
 | `o` | Show Working Copy in Finder (⌥⌘O) | |
 | `a` | Approve Entries (⌥⌘A) | Adds the chosen entries to the Journal |
