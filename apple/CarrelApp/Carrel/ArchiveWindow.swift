@@ -220,7 +220,8 @@ private struct Inspector: View {
         {
             QuestionInspector(
                 question: question, questions: questions,
-                collections: model.collections.map(\.path))
+                collections: model.collections.map(\.path)
+            ) { id in model.items.first { $0.id == id }?.title }
         } else if model.screen == .restructure, let restructure = model.restructure,
             let proposal = restructure.selected
         {
@@ -246,6 +247,8 @@ private struct Inspector: View {
                         archive: model.archive, open: model.open(item:)
                     ) {
                         ItemActions(model: model, item: item)
+                    } below: {
+                        ItemQuestionsSection(item: item, window: model)
                     }
                 }
                 .id(item.id)

@@ -10,15 +10,26 @@ struct CorrectionSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Correct “\(correction.target.title)”").font(.headline)
+            Text(
+                correction.target.isAnswer
+                    ? correction.target.title : "Correct “\(correction.target.title)”"
+            )
+            .font(.headline)
             switch correction.stage {
             case .writing:
-                Text("Say what’s wrong, in your own words: a title, a date, where it belongs.")
-                    .foregroundStyle(.secondary)
-                TextField("Correction", text: $correction.words, axis: .vertical)
-                    .lineLimit(3...8)
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit { Task { await correction.prepare() } }
+                Text(
+                    correction.target.isAnswer
+                        ? "Answer in your own words; you see what it changes on the card before anything is saved."
+                        : "Say what’s wrong, in your own words: a title, a date, where it belongs."
+                )
+                .foregroundStyle(.secondary)
+                TextField(
+                    correction.target.isAnswer ? "Answer" : "Correction", text: $correction.words,
+                    axis: .vertical
+                )
+                .lineLimit(3...8)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit { Task { await correction.prepare() } }
             case .preparing:
                 ProgressView {
                     Text(correction.archive.progress?.title ?? "Working out the correction")
@@ -30,6 +41,8 @@ struct CorrectionSheet: View {
                 Label(
                     saved.filed ? "Saved; undo it from History." : "Saved to the proposal.",
                     systemImage: "checkmark.circle")
+            case .settled:
+                Label("Answered; the card stays as it is.", systemImage: "checkmark.circle")
             }
             if let problem = correction.problem {
                 Label(problem, systemImage: "exclamationmark.triangle")
@@ -57,10 +70,15 @@ struct CorrectionSheet: View {
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }
                     .keyboardShortcut(.cancelAction)
-                Button("Confirm") { Task { await correction.confirm() } }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(changes.isEmpty)
-            case .saved:
+                if changes.isEmpty, correction.target.isAnswer {
+                    Button("Mark Answered") { Task { await correction.settle() } }
+                        .keyboardShortcut(.defaultAction)
+                } else {
+                    Button("Confirm") { Task { await correction.confirm() } }
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(changes.isEmpty)
+                }
+            case .saved, .settled:
                 Spacer()
                 Button("Done") { dismiss() }
                     .keyboardShortcut(.defaultAction)

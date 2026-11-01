@@ -56,6 +56,8 @@ public final class ArchiveModel {
     public private(set) var review = ReviewList(batches: [], unreadable: [])
     /// The questions waiting, those holding up the most proposals first.
     public private(set) var questions: [Question] = []
+    /// The questions resting after a skip, the soonest back first.
+    public private(set) var skippedQuestions: [Question] = []
     /// The restructure proposals waiting, oldest first.
     public private(set) var restructureProposals: [RestructureProposal] = []
     /// The crawler's findings waiting in Review, oldest first.
@@ -163,6 +165,7 @@ public final class ArchiveModel {
     /// Reads the questions again.
     public func refreshQuestions() async throws {
         questions = try await call { try $0.questions() }
+        skippedQuestions = try await call { try $0.skippedQuestions() }
     }
 
     /// Reads the crawler's findings waiting in Review again.
@@ -288,7 +291,8 @@ public final class ArchiveModel {
         try await refreshReview()
     }
 
-    /// Answers the question `id`: a term's meaning, or a collection's path.
+    /// Answers the question `id`: a suggestion's number or words, a term's meaning, a
+    /// collection's path, or a sender's yes or no.
     @discardableResult
     public func answer(_ id: String, with answer: String) async throws -> Answered {
         let answered = try await call { try $0.answerQuestion(id: id, answer: answer) }
@@ -333,6 +337,8 @@ public final class ArchiveModel {
     @discardableResult
     public func save(_ correction: Correction) async throws -> SavedCorrection {
         let saved = try await call { try $0.saveCorrection(correction: correction) }
+        // One answering an item question takes the question off the queue.
+        try await refreshQuestions()
         try await changed { try await $0.refreshReview() }
         return saved
     }
