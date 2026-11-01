@@ -1,6 +1,6 @@
 # Getting started
 
-This walks you from nothing to your first files filed in a Carrel archive, in about twenty minutes. It uses the `carrel` command-line tool and its interactive mode; the Mac app comes in v0.5. For what each part means and everything else Carrel does, see the [User guide](user-guide.md).
+This walks you from nothing to your first files filed in a Carrel archive, in about twenty minutes. It uses the `carrel` command-line tool and its interactive mode. On a Mac you can do the same in the Mac app, which shares the archive with them: see [The Mac app](mac-app.md). For what each part means and everything else Carrel does, see the [User guide](user-guide.md).
 
 ## What Carrel does
 
@@ -149,4 +149,5 @@ From then on, each approved batch takes a snapshot.
 
 - The [User guide](user-guide.md) explains each part in more depth: sensitivity, questions, renaming, settings and more.
 - The [Commands](commands.md) page lists every command and option.
+- [The Mac app](mac-app.md) covers getting the app, its screens and its background agent.
 - To contribute, start with the [Architecture](../dev/architecture.md) page.
