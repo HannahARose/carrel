@@ -59,6 +59,8 @@ pub struct Options {
     pub resolution: Resolution,
     /// Search's filters; `after:` and `before:` apply to the date the timeline goes by.
     pub filters: Filters,
+    /// Only these items, when given, such as those a search's words found ([`matching`]).
+    pub only: Option<HashSet<Id>>,
 }
 
 /// One item on the timeline.
@@ -131,14 +133,17 @@ fn as_found(entry: &Entry, date: Date) -> FoundItem {
     }
 }
 
-/// The timeline of `catalog`, as `options` asks for, of only the items in `only` when given
-/// (such as those a search's words found, from [`matching`]).
+/// The timeline of `catalog`, as `options` asks for.
 #[must_use]
-pub fn timeline(catalog: &Catalog, options: &Options, only: Option<&HashSet<Id>>) -> Timeline {
+pub fn timeline(catalog: &Catalog, options: &Options) -> Timeline {
     let mut periods: BTreeMap<String, Vec<Placed>> = BTreeMap::new();
     let mut undated = 0;
     for entry in &catalog.entries {
-        if only.is_some_and(|only| !only.contains(&entry.item.id)) {
+        if options
+            .only
+            .as_ref()
+            .is_some_and(|only| !only.contains(&entry.item.id))
+        {
             continue;
         }
         let dates = placings(entry, options.by);
@@ -240,7 +245,7 @@ mod tests {
 
     #[test]
     fn items_are_placed_by_their_own_date_unless_asked() {
-        let t = timeline(&catalog(), &Options::default(), None);
+        let t = timeline(&catalog(), &Options::default());
         assert_eq!(
             periods(&t),
             [("2019-04", vec!["Lease"]), ("2025-01", vec!["Notes"])]
@@ -252,7 +257,7 @@ mod tests {
             by: Some(DateKind::Worked),
             ..Options::default()
         };
-        let t = timeline(&catalog(), &worked, None);
+        let t = timeline(&catalog(), &worked);
         assert_eq!(
             periods(&t),
             [("2025-02", vec!["Notes"]), ("2025-03", vec!["Notes"])],
@@ -269,7 +274,7 @@ mod tests {
             resolution: Resolution::Year,
             ..Options::default()
         };
-        let t = timeline(&catalog(), &by_year, None);
+        let t = timeline(&catalog(), &by_year);
         assert_eq!(periods(&t), [("2025", vec!["Lease", "Notes"])]);
 
         let filtered = Options {
@@ -277,7 +282,7 @@ mod tests {
             filters: Query::parse("tag:housing after:2019").unwrap().filters,
             ..Options::default()
         };
-        let t = timeline(&catalog(), &filtered, None);
+        let t = timeline(&catalog(), &filtered);
         assert_eq!(periods(&t), [("2019-04-02", vec!["Lease"])]);
         assert_eq!(t.undated, 0, "the undated item hasn't the tag");
 
@@ -286,12 +291,15 @@ mod tests {
             ..Options::default()
         };
         assert_eq!(
-            periods(&timeline(&catalog(), &before, None)),
+            periods(&timeline(&catalog(), &before)),
             [("2019-04", vec!["Lease"])]
         );
 
-        let only: HashSet<Id> = [Id(uuid::Uuid::from_u128(2))].into();
-        let t = timeline(&catalog(), &Options::default(), Some(&only));
+        let only = Options {
+            only: Some([Id(uuid::Uuid::from_u128(2))].into()),
+            ..Options::default()
+        };
+        let t = timeline(&catalog(), &only);
         assert_eq!(periods(&t), [("2025-01", vec!["Notes"])]);
     }
 }

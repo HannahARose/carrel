@@ -86,7 +86,7 @@ pub fn on_this_day(catalog: &Catalog, date: Date) -> OnThisDay {
             }
         }
     }
-    years.sort_by(|a, b| b.year.cmp(&a.year));
+    years.sort_by_key(|y| std::cmp::Reverse(y.year));
     OnThisDay {
         date: date.to_string(),
         years,
@@ -136,7 +136,7 @@ mod tests {
         leap.created = Some(date("2024-02-29"));
         let catalog = Catalog::new(vec![leap], Vec::new());
         assert_eq!(on_this_day(&catalog, date("2025-02-28")).years.len(), 1);
-        assert!(on_this_day(&catalog, date("2028-02-28")).years.is_empty());
+        assert_eq!(on_this_day(&catalog, date("2028-02-28")).years, []);
         assert_eq!(on_this_day(&catalog, date("2028-02-29")).years.len(), 1);
     }
 }

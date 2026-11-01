@@ -418,6 +418,26 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn the_sample_archive_is_read_into_a_catalog() {
+        let root =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/sample-archive");
+        let archive = Archive::open(&root).unwrap();
+        let catalog = Catalog::read(&archive).unwrap();
+        assert_eq!(catalog.entries.len(), 11);
+        let sim = catalog
+            .entries
+            .iter()
+            .find(|e| e.item.card == "Projects/oscillator-sim.md")
+            .unwrap();
+        assert_eq!(sim.created, Some(date("2026-09-01")));
+        assert_eq!(sim.worked, [date("2026-10-27"), date("2026-10-28")]);
+        assert_eq!(sim.links[0].0, "derived-from");
+        assert_eq!(catalog.get(sim.item.id), Some(sim));
+        assert_eq!(catalog.last_touched("Projects"), Some(date("2026-10-28")));
+        assert!(catalog.collection("Projects/Hardware").is_some());
+    }
+
+    #[test]
     fn a_card_becomes_an_entry_with_its_days() {
         let text = "---\ncarrel: card\nformat: \"1.0\"\nid: 01a18701-0500-776a-9867-080924eb019c\nkind: file\ntitle: Lease\nitem: lease.pdf\nsize: 10\ndates:\n  document: \"2019-04-02\"\n  added: \"2025-01-05T10:00:00Z\"\n  worked: \"2025-03-01\"\nsensitivity: personal\n---\n";
         let file = CardFile::parse(text).unwrap();

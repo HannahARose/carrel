@@ -11,6 +11,7 @@ mod commands;
 mod config;
 mod correct;
 mod desk;
+mod discover;
 mod edit;
 mod expand;
 mod findability;
@@ -235,6 +236,12 @@ enum Command {
     Backup {
         #[command(subcommand)]
         action: BackupAction,
+    },
+    /// Discover the archive: what happened on this day in other years, a walk through the
+    /// stacks, a timeline, a map of what takes up the space, and when you filed and worked.
+    Discover {
+        #[command(subcommand)]
+        action: Option<DiscoverAction>,
     },
     /// Questions ingest needs you to answer, most items first.
     Questions {
@@ -492,6 +499,64 @@ enum BackupAction {
         /// Where to restore it; it must not exist yet.
         #[arg(long)]
         to: Option<PathBuf>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum DiscoverAction {
+    /// What was made, filed or worked on on this day in other years (the default).
+    Today {
+        /// Another day than today, such as 2025-03-14.
+        #[arg(long, value_name = "DATE")]
+        date: Option<String>,
+    },
+    /// Wander the stacks: one item at a time, each with why it came next: a link, an item
+    /// near it in meaning, a neighbour in its collection, or a jump somewhere you haven't been
+    /// in a while. In a terminal, Enter takes the next step.
+    Wander {
+        /// The item to start from: its identifier, or its card's or contents' path.
+        item: Option<String>,
+        /// The walk's seed: the same seed from the same item takes the same steps.
+        #[arg(long, value_name = "NUMBER")]
+        seed: Option<u64>,
+        /// How many steps to take when not in a terminal.
+        #[arg(short = 'n', long, value_name = "COUNT", default_value_t = 1)]
+        steps: usize,
+        /// Go on with the last walk.
+        #[arg(long, conflicts_with_all = ["item", "seed"])]
+        next: bool,
+    },
+    /// Items by date, by year, month or day, narrowed by words and search's filters such as
+    /// collection:Finances, tag:receipts, after:2025-01 and before:2026.
+    Timeline {
+        /// Words and filters, as search takes them.
+        #[arg(value_name = "QUERY")]
+        query: Vec<String>,
+        /// Which date: created, filed or worked. Defaults to when each item was made, else
+        /// filed.
+        #[arg(long, value_name = "DATE")]
+        by: Option<String>,
+        /// Group by year, month or day.
+        #[arg(long, value_name = "PERIOD", default_value = "month")]
+        per: String,
+        /// List at most this many items in each period.
+        #[arg(long, value_name = "COUNT", default_value_t = 5)]
+        items: usize,
+    },
+    /// Collections by total size and number of items, as a tree, largest first.
+    Map {
+        /// Show only this many levels of collections.
+        #[arg(long, value_name = "LEVELS")]
+        depth: Option<usize>,
+    },
+    /// When items were filed and worked on, by day, as a heatmap. Defaults to the last year.
+    Activity {
+        /// The first day.
+        #[arg(long, value_name = "DATE")]
+        from: Option<String>,
+        /// The last day.
+        #[arg(long, value_name = "DATE")]
+        to: Option<String>,
     },
 }
 
@@ -831,15 +896,10 @@ fn main() -> ExitCode {
             discard,
             trim_snapshots,
         ),
-        Command::Collection { action } => match action {
-            CollectionAction::New {
-                path,
-                description,
-                tags,
-            } => commands::collection_new(cli.archive.as_deref(), &path, description, &tags),
-        },
+        Command::Collection { action } => collection_command(cli.archive.as_deref(), action),
         Command::Backup { action } => backup_command(cli.archive.as_deref(), action),
         Command::Questions { action } => questions_command(cli.archive.as_deref(), action),
+        Command::Discover { action } => discover_command(cli.archive.as_deref(), action, cli.json),
         Command::Bench(args) => bench::bench(&args, cli.json),
         Command::Models { action } => models_command(
             action.unwrap_or(ModelsAction::List),
@@ -874,6 +934,64 @@ fn index_command(
         Some(IndexAction::Model { name: None }) => index::models(archive),
         Some(IndexAction::Model { name: Some(name) }) => index::switch_to(archive, &name, json),
         None | Some(IndexAction::Status) => index::status(archive),
+    }
+}
+
+/// `carrel collection` and its subcommands.
+fn collection_command(
+    archive: Option<&std::path::Path>,
+    action: CollectionAction,
+) -> Result<Report, Failure> {
+    match action {
+        CollectionAction::New {
+            path,
+            description,
+            tags,
+        } => commands::collection_new(archive, &path, description, &tags),
+    }
+}
+
+/// `carrel discover` and its subcommands.
+fn discover_command(
+    archive: Option<&std::path::Path>,
+    action: Option<DiscoverAction>,
+    json: bool,
+) -> Result<Report, Failure> {
+    match action.unwrap_or(DiscoverAction::Today { date: None }) {
+        DiscoverAction::Today { date } => discover::on_this_day(archive, date.as_deref()),
+        DiscoverAction::Wander {
+            item,
+            seed,
+            steps,
+            next,
+        } => discover::wander(
+            archive,
+            &discover::WanderArgs {
+                item,
+                seed,
+                steps,
+                next,
+            },
+            json,
+        ),
+        DiscoverAction::Timeline {
+            query,
+            by,
+            per,
+            items,
+        } => discover::timeline(
+            archive,
+            &discover::TimelineArgs {
+                query,
+                by,
+                per,
+                items,
+            },
+        ),
+        DiscoverAction::Map { depth } => discover::map(archive, depth),
+        DiscoverAction::Activity { from, to } => {
+            discover::activity(archive, from.as_deref(), to.as_deref())
+        }
     }
 }
 

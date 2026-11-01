@@ -140,8 +140,8 @@ impl Visits {
             .iter()
             .filter(|c| c.path != "Holding")
             .filter_map(|c| {
-                let seen = self.last_seen(catalog, &c.path)?;
-                let days = days_between(seen, today);
+                let last = self.last_seen(catalog, &c.path)?;
+                let days = days_between(last, today);
                 let items: Vec<&Item> = catalog.in_collection(&c.path).map(|e| &e.item).collect();
                 (days >= FORGOTTEN_DAYS && !items.is_empty()).then(|| {
                     let mut rng = Rng::new(seed ^ hash(&c.path));
@@ -153,7 +153,7 @@ impl Visits {
                     Forgotten {
                         collection: c.path.clone(),
                         title: c.title.clone(),
-                        last_seen: seen.to_string(),
+                        last_seen: last.to_string(),
                         days,
                         items: chosen,
                     }
@@ -239,7 +239,7 @@ mod tests {
 
         assert!(visits.open("Letters", date("2026-06-01")));
         assert!(!visits.open("Letters", date("2026-06-01")), "nothing new");
-        assert!(visits.forgotten(&catalog, today, 1).is_empty());
+        assert_eq!(visits.forgotten(&catalog, today, 1), []);
         assert_eq!(
             visits.forgotten(&catalog, date("2027-06-01"), 1)[0].last_seen,
             "2026-06-01"

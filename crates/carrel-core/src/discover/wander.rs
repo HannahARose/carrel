@@ -2,8 +2,9 @@
 //! came next: an item it links to or that links to it, one near it by meaning, a neighbour in
 //! its collection, or now and then a jump to a collection not opened in a long time.
 //!
-//! A walk is reproducible: the same seed from the same item, over the same archive, takes the
-//! same steps. It never visits an item twice. A restricted item can be visited, by its card,
+//! A walk is reproducible: the same seed from the same item, over the same archive and with the
+//! same record of which collections were opened when ([`Walk::remembering`]), takes the same
+//! steps, however often it's stopped and taken up again. It never visits an item twice. A restricted item can be visited, by its card,
 //! but its text is never shown.
 //!
 //! ```
@@ -15,7 +16,7 @@
 //! assert!(walk.step(&catalog, &around).is_none(), "an empty archive has nowhere to go");
 //! ```
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
 use jiff::civil::Date;
 use serde::{Deserialize, Serialize};
@@ -99,8 +100,6 @@ pub struct Surroundings<'a> {
     pub near: Option<&'a dyn Fn(Id) -> Vec<(Id, f32)>>,
     /// The text cache, for previews.
     pub texts: Option<&'a TextCache>,
-    /// Which collections this device opened when, for jumps.
-    pub visits: Option<&'a Visits>,
 }
 
 impl std::fmt::Debug for Surroundings<'_> {
@@ -108,7 +107,6 @@ impl std::fmt::Debug for Surroundings<'_> {
         f.debug_struct("Surroundings")
             .field("near", &self.near.is_some())
             .field("texts", &self.texts.is_some())
-            .field("visits", &self.visits)
             .finish()
     }
 }
@@ -126,7 +124,6 @@ impl<'a> Surroundings<'a> {
         Self {
             near: None,
             texts: None,
-            visits: None,
         }
     }
 
@@ -141,13 +138,6 @@ impl<'a> Surroundings<'a> {
     #[must_use]
     pub fn with_texts(mut self, texts: &'a TextCache) -> Self {
         self.texts = Some(texts);
-        self
-    }
-
-    /// With `visits` for which collections were opened when.
-    #[must_use]
-    pub fn with_visits(mut self, visits: &'a Visits) -> Self {
-        self.visits = Some(visits);
         self
     }
 }
@@ -175,6 +165,10 @@ pub struct Walk {
     /// The items it has visited, in order.
     #[serde(default)]
     pub visited: Vec<Id>,
+    /// The day each collection had last been opened on this device when the walk began, by
+    /// path, so its jumps don't change as it opens them.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub opened: BTreeMap<String, String>,
 }
 
 /// The start of `text`, cut at a word, with an ellipsis when there's more.
@@ -199,7 +193,15 @@ impl Walk {
             seed,
             start,
             visited: Vec::new(),
+            opened: BTreeMap::new(),
         }
+    }
+
+    /// The walk, jumping to the collections `visits` says were opened longest ago.
+    #[must_use]
+    pub fn remembering(mut self, visits: &Visits) -> Self {
+        self.opened.clone_from(&visits.opened);
+        self
     }
 
     /// The item the walk is at: the last visited, else where it started.
@@ -225,7 +227,7 @@ impl Walk {
             _ => None,
         };
         let (entry, reason) = followed.or_else(|| {
-            let (entry, last_seen) = jump(catalog, around, current, &seen, &mut rng)?;
+            let (entry, last_seen) = jump(catalog, &self.opened, current, &seen, &mut rng)?;
             let collection = entry.item.collection.clone();
             Some(match current {
                 None => (entry, Reason::Start { collection }),
@@ -336,13 +338,15 @@ fn follow<'a>(
 /// visited, away from the one it's in when there's another; and when it was last seen.
 fn jump<'a>(
     catalog: &'a Catalog,
-    around: &Surroundings,
+    opened: &BTreeMap<String, String>,
     current: Option<&Entry>,
     seen: &HashSet<Id>,
     rng: &mut Rng,
 ) -> Option<(&'a Entry, Option<String>)> {
-    let empty = Visits::default();
-    let visits = around.visits.unwrap_or(&empty);
+    let visits = Visits {
+        opened: opened.clone(),
+        ..Visits::default()
+    };
     let mut places: Vec<(Option<Date>, &str)> = catalog
         .collections
         .iter()
@@ -435,15 +439,12 @@ mod tests {
             }
         };
         let around = Surroundings::new().with_near(&near);
-        let start = Some(Id(uuid::Uuid::from_u128(1)));
+        let from = Id(uuid::Uuid::from_u128(1));
+        let start = Some(from);
         let mut reasons = HashSet::new();
         for seed in 0..60 {
             let first = walk(seed, start, &around).remove(0);
-            assert_ne!(
-                first.item.id,
-                start.unwrap(),
-                "the start isn't visited again"
-            );
+            assert_ne!(first.item.id, from, "the start isn't visited again");
             match first.reason {
                 Reason::Linked {
                     ref link_type,
@@ -481,13 +482,43 @@ mod tests {
     fn a_jump_goes_where_this_device_has_not_been_in_a_while() {
         let mut visits = Visits::default();
         visits.open("Letters", date("2026-10-30"));
-        let around = Surroundings::new().with_visits(&visits);
+        let around = Surroundings::new();
+        let catalog = catalog();
         for seed in 0..10 {
-            let first = walk(seed, None, &around).remove(0);
+            let mut walk = Walk::new(seed, None).remembering(&visits);
+            let first = walk.step(&catalog, &around).unwrap();
             let Reason::Start { collection } = first.reason else {
                 panic!("{:?}", first.reason)
             };
             assert_eq!(collection, "Work", "Letters was opened lately");
+        }
+    }
+
+    #[test]
+    fn previews_come_from_the_text_cache_but_never_for_a_restricted_item() {
+        let dir = tempfile::tempdir().unwrap();
+        let texts = TextCache::at(dir.path());
+        let mut entries = Vec::new();
+        for (n, sensitivity) in [(1, Sensitivity::Personal), (2, Sensitivity::Restricted)] {
+            let checksum = crate::card::Checksum(format!("sha256:{}", format!("{n}").repeat(64)));
+            texts
+                .put(&checksum, &format!("the text of item {n}"))
+                .unwrap();
+            let mut e = entry(n, &format!("item {n}"), "Letters");
+            e.item.sensitivity = sensitivity;
+            // The catalog never keeps a restricted item's checksum; this one has it all the same.
+            e.text = Some(checksum);
+            entries.push(e);
+        }
+        let catalog = Catalog::new(entries, vec![collection("Letters")]);
+        let around = Surroundings::new().with_texts(&texts);
+        let mut walk = Walk::new(3, None);
+        let steps: Vec<Step> = std::iter::from_fn(|| walk.step(&catalog, &around)).collect();
+        for step in steps {
+            match step.item.sensitivity {
+                Sensitivity::Restricted => assert_eq!(step.preview, None),
+                _ => assert_eq!(step.preview.as_deref(), Some("the text of item 1")),
+            }
         }
     }
 

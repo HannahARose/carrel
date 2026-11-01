@@ -116,6 +116,7 @@ mod date_text {
     use jiff::civil::Date;
     use serde::{Deserialize, Deserializer, Serializer};
 
+    #[allow(clippy::trivially_copy_pass_by_ref)] // serde's signature
     pub fn serialize<S: Serializer>(date: &Date, s: S) -> Result<S::Ok, S::Error> {
         s.collect_str(date)
     }
