@@ -1375,15 +1375,18 @@ public protocol ArchiveHandleProtocol: AnyObject, Sendable {
     func editCard(item: String, fields: CardFields) throws  -> EditOutcome
     
     /**
-     * Saves `body` as the filed item `item`'s card body, as one change undone from History.
-     * Carrel's own sections, such as the history, have to come back as they were.
+     * Saves `body`, the owner's edit of `base`, the body [`ArchiveHandle::card_body`] gave
+     * the editor, as the filed item `item`'s card body, as one change undone from History.
+     * Carrel's own sections, such as the history, have to be as `base` had them; what was
+     * saved another way meanwhile is kept beside the edit.
      *
      * # Errors
      *
      * As [`ArchiveHandle::edit_card`]; a body that changes Carrel's sections comes back as
-     * [`EditOutcome::Problems`].
+     * [`EditOutcome::Problems`], and one whose lines were changed meanwhile too as
+     * [`EditOutcome::BodyChanged`].
      */
-    func editCardBody(item: String, body: String) throws  -> EditOutcome
+    func editCardBody(item: String, base: String, body: String) throws  -> EditOutcome
     
     /**
      * Saves `fields` to the proposal `id`'s card, checked as `e` in Review checks them.
@@ -3370,20 +3373,24 @@ open func editCard(item: String, fields: CardFields)throws  -> EditOutcome  {
 }
     
     /**
-     * Saves `body` as the filed item `item`'s card body, as one change undone from History.
-     * Carrel's own sections, such as the history, have to come back as they were.
+     * Saves `body`, the owner's edit of `base`, the body [`ArchiveHandle::card_body`] gave
+     * the editor, as the filed item `item`'s card body, as one change undone from History.
+     * Carrel's own sections, such as the history, have to be as `base` had them; what was
+     * saved another way meanwhile is kept beside the edit.
      *
      * # Errors
      *
      * As [`ArchiveHandle::edit_card`]; a body that changes Carrel's sections comes back as
-     * [`EditOutcome::Problems`].
+     * [`EditOutcome::Problems`], and one whose lines were changed meanwhile too as
+     * [`EditOutcome::BodyChanged`].
      */
-open func editCardBody(item: String, body: String)throws  -> EditOutcome  {
+open func editCardBody(item: String, base: String, body: String)throws  -> EditOutcome  {
     return try  FfiConverterTypeEditOutcome_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
         uniffiCallStatus in
     uniffi_carrel_ffi_fn_method_archivehandle_edit_card_body(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(item),
+        FfiConverterString.lower(base),
         FfiConverterString.lower(body),uniffiCallStatus
     )
 })
@@ -19110,6 +19117,19 @@ public enum EditOutcome: Equatable, Hashable {
          * What's wrong, in words.
          */problems: [String]
     )
+    /**
+     * The card's body was saved another way while it was being edited, and the two changed
+     * the same lines; nothing was written. The app offers to reload `current` or to keep
+     * `both`, saved again against `current`.
+     */
+    case bodyChanged(
+        /**
+         * The body as it is now.
+         */current: String, 
+        /**
+         * Both versions together, each changed line from each.
+         */both: String
+    )
 
 
 
@@ -19139,6 +19159,9 @@ public struct FfiConverterTypeEditOutcome: FfiConverterRustBuffer {
         case 3: return .problems(problems: try FfiConverterSequenceString.read(from: &buf)
         )
         
+        case 4: return .bodyChanged(current: try FfiConverterString.read(from: &buf), both: try FfiConverterString.read(from: &buf)
+        )
+        
         default: throw UniffiInternalError.unexpectedEnumCase
         }
     }
@@ -19160,6 +19183,12 @@ public struct FfiConverterTypeEditOutcome: FfiConverterRustBuffer {
         case let .problems(problems):
             writeInt(&buf, Int32(3))
             FfiConverterSequenceString.write(problems, into: &buf)
+            
+        
+        case let .bodyChanged(current,both):
+            writeInt(&buf, Int32(4))
+            FfiConverterString.write(current, into: &buf)
+            FfiConverterString.write(both, into: &buf)
             
         }
     }
@@ -23320,7 +23349,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_carrel_ffi_checksum_method_archivehandle_edit_card() != 19413) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_carrel_ffi_checksum_method_archivehandle_edit_card_body() != 62656) {
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_edit_card_body() != 45058) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_edit_proposal() != 65356) {

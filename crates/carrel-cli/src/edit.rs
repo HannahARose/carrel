@@ -77,9 +77,15 @@ pub fn edit(archive: Option<&Path>, query: &str) -> Result<Report, Failure> {
 /// comment so Markdown editors leave it alone.
 const BODY_PROBLEM: &str = "<!-- To fix: ";
 
+/// The problem shown when the body was saved another way, on the same lines, while it was
+/// being edited.
+const BODY_CHANGED: &str = "the notes were saved another way while you edited them, so both versions are below; tidy them and save, or save without changing anything to keep the card as it is now";
+
 /// `carrel edit ITEM --body`: the card's body in the owner's editor, saved as one change
 /// undo can reverse ([`carrel_core::edit::save_body`]). Carrel's own sections, such as the
 /// history, have to stay as they are; when they don't, the editor opens again saying so.
+/// What was saved another way while the editor was open is kept beside the edit, and when the
+/// two changed the same lines, the editor opens again with both.
 ///
 /// # Errors
 ///
@@ -91,11 +97,16 @@ pub fn edit_body(archive: Option<&Path>, query: &str) -> Result<Report, Failure>
     let item = find_item(&archive, &items, query)?.clone();
     let (registry, _) = crate::providers::registry();
     let identity = Identity::load_or_create()?;
-    let temp = std::env::temp_dir().join(format!("carrel-body-{}.md", item.id));
-    let mut text = carrel_core::edit::open(&archive, &registry, &item)?
+    // The process's own, so two edits of one item at once don't share a file.
+    let temp =
+        std::env::temp_dir().join(format!("carrel-body-{}-{}.md", item.id, std::process::id()));
+    // `base` is the body the editor last opened, which the save is checked against; `text` is
+    // what it opened, with any problems on top.
+    let mut base = carrel_core::edit::open(&archive, &registry, &item)?
         .file
         .body()
         .to_owned();
+    let mut text = base.clone();
     let saved = loop {
         std::fs::write(&temp, &text).map_err(|e| Failure::io(&temp, &e))?;
         crate::review::run_editor(&temp)?;
@@ -106,14 +117,16 @@ pub fn edit_body(archive: Option<&Path>, query: &str) -> Result<Report, Failure>
         }
         let body = without_body_problems(&edited);
         let editing = carrel_core::edit::open(&archive, &registry, &item)?;
-        match carrel_core::edit::save_body(&archive, editing, &body, holder(&identity))? {
+        match carrel_core::edit::save_body(&archive, editing, &base, &body, holder(&identity))? {
             carrel_core::edit::Saved::Problems(problems) => {
                 // The owner's edits stay; the problems go on top, replacing earlier ones.
-                text = String::new();
-                for problem in &problems {
-                    writeln!(text, "{BODY_PROBLEM}{problem} -->").unwrap();
-                }
-                text.push_str(&body);
+                text = with_body_problems(&problems, &body);
+            }
+            carrel_core::edit::Saved::BodyChanged { current, both } => {
+                // Saved another way meanwhile: both versions, to tidy and save against the
+                // body as it is now, or to leave as they are, keeping the card's.
+                text = with_body_problems(&[BODY_CHANGED.to_owned()], &both);
+                base = current;
             }
             outcome => break outcome,
         }
@@ -131,6 +144,16 @@ pub fn edit_body(archive: Option<&Path>, query: &str) -> Result<Report, Failure>
             json!({"item": item.id, "changed": [], "commit": null}),
         )),
     }
+}
+
+/// `body` with a line on top for each of `problems`, as `carrel edit --body` shows them.
+fn with_body_problems(problems: &[String], body: &str) -> String {
+    let mut text = String::new();
+    for problem in problems {
+        writeln!(text, "{BODY_PROBLEM}{problem} -->").unwrap();
+    }
+    text.push_str(body);
+    text
 }
 
 /// `edited` without the problem lines `carrel edit --body` put above it.

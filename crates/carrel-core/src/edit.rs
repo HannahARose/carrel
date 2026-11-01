@@ -10,6 +10,9 @@ use crate::coordinator::{Coordinator as _, DEFAULT_LEASE, DiskLock, Holder};
 use crate::history::{Change, History, Operation};
 use crate::providers::Registry;
 
+mod body;
+pub use body::save_body;
+
 /// A filed card, read for editing.
 #[derive(Debug, Clone)]
 pub struct Editing {
@@ -47,6 +50,15 @@ pub enum Saved {
     },
     /// The edit doesn't check out, for these reasons; nothing was written.
     Problems(Vec<String>),
+    /// The body was saved another way while it was being edited, and the two changed the
+    /// same lines; nothing was written ([`save_body`]).
+    BodyChanged {
+        /// The body as it is now, to reload.
+        current: String,
+        /// Both versions together, each changed line from each kept, to tidy and save again
+        /// against `current`.
+        both: String,
+    },
 }
 
 fn io(path: &std::path::Path) -> impl FnOnce(std::io::Error) -> ActionError + '_ {
@@ -140,56 +152,6 @@ pub fn save(
     let commit = write(archive, &item, &file, &summary, holder)?;
     Ok(Saved::Changed {
         fields: changed,
-        summary,
-        commit,
-    })
-}
-
-/// Saves the owner's edit of the card's whole body, its Notes and anything else they wrote
-/// below the fields, as one history change as `holder`. Carrel's managed sections (FORMAT.md
-/// §5.3), such as the history, must come back exactly as they were: they're changed through
-/// their own actions, such as deciding pending entries on Active.
-///
-/// # Errors
-///
-/// [`ActionError::Lease`] if another writer holds the archive, or an error writing the card
-/// or the history. A body that changes a managed section isn't an error: it comes back as
-/// [`Saved::Problems`].
-pub fn save_body(
-    archive: &Archive,
-    editing: Editing,
-    body: &str,
-    holder: Holder,
-) -> Result<Saved, ActionError> {
-    let Editing { item, mut file, .. } = editing;
-    if body == file.body() {
-        return Ok(Saved::Unchanged);
-    }
-    let managed = |text: &str| {
-        crate::sections::find_all(text).map(|found| {
-            found
-                .into_iter()
-                .map(|s| (s.name, text[s.content].to_owned()))
-                .collect::<Vec<_>>()
-        })
-    };
-    let was =
-        managed(file.body()).map_err(|e| ActionError::Invalid(format!("{}: {e}", item.card)))?;
-    match managed(body) {
-        Err(e) => return Ok(Saved::Problems(vec![format!("the body's sections: {e}")])),
-        Ok(now) if now != was => {
-            return Ok(Saved::Problems(vec![
-                "Carrel's own sections, between <!-- carrel:… --> markers, have to stay as they are; change the history's entries on Active"
-                    .to_owned(),
-            ]));
-        }
-        Ok(_) => {}
-    }
-    file.set_body(body);
-    let summary = format!("Edit “{}”: notes", file.card().title);
-    let commit = write(archive, &item, &file, &summary, holder)?;
-    Ok(Saved::Changed {
-        fields: vec!["notes"],
         summary,
         commit,
     })

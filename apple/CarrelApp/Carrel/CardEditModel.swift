@@ -31,6 +31,9 @@ final class CardEditModel {
     var body: String?
     /// Why the last save didn't check out.
     private(set) var problems: [String] = []
+    /// The body as saved another way while it was being edited, on the same lines as the
+    /// edit, and both versions together: nothing was saved, and the owner chooses.
+    private(set) var bodyClash: (current: String, both: String)?
     /// Why the card can't be edited, when it can't be read.
     private(set) var unavailable: String?
     /// Called after a save, so the lists show the change.
@@ -64,6 +67,7 @@ final class CardEditModel {
             tags = editable.tags
             floor = editable.floor
             problems = []
+            bodyClash = nil
             unavailable = nil
         } catch {
             archive.lastError = nil
@@ -111,12 +115,18 @@ final class CardEditModel {
             if fields != original { outcome = try? await archive.edit(item: id, fields: fields) }
             if case .problems = outcome {
             } else if outcome != nil, bodyChanged, let body {
-                outcome = try? await archive.edit(item: id, body: body)
+                // The fields are saved, whatever becomes of the body.
+                original = fields
+                outcome = try? await archive.edit(item: id, base: originalBody ?? "", body: body)
             }
         }
         switch outcome {
         case .problems(let problems):
             self.problems = problems
+            return false
+        case .bodyChanged(let current, let both):
+            problems = []
+            bodyClash = (current, both)
             return false
         case .saved, .unchanged:
             problems = []
@@ -133,5 +143,23 @@ final class CardEditModel {
         fields = original
         body = originalBody
         problems = []
+        bodyClash = nil
+    }
+
+    /// After a clash, edits both versions together, to tidy and save against the body as it
+    /// is now.
+    func keepBothBodies() {
+        guard let clash = bodyClash else { return }
+        originalBody = clash.current
+        body = clash.both
+        bodyClash = nil
+    }
+
+    /// After a clash, drops the edit for the body as it is now.
+    func reloadBody() {
+        guard let clash = bodyClash else { return }
+        originalBody = clash.current
+        body = clash.current
+        bodyClash = nil
     }
 }
