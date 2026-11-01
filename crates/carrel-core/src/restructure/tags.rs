@@ -421,14 +421,27 @@ fn rationale(survey: &Survey, proposal: &Proposal) -> String {
         .iter()
         .flat_map(|c| c.held.iter().map(|h| h.id))
         .collect();
+    let plural = |n: usize, one: &str, many: &str| match n {
+        0 => None,
+        1 => Some(format!("1 {one}")),
+        n => Some(format!("{n} {many}")),
+    };
+    let parts: Vec<String> = [
+        plural(merges, "merge", "merges"),
+        plural(splits, "split", "splits"),
+        plural(retired, "retirement", "retirements"),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    let parts = match parts.as_slice() {
+        [rest @ .., last] if !rest.is_empty() => format!("{} and {last}", rest.join(", ")),
+        _ => parts.join(""),
+    };
     let mut text = format!(
-        "{} tags on {tagged} items: {merges} merge{}, {splits} split{} and {retired} \
-         retirement{}, so each idea has one tag and every tag helps find something. Only \
-         tags on cards and in vocabularies change; nothing moves.",
+        "{} tags on {tagged} items: {parts}, so each idea has one tag and every tag helps find \
+         something. Only tags on cards and in vocabularies change; nothing moves.",
         survey.uses.len(),
-        if merges == 1 { "" } else { "s" },
-        if splits == 1 { "" } else { "s" },
-        if retired == 1 { "" } else { "s" },
     );
     if !held.is_empty() {
         let _ = write!(

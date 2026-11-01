@@ -42,6 +42,7 @@ The command line and the interactive mode run on macOS, Linux and Windows. The M
 | Desk items: add, remove, archive | `desk` | ✓ Active | ✓ (#235) |
 | Work-session entries: approve, edit, combine, drop | `sessions` | ✓ Active | ✓ (#235) |
 | History and undo | `log`, `undo` | ✓ History | ✓ (#235) |
+| Restructure tags: merge, split and retire, approved all or in part | `restructure tags` | #326 | #327 |
 | The librarian: ask, converse, save to the Journal | `ask` | ✓ the Librarian screen (`L`) | ✓ the Librarian panel (⌥⌘L), Ask About This (⇧⌘L) |
 | The librarian's changes: list and undo them together | `status`, `log --librarian`, `undo --librarian` | ✓ the Librarian screen, Status and History | ✓ the Librarian panel, Status and History |
 | Backups: set up, snapshot, list, verify, restore | `backup` | ✓ Backups | ✓ Backups (#266) |

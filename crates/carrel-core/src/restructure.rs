@@ -554,6 +554,25 @@ fn apply_edit(archive: &Archive, change: &ProposedChange) -> Result<Outcome, Res
     }
 }
 
+/// Puts `proposal` in the queue in place of any waiting proposal of the same kind for the
+/// same section, which it supersedes. Returns how many it replaced.
+///
+/// # Errors
+///
+/// An error reading or writing the queue.
+pub fn queue(archive: &Archive, proposal: &Proposal) -> Result<usize, RestructureError> {
+    let queue = ProposalQueue::of(archive);
+    let mut replaced = 0;
+    for old in waiting(archive, Some(proposal.kind))? {
+        if old.section == proposal.section && old.id != proposal.id {
+            queue.remove(old.id)?;
+            replaced += 1;
+        }
+    }
+    queue.save(proposal)?;
+    Ok(replaced)
+}
+
 /// Removes `proposal` from the queue without changing anything else.
 ///
 /// # Errors
@@ -633,12 +652,13 @@ fn body(proposal: &Proposal, selection: &Selection, outcomes: &[Outcome]) -> Str
         let change = proposal
             .change(&outcome.change)
             .expect("outcomes are of the proposal's changes");
+        let n = outcome.items.len();
         let _ = writeln!(
             text,
-            "\n{}. {} ({} items): {}",
+            "\n{}. {} ({n} item{}): {}",
             change.id,
             change.change.describe(),
-            outcome.items.len(),
+            if n == 1 { "" } else { "s" },
             change.reason
         );
     }

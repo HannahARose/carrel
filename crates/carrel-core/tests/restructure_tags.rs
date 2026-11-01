@@ -214,7 +214,7 @@ fn tags(names: &[&str]) -> Vec<Tag> {
     names.iter().map(|n| Tag((*n).into())).collect()
 }
 
-fn find<'a>(proposal: &'a Proposal, wanted: impl Fn(&Edit) -> bool) -> &'a ProposedChange {
+fn find(proposal: &Proposal, wanted: impl Fn(&Edit) -> bool) -> &ProposedChange {
     proposal
         .changes
         .iter()
@@ -379,7 +379,7 @@ fn a_card_the_owner_changed_since_is_left_alone_and_reported() {
     let only = vec![merge.id.clone()];
     let approved =
         restructure::approve(&setup.archive, &proposal, Some(&only), setup.holder).unwrap();
-    assert!(approved.outcomes[0].items.is_empty());
+    assert_eq!(approved.outcomes[0].items.len(), 0);
     assert_eq!(approved.outcomes[0].skipped[0].0, setup.ids["r3"]);
     assert_eq!(setup.tags("r3"), ["Receipt"]);
 }

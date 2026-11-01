@@ -80,6 +80,19 @@ With `--json`, `carrel search` prints `{"root", "query", "total", "meaning", "re
 
 Identifiers can be shortened to their last eight characters, as the list shows them.
 
+## Restructure
+
+See [Tidying tags](user-guide.md#tidying-tags).
+
+| Command | What it does |
+| --- | --- |
+| `carrel restructure tags [propose]` | Proposes merging tags that mean the same thing, splitting a tag spread over unrelated items and retiring rare tags, each change with why and the items it changes. Tags you wrote yourself stay, and the proposal says so. It replaces any tag proposal waiting. |
+| `carrel restructure tags show [ID]` | Shows the waiting proposal. |
+| `carrel restructure tags approve [ID] [--only N,…]` | Applies the proposal, or only the numbered changes, to the cards and vocabularies as one history change that `carrel undo` reverses. |
+| `carrel restructure tags reject [ID]` | Drops the proposal, changing nothing. |
+
+`ID` is needed only when more than one tag proposal is waiting. With `--json`, `propose` prints `{"proposal", "replaced", "note"}` (`proposal` is `null` when there's nothing to change) and `show` prints `{"proposal"}`, the proposal as it's stored: `{"id", "kind", "section", "created", "by", "invasiveness", "rationale", "changes"}`, each change `{"id", "change", "reason", "invasiveness", "items", "held", "documents", "depends_on"}`, where `change.kind` is `merge-tags` (`from`, `into`), `split-tag` (`tag`, `into`: each `{"tag", "description", "items"}`) or `retire-tag` (`tag`), items are `{"id", "card", "title"}` and held items add `why`. `approve` prints `{"proposal", "approved"}`, `approved` being `{"selection", "outcomes", "summary", "commit"}`, and `reject` prints `{"rejected"}`.
+
 ## Questions
 
 | Command | What it does |
