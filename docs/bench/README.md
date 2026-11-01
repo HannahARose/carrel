@@ -180,6 +180,23 @@ No model meets the bar yet, so none has the `librarian` flag, and the default st
 - **Context:** a listing question ("which receipts are from 2025?") was too long for Apple's on-device model.
 - **No restricted text was shown** by any model.
 
+### Librarian: after #361
+
+The same run on DeskBook with `dev` after #361, which lets the librarian finish its answers (a larger output limit), returns an earlier result for a repeated tool call and trims tool results to fit a model's context. The test set now has 116 items, as #357 added 35. [Full report](2026-11-01-after-361/librarian/report.md) · [results.json](2026-11-01-after-361/librarian/results.json)
+
+| Model | Recall | Precision | Facts | Restricted shown | Unanswered | Steps | s/question | Meets the bar |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Apple Foundation Model | 88% (was 67%) | 67% | 65% | 0 | 1 | 3.5 | 108.9 | no: facts, too slow |
+| Granite 4.2 3B (llama.cpp) | 60% (was 54%) | 93% | 70% | 0 | 4 | 2.4 | 53.9 | no: recall, facts |
+| Qwen3.5 4B (llama.cpp) | 70% (was 48%) | 90% | 89% | 0 | 4 | 1.8 | 51.3 | no: recall |
+
+- **Qwen3.5 4B is closest:** it meets every part of the bar but recall, 70% against 80%.
+- **Cut-off answers:** Qwen's and Granite's four unanswered questions are all still answers cut off, now at the 2,400-token limit. Finishing those would likely bring Qwen to the bar.
+- **Apple's model** finds the most (88%) but states the fewest facts, and at 109 seconds a question it's too slow. It takes fewer steps than before (3.5, from 6.8), but more tokens (35,000 a question, from 21,000).
+- **No model showed restricted text.**
+
+No model has the `librarian` flag yet, so the default is unchanged.
+
 ## Question value
 
 Whether the question queue asks the questions that help most (`docs/design/librarian.md`, "Measuring it"). `carrel bench --questions` ingests the test set with each text model in one batch, as ingest would, and ranks the questions the batch raises as the queue does (`questions::rank`). It then answers each question alone with the answer the test set implies, and re-routes:
@@ -214,6 +231,20 @@ So 35 items were added for this benchmark (#357), each with its known answer in 
 - **uncertain placements:** three Larkspur Road items from an old flat, each fitting more than one collection.
 
 The senders, the group and the uncertain placements raise a group question when the model splits them or isn't sure of them. The filing, findability and librarian benchmarks see the added items too, so their totals from runs after this aren't comparable with the 2026-11-01 runs item for item.
+
+### Question value: after #357
+
+On DeskBook, with the 35 items above. [Report](2026-11-01-after-361/questions/report.md) · [results.json](2026-11-01-after-361/questions/results.json)
+
+| Model | Questions | Routing before | After all | Top 1 (best) | Top 3 (best) | Top 5 (best) | Rank correlation |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Apple Foundation Model | 14 | 73% | 77% | 75% (75%) | 75% (76%) | 76% (77%) | 0.58 |
+| Granite 4.2 3B | 14 | 62% | 68% | 64% (64%) | 67% (67%) | 68% (69%) | 0.87 |
+| Qwen3.5 4B | 14 | 82% | 84% | 84% (84%) | 84% (85%) | 84% (85%) | 0.48 |
+
+- **The ranking asks the right questions first:** with each model, answering the top 1, 3 or 5 questions comes within a point of the best any that many could do.
+- **Answers help most where routing is weakest:** answering every question adds 6 points for Granite, 4 for Apple's model and 2 for Qwen.
+- **Rank correlation** is high for Granite (0.87) and moderate for the others. That's over only 14 questions, many worth the same, so the top-k results say more.
 
 ## Crawler
 
