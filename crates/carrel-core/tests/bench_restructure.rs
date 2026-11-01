@@ -336,3 +336,90 @@ fn a_proposal_built_from_the_muddled_archive_is_scored_without_a_model() {
         "{by_level:?}"
     );
 }
+
+/// Stub card vectors like an embedding model's: every one shares a strong common direction,
+/// so even unrelated items have a cosine around 0.6, with a weaker direction for each item's
+/// intended collection and a little noise.
+#[allow(clippy::cast_precision_loss)]
+fn embedding_like_vectors(
+    files: &BTreeMap<Id, String>,
+    answers: &Answers,
+    collections: &[String],
+) -> HashMap<Id, Vec<f32>> {
+    let dimensions = collections.len() + 33;
+    let mut seed = 12_345_u64;
+    let mut noise = move || {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        ((seed % 10_000) as f32 / 10_000.0 - 0.5) * 0.25
+    };
+    files
+        .iter()
+        .filter_map(|(id, file)| {
+            let intended = answers.items.get(file)?.destinations.first()?;
+            let place = collections.iter().position(|c| c == intended)?;
+            let mut v: Vec<f32> = (0..dimensions).map(|_| noise()).collect();
+            v[collections.len()] = 1.1;
+            v[place] = 0.8;
+            Some((*id, v))
+        })
+        .collect()
+}
+
+#[test]
+fn numbers_alone_at_eager_bring_back_the_missing_collection_from_embedding_like_vectors() {
+    let dir = tempfile::tempdir().unwrap();
+    let answers = Answers::load(&bench().join("answers.yaml")).unwrap();
+    let muddle = Muddle::load(&bench().join("muddle.yaml")).unwrap();
+    let (archive, files) = muddled(dir.path());
+    let archive = at_eagerness(&archive, Eagerness::Eager).unwrap();
+    let collections: Vec<String> = archive
+        .collections()
+        .unwrap()
+        .into_iter()
+        .map(|c| c.path)
+        .chain(["Recipes".to_owned()])
+        .collect();
+    let vectors = embedding_like_vectors(&files, &answers, &collections);
+    let proposal = propose_section(
+        &archive,
+        "",
+        &vectors,
+        None,
+        &SectionOptions::for_archive(&archive),
+    )
+    .unwrap();
+    let scored = score(&proposal, &files, &muddle.places(&answers), &answers, 0.0);
+    assert!(scored.recovered, "{scored:?}");
+    assert_eq!(scored.broken, 0, "{scored:?}");
+
+    // The missing collection's items, waiting in Home, move together into a new collection
+    // of their own, and so do the items dumped there from Manuals.
+    let intended = |collection: &str| -> Vec<Id> {
+        files
+            .iter()
+            .filter(|(_, f)| {
+                answers.items[*f].destinations.first().map(String::as_str) == Some(collection)
+            })
+            .map(|(id, _)| *id)
+            .collect()
+    };
+    let moved: Vec<Vec<Id>> = proposal
+        .changes
+        .iter()
+        .filter(|c| matches!(c.change, Edit::MoveItems { .. }))
+        .map(|c| {
+            let mut ids: Vec<Id> = c.items.iter().map(|t| t.id).collect();
+            ids.sort();
+            ids
+        })
+        .collect();
+    assert!(moved.contains(&intended("Recipes")), "{moved:?}");
+    assert!(moved.contains(&intended("Manuals")), "{moved:?}");
+    assert!(
+        scored.held_back.iter().all(|h| !h.contains("116 items")),
+        "the archive isn't one group: {:?}",
+        scored.held_back
+    );
+}

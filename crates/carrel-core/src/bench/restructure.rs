@@ -178,6 +178,10 @@ pub struct RestructureScore {
     pub findability_gain: Option<f64>,
     /// Why the findability test didn't run, if it didn't.
     pub untested: Option<String>,
+    /// Groups worth looking at that it left out, each as what it would have done and why
+    /// not.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub held_back: Vec<String>,
     /// How long building the proposal took, in seconds.
     pub seconds: f64,
 }
@@ -248,6 +252,12 @@ pub fn score(
         }),
         findability,
         untested: assessment.and_then(|a| a.untested.clone()),
+        held_back: assessment.map_or_else(Vec::new, |a| {
+            a.held_back
+                .iter()
+                .map(|h| format!("{}: {}", h.what, h.why))
+                .collect()
+        }),
         seconds,
     }
 }

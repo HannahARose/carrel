@@ -3,9 +3,11 @@
 //! together doesn't hinge on one model's whim. A model names the groups later; this only says
 //! which items they hold.
 //!
-//! Two items are as similar as their card vectors' cosine says, raised by their ties in the
-//! graph (shared tags, links, days worked on together) as [`GroupingOptions::graph_weight`]
-//! says; items without a vector are as similar as their ties alone. Items are
+//! Two items are as similar as their card vectors' cosine says, measured from the section's
+//! baseline (the average cosine of any two of its items, since an embedding model puts even
+//! unrelated texts at a cosine well above zero), raised by their ties in the graph (shared
+//! tags, links, days worked on together) as [`GroupingOptions::graph_weight`] says; items
+//! without a vector are as similar as their ties alone. Items are
 //! clustered by average linkage: the two groups whose items are most similar on average join,
 //! until no two are similar enough ([`GroupingOptions::threshold`]). Literary warrant decides
 //! which groups are worth a collection: at least `min_collection_items` members (FORMAT.md
@@ -136,9 +138,38 @@ fn cosine(a: &[f32], b: &[f32]) -> Option<f64> {
     (aa > 0.0 && bb > 0.0).then(|| dot / (aa.sqrt() * bb.sqrt()))
 }
 
+/// The average cosine of every two of `vectors` (ignoring missing and empty ones), or 0 with
+/// fewer than two: from the sum of the unit vectors, since the squared length of that sum is
+/// every pair's cosine twice plus one for each vector.
+#[allow(clippy::cast_precision_loss)] // item counts
+fn baseline_cosine(vectors: &[Option<&[f32]>]) -> f64 {
+    let mut sum: Vec<f64> = Vec::new();
+    let mut n = 0_usize;
+    for v in vectors.iter().flatten() {
+        let length = v.iter().map(|x| f64::from(*x).powi(2)).sum::<f64>().sqrt();
+        if length == 0.0 || (!sum.is_empty() && sum.len() != v.len()) {
+            continue;
+        }
+        if sum.is_empty() {
+            sum = vec![0.0; v.len()];
+        }
+        for (s, x) in sum.iter_mut().zip(v.iter()) {
+            *s += f64::from(*x) / length;
+        }
+        n += 1;
+    }
+    if n < 2 {
+        return 0.0;
+    }
+    let squared: f64 = sum.iter().map(|s| s * s).sum();
+    ((squared - n as f64) / (n * (n - 1)) as f64).clamp(0.0, 1.0)
+}
+
 /// What the similarity of two items is made from.
 struct Similarity<'a> {
     vectors: Vec<Option<&'a [f32]>>,
+    /// The average cosine of any two items, which counts as no likeness at all.
+    baseline: f64,
     ties: HashMap<(usize, usize), f64>,
     options: GroupingOptions,
 }
@@ -150,7 +181,8 @@ impl Similarity<'_> {
         // A tie's weight, brought into 0..1: one tag only two items share is about 0.7.
         let tie = 1.0 - (-2.0 * self.ties.get(&key).copied().unwrap_or(0.0)).exp();
         let meaning = match (self.vectors[i], self.vectors[j]) {
-            (Some(a), Some(b)) => cosine(a, b).map(|c| c.clamp(0.0, 1.0)),
+            (Some(a), Some(b)) => cosine(a, b)
+                .map(|c| ((c - self.baseline) / (1.0 - self.baseline).max(1e-9)).clamp(0.0, 1.0)),
             _ => None,
         };
         match meaning {
@@ -286,8 +318,8 @@ fn placement(collections: &[&str]) -> (String, Invasiveness) {
 }
 
 /// The candidate group of `members` (their places in `similarity`), which are `items`, or none
-/// if they're exactly a collection's items already. `per_collection` counts each collection's
-/// items.
+/// if they're exactly a collection's items already.
+/// `per_collection` counts each collection's items.
 #[allow(clippy::cast_precision_loss)] // item counts
 fn candidate(
     members: &[usize],
@@ -342,10 +374,45 @@ fn candidate(
     })
 }
 
+/// Drops the groups that are a collection as it is: more than half of one collection's items
+/// and no others, leaving at most one of its items out, or beside other groups that subdivide
+/// it, which are the parts worth a subcollection. Holding is only waiting, so most of it is
+/// still a group worth filing.
+fn drop_collections_as_they_are(
+    groups: &mut Vec<CandidateGroup>,
+    per_collection: &HashMap<&str, usize>,
+) {
+    let only = |g: &CandidateGroup| match g.sources.as_slice() {
+        [s] if !is_within(&s.collection, HOLDING) => Some((s.collection.clone(), s.items)),
+        _ => None,
+    };
+    let subdividing = |collection: &str| {
+        groups
+            .iter()
+            .filter(|g| only(g).is_some_and(|(c, _)| c == collection))
+            .count()
+    };
+    let dropped: Vec<bool> = groups
+        .iter()
+        .map(|g| {
+            only(g).is_some_and(|(collection, count)| {
+                let all = per_collection
+                    .get(collection.as_str())
+                    .copied()
+                    .unwrap_or(0);
+                count * 2 > all && (count + 1 >= all || subdividing(&collection) > 1)
+            })
+        })
+        .collect();
+    let mut kept = dropped.iter().map(|d| !d);
+    groups.retain(|_| kept.next().unwrap_or(true));
+}
+
 /// The candidate groups among the graph's items in `section` (a collection's path, or empty
 /// for the whole archive), from their card `vectors` (missing ones are grouped by the graph
-/// alone) and the graph's edges. Checked-out items are left out. A group that is exactly a
-/// collection's items already is no change, so isn't a candidate.
+/// alone) and the graph's edges. Checked-out items are left out. A group that is a collection's
+/// items already, or that collection as it is (most of its items and no others, leaving at
+/// most one out or beside groups subdividing it), is no change, so isn't a candidate.
 #[must_use]
 pub fn group_section<S: std::hash::BuildHasher>(
     graph: &Graph,
@@ -374,11 +441,13 @@ pub fn group_section<S: std::hash::BuildHasher>(
             ties.insert(if x < y { (x, y) } else { (y, x) }, edge.weight);
         }
     }
+    let item_vectors: Vec<Option<&[f32]>> = chosen
+        .iter()
+        .map(|&i| vectors.get(&graph.items[i].id).map(Vec::as_slice))
+        .collect();
     let similarity = Similarity {
-        vectors: chosen
-            .iter()
-            .map(|&i| vectors.get(&graph.items[i].id).map(Vec::as_slice))
-            .collect(),
+        baseline: baseline_cosine(&item_vectors),
+        vectors: item_vectors,
         ties,
         options: *options,
     };
@@ -400,6 +469,7 @@ pub fn group_section<S: std::hash::BuildHasher>(
             candidate(&members, &items, &similarity, &per_collection)
         })
         .collect();
+    drop_collections_as_they_are(&mut groups, &per_collection);
     groups.sort_by(|a, b| {
         b.cohesion
             .total_cmp(&a.cohesion)
@@ -478,6 +548,62 @@ mod tests {
         }
         let birds: Vec<Id> = (1..=6).map(id).collect();
         assert!(grouping.groups.iter().any(|g| g.members == birds));
+    }
+
+    #[test]
+    fn a_shared_direction_in_every_vector_doesnt_make_everything_one_group() {
+        let (graph, vectors) = sample();
+        // As an embedding model does, put every vector near one direction: by raw cosine,
+        // birds and stars are now well over the threshold.
+        let shared: HashMap<Id, Vec<f32>> = vectors
+            .into_iter()
+            .map(|(id, v)| {
+                let mut v: Vec<f32> = v.iter().map(|x| x * 0.4).collect();
+                v.push(1.0);
+                (id, v)
+            })
+            .collect();
+        let grouping = group_section(&graph, "Reading", &shared, &GroupingOptions::default());
+        assert_eq!(grouping.groups.len(), 2, "{:?}", grouping.groups);
+        let birds: Vec<Id> = (1..=6).map(id).collect();
+        assert!(grouping.groups.iter().any(|g| g.members == birds));
+    }
+
+    #[test]
+    fn the_baseline_is_the_average_cosine_of_every_pair() {
+        let (a, b, c) = ([1.0_f32, 0.0], [0.0_f32, 2.0], [1.0_f32, 1.0]);
+        let vectors = [Some(&a[..]), Some(&b[..]), None, Some(&c[..])];
+        // Cosines: a·b 0, a·c and b·c both 1/√2.
+        let expected = (2.0 / 2.0_f64.sqrt()) / 3.0;
+        assert!((baseline_cosine(&vectors) - expected).abs() < 1e-9);
+        assert!(baseline_cosine(&[Some(&a[..])]).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn most_of_a_collection_beside_its_other_parts_is_no_candidate() {
+        let (graph, vectors) = sample();
+        let mut lopsided = vectors.clone();
+        // Eight of Reading's twelve about birds, four about stars.
+        for n in 7..=8_u128 {
+            lopsided.insert(id(n), vector(0, n));
+        }
+        // With the stars a group too, the birds are Reading as it is: only the stars are
+        // worth a subcollection.
+        let options = GroupingOptions {
+            warrant: 4,
+            ..GroupingOptions::default()
+        };
+        let grouping = group_section(&graph, "Reading", &lopsided, &options);
+        let sizes: Vec<usize> = grouping.groups.iter().map(|g| g.members.len()).collect();
+        assert_eq!(sizes, [4], "{:?}", grouping.groups);
+        // Too few stars for a group, the birds are a subcollection worth proposing.
+        let options = GroupingOptions {
+            warrant: 5,
+            ..GroupingOptions::default()
+        };
+        let grouping = group_section(&graph, "Reading", &lopsided, &options);
+        let sizes: Vec<usize> = grouping.groups.iter().map(|g| g.members.len()).collect();
+        assert_eq!(sizes, [8], "{:?}", grouping.groups);
     }
 
     #[test]

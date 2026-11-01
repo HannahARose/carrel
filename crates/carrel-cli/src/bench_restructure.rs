@@ -297,6 +297,9 @@ fn report_markdown(rows: &[Row], notes: &[String]) -> String {
         if let Some(why) = &s.untested {
             writeln!(text, "- Untested: {why}").unwrap();
         }
+        for held in &s.held_back {
+            writeln!(text, "- Held back: {held}").unwrap();
+        }
     }
     text
 }
