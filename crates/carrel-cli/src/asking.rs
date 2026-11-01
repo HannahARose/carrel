@@ -136,11 +136,9 @@ pub fn daily_section(archive: &Archive, records: &mut Records) -> (String, Value
 /// added to the queue so it can be answered by its identifier; none when there's none open.
 pub fn question_on(archive: &Archive, card: &str) -> Option<QuestionEntry> {
     let item = archive.items().ok()?.into_iter().find(|i| i.card == card)?;
-    let question = moments::about_item(archive, &item, crate::discover::today())
-        .ok()?
-        .into_iter()
-        .next()?;
-    moments::ask(archive, &question).ok()
+    moments::ask_about(archive, &item, crate::discover::today())
+        .ok()
+        .flatten()
 }
 
 /// A wander step's question, under the step.

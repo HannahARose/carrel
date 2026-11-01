@@ -1,5 +1,6 @@
-// The Questions screen: the questions by rank in the list, and the chosen one in the inspector
-// with the items it holds up, answered in a text field or by choosing a collection.
+// The Questions screen: the questions by rank in the list, those skipped below when shown, and
+// the chosen one in the inspector with what it's about, its likely answers and the owner's own,
+// Skip and Dismiss.
 
 import CarrelKit
 import SwiftUI
@@ -9,34 +10,77 @@ struct QuestionsView: View {
 
     var body: some View {
         List(selection: $questions.selection) {
-            ForEach(questions.questions) { question in
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(question.question).lineLimit(2)
-                    Text(question.summary)
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                .tag(question.id)
-                .contextMenu {
-                    Button("Dismiss") { Task { await questions.dismiss(question.id) } }
+            ForEach(questions.questions) { QuestionRow(question: $0, questions: questions) }
+            if questions.showsSkipped, !questions.skipped.isEmpty {
+                Section("Skipped") {
+                    ForEach(questions.skipped) { QuestionRow(question: $0, questions: questions) }
                 }
             }
         }
-        .onKeyPress(characters: CharacterSet(charactersIn: "d"), phases: .down) { press in
+        .onKeyPress(characters: CharacterSet(charactersIn: "ds"), phases: .down) { press in
             guard press.modifiers.isEmpty, let id = questions.selection else { return .ignored }
-            Task { await questions.dismiss(id) }
+            if press.characters == "s" {
+                Task { await questions.skip(id) }
+            } else {
+                Task { await questions.dismiss(id) }
+            }
             return .handled
         }
         .overlay {
-            if questions.questions.isEmpty {
+            if questions.questions.isEmpty, !questions.showsSkipped || questions.skipped.isEmpty {
                 ContentUnavailableView(
                     "No Questions", systemImage: "questionmark.bubble",
-                    description: Text("Questions about terms and collections appear here."))
+                    description: Text(
+                        "Questions about terms, collections, senders and items appear here."))
             }
+        }
+        .toolbar {
+            Toggle(isOn: $questions.showsSkipped) {
+                Label("Show Skipped", systemImage: "clock.arrow.circlepath")
+            }
+            .help("Show the questions resting after a skip (\(questions.skipped.count))")
         }
         .safeAreaInset(edge: .bottom) {
             if let report = questions.report {
                 ReportBar(text: report)
             }
+        }
+        .routingRuleOffer(questions)
+    }
+}
+
+private struct QuestionRow: View {
+    let question: Question
+    let questions: QuestionsModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(question.question).lineLimit(2)
+            Text(question.summary)
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        .tag(question.id)
+        .contextMenu {
+            Button("Skip") { Task { await questions.skip(question.id) } }
+            Button("Dismiss") { Task { await questions.dismiss(question.id) } }
+        }
+    }
+}
+
+extension View {
+    /// Asks before adding the routing rule offered after a sender's answer.
+    func routingRuleOffer(_ questions: QuestionsModel) -> some View {
+        confirmationDialog(
+            "Add a routing rule?",
+            isPresented: Binding(
+                get: { questions.offeredRule != nil },
+                set: { if !$0 { questions.offeredRule = nil } }),
+            presenting: questions.offeredRule
+        ) { _ in
+            Button("Add Rule") { Task { await questions.addOfferedRule() } }
+            Button("Not Now", role: .cancel) { questions.offeredRule = nil }
+        } message: { rule in
+            Text("File future items named for “\(rule.subject)” in \(rule.collection)?")
         }
     }
 }
@@ -44,9 +88,11 @@ struct QuestionsView: View {
 extension Question {
     /// What it's about and what it holds up, for its row.
     var summary: String {
-        let about = topic == .term ? "Term “\(subject)”" : "Where “\(subject)” goes"
         let count = proposals.count
-        return "\(about) · holds up \(count == 1 ? "1 proposal" : "\(count) proposals")"
+        let holds =
+            count == 0 ? nil : "holds up \(count == 1 ? "1 proposal" : "\(count) proposals")"
+        let skippedNote = isSkipped ? "skipped" : nil
+        return ([topicLine] + [holds, skippedNote].compactMap { $0 }).joined(separator: " · ")
     }
 }
 
@@ -55,50 +101,55 @@ struct QuestionInspector: View {
     @Bindable var questions: QuestionsModel
     /// Every collection, when the question offers no choices of its own.
     let collections: [String]
+    /// The title of the filed item with an identifier.
+    let title: (String) -> String?
 
     var body: some View {
         Form {
             Section {
                 VStack(alignment: .leading, spacing: 6) {
-                    Label(
-                        question.topic == .term ? "Term" : "Collection",
-                        systemImage: "questionmark.bubble"
-                    )
-                    .font(.caption).foregroundStyle(.secondary)
+                    Label(question.kindName, systemImage: "questionmark.bubble")
+                        .font(.caption).foregroundStyle(.secondary)
                     Text(question.question).font(.title3.bold())
+                    if question.isSkipped {
+                        Text(
+                            question.skips == 1 ? "Skipped once" : "Skipped \(question.skips) times"
+                        )
+                        .font(.caption).foregroundStyle(.secondary)
+                    }
                 }
                 .textSelection(.enabled)
             }
             Section("Answer") {
-                switch question.topic {
-                case .term:
-                    TextField(
-                        "Meaning", text: answer, prompt: Text("What “\(question.subject)” means"),
-                        axis: .vertical
-                    )
-                    .lineLimit(1...4)
-                    .onSubmit(submit)
-                case .collection:
-                    Picker("Collection", selection: answer) {
-                        Text("Choose…").tag("")
-                        ForEach(
-                            question.choices.isEmpty ? collections : question.choices, id: \.self
-                        ) {
-                            Text($0).tag($0)
-                        }
-                    }
+                QuestionAnswerer(
+                    question: question, collections: collections, answer: answer
+                ) { given in
+                    let id = question.id
+                    Task { await questions.answer(id, with: given) }
                 }
                 HStack {
+                    Button("Skip") { Task { await questions.skip(question.id) } }
+                        .help("Ask it again in a few days")
                     Button("Dismiss") { Task { await questions.dismiss(question.id) } }
                     Spacer()
-                    Button("Answer", action: submit)
-                        .keyboardShortcut(.defaultAction)
-                        .disabled(questions.answer(for: question.id).isEmpty)
+                    Button(question.kind == .item ? "Answer…" : "Answer") {
+                        let id = question.id
+                        Task { await questions.answer(id) }
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(questions.answer(for: question.id).isEmpty)
                 }
             }
-            Section("Holds Up") {
-                ForEach(Array(questions.affected(by: question).enumerated()), id: \.offset) {
-                    Text($0.element)
+            if !question.about.isEmpty {
+                Section("About") {
+                    ForEach(question.about, id: \.self) { Text(title($0) ?? $0) }
+                }
+            }
+            if !question.proposals.isEmpty {
+                Section("Holds Up") {
+                    ForEach(Array(questions.affected(by: question).enumerated()), id: \.offset) {
+                        Text($0.element)
+                    }
                 }
             }
         }
@@ -112,10 +163,5 @@ struct QuestionInspector: View {
         } set: {
             questions.answers[id] = $0
         }
-    }
-
-    private func submit() {
-        let id = question.id
-        Task { await questions.answer(id) }
     }
 }

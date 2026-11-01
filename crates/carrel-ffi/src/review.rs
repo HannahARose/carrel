@@ -7,9 +7,11 @@ use std::collections::BTreeMap;
 use carrel_core::actions::{self, Kept};
 use carrel_core::compressed::plan::Choice;
 use carrel_core::ingest::filing::{Outcome, Placement};
+use carrel_core::questions::answer::{self as core_answer, SenderAnswer};
 use carrel_core::questions::{QuestionEntry, QuestionKind, QuestionQueue};
 use carrel_core::review::{Confidence as CoreConfidence, ReviewEntry, ReviewQueue, State};
 
+use crate::questions::{QuestionAsks, QuestionSuggestion};
 use crate::records::CardFields;
 use crate::{ArchiveHandle, CarrelError, ItemKind, text};
 
@@ -323,6 +325,17 @@ pub struct Question {
     pub proposals: Vec<String>,
     /// For a collection question, the collections to choose from.
     pub choices: Vec<String>,
+    /// Which kind of question it is, and so how it's answered.
+    pub kind: QuestionAsks,
+    /// The filed items it's about: an item question's item, or a group's or sender's items
+    /// in the archive.
+    pub about: Vec<String>,
+    /// Likely answers to pick from, most likely first.
+    pub suggestions: Vec<QuestionSuggestion>,
+    /// How many times it's been skipped.
+    pub skips: u32,
+    /// When it was last skipped, if it was.
+    pub skipped: Option<String>,
 }
 
 impl From<&QuestionEntry> for Question {
@@ -339,6 +352,11 @@ impl From<&QuestionEntry> for Question {
             question: entry.question.clone(),
             proposals: entry.items.iter().map(ToString::to_string).collect(),
             choices: entry.choices.clone(),
+            kind: entry.kind.into(),
+            about: entry.about.iter().map(ToString::to_string).collect(),
+            suggestions: entry.suggestions.iter().map(Into::into).collect(),
+            skips: entry.skips,
+            skipped: entry.skipped.as_ref().map(|t| t.0.clone()),
         }
     }
 }
@@ -353,9 +371,51 @@ pub struct Answered {
     pub requeued: Vec<String>,
     /// For a collection, the proposals pointed there.
     pub moved: Vec<MovedProposal>,
+    /// Whether the answer settled it without changing anything, so it isn't asked again.
+    pub declined: bool,
+    /// For a collection, group or sender, the collection the items go in.
+    pub collection: Option<String>,
+    /// Whether that collection was created for the answer.
+    pub created: bool,
+    /// The filed items refiled there, by title.
+    pub refiled: Vec<String>,
+    /// Filed items that couldn't be refiled, each with why.
+    pub not_refiled: Vec<String>,
+    /// For a sender or project, the subject a routing rule could file future items by, to
+    /// offer before adding one with [`ArchiveHandle::add_question_rule`].
+    pub rule_for: Option<String>,
 }
 
 impl ArchiveHandle {
+    /// Points `question`'s proposals at the collection at `path`, refiling its filed items
+    /// there, creating it if `create`.
+    fn place_answer(
+        &self,
+        archive: &carrel_core::archive::Archive,
+        question: &QuestionEntry,
+        path: &str,
+        create: bool,
+        answered: Answered,
+    ) -> Result<Answered, CarrelError> {
+        let placed = core_answer::place(archive, question, path, create, self.holder()?)?;
+        Ok(Answered {
+            moved: placed
+                .moved
+                .into_iter()
+                .map(|m| MovedProposal {
+                    proposal: m.entry.id.to_string(),
+                    to: m.to,
+                    dropped: m.dropped,
+                })
+                .collect(),
+            created: placed.created.is_some(),
+            refiled: placed.refiled.into_iter().map(|(title, _)| title).collect(),
+            not_refiled: placed.not_refiled,
+            collection: Some(placed.collection),
+            ..answered
+        })
+    }
+
     /// Files `entries` where `placement` says, as this device, with a snapshot first when
     /// backups are set up, as `carrel review approve` does.
     fn file(
@@ -560,9 +620,7 @@ impl ArchiveHandle {
     }
 
     /// The questions waiting for the owner, the most worth answering first (the core's
-    /// ranking), without those resting after a skip. Only the kinds the app answers today are
-    /// listed: terms, and collection and group questions, answered with a collection's path.
-    /// Item and sender questions wait for the app's Questions screen to offer them (#291).
+    /// ranking), without those resting after a skip ([`ArchiveHandle::skipped_questions`]).
     ///
     /// # Errors
     ///
@@ -570,28 +628,21 @@ impl ArchiveHandle {
     pub fn questions(&self) -> Result<Vec<Question>, CarrelError> {
         let archive = self.fresh()?;
         let ranked = carrel_core::questions::answer::tidy(&archive)?;
-        Ok(ranked
-            .open
-            .iter()
-            .map(|w| &w.question)
-            .filter(|q| {
-                matches!(
-                    q.kind,
-                    QuestionKind::Term | QuestionKind::Collection | QuestionKind::Group
-                )
-            })
-            .map(Into::into)
-            .collect())
+        Ok(ranked.open.iter().map(|w| (&w.question).into()).collect())
     }
 
-    /// Answers the question `id`: a term's answer is added to the glossary and the
-    /// proposals waiting on it are queued to be drafted again; a collection's answer is a
-    /// collection's path, where the waiting proposals then go.
+    /// Answers the question `id` with `answer`: a suggestion's number or words, or the
+    /// owner's own. A suggestion that changes nothing settles it. A term's answer is added
+    /// to the glossary and the proposals waiting on it are drafted again. A collection's or
+    /// group's is a collection's path, where its items then go, created when the suggestion
+    /// is a new collection. A sender's is yes, no or a collection, after which a routing rule
+    /// can be offered ([`Answered::rule_for`]). An item question is answered through a
+    /// correction instead ([`ArchiveHandle::prepare_question_correction`]).
     ///
     /// # Errors
     ///
-    /// [`CarrelError::Invalid`] for an empty answer or an unknown collection,
-    /// [`CarrelError::Busy`] if another writer holds the archive, or
+    /// [`CarrelError::Invalid`] for an empty answer, an unknown collection or an item
+    /// question, [`CarrelError::Busy`] if another writer holds the archive, or
     /// [`CarrelError::Failed`].
     pub fn answer_question(&self, id: String, answer: String) -> Result<Answered, CarrelError> {
         let archive = self.fresh()?;
@@ -600,6 +651,26 @@ impl ArchiveHandle {
         if answer.is_empty() {
             return Err(CarrelError::invalid("give an answer"));
         }
+        let picked = question.picked(answer).cloned();
+        let answered = Answered {
+            commit: None,
+            requeued: Vec::new(),
+            moved: Vec::new(),
+            declined: false,
+            collection: None,
+            created: false,
+            refiled: Vec::new(),
+            not_refiled: Vec::new(),
+            rule_for: None,
+        };
+        if picked.as_ref().is_some_and(|s| s.no_change) {
+            core_answer::decline(&archive, &question)?;
+            return Ok(Answered {
+                declined: true,
+                ..answered
+            });
+        }
+        let answer = picked.as_ref().map_or(answer, |s| s.answer.as_str());
         match question.kind {
             QuestionKind::Term => {
                 let identity = self.identity()?;
@@ -608,33 +679,34 @@ impl ArchiveHandle {
                 Ok(Answered {
                     commit,
                     requeued: queued.iter().map(|e| e.id.to_string()).collect(),
-                    moved: Vec::new(),
+                    ..answered
                 })
             }
-            QuestionKind::Item | QuestionKind::Sender => Err(CarrelError::invalid(
-                "answer this question from the command line or the interactive mode",
+            QuestionKind::Item => Err(CarrelError::invalid(
+                "an item question is answered through a correction of its card",
             )),
             QuestionKind::Collection | QuestionKind::Group => {
-                let placed = carrel_core::questions::answer::place(
-                    &archive,
-                    &question,
-                    answer,
-                    false,
-                    self.identity()?.holder(),
-                )?;
-                Ok(Answered {
-                    commit: None,
-                    requeued: Vec::new(),
-                    moved: placed
-                        .moved
-                        .into_iter()
-                        .map(|m| MovedProposal {
-                            proposal: m.entry.id.to_string(),
-                            to: m.to,
-                            dropped: m.dropped,
+                let create = picked.as_ref().is_some_and(|s| s.new_collection);
+                self.place_answer(&archive, &question, answer, create, answered)
+            }
+            QuestionKind::Sender => {
+                match core_answer::sender_answer(&question, answer, picked.as_ref(), false)? {
+                    SenderAnswer::Decline => {
+                        core_answer::decline(&archive, &question)?;
+                        Ok(Answered {
+                            declined: true,
+                            ..answered
                         })
-                        .collect(),
-                })
+                    }
+                    SenderAnswer::Place { path, create } => {
+                        let placed =
+                            self.place_answer(&archive, &question, &path, create, answered)?;
+                        Ok(Answered {
+                            rule_for: Some(question.subject.clone()),
+                            ..placed
+                        })
+                    }
+                }
             }
         }
     }

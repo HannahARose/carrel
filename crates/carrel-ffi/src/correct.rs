@@ -155,10 +155,21 @@ pub struct CorrectionChanges {
 pub struct Correction {
     changes: CorrectionChanges,
     prepared: Mutex<Option<Prepared>>,
+    /// The item question it answers, which leaves the queue once it's saved.
+    answering: Option<carrel_core::card::Id>,
 }
 
 impl Correction {
+    /// `prepared`, answering the item question `question`.
+    pub(crate) fn answering(prepared: Prepared, question: carrel_core::card::Id) -> Arc<Self> {
+        Arc::new(Self::made(prepared, Some(question)))
+    }
+
     fn of(prepared: Prepared) -> Arc<Self> {
+        Arc::new(Self::made(prepared, None))
+    }
+
+    fn made(prepared: Prepared, answering: Option<carrel_core::card::Id>) -> Self {
         let changes = CorrectionChanges {
             title: prepared.title.clone(),
             before: (&prepared.before).into(),
@@ -175,10 +186,11 @@ impl Correction {
             model: prepared.worked.model.clone(),
             is_empty: prepared.is_empty(),
         };
-        Arc::new(Self {
+        Self {
             changes,
             prepared: Mutex::new(Some(prepared)),
-        })
+            answering,
+        }
     }
 }
 
@@ -262,8 +274,8 @@ impl ArchiveHandle {
     }
 
     /// Saves `correction`, as the owner agreed: a proposal back to the queue, or a filed
-    /// item's card as one change, refiled when its collection changed. A correction is saved
-    /// once.
+    /// item's card as one change, refiled when its collection changed. One answering an item
+    /// question takes the question off the queue. A correction is saved once.
     ///
     /// # Errors
     ///
@@ -281,6 +293,12 @@ impl ArchiveHandle {
             .ok_or_else(|| CarrelError::invalid("this correction was saved already"))?;
         let archive = self.fresh()?;
         let saved = prepare::save(&archive, prepared, || self.holder())?;
+        if let Some(id) = correction.answering
+            && let Ok(question) =
+                carrel_core::questions::QuestionQueue::of(&archive).find(&id.to_string())
+        {
+            carrel_core::questions::answer::settled(&archive, &question)?;
+        }
         Ok(SavedCorrection {
             title: saved.title,
             filed: saved.filed,

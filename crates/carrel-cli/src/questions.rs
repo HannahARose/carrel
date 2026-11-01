@@ -9,7 +9,7 @@ use std::path::Path;
 
 use carrel_core::actions;
 use carrel_core::archive::Archive;
-use carrel_core::questions::answer::{self as core_answer, Target};
+use carrel_core::questions::answer::{self as core_answer, SenderAnswer, Target};
 use carrel_core::questions::rank::Weighed;
 use carrel_core::questions::{QuestionEntry, QuestionKind, QuestionQueue, Suggestion};
 use carrel_core::review::short_id;
@@ -252,33 +252,19 @@ fn sender(
     picked: Option<&Suggestion>,
     options: Options,
 ) -> Result<Report, Failure> {
-    let lower = answer.to_lowercase();
-    if matches!(lower.as_str(), "no" | "n" | "no thanks") {
-        core_answer::decline(archive, question)?;
-        return Ok(Report::new(
-            format!(
-                "Settled: “{}” stays where it is, and Carrel won't ask again.\n",
-                question.subject
-            ),
-            json!({"question": question.id, "declined": true}),
-        ));
-    }
-    let proposed = question
-        .suggestions
-        .iter()
-        .find(|s| s.new_collection)
-        .map(|s| s.answer.clone())
-        .or_else(|| question.choices.first().cloned());
-    let (path, create) = if matches!(lower.as_str(), "yes" | "y") {
-        let Some(path) = proposed else {
-            return Err(Failure::new("say which collection they go in"));
-        };
-        (path, true)
-    } else {
-        (
-            answer.to_owned(),
-            options.create || picked.is_some_and(|s| s.new_collection),
-        )
+    let (path, create) = match core_answer::sender_answer(question, answer, picked, options.create)?
+    {
+        SenderAnswer::Decline => {
+            core_answer::decline(archive, question)?;
+            return Ok(Report::new(
+                format!(
+                    "Settled: “{}” stays where it is, and Carrel won't ask again.\n",
+                    question.subject
+                ),
+                json!({"question": question.id, "declined": true}),
+            ));
+        }
+        SenderAnswer::Place { path, create } => (path, create),
     };
     place(archive, question, &path, create, Some(options))
 }
