@@ -349,11 +349,13 @@ public final class ArchiveModel {
         return outcome
     }
 
-    /// Saves an edited body, Notes and all, to a filed card; Carrel's sections must be as
-    /// they were.
+    /// Saves `body`, an edit of `base`, the body the editor opened, Notes and all, to a filed
+    /// card; Carrel's sections must be as `base` had them. What was saved another way
+    /// meanwhile is kept beside the edit, or comes back as `.bodyChanged` when the two
+    /// changed the same lines.
     @discardableResult
-    public func edit(item id: String, body: String) async throws -> EditOutcome {
-        let outcome = try await call { try $0.editCardBody(item: id, body: body) }
+    public func edit(item id: String, base: String, body: String) async throws -> EditOutcome {
+        let outcome = try await call { try $0.editCardBody(item: id, base: base, body: body) }
         if case .saved = outcome { try await changed { _ in } }
         return outcome
     }
