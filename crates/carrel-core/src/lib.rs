@@ -91,6 +91,7 @@ pub mod previews;
 pub mod providers;
 pub mod questions;
 pub mod rename;
+pub mod restructure;
 pub mod review;
 pub mod search;
 pub mod sections;
