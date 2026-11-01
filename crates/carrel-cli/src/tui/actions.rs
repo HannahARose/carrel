@@ -67,6 +67,7 @@ pub fn input_text(purpose: &InputPurpose) -> Option<(&'static str, String)> {
                  links to it follow. The name shown works on every system:"
             ),
         ),
+        InputPurpose::FlagNote { title, .. } => super::flagging::input_text(title),
         _ => return None,
     })
 }
@@ -275,6 +276,9 @@ impl App {
                     tags,
                 }));
             }
+            InputPurpose::FlagNote { target, .. } => {
+                return Some(super::flagging::flag_note(target, &text));
+            }
             InputPurpose::Rename { card, from } => {
                 if text.is_empty() || text == from {
                     self.message = Some("Same name; nothing changed".into());
@@ -364,6 +368,9 @@ pub fn confirm_text(confirm: &Confirm) -> (&'static str, String, String, &'stati
                 ),
                 " create it   ",
             )
+        }
+        Confirm::Unflag { title, note, .. } => {
+            super::flagging::confirm_text(title, note.as_deref())
         }
         Confirm::Rename { from, to, .. } => (
             " Rename ",

@@ -11,6 +11,7 @@ mod backups;
 mod browser;
 mod discover;
 mod embedding;
+mod flagging;
 mod intake;
 mod item;
 mod librarian;
@@ -260,7 +261,9 @@ fn event_loop(
                 let result = edit_browsed(app.archive.root(), &effect);
                 reenter(terminal, &mut painter);
                 changed(app.archive.root(), &result);
+                let card = flagging::edited_card(&effect, &result);
                 finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
+                app.offer_to_unflag(card.as_deref());
             }
             Some(Effect::EditEntry { item, number }) => {
                 // The editor needs the terminal to itself.
@@ -383,6 +386,7 @@ fn correction(app: &mut App, step: Step, preparing: &mut Option<Preparing>) {
                 let fact = prepared.fact.clone();
                 let result = crate::correct::save(&app.archive, prepared);
                 let saved = result.is_ok();
+                let card = result.as_ref().ok().and_then(|s| s.card.clone());
                 if saved {
                     crate::worker::after_change(Some(app.archive.root()));
                 }
@@ -392,6 +396,8 @@ fn correction(app: &mut App, step: Step, preparing: &mut Option<Preparing>) {
                         about: fact.about,
                         fact: fact.fact,
                     });
+                } else {
+                    app.offer_to_unflag(card.as_deref());
                 }
             }
         }
@@ -540,7 +546,8 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
         | Effect::DeskArchive(_)
         | Effect::NewCollection(_)
         | Effect::Rename { .. }
-        | Effect::Expand { .. }) => archive_work(root, effect),
+        | Effect::Expand { .. }
+        | Effect::Flag(_)) => archive_work(root, effect),
     };
     app.busy = Some(busy);
     let (send, receive) = std::sync::mpsc::channel();
@@ -792,6 +799,7 @@ fn archive_work(root: PathBuf, effect: Effect) -> (String, Work) {
             "Expanding it…",
             Box::new(move |root| crate::expand::expand(Some(root), &item, anyway)),
         ),
+        Effect::Flag(flagging) => flagging::flag_work(flagging),
         _ => unreachable!("only the archive's actions come here"),
     };
     (

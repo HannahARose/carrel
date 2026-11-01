@@ -850,7 +850,12 @@ fn draw_browse(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
         .iter()
         .map(|c| {
             let depth = c.path.matches('/').count();
-            ListItem::new(format!("{}{}", "  ".repeat(depth), c.doc.title))
+            let mark = if c.doc.needs_work.is_some() {
+                super::flagging::MARK
+            } else {
+                ""
+            };
+            ListItem::new(format!("{}{mark}{}", "  ".repeat(depth), c.doc.title))
         })
         .collect();
     // The pane the arrows move in is highlighted; the other keeps its choice dimly.
@@ -881,16 +886,21 @@ fn draw_browse(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
         app.browse_items
             .iter()
             .enumerate()
-            .map(
-                |(i, (_, title))| match app.searched.hit(i).map(|h| &h.found) {
+            .map(|(i, (card, title))| {
+                let flag = if app.browse_flagged.contains(card) {
+                    super::flagging::MARK
+                } else {
+                    ""
+                };
+                match app.searched.hit(i).map(|h| &h.found) {
                     Some(Found::Item(item)) => ListItem::new(format!(
-                        "{title}{}  ({})",
+                        "{flag}{title}{}  ({})",
                         crate::related::mark(item.sensitivity),
                         item.collection
                     )),
-                    _ => ListItem::new(title.as_str()),
-                },
-            )
+                    _ => ListItem::new(format!("{flag}{title}")),
+                }
+            })
             .collect()
     };
     let mut items_state = ListState::default().with_selected(Some(app.browse_item));

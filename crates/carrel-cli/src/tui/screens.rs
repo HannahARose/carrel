@@ -99,6 +99,13 @@ pub enum InputPurpose {
     },
     /// One of the commands' options, asked for along the way.
     Option(super::option_lines::OptionLine),
+    /// What needs work on an item or a collection being flagged.
+    FlagNote {
+        /// The item's card or the collection's folder.
+        target: String,
+        /// Its title.
+        title: String,
+    },
 }
 
 /// What a correction is for.
@@ -144,6 +151,7 @@ impl Input {
             InputPurpose::CollectionTags { .. } => "name=meaning; …, or nothing",
             InputPurpose::Rename { .. } => "the new name",
             InputPurpose::Option(line) => line.prompt(),
+            InputPurpose::FlagNote { .. } => "what needs work, or nothing",
         }
     }
 
@@ -420,6 +428,7 @@ impl App {
             self.searched = super::search::Searched::default();
             self.collection_items()
         };
+        self.browse_flagged = self.flagged_cards();
         self.browse_item = self
             .browse_item
             .min(self.browse_items.len().saturating_sub(1));
@@ -461,7 +470,8 @@ impl App {
     /// Handles a key on the Browse screen: ←→ move between collections, items and the chosen
     /// item's view, `e` and `c` edit or correct the chosen item, `o`, `r` and `z` check it out,
     /// rename or expand it, `a` answers Carrel's question about it and `A` asks for them, `w`
-    /// wanders from it, `n` creates a collection, `/` searches, and Esc clears a search.
+    /// wanders from it, `n` creates a collection, `f` flags an item or a collection and `F`
+    /// lists the flagged items, `/` searches, and Esc clears a search.
     pub(super) fn browse_key(&mut self, key: KeyEvent) -> Handled {
         if self.browse_pane == Pane::Item
             && let Handled::Yes(effect) = self.item_key(key)
@@ -470,6 +480,9 @@ impl App {
         }
         let on_item = self.browse_pane != Pane::Collections;
         if !on_item && let Some(handled) = self.collection_restructure_key(key) {
+            return handled;
+        }
+        if let Some(handled) = self.flag_key(key, on_item) {
             return handled;
         }
         if let Handled::Yes(effect) = self.browse_action_key(key, on_item) {

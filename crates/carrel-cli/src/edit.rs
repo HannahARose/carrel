@@ -14,6 +14,29 @@ use crate::commands::{find_item, holder, locate};
 use crate::config::Identity;
 use crate::{Failure, Report};
 
+/// `carrel edit ITEM [--body]`: [`edit`] or [`edit_body`], then, when the card is flagged as
+/// needing work, the offer to clear its flag. The interactive mode offers it its own way.
+///
+/// # Errors
+///
+/// As [`edit`] and [`edit_body`], or if the flag can't be cleared.
+pub fn edit_command(archive: Option<&Path>, query: &str, body: bool) -> Result<Report, Failure> {
+    let mut report = if body {
+        edit_body(archive, query)?
+    } else {
+        edit(archive, query)?
+    };
+    let id = report.json["item"]
+        .as_str()
+        .and_then(|id| uuid::Uuid::parse_str(id).ok());
+    if let Some(id) = id
+        && report.json["commit"].is_string()
+    {
+        crate::flag::offer_to_clear(&locate(archive)?, carrel_core::card::Id(id), &mut report)?;
+    }
+    Ok(report)
+}
+
 /// `carrel edit ITEM`: the card's fields in the owner's editor, saved against the fields it
 /// opened ([`carrel_core::edit::save`]), so a field saved another way meanwhile isn't
 /// overwritten. When one the owner changed was, the editor opens again saying so.
@@ -73,14 +96,10 @@ pub fn edit(archive: Option<&Path>, query: &str) -> Result<Report, Failure> {
             fields,
             summary,
             commit,
-        } => {
-            let mut report = Report::new(
-                format!("{summary}; undo it from History or with `carrel undo`.\n"),
-                json!({"item": item.id, "changed": fields, "commit": commit}),
-            );
-            crate::flag::offer_to_clear(&archive, item.id, &mut report)?;
-            Ok(report)
-        }
+        } => Ok(Report::new(
+            format!("{summary}; undo it from History or with `carrel undo`.\n"),
+            json!({"item": item.id, "changed": fields, "commit": commit}),
+        )),
         _ => Ok(Report::new(
             "Nothing changed\n",
             json!({"item": item.id, "changed": [], "commit": null}),
@@ -192,14 +211,10 @@ pub fn edit_body(archive: Option<&Path>, query: &str) -> Result<Report, Failure>
     match saved {
         Saved::Changed {
             summary, commit, ..
-        } => {
-            let mut report = Report::new(
-                format!("{summary}; undo it from History or with `carrel undo`.\n"),
-                json!({"item": item.id, "changed": ["notes"], "commit": commit}),
-            );
-            crate::flag::offer_to_clear(&archive, item.id, &mut report)?;
-            Ok(report)
-        }
+        } => Ok(Report::new(
+            format!("{summary}; undo it from History or with `carrel undo`.\n"),
+            json!({"item": item.id, "changed": ["notes"], "commit": commit}),
+        )),
         _ => Ok(Report::new(
             "Nothing changed\n",
             json!({"item": item.id, "changed": [], "commit": null}),
