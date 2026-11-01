@@ -406,9 +406,9 @@ fn draw_confirm(frame: &mut Frame, confirm: &Confirm, theme: Theme, area: Rect) 
             format!(
                 "Its items go to {path} now, each an undoable move, creating the collection if \
                  it's new. Saying yes also adds a routing rule, so items named for “{subject}” \
-                 go there from now on; n gathers them without the rule. Esc changes nothing."
+                 go there from now on."
             ),
-            " with a rule   n without   ",
+            " with a rule   ",
         ),
         Confirm::Learn { about, fact } => (
             " Glossary ",
@@ -453,7 +453,16 @@ fn draw_confirm(frame: &mut Frame, confirm: &Confirm, theme: Theme, area: Rect) 
             Span::raw(" delete its card too   "),
         ]);
     }
-    answers.extend([Span::styled("n", theme.key()), Span::raw(" keep it")]);
+    if matches!(confirm, Confirm::Rule { .. }) {
+        answers.extend([
+            Span::styled("n", theme.key()),
+            Span::raw(" without a rule   "),
+            Span::styled("Esc", theme.key()),
+            Span::raw(" not now"),
+        ]);
+    } else {
+        answers.extend([Span::styled("n", theme.key()), Span::raw(" keep it")]);
+    }
     lines.extend([Line::from(""), Line::from(answers)]);
     let width = if matches!(confirm, Confirm::Return { .. }) {
         area.width.saturating_sub(8).clamp(64, 100)

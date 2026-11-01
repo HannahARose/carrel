@@ -227,7 +227,7 @@ pub fn item(
     }
 
     let last = card.dates.as_ref().and_then(|d| {
-        [&d.worked, &d.modified, &d.created]
+        [&d.worked, &d.modified, &d.created, &d.added]
             .into_iter()
             .flatten()
             .filter_map(|t| t.0.get(..10)?.parse::<jiff::civil::Date>().ok())

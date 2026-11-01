@@ -2853,3 +2853,286 @@ fn the_worker_steps_aside_while_the_agent_looks_after_the_archive() {
     assert_eq!(worked["done"], 1);
     assert_eq!(sandbox.json(&root, &["ingest", "--status"])["agent"], false);
 }
+
+/// Writes a question file into `root`'s queue, as an older or another program would.
+fn write_question(root: &Path, question: &Value) {
+    let dir = root.join("_System/queue/questions");
+    std::fs::create_dir_all(&dir).unwrap();
+    let id = question["id"].as_str().unwrap();
+    std::fs::write(
+        dir.join(format!("{id}.json")),
+        serde_json::to_string_pretty(question).unwrap(),
+    )
+    .unwrap();
+}
+
+/// Starts history in the sample at `root`, so answers can move items undoably.
+fn init_sample(sandbox: &Sandbox, root: &Path) {
+    let init = std::process::Command::new(env!("CARGO_BIN_EXE_carrel"))
+        .args(["init", root.to_str().unwrap()])
+        .env("CARREL_CONFIG_DIR", sandbox.path("config"))
+        .output()
+        .unwrap();
+    assert!(
+        init.status.success(),
+        "{}",
+        String::from_utf8_lossy(&init.stderr)
+    );
+}
+
+const LAMP_PROPOSAL: &str = "01a18701-0500-776a-9867-08f000000001";
+
+#[test]
+fn questions_are_ranked_skipped_and_answered_by_picking_a_suggestion() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    init_sample(&sandbox, &root);
+    // A question as ingest wrote them before suggestions, skipping and the new kinds.
+    write_question(
+        &root,
+        &json!({
+            "carrel": "question", "format": "1.0",
+            "id": "01a18701-0500-776a-9867-08f0000000a1",
+            "batch": "01a18701-0500-776a-9867-08f0000000b1",
+            "created": "2026-10-29T16:20:05-07:00",
+            "kind": "term", "subject": "ABX", "question": "What is “ABX”?",
+            "items": [LAMP_PROPOSAL]
+        }),
+    );
+    write_question(
+        &root,
+        &json!({
+            "carrel": "question", "format": "1.0",
+            "id": "01a18701-0500-776a-9867-08f0000000a2",
+            "created": "2026-10-30T09:00:00-07:00",
+            "kind": "group", "subject": "lamp",
+            "question": "These items about “lamp”: Projects/Hardware, or a new Projects/Lamps collection?",
+            "items": [LAMP_PROPOSAL],
+            "choices": ["Projects", "Projects/Hardware", "Reading"],
+            "suggestions": [
+                {"answer": "Projects/Hardware", "why": "where one was going"},
+                {"answer": "Projects/Lamps", "new_collection": true}
+            ]
+        }),
+    );
+    // The same question again, written differently: it merges into the first.
+    write_question(
+        &root,
+        &json!({
+            "carrel": "question", "format": "1.0",
+            "id": "01a18701-0500-776a-9867-08f0000000a3",
+            "created": "2026-10-31T09:00:00-07:00",
+            "kind": "term", "subject": "abx", "question": "What does “abx” mean?",
+            "items": [LAMP_PROPOSAL]
+        }),
+    );
+
+    let listed = sandbox.json(&root, &["questions"]);
+    let ids: Vec<&str> = listed["questions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|q| q["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        ids,
+        [
+            "01a18701-0500-776a-9867-08f0000000a1",
+            "01a18701-0500-776a-9867-08f0000000a2"
+        ],
+        "{listed}"
+    );
+    assert_eq!(listed["questions"][0]["settles"], 1);
+    assert_eq!(
+        listed["merged"][0]["into"],
+        "01a18701-0500-776a-9867-08f0000000a1"
+    );
+    assert!(
+        !root
+            .join("_System/queue/questions/01a18701-0500-776a-9867-08f0000000a3.json")
+            .exists()
+    );
+    let text = sandbox.ok(&root, &["questions"]);
+    assert!(
+        text.contains("2  Projects/Lamps  (a new collection)"),
+        "{text}"
+    );
+
+    let skipped = sandbox.json(&root, &["questions", "skip", "a1"]);
+    assert_eq!(skipped["skips"], 1);
+    let listed = sandbox.json(&root, &["questions"]);
+    assert_eq!(listed["questions"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        listed["resting"][0]["id"],
+        "01a18701-0500-776a-9867-08f0000000a1"
+    );
+    assert!(
+        sandbox
+            .ok(&root, &["questions"])
+            .contains("1 skipped question is resting")
+    );
+    assert!(
+        sandbox
+            .ok(&root, &["questions", "list", "--all"])
+            .contains("Resting after a skip:")
+    );
+
+    let answered = sandbox.json(&root, &["questions", "answer", "a2", "2"]);
+    assert_eq!(answered["collection"], "Projects/Lamps", "{answered}");
+    assert_eq!(answered["created"], true);
+    assert!(root.join("Projects/Lamps/_collection.md").exists());
+    let proposal: Value = serde_json::from_str(
+        &std::fs::read_to_string(root.join(format!("_System/queue/review/{LAMP_PROPOSAL}.json")))
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(proposal["destination"]["path"], "Projects/Lamps");
+
+    let wrong = sandbox.run_in(&root, &["questions", "answer", "a1"]);
+    assert!(
+        !wrong.status.success(),
+        "no answer, and no terminal to ask on"
+    );
+}
+
+#[test]
+fn a_sender_answer_gathers_its_items_and_adds_a_rule_only_on_yes() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    init_sample(&sandbox, &root);
+    let sender = |id: &str, subject: &str, about: &str| {
+        json!({
+            "carrel": "question", "format": "1.0", "id": id,
+            "created": "2026-10-30T09:00:00-07:00",
+            "kind": "sender", "subject": subject,
+            "question": format!("Should “{subject}” have its own collection?"),
+            "about": [about],
+            "suggestions": [
+                {"answer": format!("Projects/{subject}"), "new_collection": true},
+                {"answer": "No, keep them in Projects/Hardware", "no_change": true}
+            ]
+        })
+    };
+    write_question(
+        &root,
+        &sender(
+            "01a18701-0500-776a-9867-08f0000000c1",
+            "Lamps",
+            "01a18701-0500-776a-9867-080d24773181",
+        ),
+    );
+    write_question(
+        &root,
+        &sender(
+            "01a18701-0500-776a-9867-08f0000000c2",
+            "Notes",
+            "01a18701-0500-776a-9867-080f706799db",
+        ),
+    );
+    let rules = std::fs::read_to_string(root.join("_System/rules/routing.yaml")).unwrap();
+
+    let answered = sandbox.json(&root, &["questions", "answer", "c1", "1"]);
+    assert_eq!(
+        answered["refiled"].as_array().unwrap().len(),
+        1,
+        "{answered}"
+    );
+    assert_eq!(answered["rule"]["added"], false);
+    assert!(root.join("Projects/Lamps/parts-list.csv").exists());
+    assert_eq!(
+        std::fs::read_to_string(root.join("_System/rules/routing.yaml")).unwrap(),
+        rules,
+        "no rule without the owner's yes"
+    );
+
+    let declined = sandbox.json(&root, &["questions", "answer", "c2", "2"]);
+    assert_eq!(declined["declined"], true);
+    assert!(root.join("Projects/Hardware/notes.md").exists());
+    let listed = sandbox.json(&root, &["questions"]);
+    assert_eq!(listed["questions"].as_array().unwrap().len(), 0, "{listed}");
+    assert!(
+        root.join("_System/queue/questions/01a18701-0500-776a-9867-08f0000000c2.json")
+            .exists(),
+        "a no is remembered, so it isn't asked again"
+    );
+
+    write_question(
+        &root,
+        &sender(
+            "01a18701-0500-776a-9867-08f0000000c3",
+            "Wiring",
+            "01a18701-0500-776a-9867-080f706799db",
+        ),
+    );
+    let learned = sandbox.json(&root, &["questions", "answer", "c3", "yes", "--learn"]);
+    assert_eq!(learned["rule"]["added"], true, "{learned}");
+    let rules = std::fs::read_to_string(root.join("_System/rules/routing.yaml")).unwrap();
+    assert!(rules.contains("name: \"(?i)Wiring\""), "{rules}");
+    let log = sandbox.json(&root, &["log"]);
+    assert!(
+        log[0]["summary"]
+            .as_str()
+            .unwrap()
+            .contains("Add the routing rule “Wiring → Projects/Wiring”"),
+        "{log}"
+    );
+}
+
+#[test]
+fn an_item_question_is_answered_through_a_correction() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    init_sample(&sandbox, &root);
+    let card = root.join("Projects/Hardware/lamp-build.md");
+    let text = std::fs::read_to_string(&card).unwrap().replace(
+        "summary: \"Notes and a sketch for a 3D-printed desk lamp with a dimmable LED strip.\"\n",
+        "",
+    );
+    let text = text.replace("added: \"2026-10-26\"", "added: \"2019-05-01\"");
+    std::fs::write(&card, text).unwrap();
+
+    let asked = sandbox.json(
+        &root,
+        &["questions", "about", "Projects/Hardware/lamp-build.md"],
+    );
+    let questions = asked["questions"].as_array().unwrap();
+    let words: Vec<&str> = questions
+        .iter()
+        .map(|q| q["question"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        words,
+        ["What was this project for?", "Does this still matter?"],
+        "{asked}"
+    );
+    let project = questions[0]["id"].as_str().unwrap().to_owned();
+    let matters = questions[1]["id"].as_str().unwrap().to_owned();
+
+    let summary = "summary: A dimmable desk lamp, designed and printed for the study.";
+    let corrected = sandbox.json(&root, &["questions", "answer", &project, summary, "--yes"]);
+    assert_eq!(corrected["saved"], true, "{corrected}");
+    let card_text = std::fs::read_to_string(&card).unwrap();
+    assert!(
+        card_text.contains("A dimmable desk lamp, designed and printed for the study."),
+        "{card_text}"
+    );
+
+    let kept = sandbox.json(&root, &["questions", "answer", &matters, "1"]);
+    assert_eq!(kept["declined"], true);
+    let again = sandbox.json(
+        &root,
+        &["questions", "about", "Projects/Hardware/lamp-build.md"],
+    );
+    assert_eq!(
+        again["questions"].as_array().unwrap().len(),
+        0,
+        "answered, and a kept item isn't asked about again: {again}"
+    );
+    assert_eq!(
+        sandbox.json(&root, &["questions"])["questions"]
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
+}
