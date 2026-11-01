@@ -19,8 +19,8 @@ The command line and the interactive mode run on macOS, Linux and Windows. The M
 | Review: expand or keep compressed files | `review expand`, `keep-compressed` | ✓ | ✓ (#234) |
 | Review: duplicates (keep both, file as a version) | `review` | ✓ | ✓ (#234) |
 | Questions: answer and dismiss | `questions` | ✓ Questions | ✓ (#234) |
-| Questions: ranked, with suggested answers, skip | `questions`, `questions skip` | ✓ Questions (`1`–`9`, `s`) | ranked; suggestions and skip #291 |
-| Questions about an item, a group, a sender | `questions answer`, `questions about` | ✓ Questions | groups ✓; items and senders #291 |
+| Questions: ranked, with suggested answers, skip | `questions`, `questions skip` | ✓ Questions (`1`–`9`, `s`) | ranked; suggestions and skip #319 |
+| Questions about an item, a group, a sender | `questions answer`, `questions about` | ✓ Questions | groups ✓; items and senders #319 |
 | Questions while browsing and wandering, from the librarian, and a few a day on Status | `show`, `discover wander`, `ask`, `status` | ✓ Browse, Discover, Librarian, Status (`a`) | #316 |
 | Browse collections and items | `show`, `status` | ✓ Browse | ✓ Browse |
 | Previews of items | the item's path in `show` | ✓ Browse, in terminals that draw images (#258) | ✓ inspector and grid (#256) |
