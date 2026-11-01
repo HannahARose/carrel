@@ -140,7 +140,7 @@ final class ArchiveWindowModel {
         }
     }
 
-    init(url: URL, options: OpenOptions? = nil, defaults: UserDefaults = .standard) {
+    init(url: URL, options: OpenOptions? = nil, defaults: UserDefaults = .app) {
         self.url = url
         self.options = options
         self.defaults = defaults

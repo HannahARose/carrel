@@ -193,6 +193,31 @@ scripts/swift-format.sh --check
 xcodebuild -project apple/CarrelApp/CarrelApp.xcodeproj -scheme Carrel test
 ```
 
+#### Debug builds keep clear of the installed app
+
+A Debug build, from Xcode or a test run, is a different app from the one installed in `/Applications`, so it can't take over the installed app's extensions, settings or agent ([#443](https://github.com/Horizon-Labs/carrel/issues/443)):
+
+| | Release (installed) | Debug |
+| --- | --- | --- |
+| App and its defaults | `io.github.hannaharose.Carrel` | `io.github.hannaharose.Carrel.dev` |
+| Agent and its Mach service | `io.github.hannaharose.Carrel.Agent` | `io.github.hannaharose.Carrel.dev.Agent` |
+| Finder, Send to Archive | `io.github.hannaharose.Carrel.Finder`, `.SendToArchive` | `io.github.hannaharose.Carrel.dev.Finder`, `.SendToArchive` |
+| App group | `io.github.hannaharose.Carrel` | `io.github.hannaharose.Carrel.dev` |
+
+The project sets `CARREL_BUNDLE_IDENTIFIER` once per configuration, and each target's identifier, `CARREL_APP_GROUP`, the extensions' entitlements and the `CarrelAppGroup` key in each Info.plist come from it. CarrelKit's `AgentService.appGroup` reads that key, and the agent reads the app's domain from `CarrelAppIdentifier`, so a Debug agent follows the Debug app's archives. A new target or extension takes its identifier as `$(CARREL_BUNDLE_IDENTIFIER).Name`, never a literal one.
+
+As the host of the unit tests, the app (`CarrelMain`) starts bare: no windows, no Dock icon, no decision log, and no login item or agent registered. `UserDefaults.app` is then a suite of the tests' own (`io.github.hannaharose.Carrel.test-host`), emptied at each run, so tests never read or write the Debug app's settings or recents either. Debug and Release still both answer `carrel://` links; with both registered, macOS may open either, so quit a Debug build you aren't using and keep it out of `/Applications`.
+
+To check that a run left the installed app alone, compare these before and after:
+
+```bash
+defaults read io.github.hannaharose.Carrel
+```
+
+```bash
+pluginkit -mAvvv -i io.github.hannaharose.Carrel.Finder
+```
+
 `apple/CarrelProviders` is the Apple provider (`carrel-provider-apple`), a separate Swift package that needs no Rust build: run `swift test` there. `CARREL_TEST_APPLE_PROVIDER=<path to the built program> cargo test -p carrel-core --test apple_provider` tests it through the provider protocol, as CI does.
 
 The app's Describe button asks Apple's on-device model (Foundation Models, macOS 26 and later with Apple Intelligence turned on) to describe the archive through Rust. Without it, a stand-in that only counts is used.

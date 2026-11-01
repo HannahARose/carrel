@@ -27,8 +27,11 @@ struct CarrelAgentApp: App {
 /// The agent, the archives it follows, and whether it's paused, kept between launches.
 @Observable
 final class AgentHost {
-    /// The app's defaults, which hold its recent archives.
-    static let appDomain = "io.github.hannaharose.Carrel"
+    /// The app's defaults, which hold its recent archives: those of the app this agent was
+    /// built with, so a Debug agent follows the Debug app's archives.
+    static let appDomain =
+        Bundle.main.object(forInfoDictionaryKey: "CarrelAppIdentifier") as? String
+        ?? AgentService.releaseAppGroup
     /// Set to archive folders separated by `:` to follow those instead of the app's recent
     /// archives, as in manual checks against a temporary archive.
     static let archivesEnv = "CARREL_AGENT_ARCHIVES"

@@ -480,7 +480,7 @@
 					"@executable_path/../Frameworks",
 					"@executable_path/../../../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = io.github.hannaharose.Carrel.Finder;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(CARREL_BUNDLE_IDENTIFIER).Finder";
 				PRODUCT_NAME = "Carrel Finder";
 				SKIP_INSTALL = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
@@ -503,7 +503,7 @@
 					"@executable_path/../Frameworks",
 					"@executable_path/../../../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = io.github.hannaharose.Carrel.Finder;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(CARREL_BUNDLE_IDENTIFIER).Finder";
 				PRODUCT_NAME = "Carrel Finder";
 				SKIP_INSTALL = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
@@ -526,7 +526,7 @@
 					"@executable_path/../Frameworks",
 					"@executable_path/../../../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = io.github.hannaharose.Carrel.SendToArchive;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(CARREL_BUNDLE_IDENTIFIER).SendToArchive";
 				PRODUCT_NAME = "Send to Archive";
 				SKIP_INSTALL = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
@@ -549,7 +549,7 @@
 					"@executable_path/../Frameworks",
 					"@executable_path/../../../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = io.github.hannaharose.Carrel.SendToArchive;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(CARREL_BUNDLE_IDENTIFIER).SendToArchive";
 				PRODUCT_NAME = "Send to Archive";
 				SKIP_INSTALL = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
@@ -562,6 +562,8 @@
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ARCHS = arm64;
+				CARREL_APP_GROUP = "$(CARREL_BUNDLE_IDENTIFIER)";
+				CARREL_BUNDLE_IDENTIFIER = io.github.hannaharose.Carrel.dev;
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
 				CODE_SIGN_IDENTITY = "-";
@@ -593,6 +595,8 @@
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ARCHS = arm64;
+				CARREL_APP_GROUP = "$(CARREL_BUNDLE_IDENTIFIER)";
+				CARREL_BUNDLE_IDENTIFIER = io.github.hannaharose.Carrel;
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
 				CODE_SIGN_IDENTITY = "-";
@@ -628,7 +632,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = io.github.hannaharose.Carrel;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(CARREL_BUNDLE_IDENTIFIER)";
 				PRODUCT_NAME = Carrel;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -651,7 +655,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = io.github.hannaharose.Carrel;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(CARREL_BUNDLE_IDENTIFIER)";
 				PRODUCT_NAME = Carrel;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -696,7 +700,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = io.github.hannaharose.Carrel.Agent;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(CARREL_BUNDLE_IDENTIFIER).Agent";
 				PRODUCT_NAME = "Carrel Agent";
 				SKIP_INSTALL = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
@@ -720,7 +724,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = io.github.hannaharose.Carrel.Agent;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(CARREL_BUNDLE_IDENTIFIER).Agent";
 				PRODUCT_NAME = "Carrel Agent";
 				SKIP_INSTALL = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;

@@ -1,9 +1,35 @@
-// The Mac app: one window per archive, a welcome window when none is open, and Settings.
+// The Mac app: one window per archive, a welcome window when none is open, and Settings. As the
+// host of the unit tests it's a bare app instead, with no windows, decision log or real defaults.
 
+import AppKit
 import CarrelKit
 import SwiftUI
 
 @main
+enum CarrelMain {
+    /// Whether this process hosts the unit tests, which XCTest says in the environment.
+    static let isHostingTests = ProcessInfo.processInfo.environment.keys.contains {
+        $0 == "XCTestConfigurationFilePath" || $0 == "XCTestBundlePath"
+    }
+
+    static func main() {
+        guard isHostingTests else { return CarrelApp.main() }
+        NSApplication.shared.setActivationPolicy(.prohibited)
+        NSApplication.shared.run()
+    }
+}
+
+extension UserDefaults {
+    /// The app's defaults: its own domain, or while it hosts the tests a suite of their own,
+    /// emptied at each run, so tests never read or write a developer's settings or recents.
+    static let app: UserDefaults = {
+        guard CarrelMain.isHostingTests else { return .standard }
+        let suite = "io.github.hannaharose.Carrel.test-host"
+        UserDefaults.standard.removePersistentDomain(forName: suite)
+        return UserDefaults(suiteName: suite) ?? .standard
+    }()
+}
+
 struct CarrelApp: App {
     @State private var app = AppModel()
 
