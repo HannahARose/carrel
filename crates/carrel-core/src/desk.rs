@@ -550,7 +550,8 @@ pub struct Suggestions {
 /// Suggestions for `desk`, as of `now`: the folders directly inside `places` (the Desktop and
 /// `~/Code`, say) that look like active work, changed in the last [`ACTIVE_DAYS`] or a Git
 /// repository, and the desk items unchanged for [`IDLE_DAYS`]. Folders already on the desk,
-/// checked out to, or inside the archive are left out, as are hidden ones.
+/// checked out to, or inside the archive are left out, as are hidden ones. A folder checked
+/// out to a path written with `~` is in `home`.
 ///
 /// # Errors
 ///
@@ -559,6 +560,7 @@ pub fn suggest(
     archive: &Archive,
     desk: &Desk,
     places: &[PathBuf],
+    home: Option<&Path>,
     now: std::time::SystemTime,
 ) -> Result<Suggestions, DeskError> {
     let failed = |e: &dyn std::fmt::Display| DeskError::Io {
@@ -574,9 +576,7 @@ pub fn suggest(
             .and_then(|t| CardFile::parse(&t).ok());
         if let Some(out) = card.and_then(|f| f.card().checked_out.clone()) {
             let to = match out.to.strip_prefix("~/") {
-                Some(rest) => {
-                    crate::local::home_dir().map_or_else(|| out.to.clone().into(), |h| h.join(rest))
-                }
+                Some(rest) => home.map_or_else(|| out.to.clone().into(), |h| h.join(rest)),
                 None => PathBuf::from(&out.to),
             };
             taken.push(std::fs::canonicalize(&to).unwrap_or(to));

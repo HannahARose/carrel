@@ -289,6 +289,7 @@ fn status_suggests_active_folders_to_track_and_idle_desk_items_to_archive() {
         &s.archive,
         &desk,
         std::slice::from_ref(&code),
+        None,
         std::time::SystemTime::now(),
     )
     .unwrap();
