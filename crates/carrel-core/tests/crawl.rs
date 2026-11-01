@@ -405,6 +405,92 @@ fn a_finding_is_waiting_once_and_one_whose_item_has_gone_is_kept_with_why() {
     assert_eq!(findings::list(&archive).unwrap().len(), 1, "kept");
 }
 
+#[test]
+fn a_cut_off_answer_is_asked_for_again_with_more_room_and_the_tags_are_capped() {
+    let (_dir, archive, holder) = sample(false);
+    let mut registry = Registry::with_built_ins();
+    let model = Scripted::new(
+        "scripted",
+        10,
+        8_000,
+        vec![
+            Err(carrel_core::providers::ProviderError::Failed(
+                "m's answer was cut off at 1200 tokens before the JSON ended".into(),
+            )),
+            Ok(verdict(false, "Reading", 0.8)),
+        ],
+    );
+    let asked = model.asked.clone();
+    registry.add(Box::new(model));
+    let did = Crawler {
+        archive: &archive,
+        registry: &registry,
+        model: AvailableModel {
+            provider: "scripted".into(),
+            offer: "m".into(),
+            label: "scripted/m".into(),
+        },
+        holder,
+    }
+    .pass(1, &never)
+    .unwrap();
+    assert_eq!((did.judged, did.failed.len()), (1, 0), "{did:?}");
+    let asked = asked.lock().unwrap();
+    let rooms: Vec<Option<u32>> = asked.iter().map(|r| r.max_tokens).collect();
+    assert_eq!(rooms, [Some(1_200), Some(2_400)]);
+    assert_eq!(
+        asked[0].schema.as_ref().unwrap()["properties"]["tags"]["maxItems"],
+        5
+    );
+}
+
+#[test]
+fn a_misfit_the_model_isnt_sure_of_counts_as_fitting() {
+    let (_dir, archive, holder) = sample(false);
+    let item = archive
+        .items()
+        .unwrap()
+        .into_iter()
+        .find(|i| i.card.starts_with("Reading/"))
+        .unwrap();
+    let judge = |answer: Value| {
+        let (registry, model) = scripted(vec![answer]);
+        Crawler {
+            archive: &archive,
+            registry: &registry,
+            model,
+            holder,
+        }
+        .judge_item(&item)
+        .unwrap()
+        .unwrap()
+    };
+    let unsure = judge(verdict(false, "Projects", 0.3));
+    assert!(unsure.fits);
+    assert_eq!(unsure.better, None);
+    let sure = judge(verdict(false, "Projects", 0.7));
+    assert!(!sure.fits);
+    assert_eq!(sure.better.as_deref(), Some("Projects"));
+    // In Holding, nothing fits, however unsure the model is.
+    let scan = archive
+        .items()
+        .unwrap()
+        .into_iter()
+        .find(|i| i.id.to_string() == SCAN)
+        .unwrap();
+    let (registry, model) = scripted(vec![verdict(false, "Reading", 0.2)]);
+    let held = Crawler {
+        archive: &archive,
+        registry: &registry,
+        model,
+        holder,
+    }
+    .judge_item(&scan)
+    .unwrap()
+    .unwrap();
+    assert!(!held.fits);
+}
+
 fn card_of(archive: &Archive, id: &str) -> carrel_core::card::Card {
     let item = archive
         .items()

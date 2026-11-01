@@ -180,6 +180,23 @@ No model meets the bar yet, so none has the `librarian` flag, and the default st
 - **Context:** a listing question ("which receipts are from 2025?") was too long for Apple's on-device model.
 - **No restricted text was shown** by any model.
 
+### Librarian: after #361
+
+The same run on DeskBook with `dev` after #361, which lets the librarian finish its answers (a larger output limit), returns an earlier result for a repeated tool call and trims tool results to fit a model's context. The test set now has 116 items, as #357 added 35. [Full report](2026-11-01-after-361/librarian/report.md) · [results.json](2026-11-01-after-361/librarian/results.json)
+
+| Model | Recall | Precision | Facts | Restricted shown | Unanswered | Steps | s/question | Meets the bar |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Apple Foundation Model | 88% (was 67%) | 67% | 65% | 0 | 1 | 3.5 | 108.9 | no: facts, too slow |
+| Granite 4.2 3B (llama.cpp) | 60% (was 54%) | 93% | 70% | 0 | 4 | 2.4 | 53.9 | no: recall, facts |
+| Qwen3.5 4B (llama.cpp) | 70% (was 48%) | 90% | 89% | 0 | 4 | 1.8 | 51.3 | no: recall |
+
+- **Qwen3.5 4B is closest:** it meets every part of the bar but recall, 70% against 80%.
+- **Cut-off answers:** Qwen's and Granite's four unanswered questions are all still answers cut off, now at the 2,400-token limit. Finishing those would likely bring Qwen to the bar.
+- **Apple's model** finds the most (88%) but states the fewest facts, and at 109 seconds a question it's too slow. It takes fewer steps than before (3.5, from 6.8), but more tokens (35,000 a question, from 21,000).
+- **No model showed restricted text.**
+
+No model has the `librarian` flag yet, so the default is unchanged.
+
 ## Question value
 
 Whether the question queue asks the questions that help most (`docs/design/librarian.md`, "Measuring it"). `carrel bench --questions` ingests the test set with each text model in one batch, as ingest would, and ranks the questions the batch raises as the queue does (`questions::rank`). It then answers each question alone with the answer the test set implies, and re-routes:
@@ -215,11 +232,25 @@ So 35 items were added for this benchmark (#357), each with its known answer in 
 
 The senders, the group and the uncertain placements raise a group question when the model splits them or isn't sure of them. The filing, findability and librarian benchmarks see the added items too, so their totals from runs after this aren't comparable with the 2026-11-01 runs item for item.
 
+### Question value: after #357
+
+On DeskBook, with the 35 items above. [Report](2026-11-01-after-361/questions/report.md) · [results.json](2026-11-01-after-361/questions/results.json)
+
+| Model | Questions | Routing before | After all | Top 1 (best) | Top 3 (best) | Top 5 (best) | Rank correlation |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Apple Foundation Model | 14 | 73% | 77% | 75% (75%) | 75% (76%) | 76% (77%) | 0.58 |
+| Granite 4.2 3B | 14 | 62% | 68% | 64% (64%) | 67% (67%) | 68% (69%) | 0.87 |
+| Qwen3.5 4B | 14 | 82% | 84% | 84% (84%) | 84% (85%) | 84% (85%) | 0.48 |
+
+- **The ranking asks the right questions first:** with each model, answering the top 1, 3 or 5 questions comes within a point of the best any that many could do.
+- **Answers help most where routing is weakest:** answering every question adds 6 points for Granite, 4 for Apple's model and 2 for Qwen.
+- **Rank correlation** is high for Granite (0.87) and moderate for the others. That's over only 14 questions, many worth the same, so the top-k results say more.
+
 ## Crawler
 
 How well each model finds misplaced items, as the crawler would (`docs/design/restructure.md`, "Measuring it"). [`fixtures/bench/muddle.yaml`](../../fixtures/bench/muddle.yaml) muddles a copy of the test set's archive. Every item is filed where `answers.yaml` expects it, except:
 
-- **a collection that's missing:** Recipes isn't there, and its 4 items wait in Home;
+- **a collection that's missing:** Recipes isn't there, and its 4 items wait in Home. The test archive's `min_collection_items` is 4, so a restructure proposal can gather them, and `carrel bench` checks that the missing and emptied collections have that many;
 - **a collection that's overfilled:** Manuals' 6 items are dumped in Home, and Manuals is left there empty;
 - **items scattered:** 8 single items filed in collections they have nothing to do with, such as the desk chair receipt in Reading.
 
@@ -231,6 +262,8 @@ That makes 18 misplaced items among 113 that count; Holding's own items don't, s
 - **precision:** the share of the items it says don't fit that are misplaced. A false alarm is a finding the owner has to reject;
 - **placement:** of the misplaced items whose collection is there (14 of the 18), the share it would move to an acceptable collection. An item it missed counts as not placed;
 - **unusable answers and seconds per item.**
+
+As in the crawler, an item counts as flagged only when the model says it doesn't fit and is at least 0.5 sure; a less sure misfit counts as fitting.
 
 ```bash
 carrel bench --crawl --out bench-results
@@ -261,11 +294,11 @@ Whether a restructure proposal recovers what was muddled (`docs/design/restructu
 carrel bench --restructure --out bench-results
 ```
 
-It writes `bench-results/restructure/results.json` and `report.md`. Each proposal's score is saved to `restructure/runs/` as it's made, so a stopped run carries on; `--fresh` starts over, and `--model NAME` measures one text model beside numbers alone. Proposals are never applied: where each item would end up is worked out from the changes.
+It writes `bench-results/restructure/results.json` and `report.md`. Each proposal's score is saved to `restructure/runs/` as it's made, so a stopped run carries on; `--fresh` starts over, and `--model NAME` measures one text model beside numbers alone. Proposals are never applied: where each item would end up is worked out from the changes. The report lists each group a proposal held back, and why.
 
 ### Restructure: not run yet
 
-No real model has been measured. On the stub card vectors in the tests, which know the intended shape, numbers alone at Balanced subdivide collections without breaking anything and bring the archive closer to the intended shape, but hold back the new top-level collections that would recover Recipes; each eagerness recovers at least as much as the one below it.
+No real model has been measured. The first run on the reference machine proposed nothing at all, since every card vector shares a direction, as an embedding model's do, so every item was grouped with every other (#404). Grouping now measures likeness from the archive's average cosine. On stub card vectors built that way, numbers alone at Eager gather the missing Recipes' items and the items dumped from Manuals into new collections of their own. On the stub card vectors in the tests that know the intended shape exactly, numbers alone at Balanced subdivide collections without breaking anything and bring the archive closer to the intended shape, but hold back the new top-level collections that would recover Recipes; each eagerness recovers at least as much as the one below it.
 
 ## Running it again
 

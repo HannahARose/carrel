@@ -5,7 +5,7 @@ id: 01a18d4f-c1b1-71d7-bc08-78f1a96ad515
 name: Bench archive
 sensitivity_default: personal
 size_threshold: 10737418240
-min_collection_items: 5
+min_collection_items: 4
 ---
 
 # Bench archive

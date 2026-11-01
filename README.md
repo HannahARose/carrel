@@ -6,7 +6,7 @@ Carrel is a personal archivist with native apps for macOS, iPadOS and iOS and a 
 
 Every document is analyzed on your own devices. Nothing is sent anywhere unless you explicitly opt in.
 
-> **Status:** [v0.5.1](https://github.com/Horizon-Labs/carrel/releases/tag/v0.5.1) is the latest release: the Mac app, with a background agent, over the same archive as the `carrel` command line and its interactive mode on macOS, Linux and Windows, each fully capable. Filing, checking out and returning work, corrections and edits, search in your own words, previews, history, backups and settings, all on your computer. New here? Start with [Getting started](docs/guide/getting-started.md), or [the Mac app](docs/guide/mac-app.md).
+> **Status:** [v0.6.0](https://github.com/Horizon-Labs/carrel/releases/tag/v0.6.0) is the latest release: the librarian, which answers questions about your archive in your own words, and discovery, over the Mac app, the `carrel` command line and its interactive mode, each fully capable on macOS, Linux and Windows. Filing, checking out and returning work, corrections and edits, search in your own words, previews, history, backups and settings, all on your computer. New here? Start with [Getting started](docs/guide/getting-started.md), or [the Mac app](docs/guide/mac-app.md).
 
 ## Principles
 

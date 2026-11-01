@@ -14,6 +14,12 @@ const TEXT_CHARS: usize = 3_000;
 const DESIGN_CHARS: usize = 2_000;
 /// How many collections the prompt lists.
 const PLACES_LISTED: usize = 80;
+/// How many missing tags the model may suggest.
+const MAX_TAGS: usize = crate::ingest::card::MAX_TAGS;
+/// How sure the model must be that an item doesn't fit for it to count as misplaced: a model
+/// less sure than this is taken to say it fits, since a move it isn't sure of costs the owner
+/// more than an item left where it is.
+pub const MISFIT_CONFIDENCE: f64 = 0.5;
 
 /// A collection the item could go to.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,10 +68,10 @@ pub struct Judgment {
 #[must_use]
 pub fn system() -> String {
     "You keep a personal archive in order. Each item is described by a card and filed in a collection, whose design document says what belongs in it. You check one item at a time: whether it still fits its collection, where it would fit better if not, and whether its card could be better.\n\n\
-     - Judge fit against the design document and the list of collections. Say it fits unless another collection is clearly better; Holding is for items waiting for a home, so an item there never fits.\n\
-     - When it doesn't fit, name the collection it belongs in, from the list, exactly as written.\n\
-     - Then read the card again. Suggest a clearer title, a better summary, the date it was made when the text gives one the card lacks, and tags it's missing. Leave a field empty when the card's is fine. Only suggest what the text and card show; don't guess.\n\
-     - Give how sure you are, from 0 to 1, and why, in a sentence.\n"
+     - Judge fit against the design document and the list of collections. Most items are where they belong. Say it fits when its collection is a reasonable place for it, even if another would do as well; say it doesn't fit only when it plainly belongs somewhere else, or nowhere in the list. Holding is for items waiting for a home, so an item there never fits.\n\
+     - When it doesn't fit, name the collection it belongs in, from the list, exactly as written, or leave it empty when none is right.\n\
+     - Then read the card again. Suggest a clearer title, a better summary of at most two sentences, the date it was made when the text gives one the card lacks, and up to five tags it's missing. Leave a field empty when the card's is fine, as it usually is. Only suggest what the text and card show; don't guess.\n\
+     - Give how sure you are, from 0 to 1, and why, in one short sentence.\n"
         .to_owned()
 }
 
@@ -135,7 +141,7 @@ fn shorten(text: &str, chars: usize) -> String {
 
 /// The JSON Schema the model answers to, the collection one of `paths` or empty. Every field is
 /// required, with an empty value for none, since models constrained by a grammar otherwise stop
-/// early.
+/// early; the tags are capped, so a small model can't list them until it runs out of room.
 #[must_use]
 pub fn schema(paths: &[String]) -> Value {
     let mut collections: Vec<&str> = vec![""];
@@ -150,14 +156,15 @@ pub fn schema(paths: &[String]) -> Value {
             "title": {"type": "string", "description": "A clearer title; empty when the card's is fine"},
             "summary": {"type": "string", "description": "A better summary; empty when the card's is fine"},
             "created": {"type": "string", "description": "When it was made, YYYY-MM-DD, if the text says and the card doesn't; else empty"},
-            "tags": {"type": "array", "items": {"type": "string"}, "description": "Tags it's missing; usually empty"}
+            "tags": {"type": "array", "items": {"type": "string"}, "maxItems": MAX_TAGS, "description": "Tags it's missing; usually empty"}
         },
         "required": ["fits", "collection", "confidence", "reason", "title", "summary", "created", "tags"]
     })
 }
 
 /// The model's answer, read, against the card it's about and the collection it's in. `None`
-/// when it isn't in the form asked for. Suggestions that change nothing are dropped.
+/// when it isn't in the form asked for. Suggestions that change nothing are dropped, and a
+/// misfit it's less sure of than [`MISFIT_CONFIDENCE`] counts as fitting.
 #[must_use]
 pub fn read(answer: &Value, card: &Card, collection: &str) -> Option<Judgment> {
     // Its white space run together: a suggestion is one line, whatever the model wrote.
@@ -169,12 +176,12 @@ pub fn read(answer: &Value, card: &Card, collection: &str) -> Option<Judgment> {
             .filter(|t| !t.is_empty())
     };
     let fits = answer.get("fits")?.as_bool()?;
-    let confidence = answer
+    let stated = answer
         .get("confidence")
         .and_then(Value::as_f64)
         .filter(|c| c.is_finite())
-        .unwrap_or(0.0)
-        .clamp(0.0, 1.0);
+        .map(|c| c.clamp(0.0, 1.0));
+    let confidence = stated.unwrap_or(0.0);
     let better = text("collection").filter(|c| c != collection);
     let created = text("created").filter(|c| {
         crate::card::DateOrTime(c.clone()).is_valid()
@@ -198,8 +205,10 @@ pub fn read(answer: &Value, card: &Card, collection: &str) -> Option<Judgment> {
     tags.retain(|t| !t.is_empty() && !have.contains(&t.as_str()));
     tags.sort();
     tags.dedup();
-    // Nothing is meant to stay in Holding, whatever the model says.
-    let fits = fits && collection != "Holding";
+    // A misfit the model isn't sure of counts as fitting. Nothing is meant to stay in
+    // Holding, whatever the model says.
+    let unsure = stated.is_some_and(|c| c < MISFIT_CONFIDENCE);
+    let fits = (fits || unsure) && collection != "Holding";
     Some(Judgment {
         fits,
         // An item that doesn't fit but names nowhere better still doesn't fit.
