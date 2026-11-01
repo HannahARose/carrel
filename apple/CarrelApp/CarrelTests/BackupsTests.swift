@@ -82,6 +82,10 @@ final class BackupsTests: XCTestCase {
 
         await backups.verify()
         XCTAssertTrue(backups.report?.contains("check out") ?? false, backups.report ?? "")
+        backups.choosingVerify = true
+        await backups.verify(percent: 25)
+        XCTAssertFalse(backups.choosingVerify)
+        XCTAssertTrue(backups.report?.contains("reading back 25%") ?? false, backups.report ?? "")
 
         let item = try XCTUnwrap(
             window.model.items.first { $0.card == "Projects/Hardware/parts-list.csv.md" })
@@ -92,6 +96,12 @@ final class BackupsTests: XCTestCase {
             restored.deletingLastPathComponent().resolvingSymlinksInPath().path,
             window.folder.resolvingSymlinksInPath().path, "beside the archive")
         XCTAssertTrue(restored.lastPathComponent.hasPrefix("parts-list.csv (restored "))
+
+        let chosen = window.folder.appending(path: "Restored here")
+        await backups.restore(item: item.id, to: chosen)
+        let into = try XCTUnwrap(backups.restored, window.archive.lastError?.message ?? "")
+        XCTAssertEqual(into.lastPathComponent, "Restored here", "where it was asked to go")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: chosen.path(percentEncoded: false)))
 
         try FileManager.default.moveItem(at: drive, to: window.folder.appending(path: "unplugged"))
         await backups.refresh()

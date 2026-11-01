@@ -33,7 +33,7 @@ The command line and the interactive mode run on macOS, Linux and Windows. The M
 | Discovery: wander from an item | `discover wander ITEM` | ✓ `w` in Browse | #343 |
 | Discovery: the archive map, activity | `discover map`, `discover activity` | ✓ a sized tree and a block heatmap | ✓ a treemap and a heatmap |
 | Discovery: activity over chosen days | `discover activity --from --to` | ✓ `r` on activity | #343 |
-| Discovery: the tag and link graph | `discover graph [--items]` | #326, a text view of the strongest connections | #327, a drawn graph |
+| Discovery: the tag and link graph | `discover graph [--items]` | #326, a text view of the strongest connections | ✓ Discover → Connections, drawn |
 | Resurfacing forgotten collections | `status` | ✓ Status | ✓ Status |
 | The embedding index: status, rebuild, switch models | `index` | ✓ Status, Settings | ✓ Settings → Search (#267) |
 | Correct a filed item | `correct` | ✓ `c` | ✓ ⌘K (#234) |
@@ -49,14 +49,15 @@ The command line and the interactive mode run on macOS, Linux and Windows. The M
 | Desk items: a title and summary for the card | `desk add --title --summary` | ✓ asked when adding | #343 |
 | Work-session entries: approve, edit, combine, drop | `sessions` | ✓ Active | ✓ (#235) |
 | History and undo | `log`, `undo` | ✓ History | ✓ (#235) |
-| Restructure tags: merge, split and retire, approved all or in part | `restructure tags` | #326 | #327 |
+| Restructure tags: merge, split and retire, approved all or in part | `restructure tags` | #326 | ✓ Restructure, before and after side by side |
 | Restructure a section: propose, list, show, approve all or part, reject | `restructure propose`, `list`, `show`, `approve`, `reject` | #326 | #327 |
 | How eager to rearrange: archive-wide, and per collection | `settings set restructure.eagerness`, `restructure eagerness COLLECTION` | ✓ Settings (archive-wide); a collection's own #326 | ✓ Settings (archive-wide); a collection's inspector #327 |
 | The librarian: ask, converse, save to the Journal | `ask` | ✓ the Librarian screen (`L`) | ✓ the Librarian panel (⌥⌘L), Ask About This (⇧⌘L) |
 | The librarian's changes: list and undo them together | `status`, `log --librarian`, `undo --librarian` | ✓ the Librarian screen, Status and History | ✓ the Librarian panel, Status and History |
+| The crawler: how far it has got, a pass now, its findings, its changes and undoing them | `crawl status`, `crawl run`, `review`, `status`, `crawl undo` | #326 | #327 |
 | Backups: set up, snapshot, list, verify, restore | `backup` | ✓ Backups | ✓ Backups (#266) |
 | Backups: the repository's name | `backup setup --description` | ✓ asked on set up | ✓ the setup sheet |
-| Backups: how much to verify, where to restore | `backup verify --percent`, `backup restore --to` | ✓ asked along the way | #348 |
+| Backups: how much to verify, where to restore | `backup verify --percent`, `backup restore --to` | ✓ asked along the way | ✓ Verify… asks how much; Restore asks where |
 | Settings, this device's and the archive's | `settings` | ✓ Settings | ✓ Settings → General (#267) |
 | Models: list, download, remove | `models` | ✓ Settings | ✓ Settings → Models (#267) |
 | Providers in use, and file types not read | `providers`, `formats` | ✓ Settings | ✓ Settings → Providers (#267) |

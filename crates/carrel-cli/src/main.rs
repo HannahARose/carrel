@@ -15,6 +15,7 @@ mod checkout;
 mod commands;
 mod config;
 mod correct;
+mod crawl;
 mod desk;
 mod discover;
 mod edit;
@@ -298,6 +299,13 @@ enum Command {
     Restructure {
         #[command(subcommand)]
         action: RestructureAction,
+    },
+    /// The crawler, which rechecks where items are filed when the device is idle: how far it
+    /// has got (`status`, the default), a pass now (`run`), or undoing its changes (`undo`).
+    /// Its findings wait in `carrel review`.
+    Crawl {
+        #[command(subcommand)]
+        action: Option<crawl::CrawlAction>,
     },
     /// Measure text models on the benchmark's test set, for choosing defaults
     /// (`docs/design/benchmark.md`).
@@ -1139,6 +1147,7 @@ fn main() -> ExitCode {
         Command::Questions { action } => questions_command(cli.archive.as_deref(), action),
         Command::Discover { action } => discover_command(cli.archive.as_deref(), action, cli.json),
         Command::Restructure { action } => restructure_command(cli.archive.as_deref(), action),
+        Command::Crawl { action } => crawl::command(cli.archive.as_deref(), action),
         Command::Bench(args) => bench::bench(&args, cli.json),
         Command::Models { action } => models_command(
             action.unwrap_or(ModelsAction::List),
@@ -1361,6 +1370,7 @@ fn changes_archive(command: &Command) -> bool {
             None | Some(ReviewAction::List { .. } | ReviewAction::Show { .. })
         ),
         Command::Desk { action } => !matches!(action, None | Some(DeskAction::List)),
+        Command::Crawl { action } => !matches!(action, None | Some(crawl::CrawlAction::Status)),
         Command::Backup { action } => {
             matches!(action, BackupAction::Setup { .. } | BackupAction::Now)
         }

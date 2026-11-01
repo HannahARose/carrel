@@ -494,6 +494,8 @@ Archive-level settings that every device follows. Version 1.0 defines:
 | `restructure.stability_penalty` | number from 0 to 1: the cost added to a change in a section restructured within `restructure.stability_days`. Unset, the level's: 0.5, 0.2, 0.05 | none |
 | `restructure.stability_days` | integer: how many days after a restructure its section counts as recently changed. Unset, the level's: 365, 90, 30 | none |
 | `restructure.move_budget` | integer, or `none` for no limit: how many items one proposal may move between branches or top-level collections; subdividing, renaming and rewriting don't count. Unset, the level's: 10, none, none | none |
+| `crawler.changes` | `true` (the crawler may refile items and correct model-written card fields on its own when it's sure, each an undoable change marked as its own, §8.2) or `false` (its findings wait in Review, §7.9) | `false` |
+| `crawler.pace` | `off`, `gentle`, `steady` or `brisk`: how much of a device's idle time the crawler uses to recheck where items are filed. It runs only when the device is idle and on power | `steady` |
 
 Programs **must** preserve unknown keys.
 
@@ -586,7 +588,7 @@ A device only ever writes to its own inbox folder. The writer applies inbox file
 
 ### 7.9 Queues
 
-`_System/queue/` holds pending work as one JSON file per entry, in subfolders `intake/` (items waiting to be ingested), `review/` (ingest and change proposals), `questions/` (questions for the owner), `tasks/` (work for a more capable device) and `proposals/` (restructure proposals). Entry schemas are defined alongside the features that use them and are versioned with this specification. Programs **must** preserve unknown keys in entries.
+`_System/queue/` holds pending work as one JSON file per entry, in subfolders `intake/` (items waiting to be ingested), `review/` (ingest and change proposals), `questions/` (questions for the owner), `tasks/` (work for a more capable device), `proposals/` (restructure proposals) and `crawler/` (the crawler's findings). Entry schemas are defined alongside the features that use them and are versioned with this specification. Programs **must** preserve unknown keys in entries.
 
 #### Review entries
 
@@ -757,6 +759,37 @@ A restructure proposal (`proposals/<id>.json`) is a reviewable list of changes t
 - **Applying:** programs apply the approved changes to the archive as it is then (an item changed or moved since is left alone and reported), update the vocabularies of the design documents named and their changelogs, rewrite links to moved cards and rebuild the listings, remove the entry, and record it all as one `restructure` commit (§8.2), so undoing it reverses every part. When any approved change moves files, programs take a backup snapshot first, when backups are set up, and name it in the commit's `Carrel-Snapshot`.
 - A rejected proposal is removed without changing anything else. A new proposal of the same kind for the same section replaces one waiting.
 
+#### Crawler findings
+
+The crawler rechecks filed items in the background and leaves what it finds for the owner to review (`crawler/<id>.json`): a move to a collection the item fits better, or a correction of one of its card's fields:
+
+```json
+{
+  "carrel": "crawl",
+  "format": "1.0",
+  "id": "01a195c0-0000-7000-8000-00000000c001",
+  "created": "2026-11-01T10:00:00Z",
+  "item": "01a18701-0500-776a-9867-0810dc3b08d1",
+  "card": "Holding/untitled scan.txt.md",
+  "title": "Untitled scan",
+  "change": "move",
+  "from": "Holding",
+  "to": "Reading",
+  "reason": "A note about the oscillator paper, kept for reference.",
+  "confidence": 0.8,
+  "model": "llama/qwen3.5-9b"
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `item`, `card`, `title` | The item, and its card and title when it was found |
+| `change` | `move` (with `from` and `to`, collection paths) or `correct` (with `field`, one of `title`, `summary`, `created` or `tags`, and its new `value`; for tags, `+tag` for each to add) |
+| `reason`, `confidence`, `model` | Why, how sure from 0 to 1, and the model as `provider/offer` |
+
+- **Owner fields:** a correction is only ever of a field a model wrote (§5.6).
+- **Approving** makes the change through the corrections path as the owner's change, then removes the entry. **Rejecting** removes it, and the device's verdicts (§7.10) remember it, so it isn't proposed again.
+
 ### 7.10 Devices
 
 `_System/devices/<device-id>/device.json` records a device's name, type and capability profile. `desk.json` lists the desk items tracked on that device with their local paths. Paths in `desk.json` are only meaningful on that device.
@@ -769,6 +802,16 @@ A restructure proposal (`proposals/<id>.json`) is a reviewable list of changes t
 | `path` | Where the item is on that device, absolute |
 | `card` | Where its card is: beside it, its name with `.md` added |
 | `added` | When it was put on the desk |
+
+`crawler.json` holds the crawler's verdicts from that device, so devices crawling at the same time never write the same file. Readers merge every device's, taking the newest verdict for each item and every finding the owner declined on any device. It's an object with `last_pass` (when a pass last ran there) and `items`, keyed by item `id`, each with:
+
+| Key | Meaning |
+| --- | --- |
+| `collection` | The collection it was in when judged |
+| `fits` | Whether it fits there, by that collection's design document |
+| `better` | Where it would fit better, when it doesn't |
+| `confidence`, `reason`, `model`, `judged` | How sure, why, the model, and when |
+| `declined` | Findings (as in §7.9) the owner rejected |
 
 ### 7.11 Search index
 
@@ -821,7 +864,7 @@ Carrel-Items: 01928f3a-7c41-7d2e-9b6a-3f0c5e2a1b44
 
 `Carrel-Operation` is one of `create`, `ingest`, `approve`, `edit`, `move`, `checkout`, `return`, `session`, `restructure`, `deaccession`, `purge`, `outside-edit`, `migrate`, `inbox`. `Carrel-Snapshot` names the content backup taken with the change, when there is one. `Carrel-Items` may repeat.
 
-- **Agents:** a change a program made on its own, acting for the person rather than on their word, has a `Carrel-Agent` trailer naming it, such as `Carrel-Agent: librarian` for the librarian's optional changes (`docs/design/librarian.md`). `Carrel-Person` still names the person it acted for. Undoing such a change is the person's own change and has no `Carrel-Agent`.
+- **Agents:** a change a program made on its own, acting for the person rather than on their word, has a `Carrel-Agent` trailer naming it, such as `Carrel-Agent: librarian` for the librarian's optional changes (`docs/design/librarian.md`) and `Carrel-Agent: crawler` for the crawler's (`docs/design/restructure.md`). `Carrel-Person` still names the person it acted for. Undoing such a change is the person's own change and has no `Carrel-Agent`.
 
 - **Moves:** each item a change moves is recorded, in the order it was moved, as a `Carrel-Move` trailer whose value is a one-line JSON object: `Carrel-Move: {"item":"01928f3a-…","from":"Research/Code/sim","to":"Research/Projects/sim"}`. Paths are the item's (not the card's), relative to the archive root. Git sees card moves itself; these trailers let undo move item contents, which history doesn't track. A restructure that renames a collection or merges one into another records each folder it moves the same way, with the collection's `id` as `item` and the folders' paths.
 - **Empty changes** that leave every tracked file unchanged are not committed.

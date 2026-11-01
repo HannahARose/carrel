@@ -80,6 +80,8 @@ With `--json`, `carrel search` prints `{"root", "query", "total", "meaning", "re
 
 Identifiers can be shortened to their last eight characters, as the list shows them.
 
+The crawler's findings are listed under "From the crawler": a move of a filed item to a collection it fits better, or a correction of a field a model wrote on its card. `approve` makes the change as yours, through the corrections path, and `reject` drops it, so the crawler doesn't suggest it again.
+
 ## Restructure
 
 See [Reorganizing a section](user-guide.md#reorganizing-a-section), [How eager Carrel is to rearrange](user-guide.md#how-eager-carrel-is-to-rearrange) and [Tidying tags](user-guide.md#tidying-tags).
@@ -100,6 +102,18 @@ See [Reorganizing a section](user-guide.md#reorganizing-a-section), [How eager C
 `show`, `approve` and `reject` take any waiting proposal; `ID` is needed only when more than one is waiting. With `--json`, `restructure propose` prints `{"proposal", "replaced", "note"}`, or `{"proposal": null, "rationale", "assessment", "note"}` when nothing is worth changing; `list` prints `{"proposals"}`, each `{"id", "kind", "section", "created", "changes", "invasiveness", "rationale"}`; `show`, `approve` and `reject` print as the tag commands below do, and `approve` adds `note` (why no snapshot was taken). A section proposal's changes are `create-collection` (`path`, `description`), `move-items` (`to`), `rename-collection` (`from`, `to`), `merge-collection` (`from`, `into`) or `rewrite-design` (`collection`, `description`, `organization`), and it carries an `assessment` (FORMAT.md §7.9). Each approved change's outcome adds `moves` and, when it couldn't be made, `not_applied`; `approved` adds `snapshot`. `restructure eagerness` prints `{"collection", "eagerness", "from", "source", "thresholds", "collections"}`, and `commit` when it set one.
 
 For tag proposals, `ID` is needed only when more than one tag proposal is waiting. With `--json`, `propose` prints `{"proposal", "replaced", "note"}` (`proposal` is `null` when there's nothing to change) and `show` prints `{"proposal"}`, the proposal as it's stored: `{"id", "kind", "section", "created", "by", "invasiveness", "rationale", "changes"}`, each change `{"id", "change", "reason", "invasiveness", "items", "held", "documents", "depends_on"}`, where `change.kind` is `merge-tags` (`from`, `into`), `split-tag` (`tag`, `into`: each `{"tag", "description", "items"}`) or `retire-tag` (`tag`), items are `{"id", "card", "title"}` and held items add `why`. `approve` prints `{"proposal", "approved"}`, `approved` being `{"selection", "outcomes", "summary", "commit"}`, and `reject` prints `{"rejected"}`.
+
+## Crawler
+
+See [The crawler](user-guide.md#the-crawler).
+
+| Command | What it does |
+| --- | --- |
+| `carrel crawl [status]` | Shows the crawler's pace, how many items it has checked, those due in the order it takes them (Holding, items filed with low confidence, crowded collections, then everything), the collections whose items keep not fitting, its findings waiting in Review and the changes it made this week. |
+| `carrel crawl run [--items N]` | Checks a few items now, whatever the pace and however busy the device. |
+| `carrel crawl undo SINCE` | Undoes every change the crawler made on its own since then: a span such as `24h` or `7d`, `today`, or a date. |
+
+It runs by itself in `carrel agent` and after the background worker, only when the device has been idle a while and is on power (on a Mac; elsewhere when the agent has seen no changes for a few minutes), and stops for anything you do. `crawler.pace` sets how much of the idle time it uses (`off`, `gentle`, `steady` or `brisk`), and `crawler.changes` whether it makes the refiles and corrections it's sure of itself, each undoable. With `--json`, `status` prints `{"pace", "changes", "items", "judged", "waiting", "misfits", "findings", "last_pass", "recent"}`, and `run` prints `{"judged", "misfits", "proposed", "made", "failed", "stopped"}`.
 
 ## Questions
 
@@ -183,7 +197,7 @@ Backups need [Kopia](https://kopia.io), beside `carrel` or on `PATH`.
 | --- | --- |
 | `CARREL_CONFIG_DIR` | Where Carrel keeps this device's files, instead of the default (see the [User guide](user-guide.md#what-carrel-keeps-on-this-device)) |
 | `CARREL_MODELS_DIR` | Where local models are kept |
-| `CARREL_WORKER=off` | Never start a worker in the background |
+| `CARREL_WORKER=off` | Never start a worker in the background, and never let the crawler run by itself |
 | `CARREL_SERVICE_MANAGER=off` | `carrel agent install` and `uninstall` write and remove the service's file without running `launchctl`, `systemctl` or `schtasks` |
 | `CARREL_TRASH_DIR` | Put files Carrel trashes (such as a zip after it's unpacked) in this folder instead of the system Trash |
 | `CARREL_OCR_LANGUAGES` | Tesseract's languages for OCR, such as `eng+deu` |

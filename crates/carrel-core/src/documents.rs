@@ -169,6 +169,12 @@ pub struct Settings {
         skip_serializing_if = "crate::restructure::eagerness::RestructureSettings::is_default"
     )]
     pub restructure: crate::restructure::eagerness::RestructureSettings,
+    /// What the crawler may do on its own, and its pace (`docs/design/restructure.md`).
+    #[serde(
+        default,
+        skip_serializing_if = "crate::crawl::CrawlerSettings::is_default"
+    )]
+    pub crawler: crate::crawl::CrawlerSettings,
     /// Keys this version doesn't know.
     #[serde(flatten)]
     pub extra: Extra,
@@ -449,6 +455,7 @@ impl Default for Settings {
             compressed_files: crate::compressed::plan::Choice::default(),
             librarian: LibrarianSettings::default(),
             restructure: crate::restructure::eagerness::RestructureSettings::default(),
+            crawler: crate::crawl::CrawlerSettings::default(),
             extra: Extra::new(),
         }
     }
