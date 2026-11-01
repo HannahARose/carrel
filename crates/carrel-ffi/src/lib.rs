@@ -60,6 +60,7 @@ pub mod crawl;
 pub mod creating;
 pub mod discover;
 pub mod edit;
+pub mod flags;
 pub mod graph;
 pub mod history;
 pub mod index;
@@ -264,6 +265,8 @@ pub struct ItemSummary {
     pub card: String,
     /// The item's path relative to the archive root, if it has one.
     pub item: Option<String>,
+    /// The owner's flag, if they marked it as needing work.
+    pub flag: Option<flags::Flag>,
 }
 
 /// A collection, as listed in the apps.
@@ -275,6 +278,8 @@ pub struct CollectionSummary {
     pub title: String,
     /// Its one-line description, if it has one.
     pub description: Option<String>,
+    /// The owner's flag, if they marked it as needing work.
+    pub flag: Option<flags::Flag>,
 }
 
 /// A language model the platform provides, implemented in Swift.
@@ -519,6 +524,7 @@ impl ArchiveHandle {
                 path: c.path,
                 title: c.doc.title,
                 description: c.doc.description,
+                flag: c.doc.needs_work.as_ref().map(Into::into),
             })
             .collect())
     }
@@ -546,6 +552,7 @@ impl ArchiveHandle {
                     kind: item.kind.into(),
                     card: item.card,
                     item: item.item,
+                    flag: file.card().needs_work.as_ref().map(Into::into),
                 })
             })
             .collect()
