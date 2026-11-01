@@ -275,6 +275,31 @@ Search is for you alone, so sensitive and restricted items come back like any ot
 
 **In Browse,** `/` runs the same search: type words, filters or both, and press `Enter`. The items found are listed best first, with their collection and a mark for sensitive and restricted ones, and above the chosen item's card is what matched and the passage, your words underlined. Collections and glossary facts that match are counted in the list's title; `carrel search` lists them. Browse doesn't stop to read text that hasn't been read yet: items filed before search arrived are found by their cards until a `carrel search` has read them (anything drafted since kept its text when it was drafted). `Esc` clears the search.
 
+## Asking the librarian
+
+The **librarian** answers questions about what's in your archive, in plain words: "what do I have about the lamp build?", "what did I work on last spring?", "what does the lease say about notice?". It runs on a text model on this device and reads the archive through the same search, cards, related items and history you use, so nothing leaves the device.
+
+- `carrel ask "…"` gives one answer. `carrel ask` alone starts a conversation: type a question per line, and an empty line ends it. Each question can build on the ones before.
+- Each answer comes with the **items** it's about, as card paths you can open, and the **passages** it used, quoted word for word from the items. It ends with the model that gave it and how many steps it took.
+- It answers first, then often offers something you didn't ask for: a related item, a collection you haven't opened in a while, or a gap ("you have the 2023 and 2025 statements but not 2024").
+- **Restricted items are found by their card only,** as search finds them: the librarian can tell you a restricted bank statement exists, but it never reads or quotes what's in it. Sensitive items are read like any other, since everything stays on this device.
+
+**How it works:** each step, the model asks for one of a small set of tools (search with filters, show a card, related items, read the passages of an item's text that match the question, an item's history, or a collection's design document and items) and Carrel runs it and hands back the result, until the model answers. An answer takes at most 8 steps; if it runs out, it says so and lists what it came across. The tools only read: the librarian can't change anything except as below.
+
+**Which model:** the strongest this device has, the largest open model you've installed that fits in its memory, else Apple's on-device model, else whatever text model there is. Choose one with `carrel settings set librarian.model NAME`. A small model gives short answers and leans on search; a larger one reads and connects more.
+
+**Saving a conversation:** conversations are kept only while they last. `--save` writes one to this month's Journal (`Journal/2026/2026-11.md`), under **Conversations with the librarian**: each question and answer, and links to the items, readable without Carrel. Saving is a change in history, like any other.
+
+### What the librarian may change
+
+Along the way the librarian notices things that could be better: a receipt in the wrong collection, a title that doesn't say what a document is, items that would make a collection. It can suggest four kinds of change: **refile** an item, **correct** a card's title, summary, created date or tags, **rename** an item, and **create a collection**.
+
+- **By default it changes nothing.** Each suggestion is listed under the answer with how sure it is and the command that makes it (`carrel correct …`, `carrel rename …`, `carrel collection new …`). In a conversation at the terminal, it asks about each one, and makes those you say yes to, as your own changes.
+- **If you let it,** with `carrel settings set librarian.changes on`, it makes the changes it's sure of itself: those it's at least as sure of as `librarian.confidence` (0.9, out of 1, unless you change it). The rest are still left for you.
+- Each change it makes goes through the same steps as the command would, and is an ordinary change in history marked as the librarian's (**by the librarian** in `carrel log`). `carrel undo CHANGE` reverses one.
+- It never changes a field you wrote yourself (only those a model wrote, as the card's provenance records), never acts on restricted items, and can't delete anything, edit a file's contents, change settings or rules, or send anything anywhere.
+- `carrel status` lists the librarian's changes this week. `carrel log --librarian` lists them all, and `carrel undo --librarian 7d` undoes every one it made in the last seven days, newest first (or since `24h`, `today`, or a date such as `2026-11-01`).
+
 ## Working on items
 
 Most items are filed and left alone, but some are still being worked on: a project, a thesis, a manuscript. Carrel keeps track of the work without getting in its way.
@@ -312,6 +337,7 @@ Every change Carrel makes to the archive is recorded: filing a batch, renaming, 
 
 - **History** (`6`) or `carrel log` lists changes, newest first.
 - `u` on a change, or `carrel undo CHANGE`, reverses it with a new change: files it moved go back, and cards and documents return to how they were. The change that created the history can't be undone.
+- Changes the librarian made on its own are marked **by the librarian**; `carrel undo --librarian SINCE` undoes them all together (see [What the librarian may change](#what-the-librarian-may-change)).
 - Rejecting a proposal isn't a change to the archive, so it isn't undone this way; ingest the file again instead.
 
 ### Writing safely
@@ -359,6 +385,7 @@ The Settings screen (`8`), or `carrel settings`, shows two kinds:
 - **File picker** for choosing what to ingest: yazi, lf, nnn, ranger, vifm or fzf if one's installed, any command you give (with `{out}` for the file it writes chosen paths to), or the built-in browser. Settings suggests pickers you could install; Carrel never installs anything.
 - **Editor** for cards, before `$VISUAL` and `$EDITOR`.
 - **Second model**, asked when the first isn't sure where an item goes: a model name, `off`, or `default` for a recommended model you've installed.
+- **Librarian model** (`librarian.model`), the model `carrel ask` runs on, as `provider/offer`, or `default` for the strongest this device has.
 - **Model** that drafts cards, routes and rates items, as `provider/offer` (such as `llama/qwen3.5-4b`), or `default` to let Carrel choose: Apple's on-device model where there is one, then local models. If the chosen model isn't available, for example because its file was removed, Carrel uses the next best. `carrel settings` shows which is in use.
 - **Providers** and **File types**, shown only: what `carrel providers` and `carrel formats` list.
 
@@ -369,6 +396,8 @@ The Settings screen (`8`), or `carrel settings`, shows two kinds:
 | `ingest.originals` | `move` the original into the archive on approval, or `keep` it where it was and copy it in | `move` |
 | `compressed_files` | `expand` zips and other compressed files on approval, `keep` them as they are, or `ask` in Review each time (see [Zips and other compressed files](#zips-and-other-compressed-files)) | `expand` |
 | `signals.crowded_items` | How many loose items make a collection crowded | `30` |
+| `librarian.changes` | `on` lets the librarian refile items, correct cards, rename items and create collections on its own when it's sure, each change undoable; `off` leaves every suggestion to you (see [What the librarian may change](#what-the-librarian-may-change)) | `off` |
+| `librarian.confidence` | How sure the librarian must be, from 0.5 to 1, to make a change on its own | `0.9` |
 | `outside_edits` | `flag` changes made outside Carrel for review, `reconcile` them as edits, or treat them as `drift` to undo. Stored now; it takes effect when Carrel starts watching for outside changes, in a later version | `flag` |
 
 Changing an archive setting is a change in history, so it can be undone.

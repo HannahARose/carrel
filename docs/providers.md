@@ -105,7 +105,7 @@ Request `{"jsonrpc": "2.0", "id": 9, "method": "shutdown"}`; the result is `null
 }}
 ```
 
-`model` names the exact model and version, recorded in the card's provenance. `json` is present only when a schema was given, and `usage` is optional.
+`model` names the exact model and version, recorded in the card's provenance. `json` is present only when a schema was given, and `usage` is optional. The librarian (`docs/design/librarian.md`) works through this method alone: each step is one request whose schema lets the model name a tool or give its answer, so a provider needs nothing more to run it. It counts `usage` against its limit of tokens per answer when a provider gives it, and estimates otherwise.
 
 ### Counting tokens: `text/count-tokens`
 
