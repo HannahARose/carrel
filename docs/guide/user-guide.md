@@ -306,6 +306,19 @@ Along the way the librarian notices things that could be better: a receipt in th
 - It never changes a field you wrote yourself (only those a model wrote, as the card's provenance records), never acts on restricted items, and can't delete anything, edit a file's contents, change settings or rules, or send anything anywhere.
 - `carrel status` lists the librarian's changes this week. `carrel log --librarian` lists them all, and `carrel undo --librarian 7d` undoes every one it made in the last seven days, newest first (or since `24h`, `today`, or a date such as `2026-11-01`).
 
+## Discovering the archive
+
+Search finds what you ask for. Discovery shows you the archive itself, so you come across what you'd forgotten. Each view is computed by Carrel's core and drawn by each interface in its own way; on the command line they're `carrel discover` and its subcommands, with `--json` for programs.
+
+- **On this day** (`carrel discover`, or `carrel discover today`): what was made, filed or worked on on today's date in other years, most recent year first. `--date 2025-03-14` asks about another day. An item made on 29 February comes round on 28 February in other years.
+- **Wander the stacks** (`carrel discover wander`): a walk from item to item, one at a time. Each step shows the item, its card's summary and tags, the start of its text, and why it came next: an item the one before links to (or that links to it), one near it in meaning, a neighbour in its collection, or now and then a jump to a collection you haven't opened in a long time. In a terminal, `Enter` takes the next step and `q` stops; elsewhere `--steps N` takes `N` at once, and `carrel discover wander --next` goes on with the last walk. Start from an item with `carrel discover wander ITEM`. A walk never visits an item twice, and it's random but reproducible: the walk's number is its seed, and `--seed N` takes the same steps again. **A restricted item is visited by its card only:** its text is never shown.
+- **The timeline** (`carrel discover timeline`): items by date, grouped by month, or by year or day with `--per year` or `--per day`. Each item is placed by when it was made, else when it was filed; `--by created`, `--by filed` or `--by worked` places items by that date instead, and an item worked on in three months is in each of them. It takes words and search's filters, such as `carrel discover timeline tag:receipts after:2024`, where `after:` and `before:` apply to the date the timeline goes by. `--items N` lists up to `N` items in each period (5 by default).
+- **The archive map** (`carrel discover map`): collections by the total size of their items and how many there are, as a tree, largest first, with each collection's share of the archive as a bar. `--depth 1` shows only the top level. Sizes are what the cards record; items whose cards record none are counted, but not in the sizes.
+- **Activity** (`carrel discover activity`): when you filed things and worked on them, as a heatmap of the last year, a column a week, Monday at the top, darker for busier days. `--from` and `--to` choose other days. A work session is an entry in an item's history.
+- **Resurfacing:** now and then, `carrel status` names a collection you haven't opened in six months, with an item or two from it. It names the same one all day, then none for a week. Showing an item in it (`carrel show`, or a wander step) counts as opening it.
+
+Which collections you opened, and your last walk, are kept on this device (see [What Carrel keeps on this device](#what-carrel-keeps-on-this-device)), never in the archive: looking around never changes it. A collection this device has never opened counts as last seen when something in it was last filed or worked on.
+
 ## Working on items
 
 Most items are filed and left alone, but some are still being worked on: a project, a thesis, a manuscript. Carrel keeps track of the work without getting in its way.
@@ -434,6 +447,7 @@ Outside any archive, in `~/Library/Application Support/Carrel` on macOS, `%APPDA
 | `workers/` | Each archive's worker lock, status and log |
 | `backups/` | Kopia's configuration for each archive's repository |
 | `sessions/` | When each archive's checked-out and desk items were last looked at for work sessions |
+| `discover/` | For each archive, which collections this device opened when, the collection Status last resurfaced, and the last walk through the stacks |
 | `logs/network.log` | Every request `carrel-fetch` made |
 
 ## Troubleshooting

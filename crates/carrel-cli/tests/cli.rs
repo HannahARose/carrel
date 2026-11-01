@@ -3303,6 +3303,215 @@ fn the_agent_drafts_what_is_queued_and_the_clis_worker_steps_aside_for_it() {
     );
 }
 
+#[test]
+fn discover_shows_this_day_and_the_timeline() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+
+    let day = sandbox.json(&root, &["discover", "today", "--date", "2027-07-02"]);
+    assert_eq!(day["date"], "2027-07-02");
+    assert_eq!(day["years"][0]["year"], 2025);
+    assert_eq!(day["years"][0]["years_ago"], 2);
+    assert_eq!(
+        day["years"][0]["items"][0]["item"]["title"],
+        "Field notes, 2025"
+    );
+    assert_eq!(day["years"][0]["items"][0]["what"], json!(["created"]));
+    let text = sandbox.ok(&root, &["discover", "today", "--date", "2026-11-24"]);
+    assert!(text.contains("1859 (167 years ago)"), "{text}");
+    let none = sandbox.ok(&root, &["discover", "today", "--date", "2026-01-01"]);
+    assert!(none.contains("Nothing was made"), "{none}");
+    let default = sandbox.json(&root, &["discover"]);
+    assert!(default["years"].is_array(), "on this day is the default");
+
+    let timeline = sandbox.json(&root, &["discover", "timeline", "--per", "year"]);
+    let periods: Vec<&str> = timeline["periods"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["period"].as_str().unwrap())
+        .collect();
+    assert_eq!(periods, ["1859", "2024", "2025", "2026"]);
+    let reading = sandbox.json(
+        &root,
+        &[
+            "discover",
+            "timeline",
+            "collection:Reading",
+            "after:2024",
+            "--by",
+            "created",
+        ],
+    );
+    assert_eq!(reading["periods"][0]["period"], "2024-03");
+    assert_eq!(reading["periods"].as_array().unwrap().len(), 2);
+    let worded = sandbox.json(&root, &["discover", "timeline", "lamp", "--by", "filed"]);
+    let lamp: Vec<&str> = worded["periods"][0]["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["item"]["title"].as_str().unwrap())
+        .collect();
+    assert!(lamp.contains(&"Desk lamp build"), "{lamp:?}");
+    assert!(!lamp.contains(&"Field notes, 2025"), "{lamp:?}");
+    let bad = sandbox.run_in(&root, &["discover", "timeline", "--per", "week"]);
+    assert_eq!(bad.status.code(), Some(1));
+}
+
+#[test]
+fn discover_draws_the_map_and_activity() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    let map = sandbox.json(&root, &["discover", "map"]);
+    assert_eq!(map["total_items"], 11);
+    assert_eq!(map["regions"][0]["path"], "Reading", "largest first");
+    let projects = map["regions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["path"] == "Projects")
+        .unwrap();
+    assert_eq!(projects["total_items"], 7);
+    assert_eq!(projects["children"][0]["path"], "Projects/Hardware");
+    let tree = sandbox.ok(&root, &["discover", "map"]);
+    assert!(tree.contains("│  └─ Hardware"), "{tree}");
+    assert!(
+        !sandbox
+            .ok(&root, &["discover", "map", "--depth", "1"])
+            .contains("Hardware")
+    );
+
+    let activity = sandbox.json(
+        &root,
+        &[
+            "discover",
+            "activity",
+            "--from",
+            "2026-10-01",
+            "--to",
+            "2026-10-31",
+        ],
+    );
+    let busiest = activity["days"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|d| d["date"] == "2026-10-26")
+        .unwrap();
+    assert_eq!(busiest["filed"], 4);
+    assert_eq!(activity["busiest"], 4);
+    let heatmap = sandbox.ok(
+        &root,
+        &[
+            "discover",
+            "activity",
+            "--from",
+            "2026-10-01",
+            "--to",
+            "2026-10-31",
+        ],
+    );
+    assert!(
+        heatmap.contains("Mon") && heatmap.contains('█'),
+        "{heatmap}"
+    );
+}
+
+#[test]
+fn wander_takes_one_step_at_a_time_and_repeats_with_its_seed() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    let ids = |walk: &Value| -> Vec<String> {
+        walk["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| s["item"]["id"].as_str().unwrap().to_owned())
+            .collect()
+    };
+
+    // A walk on another device with the same archive, to compare with.
+    let elsewhere = Sandbox::new();
+    let whole = elsewhere.json(
+        &elsewhere.sample(),
+        &["discover", "wander", "--seed", "5", "-n", "50"],
+    );
+    let all = ids(&whole);
+    assert_eq!(all.len(), 11, "every item once");
+    assert_eq!(
+        all.iter().collect::<std::collections::HashSet<_>>().len(),
+        11,
+        "never twice"
+    );
+    assert_eq!(whole["done"], true);
+    assert_eq!(whole["steps"][0]["reason"]["why"], "start");
+
+    let first = sandbox.json(&root, &["discover", "wander", "--seed", "5", "-n", "2"]);
+    assert_eq!(ids(&first), all[..2], "the same seed, the same walk");
+    let next = sandbox.json(&root, &["discover", "wander", "--next"]);
+    assert_eq!(ids(&next), all[2..3], "it goes on where it stopped");
+    assert_eq!(next["steps"][0]["number"], 3);
+    let text = sandbox.ok(&root, &["discover", "wander", "--next"]);
+    assert!(text.starts_with("4. "), "{text}");
+    assert!(text.contains("--next"), "{text}");
+
+    let from = sandbox.json(
+        &root,
+        &[
+            "discover",
+            "wander",
+            "Projects/Hardware/parts-list.csv.md",
+            "--seed",
+            "1",
+        ],
+    );
+    let step = &from["steps"][0];
+    assert_ne!(step["item"]["card"], "Projects/Hardware/parts-list.csv.md");
+    assert!(
+        ["linked", "neighbour", "jump", "near"].contains(&step["reason"]["why"].as_str().unwrap()),
+        "{step}"
+    );
+
+    let id = sandbox.json(&root, &["status"])["archive"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let kept = sandbox.path(&format!("config/discover/{id}.json"));
+    assert!(kept.is_file(), "the walk is kept on the device");
+    assert!(
+        !root.join("_System/discover").exists(),
+        "and nothing is written into the archive"
+    );
+}
+
+#[test]
+fn status_resurfaces_a_collection_not_opened_in_a_long_time() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    for entry in std::fs::read_dir(root.join("Reading")).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().is_some_and(|e| e == "md") {
+            let text = std::fs::read_to_string(&path).unwrap();
+            std::fs::write(
+                &path,
+                text.replace("  added: \"2026-10-", "  added: \"2019-10-"),
+            )
+            .unwrap();
+        }
+    }
+
+    let status = sandbox.json(&root, &["status"]);
+    let resurfaced = &status["resurfaced"];
+    assert_eq!(resurfaced["collection"], "Reading", "{resurfaced}");
+    assert_eq!(resurfaced["items"].as_array().unwrap().len(), 2);
+    let text = sandbox.ok(&root, &["status"]);
+    assert!(text.contains("Not opened in a while: Reading"), "{text}");
+
+    // Opening an item in it is opening the collection.
+    sandbox.ok(&root, &["show", "Reading/RFC 9562 UUIDs.md"]);
+    assert_eq!(sandbox.json(&root, &["status"])["resurfaced"], Value::Null);
+}
+
 /// Runs `carrel` with a scripted text model (`carrel-provider-echo-script`) answering with
 /// `script`'s lines, one per request, and `input` on standard input.
 fn with_script(
