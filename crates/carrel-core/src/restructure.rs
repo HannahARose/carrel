@@ -26,6 +26,7 @@
 
 pub mod findability;
 pub mod grouping;
+pub mod preview;
 pub mod tags;
 
 use std::collections::BTreeSet;

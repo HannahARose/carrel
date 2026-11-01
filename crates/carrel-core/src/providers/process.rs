@@ -70,10 +70,14 @@ pub fn find_program(name: &str, folders: &[PathBuf]) -> Option<PathBuf> {
 }
 
 /// The folders Carrel looks in: the one holding the running program, an app bundle's
-/// `Contents/Helpers` when it runs from one, then `PATH`.
+/// `Contents/Helpers` when it runs from one, then `PATH`. An app opened from the Finder
+/// doesn't have the shell's `PATH`, so from a bundle the folders programs are usually
+/// installed in come last ([`INSTALL_FOLDERS`]): there the app finds the providers, the
+/// network helper and Kopia the command line uses.
 #[must_use]
 pub fn default_folders() -> Vec<PathBuf> {
     let mut folders = Vec::new();
+    let mut in_bundle = false;
     if let Ok(exe) = std::env::current_exe()
         && let Some(dir) = exe.parent()
     {
@@ -82,12 +86,41 @@ pub fn default_folders() -> Vec<PathBuf> {
             && let Some(contents) = dir.parent()
         {
             folders.push(contents.join("Helpers"));
+            in_bundle = true;
         }
     }
     if let Some(path) = std::env::var_os("PATH") {
         folders.extend(std::env::split_paths(&path));
     }
+    if in_bundle {
+        let home = crate::local::home_dir();
+        for folder in install_folders(home.as_deref()) {
+            if !folders.contains(&folder) {
+                folders.push(folder);
+            }
+        }
+    }
     folders
+}
+
+/// Where programs are usually installed on a Mac, `~` standing for the home folder:
+/// `carrel`'s own suggestion, Cargo's, then Homebrew's on Apple silicon and on Intel.
+pub const INSTALL_FOLDERS: [&str; 4] = [
+    "~/.local/bin",
+    "~/.cargo/bin",
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+];
+
+/// [`INSTALL_FOLDERS`] with `~` as `home`; those under it are left out when it's unknown.
+fn install_folders(home: Option<&Path>) -> Vec<PathBuf> {
+    INSTALL_FOLDERS
+        .iter()
+        .filter_map(|folder| match folder.strip_prefix("~/") {
+            Some(under) => home.map(|home| home.join(under)),
+            None => Some(PathBuf::from(folder)),
+        })
+        .collect()
 }
 
 fn provider_name(path: &Path) -> Option<String> {
@@ -489,5 +522,26 @@ mod tests {
         if std::env::consts::EXE_SUFFIX == ".exe" {
             assert_eq!(name("carrel-provider-apple.exe").as_deref(), Some("apple"));
         }
+    }
+
+    #[test]
+    fn an_app_looks_where_programs_are_installed() {
+        let home = Path::new("/Users/someone");
+        assert_eq!(
+            install_folders(Some(home)),
+            [
+                home.join(".local/bin"),
+                home.join(".cargo/bin"),
+                PathBuf::from("/opt/homebrew/bin"),
+                PathBuf::from("/usr/local/bin"),
+            ]
+        );
+        assert_eq!(
+            install_folders(None),
+            [
+                PathBuf::from("/opt/homebrew/bin"),
+                PathBuf::from("/usr/local/bin")
+            ]
+        );
     }
 }

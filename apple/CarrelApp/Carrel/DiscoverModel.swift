@@ -13,6 +13,7 @@ enum DiscoverPage: String, CaseIterable, Hashable {
     case timeline
     case map
     case activity
+    case graph
 
     var title: String {
         switch self {
@@ -21,6 +22,7 @@ enum DiscoverPage: String, CaseIterable, Hashable {
         case .timeline: "Timeline"
         case .map: "Archive Map"
         case .activity: "Activity"
+        case .graph: "Connections"
         }
     }
 
@@ -31,6 +33,7 @@ enum DiscoverPage: String, CaseIterable, Hashable {
         case .timeline: "chart.bar.xaxis"
         case .map: "square.grid.3x3.square"
         case .activity: "square.grid.4x3.fill"
+        case .graph: "point.3.connected.trianglepath.dotted"
         }
     }
 }
@@ -92,11 +95,17 @@ final class DiscoverModel {
     /// them; `nil` for the year to today.
     var activityFrom: Date?
     var activityTo: Date?
+    /// The tag and link graph: what ties collections together, and the items that do.
+    private(set) var graph: DiscoveryGraph?
     /// A collection not opened in a long time, for Status.
     private(set) var resurfaced: Resurfaced?
 
     /// What went wrong with the last view read, for the page to say.
     var problem: String?
+
+    /// How many of the strongest connections, and of the strongest ties between items, the
+    /// graph shows.
+    nonisolated static let graphLimit: UInt32 = 40
 
     init(archive: ArchiveModel) {
         self.archive = archive
@@ -124,6 +133,12 @@ final class DiscoverModel {
                 try $0.activity(from: from, to: to)
             } into: {
                 self.activity = $0
+            }
+        case .graph:
+            await read {
+                try $0.discoveryGraph(limit: Self.graphLimit)
+            } into: {
+                self.graph = $0
             }
         }
     }

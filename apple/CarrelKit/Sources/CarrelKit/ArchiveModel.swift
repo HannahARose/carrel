@@ -56,6 +56,8 @@ public final class ArchiveModel {
     public private(set) var review = ReviewList(batches: [], unreadable: [])
     /// The questions waiting, those holding up the most proposals first.
     public private(set) var questions: [Question] = []
+    /// The restructure proposals waiting, oldest first.
+    public private(set) var restructureProposals: [RestructureProposal] = []
     /// What's checked out and on this device's desk.
     public private(set) var active: [ActiveItem] = []
     /// The history, newest first.
@@ -161,6 +163,11 @@ public final class ArchiveModel {
         questions = try await call { try $0.questions() }
     }
 
+    /// Reads the restructure proposals waiting again.
+    public func refreshRestructure() async throws {
+        restructureProposals = try await call { try $0.restructureProposals() }
+    }
+
     /// Reads what's checked out and on the desk again.
     public func refreshActive() async throws {
         active = try await call { try $0.active() }
@@ -190,6 +197,7 @@ public final class ArchiveModel {
         try await refreshStatus()
         try await refreshReview()
         try await refreshQuestions()
+        try await refreshRestructure()
         try await refreshActive()
         try await refreshIntake()
         try await refreshSettings()
