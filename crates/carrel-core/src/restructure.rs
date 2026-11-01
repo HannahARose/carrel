@@ -587,6 +587,10 @@ pub struct Outcome {
     /// and merged collections.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub moves: Vec<Move>,
+    /// What went wrong without undoing anything, such as a changelog line that couldn't be
+    /// added after an item moved.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<String>,
 }
 
 /// What approving a proposal did.
