@@ -209,7 +209,7 @@ Questions the glossary or a routing rule already answers are dropped from the qu
 
 Items waiting on a question aren't approved in bulk until it's answered or dismissed.
 
-The Mac app answers and dismisses term and collection questions for now; suggested answers, skipping, and the other kinds come to it in #319.
+The Mac app's Questions screen does all of this too ([The Mac app](mac-app.md#questions)).
 
 ### Questions as you go
 
@@ -220,7 +220,7 @@ Carrel also asks about items at natural moments, never in a pop-up, and an answe
 - **From the librarian:** when an item it found has a question, it asks after its answer ("While we're here…"), at most once an answer, never after two answers in a row, and never twice about the same item in a conversation. `a` answers it on the Librarian screen; in a conversation at the terminal, `carrel ask` asks for your answer there (a number picks a suggestion, an empty line leaves it for later).
 - **On Status:** at most three new questions a day, the same all day, chosen from all over the archive; they join Questions, and drop off Status once answered or skipped.
 
-These are in the command line and the interactive mode now, and come to the Mac app's inspector, Discover, Librarian panel and Status in #316.
+The Mac app asks them in the same places: under **Carrel Asks** below an item's card in the inspector, on a wander step in Discover, in the Librarian panel and under **Today's Questions** on Status.
 
 A question you skipped rests and one you declined is never asked again, wherever it would have come up.
 

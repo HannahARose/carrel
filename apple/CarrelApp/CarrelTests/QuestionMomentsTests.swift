@@ -134,4 +134,24 @@ final class QuestionMomentsTests: XCTestCase {
         XCTAssertNil(discover.steps.first?.question, "the first step is for looking around")
         for (a, b) in zip(asked, asked.dropFirst()) { XCTAssertNotEqual(a.id, b.id) }
     }
+
+    func testTheLibrarianAsksAboutAnItemItFoundNowAndThen() async throws {
+        let sample = try await SampleWindow()
+        defer { sample.remove() }
+        let project = try item(sample).id
+        let model = ScriptedLibrarianModel([
+            ScriptedLibrarianModel.answer("Your lamp notes.", items: [project]),
+            ScriptedLibrarianModel.answer("Still those notes.", items: [project]),
+        ])
+        let librarian = LibrarianModel(archive: sample.archive, provider: model, memoryGB: 16)
+        librarian.draft = "What did I build?"
+        await librarian.ask()
+        let asks = try XCTUnwrap(librarian.answers.first?.asks, librarian.problem ?? "")
+        XCTAssertEqual(asks.kind, .item)
+        XCTAssertTrue(
+            sample.questions.questions.contains { $0.id == asks.id }, "it's in the queue to answer")
+        librarian.draft = "And again?"
+        await librarian.ask()
+        XCTAssertNil(librarian.answers.last?.asks, "never after an answer that asked")
+    }
 }

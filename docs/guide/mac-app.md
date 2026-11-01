@@ -74,7 +74,7 @@ What the archive holds: its name and folder, whether it's read only, its format 
 
 **The Librarian's Changes This Week** lists what the librarian changed on its own, when you've let it ([What the librarian may change](user-guide.md#what-the-librarian-may-change)), with **Undo All of Them…**.
 
-Status doesn't show Recent, structure signals, suggestions or the day's few questions yet; `carrel status` and the interactive mode do.
+Status doesn't show Recent, structure signals or suggestions yet; `carrel status` and the interactive mode do.
 
 ### Review
 
@@ -96,12 +96,16 @@ A duplicate shows the archived item beside it in the inspector, so you can compa
 
 ### Questions
 
-When several items share a term Carrel doesn't know, or it can't tell where they go, it asks here instead of guessing, most useful first. Choose a question to see the items it holds up, then:
+Carrel asks here instead of guessing, most useful first: what a term means, where items go (alone or as a group), whether a sender or project should have its own collection, and things about a single item. Choose a question to see what it's about and the items it holds up, then:
 
-- **Answer:** type what the term means, or choose the collection where its items go, and press Return. Carrel drafts those items again with what you said, and remembers it.
+- **Pick a suggested answer:** the likely answers come first, with why each is likely; a click answers with it. One marked "a new collection" creates it.
+- **Answer it yourself:** type what a term means, choose where items go, or say **Yes** or **No** to a sender's collection. After a sender's answer, Carrel asks before adding a routing rule for future items. An item question's answer opens the correction sheet: you see what it changes on the card, and it's saved, and the question answered, only when you confirm (**Mark Answered** when it changes nothing).
+- **Skip** (`s`): put it aside for a while (`questions.skip_days`); **Show Skipped** in the toolbar lists those resting.
 - **Dismiss** (`d`): drop the question.
 
-Both are in the Questions menu. Suggested answers, skipping a question for now, and questions about a single item or a sender are in the interactive mode and `carrel questions` for now ([Questions and the glossary](user-guide.md#questions-and-the-glossary)), as are the questions Carrel asks beside an item, on a wander and from the librarian ([Questions as you go](user-guide.md#questions-as-you-go)); the app gains them in a later build (#319, #316).
+All of these are in the Questions menu ([Questions and the glossary](user-guide.md#questions-and-the-glossary)).
+
+Carrel also asks about items as you go, never in a pop-up ([Questions as you go](user-guide.md#questions-as-you-go)): under **Carrel Asks** below an item's card in the inspector, now and then on a wander step in Discover, after the Librarian's answer ("While we're here…"), and a few a day under **Today's Questions** on Status. Each is answered there, the same way.
 
 ### Active
 

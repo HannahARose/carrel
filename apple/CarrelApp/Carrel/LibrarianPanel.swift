@@ -233,6 +233,15 @@ private struct AnswerView: View {
                     heading("Suggestions")
                 }
             }
+            // Now and then, Carrel's question about an item the answer found.
+            if let asks = answer.asks {
+                VStack(alignment: .leading, spacing: 4) {
+                    heading("While we’re here…")
+                    AskedQuestionView(question: asks, window: window)
+                }
+                .padding(8)
+                .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 6))
+            }
             Text(footnote).font(.caption).foregroundStyle(.tertiary)
                 .help(
                     answer.steps.map { "\($0.tool) \($0.input): \($0.did)" }.joined(separator: "\n")
