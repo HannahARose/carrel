@@ -11,7 +11,7 @@ use serde_json::json;
 
 use crate::commands::{holder, locate};
 use crate::config::{Identity, Prefs};
-use crate::picker::{BUILT_IN, Choice, KNOWN, choose};
+use crate::picker::KNOWN;
 use crate::{Failure, Report};
 
 /// This device's preferences that `carrel settings set` changes.
@@ -82,19 +82,7 @@ pub fn librarian_line(setting: Option<&str>) -> String {
 /// The file picker in use, and why, for people.
 #[must_use]
 pub fn picker_line(preference: Option<&str>) -> String {
-    match (preference, choose(preference)) {
-        (Some(p), Choice::BuiltIn) if p.eq_ignore_ascii_case(BUILT_IN) => {
-            "the built-in browser (chosen)".into()
-        }
-        (Some(p), _) => format!("{p} (chosen)"),
-        (None, Choice::Command(words)) => {
-            format!(
-                "{} (found installed)",
-                words.first().map_or("", String::as_str)
-            )
-        }
-        (None, Choice::BuiltIn) => "the built-in browser (no picker installed)".into(),
-    }
+    carrel_core::file_pickers::picker_in_use(preference)
 }
 
 /// `carrel settings`.

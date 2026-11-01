@@ -262,7 +262,7 @@ impl ArchiveHandle {
             .collect())
     }
 
-    /// Checks out the item `item` to the folder `to` (the Desktop when `None`), due back on
+    /// Checks out the item `item` to the folder `to` (`checkout.destination`, the Desktop unless changed, when `None`), due back on
     /// `due` (`YYYY-MM-DD`) if given. The archive copy is read-only until it's returned.
     ///
     /// # Errors
@@ -280,10 +280,10 @@ impl ArchiveHandle {
         let item = Self::item(&archive, &item)?;
         let destination = match to {
             Some(to) => PathBuf::from(to),
-            None => self
-                .home()
-                .map(|home| home.join("Desktop"))
-                .ok_or_else(|| CarrelError::invalid("no home folder to check out to"))?,
+            None => {
+                carrel_core::settings::checkout_folder(archive.settings(), self.home().as_deref())
+                    .ok_or_else(|| CarrelError::invalid("no home folder to check out to"))?
+            }
         };
         let due = due
             .map(|d| {

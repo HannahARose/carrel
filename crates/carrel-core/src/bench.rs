@@ -16,6 +16,7 @@ pub mod crawl;
 pub mod findability;
 pub mod librarian;
 pub mod question_value;
+pub mod restructure;
 
 use std::collections::BTreeMap;
 use std::path::Path;

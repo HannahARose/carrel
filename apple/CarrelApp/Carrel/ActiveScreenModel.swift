@@ -247,10 +247,16 @@ final class ActiveScreenModel {
 
     // MARK: - Checking out and the desk
 
-    /// Starts checking out the item `id`, to the checkout folder with no due date unless
+    /// Starts checking out the item `id`, to the folder the archive's `checkout.destination`
+    /// names, or the checkout folder while it says the Desktop, with no due date unless
     /// changed.
     func startCheckout(of id: String, titled title: String) {
-        checkingOut = CheckoutDraft(item: id, title: title, folder: checkoutFolder, due: nil)
+        let handle = archive.handle
+        let destination = (try? handle.settings())?.first { $0.key == "checkout.destination" }
+        let chosen =
+            destination?.value == "desktop" ? nil : (try? handle.checkoutFolder()).flatMap { $0 }
+        let folder = chosen.map { URL(filePath: $0, directoryHint: .isDirectory) } ?? checkoutFolder
+        checkingOut = CheckoutDraft(item: id, title: title, folder: folder, due: nil)
     }
 
     /// Checks out the item as `draft` sets it up.

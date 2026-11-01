@@ -61,6 +61,7 @@ extension CollectionSummary: Identifiable {
 
 extension Proposal: Identifiable {}
 extension RestructureProposal: Identifiable {}
+extension CrawlerFinding: Identifiable {}
 extension RestructureChange: Identifiable {}
 extension ReviewBatch: Identifiable {}
 extension Question: Identifiable {}

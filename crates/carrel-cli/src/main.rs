@@ -12,6 +12,7 @@ mod bench;
 mod bench_crawl;
 mod bench_librarian;
 mod bench_questions;
+mod bench_restructure;
 mod checkout;
 mod commands;
 mod config;
