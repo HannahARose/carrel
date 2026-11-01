@@ -129,6 +129,7 @@ extension Proposal {
         var flags = [confidence.name]
         if state == .needsOwner { flags.append("needs you") }
         if draftAgain { flags.append("draft again?") }
+        if let readingsFlag { flags.append(readingsFlag) }
         if [.sensitive, .restricted].contains(fields.sensitivity) {
             flags.append(fields.sensitivity.name)
         }

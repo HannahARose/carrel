@@ -42,8 +42,8 @@ const PLAIN_FOLDERS: [&str; 10] = [
 
 /// Short words that say nothing about what an item is.
 const STOP_WORDS: [&str; 16] = [
-    "and", "are", "for", "from", "has", "have", "its", "not", "our", "that", "the", "this",
-    "was", "with", "you", "your",
+    "and", "are", "for", "from", "has", "have", "its", "not", "our", "that", "the", "this", "was",
+    "with", "you", "your",
 ];
 
 /// One reading of what an item is.
@@ -218,6 +218,19 @@ pub fn doubted(readings: &[Reading]) -> bool {
     readings.iter().any(|r| !r.against.is_empty())
 }
 
+/// How a list of proposals notes `entry`'s readings: `what is it?` when they're in doubt, or
+/// how many there are.
+#[must_use]
+pub fn flag(entry: &ReviewEntry) -> Option<String> {
+    if doubted(&entry.readings) {
+        Some("what is it?".to_owned())
+    } else if entry.readings.is_empty() {
+        None
+    } else {
+        Some(format!("{} readings", entry.readings.len()))
+    }
+}
+
 /// Lowers `entry`'s confidence when its readings are in doubt, unless a routing rule decided
 /// where it goes, and says why.
 pub fn lower_confidence(entry: &mut ReviewEntry) {
@@ -280,10 +293,7 @@ pub fn pick(entry: &ReviewEntry, n: usize) -> Result<(Worked, String), String> {
         return Err(if entry.readings.is_empty() {
             "the proposal has no other readings".to_owned()
         } else {
-            format!(
-                "there's no reading {n}; pick 1 to {}",
-                entry.readings.len()
-            )
+            format!("there's no reading {n}; pick 1 to {}", entry.readings.len())
         });
     };
     let owner = |value| Field {
@@ -358,12 +368,17 @@ pub fn answer_words(question: &QuestionEntry, answer: &str) -> Option<String> {
 /// # Errors
 ///
 /// A queue error.
-pub fn settle_questions(archive: &crate::archive::Archive, id: crate::card::Id) -> Result<(), crate::actions::ActionError> {
+pub fn settle_questions(
+    archive: &crate::archive::Archive,
+    id: crate::card::Id,
+) -> Result<(), crate::actions::ActionError> {
     let (asked, _) = crate::questions::QuestionQueue::of(archive).list()?;
     for question in asked.iter().filter(|q| {
         q.kind == QuestionKind::Item
             && q.items == [id]
-            && q.suggestions.iter().any(|s| s.extra.contains_key(READING_KEY))
+            && q.suggestions
+                .iter()
+                .any(|s| s.extra.contains_key(READING_KEY))
     }) {
         crate::questions::answer::settled(archive, question)?;
     }

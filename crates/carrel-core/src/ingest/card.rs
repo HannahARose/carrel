@@ -472,7 +472,9 @@ fn check_readings(answer: &Answer, vocabulary: &Vocabulary, draft: &mut Draft) -
         } else if summary.is_empty() {
             Some("the summary is empty".to_owned())
         } else if summary.chars().count() > MAX_SUMMARY {
-            Some(format!("the summary is longer than {MAX_SUMMARY} characters"))
+            Some(format!(
+                "the summary is longer than {MAX_SUMMARY} characters"
+            ))
         } else if reason.chars().count() > MAX_REASON {
             Some(format!("the reason is longer than {MAX_REASON} characters"))
         } else {
@@ -484,7 +486,9 @@ fn check_readings(answer: &Answer, vocabulary: &Vocabulary, draft: &mut Draft) -
         }
         // One that only repeats the card isn't another reading.
         if title.eq_ignore_ascii_case(&draft.title)
-            || kept.iter().any(|r: &Reading| r.title.eq_ignore_ascii_case(title))
+            || kept
+                .iter()
+                .any(|r: &Reading| r.title.eq_ignore_ascii_case(title))
         {
             continue;
         }

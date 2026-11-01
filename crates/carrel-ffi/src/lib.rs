@@ -73,6 +73,7 @@ pub mod previews;
 pub mod question_subjects;
 pub mod questions;
 pub mod quick_look;
+pub mod readings;
 pub mod records;
 pub mod redraft;
 pub mod reminders;

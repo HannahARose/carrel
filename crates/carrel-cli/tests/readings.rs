@@ -120,7 +120,10 @@ fn review_show_lists_the_readings_and_pick_rewrites_the_card() {
 
     let asked = sandbox.ok(&["review", "pick", "00000001", "2"]);
     assert!(asked.contains("Lampshade print file"), "{asked}");
-    assert!(asked.contains("Not saved"), "no terminal to ask on: {asked}");
+    assert!(
+        asked.contains("Not saved"),
+        "no terminal to ask on: {asked}"
+    );
 
     let saved = sandbox.json(&["review", "pick", "00000001", "2", "--yes"]);
     assert_eq!(saved["saved"], true, "{saved}");
@@ -130,7 +133,11 @@ fn review_show_lists_the_readings_and_pick_rewrites_the_card() {
         after["card"]["summary"],
         "A 3D-print file for a small lampshade."
     );
-    assert_eq!(after["card"]["tags"], json!(null), "the reading has no tags");
+    assert_eq!(
+        after["card"]["tags"],
+        json!(null),
+        "the reading has no tags"
+    );
     assert_eq!(
         after["card"]["generated"]["corrections"][0]["said"],
         "Picked reading 2: “Lampshade print file”"
@@ -140,7 +147,10 @@ fn review_show_lists_the_readings_and_pick_rewrites_the_card() {
         shown.contains("2. Lampshade print file  (the card)"),
         "{shown}"
     );
-    assert!(!shown.contains("isn't clear"), "the owner settled it: {shown}");
+    assert!(
+        !shown.contains("isn't clear"),
+        "the owner settled it: {shown}"
+    );
 
     let wrong = sandbox.run(&["review", "pick", "00000001", "3", "--yes"]);
     assert_eq!(wrong.status.code(), Some(1));

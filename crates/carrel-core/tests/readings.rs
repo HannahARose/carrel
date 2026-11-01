@@ -179,9 +179,16 @@ fn the_reading_the_file_name_fits_fills_the_card_and_the_other_is_kept() {
         .iter()
         .find(|q| q.items == [entry.id])
         .unwrap();
-    assert_eq!(question.question, "What is “cognitogram_keychain_plate copy.stl”?");
+    assert_eq!(
+        question.question,
+        "What is “cognitogram_keychain_plate copy.stl”?"
+    );
     assert_eq!(question.suggestions.len(), 2);
-    assert!(question.suggestions[1].answer.starts_with("3D-printed fish"));
+    assert!(
+        question.suggestions[1]
+            .answer
+            .starts_with("3D-printed fish")
+    );
     assert_eq!(entry.state, State::NeedsOwner);
     assert_eq!(item_words(question, "2"), pick_words(2));
     assert!(item_words(question, "a lamp").contains("a lamp"));
@@ -202,9 +209,11 @@ fn picking_a_reading_rewrites_the_card_as_one_correction_and_answers_the_questio
         Some("A model of a fish with lettering on its side.")
     );
     assert!(prepared.changed.contains(&"title") && prepared.changed.contains(&"summary"));
-    prepare::save(&s.archive, prepared, || -> Result<_, prepare::PrepareError> {
-        unreachable!("a proposal needs no writer lease")
-    })
+    prepare::save(
+        &s.archive,
+        prepared,
+        || -> Result<_, prepare::PrepareError> { unreachable!("a proposal needs no writer lease") },
+    )
     .unwrap();
 
     let saved = ReviewQueue::of(&s.archive)
@@ -214,9 +223,8 @@ fn picking_a_reading_rewrites_the_card_as_one_correction_and_answers_the_questio
     assert!(saved.owner_fields.contains(&"title".to_owned()));
     assert_eq!(saved.readings.len(), 2, "the readings stay to pick again");
     assert!(saved.readings.iter().all(|r| r.against.is_empty()));
-    let notes = carrel_core::correct::notes(&carrel_core::correct::Correctable::fields(
-        &saved.card,
-    ));
+    let notes =
+        carrel_core::correct::notes(&carrel_core::correct::Correctable::fields(&saved.card));
     assert_eq!(
         notes.last().unwrap().said,
         "Picked reading 2: “3D-printed fish model with text”"

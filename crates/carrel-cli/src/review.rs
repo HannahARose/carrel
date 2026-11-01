@@ -63,6 +63,7 @@ pub fn list(archive: Option<&Path>, all: bool) -> Result<Report, Failure> {
             if carrel_core::ingest::redraft::wants_redraft(entry) {
                 flags.push("draft again?".into());
             }
+            flags.extend(carrel_core::ingest::readings::flag(entry));
             if entry.duplicate_of.is_some() {
                 flags.push("duplicate".into());
             } else if !entry.likely_duplicates.is_empty() {

@@ -8,6 +8,8 @@ struct ProposalInspector: View {
     let proposal: Proposal
     let review: ReviewModel
     let correct: () -> Void
+    /// Opens the correction sheet with one of its readings picked.
+    let pick: (ProposalReading) -> Void
 
     @State private var edit: CardEditModel?
 
@@ -24,6 +26,9 @@ struct ProposalInspector: View {
                     Text(proposal.source).font(.caption).foregroundStyle(.secondary)
                 }
                 .textSelection(.enabled)
+            }
+            if !proposal.readings.isEmpty {
+                ReadingsSection(proposal: proposal, pick: pick)
             }
             if proposal.draftAgain {
                 DraftAgainSection(proposal: proposal, review: review)

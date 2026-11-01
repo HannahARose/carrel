@@ -208,8 +208,7 @@ impl App {
         let decision = matches!(
             key.code,
             KeyCode::Char(
-                'a' | 'h' | 'm' | 'x' | 'e' | 'c' | 'd' | 'p' | 'A' | ' ' | 'v' | 'b' | 's'
-                    | 'z'
+                'a' | 'h' | 'm' | 'x' | 'e' | 'c' | 'd' | 'p' | 'A' | ' ' | 'v' | 'b' | 's' | 'z'
             )
         );
         if !decision {

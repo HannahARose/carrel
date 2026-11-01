@@ -251,7 +251,9 @@ private struct Inspector: View {
         } else if model.screen == .review, let review = model.review,
             let proposal = review.inspected
         {
-            ProposalInspector(proposal: proposal, review: review, correct: model.correct)
+            ProposalInspector(proposal: proposal, review: review, correct: model.correct) {
+                model.pickReading($0, of: proposal)
+            }
         } else if model.screen == .questions, let questions = model.questions,
             let question = questions.selected
         {

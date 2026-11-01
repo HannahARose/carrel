@@ -112,7 +112,14 @@ fn the_glossary_vocabulary_and_schema_come_from_the_archive() {
     assert!(tags.contains(&json!("3d-printing")));
     assert_eq!(
         schema["required"],
-        json!(["title", "summary", "created", "reason", "alternatives", "tags"])
+        json!([
+            "title",
+            "summary",
+            "created",
+            "reason",
+            "alternatives",
+            "tags"
+        ])
     );
 
     let system = system_prompt(&fixture.context());
