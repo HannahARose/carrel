@@ -328,3 +328,78 @@ fn a_term_is_answered_with_a_fact_naming_its_collection() {
     let unknown = question(QuestionKind::Collection, "nothing", &[]);
     assert!(known_answer(&unknown, &proposals, &answers, &collections).is_none());
 }
+
+/// The test set raises each kind of question ingest asks (#357), whatever model drafts it:
+/// a term question for each unknown term its names share, and a group question for each
+/// sender, would-be collection and uncertain placement, when the model isn't sure where they
+/// go. The model here is never sure, as a small one often isn't.
+#[test]
+fn the_test_set_raises_each_kind_of_question() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("archive");
+    copy_dir(&bench().join("archive"), &root);
+    let archive = Archive::open(&root).unwrap();
+    let mut items: Vec<PathBuf> = std::fs::read_dir(bench().join("items"))
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .collect();
+    items.sort();
+    let mut registry = Registry::with_built_ins();
+    registry.add(Box::new(Understands::new()));
+
+    let run = carrel_core::ingest::run::run(
+        &archive,
+        &registry,
+        &items,
+        carrel_core::ingest::IntakeOptions::default(),
+        Id::new_v7(),
+    )
+    .unwrap();
+
+    let raised = |kind: QuestionKind| -> HashSet<&str> {
+        run.questions
+            .iter()
+            .filter(|q| q.kind == kind)
+            .map(|q| q.subject.as_str())
+            .collect()
+    };
+    let terms = raised(QuestionKind::Term);
+    for term in [
+        "ORCA", "QPCR", "ISA", "DnD", "LIGO", "EHIC", "BrewLog", "CNC", "PhD", "OSM",
+    ] {
+        assert!(terms.contains(term), "no question about {term}: {terms:?}");
+    }
+    let groups = raised(QuestionKind::Group);
+    for group in [
+        "Calder Building Society",
+        "Mariner Travel",
+        "Allotment",
+        "Larkspur Road",
+    ] {
+        assert!(
+            groups.contains(group),
+            "no question about {group}: {groups:?}"
+        );
+    }
+
+    // Each has a known answer, so the benchmark can value it.
+    let answers = Answers::load(&bench().join("answers.yaml")).unwrap();
+    let proposals = carrel_core::bench::question_value::proposals_of(&run);
+    let collections = archive.collections().unwrap();
+    for question in run
+        .questions
+        .iter()
+        .filter(|q| terms.contains(q.subject.as_str()) || groups.contains(q.subject.as_str()))
+    {
+        assert!(
+            known_answer(question, &proposals, &answers, &collections).is_some(),
+            "{} has no known answer",
+            question.subject
+        );
+    }
+    assert!(
+        run.questions.len() >= 14,
+        "{} questions",
+        run.questions.len()
+    );
+}

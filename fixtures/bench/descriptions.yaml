@@ -316,3 +316,110 @@ items:
   "scan_0007.stl":
     - "the little figurine with a round body and a head"
     - "3D printable statuette on a base"
+
+  # The items that raise questions (#357).
+  "ORCA kickoff minutes.md":
+    - "first meeting of the river sensor project at work"
+    - "who leads the hardware and who builds the dashboard"
+  "ORCA sensor budget.txt":
+    - "approved spending for the three water-level stations"
+    - "how much the solar panels and mobile data cost for the river project"
+  "ORCA site visit report.txt":
+    - "walking the river sites with the landowner"
+    - "why the second station moves onto the footbridge"
+  "QPCR plate layout.txt":
+    - "which wells held the samples, controls and standard curve"
+    - "the 96-well map for the January amplification run"
+  "QPCR melt curve check.md":
+    - "checking for primer dimers after amplification"
+    - "efficiency of 97 percent from the standard curve"
+  "ISA transfer form.txt":
+    - "moving my tax-free savings to a better rate"
+    - "signed request to move the whole balance from Westmoor"
+  "ISA interest summary.txt":
+    - "how much interest my tax-free savings earned this year"
+    - "fixed rate of 4.1 percent until next April"
+  "DnD campaign notes.md":
+    - "the world and villain for the tabletop game I run"
+    - "story threads for the game about drowned towns and salt flats"
+  "DnD session recap.md":
+    - "what happened in the sixth game night"
+    - "the party reaching the abbey door across the salt flats"
+  "LIGO detector primer.txt":
+    - "how the gravitational wave detectors measure a tiny stretch"
+    - "explainer on four-kilometre interferometer arms"
+  "LIGO open data tutorial.md":
+    - "how to find a black hole merger chirp in public detector data"
+    - "whitening and band-passing strain data in Python"
+  "EHIC renewal reminder.txt":
+    - "my European medical cover card is about to expire"
+    - "reminder to renew before travelling abroad this summer"
+  "EHIC application confirmation.txt":
+    - "confirmation that the new European health card is on its way"
+    - "valid for five years, arriving by post"
+  "BrewLog sensor wiring.md":
+    - "how the temperature probes in the fermenter connect to the board"
+    - "the home-brewing monitor's circuit"
+  "BrewLog firmware changelog.md":
+    - "versions of the code for my beer fermentation monitor"
+    - "when it started logging gravity from the float"
+  "CNC spindle setup.md":
+    - "setting up the motor that cuts on my milling machine"
+    - "how square the cutter is to the bed"
+  "CNC toolpath settings.txt":
+    - "feed rates for cutting plywood on the router"
+    - "step-down and tabs for milling sheet parts"
+  "PhD funding letter.txt":
+    - "offer of a funded doctoral place starting in October"
+    - "the studentship stipend and how long it lasts"
+  "PhD thesis outline.md":
+    - "chapter plan for the doctorate"
+    - "five chapters from phase models to experiments with circuits"
+  "OSM footpath edits.md":
+    - "paths I added to the open street map near the river"
+    - "fixing the bridleway that was tagged as a road"
+  "OSM import script notes.md":
+    - "a script to add the council's benches to the open map"
+    - "skipping benches within five metres of ones already mapped"
+  "Calder Building Society savings statement.txt":
+    - "the yearly balance of my savings account at the building society"
+    - "interest of 186 on the variable-rate account"
+  "Calder Building Society rate change.txt":
+    - "notice that my savings rate drops in April"
+    - "letter saying I can move my money without penalty"
+  "Calder Building Society branch closure.txt":
+    - "the local branch of my savings provider is closing in May"
+    - "where to pay money in once the High Street branch shuts"
+  "Calder Building Society travel money card.txt":
+    - "the prepaid card I loaded with Norwegian kroner"
+    - "spending money for the trip, with no fees abroad"
+  "Mariner Travel booking Bergen.txt":
+    - "hotel and train for the Norway trip in August"
+    - "four nights near the old wharf after the scenic railway"
+  "Mariner Travel invoice.txt":
+    - "what I paid the agency for the August trip"
+    - "the 816 total for hotel and rail to Bergen"
+  "Mariner Travel cancellation terms.txt":
+    - "what I'd lose if I cancel the Norway package"
+    - "refund rules by how many days before departure"
+  "Allotment plot licence.txt":
+    - "the agreement for my vegetable plot at the community gardens"
+    - "rules about bonfires and keeping the plot cultivated"
+  "Allotment planting plan.md":
+    - "which vegetables go in which bed this year"
+    - "rotating potatoes, beans, onions and squash"
+  "Allotment seed order.txt":
+    - "seeds and seed potatoes bought for the garden plot"
+    - "the order with runner beans and garlic"
+  "Allotment committee newsletter.txt":
+    - "news from the gardens association about the work party"
+    - "the spring update with the plant sale and compost bays"
+  "Larkspur Road inventory.txt":
+    - "the room-by-room list when I moved out of my old flat"
+    - "the agent's notes on the old place's carpet and oven"
+  "Larkspur Road keys handover.txt":
+    - "proof I handed back all the keys to my previous flat"
+    - "the agency's signed note for the bike shed and post box keys"
+  "Larkspur Road deposit return.txt":
+    - "getting my deposit back in full from the old flat"
+    - "money released from the protection scheme with no deductions"
