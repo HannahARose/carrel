@@ -1,0 +1,24 @@
+# How the restructure and crawler benchmarks muddle the test set's archive
+# (docs/design/restructure.md, "Measuring it"). Each item is filed where answers.yaml expects
+# it, except as below. What answers.yaml expects is the intended shape the benchmarks score
+# against.
+#
+# missing: a collection that isn't there; its items wait in another collection instead.
+# overfilled: one collection's items dumped into another, which ends up overfilled; the
+#   collection they belong in is still there, empty.
+# scattered: single items filed in a collection they have nothing to do with.
+missing:
+  collection: Recipes
+  into: Home
+overfilled:
+  collection: Home
+  from: Manuals
+scattered:
+  "flight booking lisbon.txt": Work
+  "blood test results.txt": Letters
+  "receipt desk chair.txt": Reading
+  "pension annual statement.txt": Health
+  "paper kuramoto synchronization.txt": Projects
+  "car insurance renewal.txt": Travel
+  "team meeting notes.md": Insurance
+  "letter from grandma.txt": Finances

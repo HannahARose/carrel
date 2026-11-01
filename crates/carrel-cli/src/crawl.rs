@@ -95,9 +95,8 @@ fn on_power() -> Option<bool> {
 /// The crawler for `archive` here, on the strongest model the device has, or why there's
 /// none.
 fn crawler<'a>(archive: &'a Archive, registry: &'a Registry) -> Result<Crawler<'a>, Failure> {
-    let model = carrel_core::librarian::model::choose(registry, None, crate::ask::memory_gb())
-        .map_err(Failure::new)?
-        .ok_or_else(|| {
+    let model =
+        carrel_core::crawl::model::choose(registry, crate::ask::memory_gb()).ok_or_else(|| {
             Failure::new(
                 "the crawler needs a text model, and this device has none (see `carrel models`)",
             )
