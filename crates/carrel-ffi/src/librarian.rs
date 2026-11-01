@@ -348,7 +348,7 @@ impl ArchiveHandle {
         &self,
         model: Option<Arc<dyn ModelProvider>>,
         memory_gb: Option<u64>,
-    ) -> Result<(Registry, Result<AvailableModel, NoModel>), CarrelError> {
+    ) -> Result<(Registry, Result<AvailableModel, Box<NoModel>>), CarrelError> {
         let from_app = model.is_some();
         let registry = self.correction_registry(model);
         let setting = if from_app {
@@ -590,7 +590,7 @@ mod tests {
         let sample = Sample::new();
         let choice = sample.handle.librarian_model_choice(None, Some(8)).unwrap();
         assert_eq!(choice.label, None);
-        assert!(choice.available.is_empty());
+        assert_eq!(choice.available, Vec::<String>::new());
         let download = choice.download.unwrap();
         assert_eq!(download.name, "qwen3.5-4b");
         assert!(download.size > 0);

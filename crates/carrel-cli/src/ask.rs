@@ -72,7 +72,7 @@ pub fn the_model(registry: &Registry) -> Result<AvailableModel, Failure> {
 /// [`Failure`] if the preferences can't be read.
 pub fn explain_the_model(
     registry: &Registry,
-) -> Result<Result<AvailableModel, model::NoModel>, Failure> {
+) -> Result<Result<AvailableModel, Box<model::NoModel>>, Failure> {
     let prefs = Prefs::load()?;
     Ok(model::choose_or_explain(
         registry,

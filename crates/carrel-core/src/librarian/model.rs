@@ -139,7 +139,7 @@ pub fn choose_or_explain(
     setting: Option<&str>,
     memory_gb: Option<u64>,
     models_dir: Option<&Path>,
-) -> Result<AvailableModel, NoModel> {
+) -> Result<AvailableModel, Box<NoModel>> {
     let gone = match choose(registry, setting, memory_gb) {
         Ok(Some(model)) => return Ok(model),
         Ok(None) => None,
@@ -156,7 +156,7 @@ pub fn choose_or_explain(
     } else {
         Vec::new()
     };
-    Err(NoModel {
+    Err(Box::new(NoModel {
         download: (instead.is_none() && downloaded.is_empty())
             .then(|| to_download(memory_gb))
             .flatten(),
@@ -165,7 +165,7 @@ pub fn choose_or_explain(
         gone,
         instead,
         memory_gb,
-    })
+    }))
 }
 
 /// The catalog's text models downloaded into `models_dir`, for llama.cpp or MLX.
@@ -313,7 +313,7 @@ mod tests {
         let registry = Registry::with_built_ins();
         let missing = choose_or_explain(&registry, None, Some(8), None).unwrap_err();
         assert_eq!(missing.gone, None);
-        assert!(missing.available.is_empty());
+        assert_eq!(missing.available, []);
         let download = missing.download.unwrap();
         assert_eq!(download.name, "qwen3.5-4b");
         let words = missing.to_string();

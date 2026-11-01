@@ -120,6 +120,45 @@ final class LibrarianTests: XCTestCase {
         XCTAssertNil(sample.archive.lastError, "the panel says it, not an alert")
     }
 
+    func testSaysWhichModelAnswers() async throws {
+        let (librarian, _) = librarian([])
+        await librarian.refresh()
+        XCTAssertNotNil(librarian.modelLabel)
+        XCTAssertNil(try XCTUnwrap(librarian.modelChoice).problem)
+    }
+
+    func testWithNoModelItOffersOneToDownloadWithItsSize() async throws {
+        // The sample's window starts no provider programs, so this Mac has no text model.
+        let librarian = LibrarianModel(archive: sample.archive, memoryGB: 8)
+        await librarian.refresh()
+        let choice = try XCTUnwrap(librarian.modelChoice)
+        XCTAssertNil(choice.label)
+        XCTAssertNil(librarian.modelLabel)
+        let download = try XCTUnwrap(choice.download)
+        XCTAssertEqual(download.name, "qwen3.5-4b")
+        XCTAssertGreaterThan(download.size, 0)
+        let problem = try XCTUnwrap(choice.problem)
+        XCTAssertTrue(problem.contains("needs a text model"), problem)
+        librarian.draft = "Anything?"
+        await librarian.ask()
+        XCTAssertEqual(librarian.problem, problem, "asking says the same")
+    }
+
+    func testASettingNamingAModelThatsGoneIsSaidAndCleared() async throws {
+        let config = sample.folder.appending(path: "config")
+        try FileManager.default.createDirectory(at: config, withIntermediateDirectories: true)
+        try Data(#"{"librarian_model": "llama/gone-7b"}"#.utf8)
+            .write(to: config.appending(path: "cli.json"))
+        let librarian = LibrarianModel(archive: sample.archive, memoryGB: 16)
+        await librarian.refresh()
+        let choice = try XCTUnwrap(librarian.modelChoice)
+        XCTAssertEqual(choice.gone, "llama/gone-7b")
+        XCTAssertTrue(choice.problem?.contains("llama/gone-7b") == true)
+        await librarian.useStrongest()
+        XCTAssertNil(librarian.modelChoice?.gone, "the setting is cleared")
+        XCTAssertNotNil(librarian.modelChoice?.download, "and there's a model to download")
+    }
+
     func testAskAboutThisOpensThePanelWithTheItem() throws {
         let librarian = try XCTUnwrap(sample.model.librarian)
         let item = try XCTUnwrap(sample.model.items.first { $0.id == sampleNote })

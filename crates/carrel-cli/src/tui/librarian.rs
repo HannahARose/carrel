@@ -105,7 +105,7 @@ pub fn ask_with(
 #[derive(Debug)]
 pub enum LibrarianUnanswered {
     /// It has no model to run on, and this is what would let it.
-    NoModel(carrel_core::librarian::model::NoModel),
+    NoModel(Box<carrel_core::librarian::model::NoModel>),
     /// Something else went wrong, in words.
     Failed(String),
 }
@@ -795,6 +795,7 @@ pub(super) mod tests {
             available: Vec::new(),
             instead: None,
             download: Some(qwen),
+            downloaded: Vec::new(),
             memory_gb: Some(8),
         });
         let message = app.message.clone().unwrap();
@@ -823,6 +824,7 @@ pub(super) mod tests {
             available: vec![installed.clone()],
             instead: Some(installed),
             download: None,
+            downloaded: Vec::new(),
             memory_gb: Some(16),
         });
         let message = app.message.clone().unwrap();
