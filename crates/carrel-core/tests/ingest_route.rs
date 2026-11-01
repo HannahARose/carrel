@@ -41,6 +41,7 @@ fn sample() -> (tempfile::TempDir, Archive) {
 
 fn candidate(path: PathBuf, kind: Kind) -> Candidate {
     Candidate {
+        context: None,
         path,
         kind,
         sealed: None,

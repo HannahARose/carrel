@@ -505,6 +505,7 @@ pub fn item_text(archive: &Archive, registry: &Registry, path: &Path, kind: Kind
 /// A candidate for the item at `path`, enough to read or route it again.
 fn candidate(path: PathBuf, kind: Kind) -> Candidate {
     Candidate {
+        context: None,
         path,
         kind,
         sealed: None,

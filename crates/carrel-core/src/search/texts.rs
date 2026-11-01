@@ -266,6 +266,7 @@ pub fn fill(
             continue;
         }
         let candidate = Candidate {
+            context: None,
             inside: (item.kind == Kind::File)
                 .then(|| crate::compressed::inspect(&path))
                 .flatten(),

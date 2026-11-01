@@ -496,8 +496,13 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
         | Effect::CreateArchive(_)
         | Effect::StartHistory(_)) => switch_or_index_work(app, root, effect)?,
         Effect::QuestionsAbout(card) => option_lines::questions_about_work(root, card),
-        Effect::Queue { paths, options } => {
-            let result = queue(&root, &paths, options);
+        Effect::Queue {
+            paths,
+            options,
+            url,
+            note,
+        } => {
+            let result = queue(&root, &paths, options, url.as_deref(), note.as_deref());
             finished(app, result.map_err(|Failure(e)| e));
             return None;
         }
@@ -618,17 +623,40 @@ fn picked_files(app: &mut App, picked: Result<Vec<PathBuf>, Failure>) {
     }
 }
 
-/// Adds `paths` to the intake queue and starts a worker, saying what happened in a line.
+/// Adds `paths`, or the web address `url`, to the intake queue with the owner's `note` and
+/// starts a worker, saying what happened in a line. While another device is the writer, they
+/// go into this device's inbox instead.
 fn queue(
     root: &Path,
     paths: &[PathBuf],
     options: carrel_core::ingest::IntakeOptions,
+    url: Option<&str>,
+    note: Option<&str>,
 ) -> Result<String, Failure> {
     let archive = carrel_core::archive::Archive::open(root)?;
     let identity = crate::config::Identity::load_or_create()?;
-    let queued = carrel_core::intake::add(&archive, paths, options, identity.device)?;
+    if carrel_core::inbox::writer_elsewhere(&archive, identity.device).is_some() {
+        let holder = crate::commands::holder(&identity);
+        match url {
+            Some(url) => carrel_core::inbox::send_url(&archive, holder, url, None, note)?,
+            None => carrel_core::inbox::send_paths(&archive, holder, paths, options.each, note)?,
+        };
+        return Ok(
+            "Another device is the writer, so this went into this device's inbox for it to add"
+                .into(),
+        );
+    }
+    let n = match url {
+        Some(url) => usize::from(
+            carrel_core::intake::add_url(&archive, url, None, note, identity.device)?.is_some(),
+        ),
+        None => {
+            carrel_core::intake::add_with_note(&archive, paths, options, identity.device, note)?
+                .added
+                .len()
+        }
+    };
     let started = crate::worker::start(&archive)?;
-    let n = queued.added.len();
     Ok(match (n, started || crate::worker::running(&archive)?) {
         (0, _) => "Nothing new to queue".into(),
         (n, true) => format!(
@@ -1985,6 +2013,8 @@ mod tests {
             Some(Effect::Queue {
                 paths: vec![file.clone()],
                 options: carrel_core::ingest::IntakeOptions::default(),
+                url: None,
+                note: None,
             })
         );
         assert_eq!(app.planned, None);

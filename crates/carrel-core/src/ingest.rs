@@ -219,6 +219,9 @@ pub struct Candidate {
     pub same_as: Option<usize>,
     /// For a compressed file, what's inside (`docs/design/compressed.md`).
     pub inside: Option<crate::compressed::Inside>,
+    /// What the owner said about it when adding it, such as a share sheet's note, for the
+    /// model drafting its card.
+    pub context: Option<String>,
 }
 
 /// The archived item a candidate duplicates.
@@ -250,6 +253,7 @@ pub fn examine(archive: &Archive, path: &Path) -> Result<Candidate, IngestError>
         (manifest.checksum(), manifest.total_size())
     };
     Ok(Candidate {
+        context: None,
         path: path.to_owned(),
         kind: detected.kind,
         sealed: detected.sealed,

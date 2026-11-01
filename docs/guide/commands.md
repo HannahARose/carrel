@@ -54,6 +54,8 @@ With `--json`, `carrel search` prints `{"root", "query", "total", "meaning", "re
 | `carrel ingest PATH... [--each \| --whole]` | Adds files and folders to the intake queue, shows the plan, starts a worker in the background, and returns. Each argument is one item; `--each` makes each entry of a folder its own item, and `--whole` keeps a folder named like a pile (Downloads, Desktop, Inbox) as one. |
 | `carrel ingest --dry-run PATH...` | Shows the plan at once (items, kinds, duplicates, what's left out) without queueing anything or running a model. |
 | `carrel ingest --wait PATH...` | Queues the items and stays until they're drafted, with a progress bar, then reports each one: its text, card, destination and sensitivity. |
+| `carrel ingest --url URL [--title TEXT]` | Adds a web address, to be filed as a `url` item: a card with no file, drafted from the address and title alone. Nothing is fetched. |
+| `carrel ingest --note TEXT ...` | Adds a note to what's added, files or a web address: the model drafting each card is given it, and the filed card keeps it at the start of its notes. |
 | `carrel ingest --status` | Shows the worker and this device's queue, including items that failed. |
 | `carrel ingest --remove ID`, `--first ID`, `--retry ID` | Takes a waiting item off the queue, moves it to the front, or tries a failed one again. |
 | `carrel worker` | Drafts this device's queue until it's empty, then embeds the items behind in the meaning index, if a provider here runs the archive's embedding model. Adding to the queue starts one in the background, and so does every command that changes filed items (approving, correcting, editing, renaming, returning and undoing), so this is rarely run by hand. Set `CARREL_WORKER=off` to stop one starting by itself. |
@@ -61,6 +63,8 @@ With `--json`, `carrel search` prints `{"root", "query", "total", "meaning", "re
 | `carrel agent install [ARCHIVE...] [--poll]` | Starts the agent at log-in, and now: a launchd user agent on macOS, a systemd user service on Linux, a Task Scheduler task on Windows. It says the file it wrote and the commands it ran. |
 | `carrel agent status` | Whether the agent is installed, for which archives, and whether an agent looks after each of them (and the current archive) now. |
 | `carrel agent uninstall` | Stops the agent and removes exactly what `install` wrote. |
+
+While another device is the writer (its lease in `_System/writer.lock`), `carrel ingest` puts what's added into this device's inbox, `_System/inbox/<device>/`, and says so. The writer's worker adds it to its own queue and drafts it there, recorded as one `inbox` change in History.
 
 ## Review
 

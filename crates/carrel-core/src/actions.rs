@@ -1234,6 +1234,7 @@ pub fn correct_proposal(
         let rules = crate::ingest::route::RoutingRules::of(archive, &collections);
         let router = crate::ingest::route::Router::new(archive, &collections, &rules);
         let candidate = crate::ingest::Candidate {
+            context: None,
             path: entry.source.path.clone(),
             kind: entry.kind,
             sealed: entry.sealed,

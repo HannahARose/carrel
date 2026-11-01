@@ -35,7 +35,7 @@ pub struct Poller {
 }
 
 /// The parts of `_System` worth looking at.
-const SYSTEM_PARTS: [&str; 3] = ["queue/intake", "devices", "manifests"];
+const SYSTEM_PARTS: [&str; 4] = ["queue/intake", "inbox", "devices", "manifests"];
 
 impl Poller {
     /// A poller for the archive at `archive` and the working copies `working_copies`, having

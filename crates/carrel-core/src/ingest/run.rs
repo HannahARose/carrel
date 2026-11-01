@@ -151,7 +151,30 @@ pub fn run_with_progress(
     device: Id,
     progress: &mut dyn FnMut(Progress<'_>),
 ) -> Result<Run, IngestError> {
-    let (candidates, skipped, index) = plan_with_index(archive, paths, options)?;
+    run_with_context(archive, registry, paths, options, device, None, progress)
+}
+
+/// [`run_with_progress`], with what the owner said about the items when adding them, such as
+/// a share sheet's note, given to the model drafting each card.
+///
+/// # Errors
+///
+/// As [`run`].
+pub fn run_with_context(
+    archive: &Archive,
+    registry: &Registry,
+    paths: &[PathBuf],
+    options: IntakeOptions,
+    device: Id,
+    context: Option<&str>,
+    progress: &mut dyn FnMut(Progress<'_>),
+) -> Result<Run, IngestError> {
+    let (mut candidates, skipped, index) = plan_with_index(archive, paths, options)?;
+    if let Some(context) = context.map(str::trim).filter(|c| !c.is_empty()) {
+        for candidate in &mut candidates {
+            candidate.context = Some(context.to_owned());
+        }
+    }
     let names: Vec<String> = candidates.iter().map(name).collect();
     let total = candidates.len();
     let mut report = |stage: Stage, done: usize| {

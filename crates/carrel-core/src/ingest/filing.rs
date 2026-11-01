@@ -360,6 +360,10 @@ pub fn file_one(
     if entry.source.device != device {
         return Err(FilingError::OtherDevice(entry.source.device));
     }
+    if entry.kind.is_card_only() {
+        let collection = collection_for(collections, entry, placement)?;
+        return file_card_only(archive, entry, placement, collection);
+    }
     let source = &entry.source.path;
     if std::fs::symlink_metadata(source).is_err() {
         return Err(FilingError::Missing(source.clone()));
@@ -381,18 +385,7 @@ pub fn file_one(
     if fingerprint(source, entry.kind, &rules)? != entry.source.checksum {
         return Err(FilingError::Changed(source.clone()));
     }
-    let collection = match placement {
-        Placement::Destination => collections
-            .iter()
-            .find(|c| c.doc.id == entry.destination.collection),
-        Placement::Holding => collections.iter().find(|c| c.path == HOLDING),
-    }
-    .ok_or_else(|| {
-        FilingError::NoCollection(match placement {
-            Placement::Destination => entry.destination.path.clone(),
-            Placement::Holding => HOLDING.into(),
-        })
-    })?;
+    let collection = collection_for(collections, entry, placement)?;
     let expansion = expand(archive, entry, &rules)?;
     let filed = file_item(
         archive,
@@ -406,6 +399,71 @@ pub fn file_one(
         let _ = remove(&expansion.temp);
     }
     filed
+}
+
+/// The collection `entry` is filed in, by `placement`.
+fn collection_for<'a>(
+    collections: &'a [Collection],
+    entry: &ReviewEntry,
+    placement: Placement,
+) -> Result<&'a Collection, FilingError> {
+    match placement {
+        Placement::Destination => collections
+            .iter()
+            .find(|c| c.doc.id == entry.destination.collection),
+        Placement::Holding => collections.iter().find(|c| c.path == HOLDING),
+    }
+    .ok_or_else(|| {
+        FilingError::NoCollection(match placement {
+            Placement::Destination => entry.destination.path.clone(),
+            Placement::Holding => HOLDING.into(),
+        })
+    })
+}
+
+/// Files a card-only proposal, such as a shared web address: writes its card, named for its
+/// title, with no item beside it.
+fn file_card_only(
+    archive: &Archive,
+    entry: &ReviewEntry,
+    placement: Placement,
+    collection: &Collection,
+) -> Result<Filed, FilingError> {
+    let id = Id::new_v7();
+    let folder = archive.root().join(&collection.path);
+    let portable = crate::names::portable(entry.card.title.trim());
+    let name = free_name(&folder, &portable).map_err(io(&folder))?;
+    let mut card = card_for(entry, id, &name, placement, collection);
+    card.item = None;
+    card.url = crate::intake::url_of(&entry.extra);
+    let problems: Vec<String> = card.problems().iter().map(ToString::to_string).collect();
+    if !problems.is_empty() {
+        return Err(FilingError::Card(problems));
+    }
+    let card_name = format!("{name}.md");
+    let file = CardFile::new(card, &owner_note(entry))?;
+    write_new(&folder.join(&card_name), &file.to_text()?)?;
+    if placement == Placement::Destination {
+        add_tags(archive, collection, entry)?;
+    }
+    add_to_changelog(archive, collection, &entry.card.title, &card_name)?;
+    Ok(Filed {
+        entry: entry.id,
+        item: id,
+        title: entry.card.title.clone(),
+        path: format!("{}/{card_name}", collection.path),
+        card: format!("{}/{card_name}", collection.path),
+        kept_original: None,
+        expanded_from: None,
+        trash_problem: None,
+    })
+}
+
+/// The owner's note on `entry`, such as a share sheet's, as the start of its card's body.
+fn owner_note(entry: &ReviewEntry) -> String {
+    crate::intake::note_of(&entry.extra)
+        .map(|note| format!("\n{}\n", note.trim()))
+        .unwrap_or_default()
 }
 
 /// A compressed file expanded for filing.
@@ -528,7 +586,11 @@ fn file_item(
     } else {
         describe_contents(archive, &mut card, &target, id, kind, rules)?;
     }
-    let note = name_note(&name, &portable, &original_name);
+    let note = format!(
+        "{}{}",
+        name_note(&name, &portable, &original_name),
+        owner_note(entry)
+    );
     let card_name = format!("{name}.md");
     let file = match &desk {
         Some(desk) => CardFile::with_body(card, &format!("{note}{}", desk.body())),

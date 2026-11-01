@@ -2235,6 +2235,29 @@ public protocol ArchiveHandleProtocol: AnyObject, Sendable {
     func settings() throws  -> [Setting]
     
     /**
+     * Adds the files and folders at `paths` to the intake queue, as
+     * [`queue`](ArchiveHandle::queue) does, with the owner's `note` for their drafts and cards.
+     * While another device is the writer, they go into this device's inbox instead.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if a path is missing, or the queue or inbox can't be written.
+     */
+    func sharePaths(paths: [String], each: Bool, whole: Bool, note: String?) throws  -> Shared
+    
+    /**
+     * Adds the web address `url` to the intake queue, to be filed as a `url` item drafted
+     * from the address, its `title` and the owner's `note`; nothing is fetched. While another
+     * device is the writer, it goes into this device's inbox instead.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if it isn't an `http` or `https` address, or
+     * [`CarrelError::Failed`] if the queue or inbox can't be written.
+     */
+    func shareUrl(url: String, title: String?, note: String?) throws  -> Shared
+    
+    /**
      * Everything Spotlight should find in the archive, by its `spotlight.index` setting:
      * cards, collections and glossary facts. Empty when the setting is `off`; restricted
      * items are never included.
@@ -4956,6 +4979,50 @@ open func settings()throws  -> [Setting]  {
         uniffiCallStatus in
     uniffi_carrel_ffi_fn_method_archivehandle_settings(
             self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Adds the files and folders at `paths` to the intake queue, as
+     * [`queue`](ArchiveHandle::queue) does, with the owner's `note` for their drafts and cards.
+     * While another device is the writer, they go into this device's inbox instead.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if a path is missing, or the queue or inbox can't be written.
+     */
+open func sharePaths(paths: [String], each: Bool, whole: Bool, note: String?)throws  -> Shared  {
+    return try  FfiConverterTypeShared_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_share_paths(
+            self.uniffiCloneHandle(),
+        FfiConverterSequenceString.lower(paths),
+        FfiConverterBool.lower(each),
+        FfiConverterBool.lower(whole),
+        FfiConverterOptionString.lower(note),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Adds the web address `url` to the intake queue, to be filed as a `url` item drafted
+     * from the address, its `title` and the owner's `note`; nothing is fetched. While another
+     * device is the writer, it goes into this device's inbox instead.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if it isn't an `http` or `https` address, or
+     * [`CarrelError::Failed`] if the queue or inbox can't be written.
+     */
+open func shareUrl(url: String, title: String?, note: String?)throws  -> Shared  {
+    return try  FfiConverterTypeShared_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_share_url(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(url),
+        FfiConverterOptionString.lower(title),
+        FfiConverterOptionString.lower(note),uniffiCallStatus
     )
 })
 }
@@ -18120,6 +18187,85 @@ public func FfiConverterTypeSettingChanged_lower(_ value: SettingChanged) -> Rus
 
 
 /**
+ * What sharing something with the archive did.
+ */
+public struct Shared: Equatable, Hashable {
+    /**
+     * What joined this device's intake queue, and what was left out.
+     */
+    public var added: Added
+    /**
+     * The inbox entry it went into instead, while another device is the writer.
+     */
+    public var inbox: String?
+    /**
+     * That device, when it did.
+     */
+    public var writer: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * What joined this device's intake queue, and what was left out.
+         */added: Added, 
+        /**
+         * The inbox entry it went into instead, while another device is the writer.
+         */inbox: String?, 
+        /**
+         * That device, when it did.
+         */writer: String?) {
+        self.added = added
+        self.inbox = inbox
+        self.writer = writer
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension Shared: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeShared: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Shared {
+        return
+            try Shared(
+                added: FfiConverterTypeAdded.read(from: &buf), 
+                inbox: FfiConverterOptionString.read(from: &buf), 
+                writer: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: Shared, into buf: inout [UInt8]) {
+        FfiConverterTypeAdded.write(value.added, into: &buf)
+        FfiConverterOptionString.write(value.inbox, into: &buf)
+        FfiConverterOptionString.write(value.writer, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeShared_lift(_ buf: RustBuffer) throws -> Shared {
+    return try FfiConverterTypeShared.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeShared_lower(_ value: Shared) -> RustBuffer {
+    return FfiConverterTypeShared.lower(value)
+}
+
+
+/**
  * A snapshot taken on request.
  */
 public struct SnapshotTaken: Equatable, Hashable {
@@ -24509,6 +24655,12 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_settings() != 47688) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_share_paths() != 49218) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_share_url() != 27328) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_spotlight_entries() != 62104) {

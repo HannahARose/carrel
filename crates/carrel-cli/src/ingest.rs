@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 
 use carrel_core::archive::Archive;
 use carrel_core::card::{Id, Kind};
+use carrel_core::inbox;
 use carrel_core::ingest::card::Draft;
 use carrel_core::ingest::filing::Outcome;
 use carrel_core::ingest::route::Route;
@@ -31,6 +32,8 @@ pub struct Options {
     pub dry_run: bool,
     /// Stay until the items are drafted, and report them.
     pub wait: bool,
+    /// The owner's note about the items, for their drafts and cards.
+    pub note: Option<String>,
 }
 
 /// Everything `carrel ingest` was given.
@@ -38,6 +41,8 @@ pub struct Options {
 pub struct Request {
     /// The files and folders to add.
     pub paths: Vec<PathBuf>,
+    /// A web address to add instead, with its title.
+    pub url: Option<(String, Option<String>)>,
     /// How to add them.
     pub options: Options,
     /// Show the queue instead.
@@ -56,6 +61,8 @@ pub fn command(archive: Option<&Path>, request: &Request, json: bool) -> Result<
         queue_status(archive)
     } else if let Some((change, id)) = &request.change {
         change_queued(archive, id, *change)
+    } else if let Some((url, title)) = &request.url {
+        ingest_url(archive, url, title.as_deref(), &request.options, json)
     } else {
         ingest(archive, &request.paths, &request.options, json)
     }
@@ -88,7 +95,23 @@ pub fn ingest(
             "Nothing has been queued (--dry-run).",
         ));
     }
-    let queued = intake::add(&archive, paths, options.intake, identity.device)?;
+    if let Some(writer) = inbox::writer_elsewhere(&archive, identity.device) {
+        let sent = inbox::send_paths(
+            &archive,
+            crate::commands::holder(&identity),
+            paths,
+            options.intake.each,
+            options.note.as_deref(),
+        )?;
+        return Ok(inbox_report(&sent, &writer, paths.len()));
+    }
+    let queued = intake::add_with_note(
+        &archive,
+        paths,
+        options.intake,
+        identity.device,
+        options.note.as_deref(),
+    )?;
     if options.wait {
         return wait(&archive, &queued, json);
     }
@@ -96,23 +119,96 @@ pub fn ingest(
     let note = if queued.added.is_empty() {
         "Nothing new to queue.".to_owned()
     } else {
-        format!(
-            "Queued {}. {} drafting them in the background; follow it with `carrel ingest --status`, and review proposals in `carrel` as they arrive.",
-            plural(queued.added.len(), "item"),
-            if started {
-                "A worker is"
-            } else if crate::worker::running(&archive)? {
-                "The running worker is"
-            } else if crate::worker::agent(&archive) {
-                "The Carrel agent is"
-            } else {
-                "No worker is started (CARREL_WORKER is off); run `carrel worker` to start"
-            }
-        )
+        queued_note(&archive, queued.added.len(), started)?
     };
     let mut report = plan_report(&queued, &note);
     report.json["worker_started"] = json!(started);
     Ok(report)
+}
+
+/// Says that `count` items were queued, and who's drafting them.
+fn queued_note(archive: &Archive, count: usize, started: bool) -> Result<String, Failure> {
+    Ok(format!(
+        "Queued {}. {} drafting {} in the background; follow it with `carrel ingest --status`, and review proposals in `carrel` as they arrive.",
+        plural(count, "item"),
+        if started {
+            "A worker is"
+        } else if crate::worker::running(archive)? {
+            "The running worker is"
+        } else if crate::worker::agent(archive) {
+            "The Carrel agent is"
+        } else {
+            "No worker is started (CARREL_WORKER is off); run `carrel worker` to start"
+        },
+        if count == 1 { "it" } else { "them" }
+    ))
+}
+
+/// `carrel ingest --url URL`: queues a web address to be filed as a `url` item, drafted from
+/// the address and `title` with nothing fetched, or puts it in this device's inbox while
+/// another device is the writer.
+///
+/// # Errors
+///
+/// [`Failure`] if it isn't a web address or the queue can't be written.
+pub fn ingest_url(
+    archive: Option<&Path>,
+    url: &str,
+    title: Option<&str>,
+    options: &Options,
+    json: bool,
+) -> Result<Report, Failure> {
+    let archive = locate(archive)?;
+    let identity = crate::config::Identity::load_or_create()?;
+    let note = options.note.as_deref();
+    if let Some(writer) = inbox::writer_elsewhere(&archive, identity.device) {
+        let sent = inbox::send_url(
+            &archive,
+            crate::commands::holder(&identity),
+            url,
+            title,
+            note,
+        )?;
+        return Ok(inbox_report(&sent, &writer, 1));
+    }
+    let Some(entry) = intake::add_url(&archive, url, title, note, identity.device)? else {
+        return Ok(Report::new(
+            format!("{url} is already queued or waiting for review.\n"),
+            json!({"saved": false, "queued": [], "skipped": [{"path": url, "reason": "already queued or waiting for review"}]}),
+        ));
+    };
+    let queued = Queued {
+        added: vec![entry],
+        candidates: Vec::new(),
+        skipped: Vec::new(),
+    };
+    if options.wait {
+        return wait(&archive, &queued, json);
+    }
+    let started = crate::worker::start(&archive)?;
+    let entry = &queued.added[0];
+    let mut text = format!("{url}, to be filed as a web address\n");
+    writeln!(text, "\n{}", queued_note(&archive, 1, started)?).unwrap();
+    Ok(Report::new(
+        text,
+        json!({
+            "saved": false,
+            "queued": [{"id": entry.id, "path": entry.path, "url": entry.url}],
+            "worker_started": started,
+        }),
+    ))
+}
+
+/// Says that `count` items went into this device's inbox at `sent`, for `writer` to add.
+fn inbox_report(sent: &Path, writer: &carrel_core::coordinator::LockInfo, count: usize) -> Report {
+    Report::new(
+        format!(
+            "Another device ({}) is the writer now, so {} went into this device's inbox, for it to add to its queue and draft.\n",
+            writer.device,
+            if count == 1 { "it" } else { "they" },
+        ),
+        json!({"saved": false, "queued": [], "inbox": sent, "writer": writer.device}),
+    )
 }
 
 /// Drafts the queued items in the foreground, or follows the worker already drafting them,

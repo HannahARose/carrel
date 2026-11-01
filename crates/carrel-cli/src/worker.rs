@@ -179,6 +179,8 @@ fn worker<'a>(
         holder: holder(&identity),
         backups,
         status: file_for(archive, "json").ok(),
+        received: carrel_core::local::config_dir()
+            .map(|dir| dir.join("received").join(archive.info().id.to_string())),
     })
 }
 

@@ -22,6 +22,7 @@ fn sample() -> Archive {
 
 fn candidate(name: &str) -> Candidate {
     Candidate {
+        context: None,
         path: PathBuf::from("/incoming").join(name),
         kind: Kind::File,
         sealed: None,

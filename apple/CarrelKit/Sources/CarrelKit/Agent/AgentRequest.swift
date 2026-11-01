@@ -11,14 +11,19 @@ import Foundation
 /// identifier, or an absolute path to its contents, its card or its working copy.
 public enum AgentRequest: Codable, Sendable, Equatable {
     /// Adds files and folders to the intake queue, as `carrel ingest` does. A folder is one
-    /// item when `whole`, entry by entry when `each`, and as detection decides otherwise.
-    case addFiles(archive: String?, paths: [String], each: Bool, whole: Bool)
+    /// item when `whole`, entry by entry when `each`, and as detection decides otherwise. The
+    /// owner's `note` is given to the drafts and kept in the cards. While another device is the
+    /// writer, they go into this Mac's inbox instead (FORMAT §7.8); so do the other adds.
+    case addFiles(archive: String?, paths: [String], each: Bool, whole: Bool, note: String? = nil)
     /// Adds shared text as a Markdown note item, titled `title` if given, through the intake
     /// queue as a file would go.
-    case addText(archive: String?, text: String, title: String?)
+    case addText(archive: String?, text: String, title: String?, note: String? = nil)
     /// Adds a shared file's contents, such as an image another app shares, as the file `name`,
     /// through the intake queue. The extension sends the bytes, since it can't share files.
-    case addData(archive: String?, name: String, data: Data)
+    case addData(archive: String?, name: String, data: Data, note: String? = nil)
+    /// Adds a web address, to be filed as a `url` item drafted from the address and `title`,
+    /// as `carrel ingest --url` does. Nothing is fetched.
+    case addURL(archive: String?, url: String, title: String?, note: String? = nil)
     /// Checks an item out, as `carrel checkout` does: to `folder` (the checkout folder
     /// setting when `nil`), due back on `due` (`YYYY-MM-DD`) if given.
     case checkOut(archive: String?, item: String, folder: String?, due: String?)
@@ -46,8 +51,9 @@ public enum AgentRequest: Codable, Sendable, Equatable {
     /// The archive the request names, if it names one.
     public var archive: String? {
         switch self {
-        case .addFiles(let archive, _, _, _), .addText(let archive, _, _),
-            .addData(let archive, _, _), .checkOut(let archive, _, _, _),
+        case .addFiles(let archive, _, _, _, _), .addText(let archive, _, _, _),
+            .addData(let archive, _, _, _), .addURL(let archive, _, _, _),
+            .checkOut(let archive, _, _, _),
             .returnItem(let archive, _, _), .cancelCheckout(let archive, _),
             .open(let archive, _, _), .search(let archive, _, _), .ask(let archive, _),
             .snapshot(let archive), .items(let archive, _), .collections(let archive),
@@ -56,11 +62,28 @@ public enum AgentRequest: Codable, Sendable, Equatable {
         }
     }
 
+    /// An add request with the owner's `note` for the cards; any other request as it is.
+    public func noted(_ note: String?) -> AgentRequest {
+        switch self {
+        case .addFiles(let archive, let paths, let each, let whole, _):
+            .addFiles(archive: archive, paths: paths, each: each, whole: whole, note: note)
+        case .addText(let archive, let text, let title, _):
+            .addText(archive: archive, text: text, title: title, note: note)
+        case .addData(let archive, let name, let data, _):
+            .addData(archive: archive, name: name, data: data, note: note)
+        case .addURL(let archive, let url, let title, _):
+            .addURL(archive: archive, url: url, title: title, note: note)
+        default: self
+        }
+    }
+
     /// Whether it changes the archive, and so needs the agent's claim on it.
     public var writes: Bool {
         switch self {
         case .open, .search, .ask, .items, .collections, .active: false
-        case .addFiles, .addText, .addData, .checkOut, .returnItem, .cancelCheckout, .snapshot: true
+        case .addFiles, .addText, .addData, .addURL, .checkOut, .returnItem, .cancelCheckout,
+            .snapshot:
+            true
         }
     }
 }

@@ -587,6 +587,15 @@ Devices that are not the current writer (§8.2) record quick actions as one JSON
 
 A device only ever writes to its own inbox folder. The writer applies inbox files in timestamp order and records each as applied in the history.
 
+Adding from a device that isn't the writer, such as from a Mac's share sheet, uses two actions:
+
+| `action` | Keys | What the writer does |
+| --- | --- | --- |
+| `add` | `files`: the names of copies kept in a folder beside the entry, named as the entry is without `.json`; `each`: read folders entry by entry; `note` | Moves the copies out of the archive to a folder of its own and adds them to its intake queue (§7.9), with the note |
+| `add-url` | `url`, `title`, `note` | Adds the web address to its intake queue as a `url` item |
+
+The writer records what it applied as one `inbox` change (§8.2), and removes the entries and their copies.
+
 ### 7.9 Queues
 
 `_System/queue/` holds pending work as one JSON file per entry, in subfolders `intake/` (items waiting to be ingested), `review/` (ingest and change proposals), `questions/` (questions for the owner), `tasks/` (work for a more capable device), `proposals/` (restructure proposals) and `crawler/` (the crawler's findings). Entry schemas are defined alongside the features that use them and are versioned with this specification. Programs **must** preserve unknown keys in entries.
@@ -635,7 +644,7 @@ A device only ever writes to its own inbox folder. The writer applies inbox file
 | `id`, `batch` | The entry's identifier, and the ingest batch it came from (UUIDv7) |
 | `state` | `proposed`, `needs-owner` (something couldn't be settled; see `problems`), `approved`, `held` (to go to Holding), `rejected` (to stay where it is) or `archived` |
 | `source` | Where the item is now: an absolute path on the device `device`, with its checksum (§2.6) and size, or the manifest's content checksum and total size for a folder or bundle |
-| `kind` | `file`, `folder` or `bundle`; a bundle also has `sealed` |
+| `kind` | `file`, `folder` or `bundle`; a bundle also has `sealed`. `url` for a shared web address, which is filed as a card-only item (§4.1) and has no file: `source` is then the text it was drafted from, which needn't still exist |
 | `duplicate_of` | The identifier of an archived item with the same checksum, if any |
 | `likely_duplicates` | Optional. Archived items it's likely a duplicate of, at most three: each with its `id`, its `card` path, and `why`, a list of `same-name`, `newer-version`, `older-version` and `same-title-and-date` |
 | `card` | The card fields to write (§5), except those programs fill in when archiving (`id`, `item`, `checksum`, `size`, `manifest`). In `links`, a `path` is relative to the archive root until the item is filed, when it's rewritten relative to the card |
@@ -645,6 +654,8 @@ A device only ever writes to its own inbox folder. The writer applies inbox file
 | `attempts` | Every provider call made for the entry: `stage`, `provider`, `offer`, `result` (`ok`, `unsupported`, `unavailable`, `declined` (a model's safety refusal) or `failed`) and an optional `message` |
 | `sensitivity_reasons` | Why `card.sensitivity` is `sensitive` or `restricted`, in words that never quote what was found; absent otherwise |
 | `desk_card` | Optional. For a desk item being archived (§9.4), its desk card's absolute path: the filed card keeps that card's `id` and body |
+| `url` | For `kind: url`, the web address the card's `url` gets when it's filed |
+| `note` | Optional. The owner's note from adding it (the intake entry's `note`), which the filed card keeps at the start of its body |
 | `compressed` | Optional, for a compressed file. `format` (`zip`, `tar`, `tar-gz`, `tar-bz2`, `tar-xz`, `tar-zst`, `gz`, `bz2`, `xz`, `zst`, `7z` or `rar`); `action`: `expand` (on approval, what it holds is filed in its place, with `expanded_from` on the card, and the compressed file goes to the system Trash), `keep` or `ask` (the entry needs the owner); `reason` for keeping or asking; `by_owner` when the owner chose the action, which lifts the size limits; and when known, what expanding makes: `files`, `size`, `kind`, `sealed` and `name` |
 
 When an approved or held entry has been archived, programs remove the entry; the history commit (§8.2) records what was filed. A rejected entry is removed once the owner has seen the batch summary. Entries whose `source.device` is another device can't be archived there; they wait for that device.
@@ -672,6 +683,8 @@ Items added for ingest wait in `_System/queue/intake/`, one JSON file each, name
 | `order` | Its place in the queue, lower first, then by `id`; omitted when `0` |
 | `attempts`, `failure` | How many times processing it has failed, and why the last time; after two, it waits for the owner to retry it |
 | `desk_card` | Optional. For a desk item being archived (§9.4), its desk card's absolute path. The proposal gets the card's fields and the same key |
+| `url`, `title` | Optional. A web address to file as a `url` item, and the title it came with. Its card is drafted from the address and title alone: nothing is fetched. `path` repeats the address |
+| `note` | Optional. What the owner said about the item when adding it, such as in a share sheet: it's given to the model drafting the card, and the proposal gets it as `note` |
 
 Programs process entries one at a time, save each item's proposal to `review/` as soon as it's ready, and then remove the entry.
 

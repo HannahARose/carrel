@@ -13,6 +13,7 @@ import Testing
         let plan = AgentPlan(
             root: "/Archive/", workingCopies: ["/Work/Lamp", "/Archive/Desk/Notes"])
         #expect(plan.classify("/Archive/_System/queue/intake/0193.json") == .queue)
+        #expect(plan.classify("/Archive/_System/inbox/d2/0193.json") == .queue)
         #expect(plan.classify("/Archive/Projects/Hardware/lamp.md") == .filed)
         #expect(plan.classify("/Archive/_System/devices/d1/desk.json") == .active)
         #expect(plan.classify("/Archive/_System/manifests/0193.checkout.tsv") == .active)
