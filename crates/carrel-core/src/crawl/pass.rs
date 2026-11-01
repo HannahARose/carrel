@@ -107,7 +107,6 @@ impl Crawler<'_> {
         let due = order_of(&entries, &crowded, &judged, &open, now);
         let by_id: HashMap<Id, ItemRef> = archive.items()?.into_iter().map(|i| (i.id, i)).collect();
         let places = places(archive)?;
-        let mut mine = Verdicts::load(archive, device);
         let mut crawled = Crawled::default();
         for (id, _) in due.into_iter().take(items) {
             if stop() {
@@ -134,16 +133,20 @@ impl Crawler<'_> {
             if !judgment.fits {
                 crawled.misfits += 1;
             }
-            let declined = judged
+            // Read now, not when the pass began, so a finding the owner rejected meanwhile
+            // stays declined.
+            let declined = verdicts::all(archive)
                 .get(&id)
                 .map(|v| v.declined.clone())
                 .unwrap_or_default();
             for finding in findings_of(archive, &judgment, &card, collection, &places) {
-                if !declined.contains(&finding) {
+                if !declined.iter().any(|d| declines(d, &finding)) {
                     self.act(item, &card, finding, &judgment, &mut crawled)?;
                 }
             }
-            mine.items.insert(
+            record(
+                archive,
+                device,
                 id,
                 Verdict {
                     collection: collection.to_owned(),
@@ -156,10 +159,9 @@ impl Crawler<'_> {
                     declined,
                     extra: Extra::new(),
                 },
-            );
-            // Kept after each item, so a pass that's stopped loses nothing.
-            mine.save(archive, device)?;
+            )?;
         }
+        let mut mine = Verdicts::load(archive, device);
         mine.last_pass = Some(now.to_string());
         mine.save(archive, device)?;
         Ok(crawled)
@@ -288,9 +290,39 @@ impl Crawler<'_> {
     }
 }
 
+/// Keeps `verdict` on `id` in this device's verdicts, after each item, so a pass that's stopped
+/// loses nothing. The file is read again first, so what changed in it meanwhile, such as a
+/// finding the owner rejected, is kept.
+fn record(archive: &Archive, device: Id, id: Id, mut verdict: Verdict) -> Result<(), CrawlError> {
+    let mut mine = Verdicts::load(archive, device);
+    if let Some(was) = mine.items.get(&id) {
+        for declined in &was.declined {
+            if !verdict.declined.contains(declined) {
+                verdict.declined.push(declined.clone());
+            }
+        }
+    }
+    mine.items.insert(id, verdict);
+    mine.save(archive, device)?;
+    Ok(())
+}
+
+/// Whether the owner's rejection of `declined` covers `finding`: the same move or tags, or
+/// any new title, summary or date, however the model words it next time.
+fn declines(declined: &Finding, finding: &Finding) -> bool {
+    match (declined, finding) {
+        (Finding::Correct { field: a, .. }, Finding::Correct { field: b, .. })
+            if a == b && matches!(a.as_str(), "title" | "summary" | "created") =>
+        {
+            true
+        }
+        _ => declined == finding,
+    }
+}
+
 /// What could be better about the item with `card` in `collection`, as `judgment` says: a move
-/// to a collection that exists, then corrections of the fields a model wrote, with tags the
-/// archive defines. The corrections come first, since a move changes where the card is.
+/// to a collection that exists, then corrections of the fields a model wrote or the card lacks,
+/// with tags the archive defines. The corrections come first, since a move changes where the card is.
 fn findings_of(
     archive: &Archive,
     judgment: &Judgment,
@@ -307,10 +339,17 @@ fn findings_of(
             .as_ref()
             .is_some_and(|g| g.fields.iter().any(|f| f == written))
     };
+    // A field the card doesn't have yet is no one's, so it can be filled in.
+    let missing = |field: &str| match field {
+        "summary" => card.summary.as_deref().is_none_or(|s| s.trim().is_empty()),
+        "created" => card.dates.as_ref().is_none_or(|d| d.created.is_none()),
+        "tags" => card.tags.is_empty(),
+        _ => false,
+    };
     let mut found = Vec::new();
     let mut correct = |field: &str, value: Option<String>| {
         if let Some(value) = value
-            && model_wrote(field)
+            && (model_wrote(field) || missing(field))
         {
             found.push(Finding::Correct {
                 field: field.to_owned(),
