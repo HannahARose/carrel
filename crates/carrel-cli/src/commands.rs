@@ -129,6 +129,11 @@ pub fn init(
         History::init(&archive, &lease)?;
     }
     lease.release()?;
+    if let Ok(root) = std::fs::canonicalize(archive.root()) {
+        let mut prefs = Prefs::load()?;
+        prefs.note_archive(&root);
+        prefs.save()?;
+    }
 
     let mut warnings = Vec::new();
     if DiskLock::is_synced_folder(archive.root()) {
@@ -173,25 +178,34 @@ pub(crate) fn holder(identity: &Identity) -> Holder {
     identity.holder()
 }
 
-/// `carrel open`.
+/// `carrel open`: with a path, makes that archive the one commands outside an archive use;
+/// without, says which that is and lists the archives opened or created on this device.
 pub fn open(path: Option<&Path>) -> Result<Report, Failure> {
     let mut prefs = Prefs::load()?;
     let Some(path) = path else {
-        return Ok(match prefs.archive {
-            Some(chosen) => Report::new(
-                format!("Commands outside an archive use {}\n", chosen.display()),
-                json!({ "archive": chosen }),
-            ),
-            None => Report::new(
-                "No archive chosen; commands only work inside one\n",
-                json!({ "archive": null }),
-            ),
-        });
+        let known = prefs.known_archives();
+        let mut text = match &prefs.archive {
+            Some(chosen) => format!("Commands outside an archive use {}\n", chosen.display()),
+            None => "No archive chosen; commands only work inside one\n".to_owned(),
+        };
+        let others: Vec<&PathBuf> = known
+            .iter()
+            .filter(|r| Some(*r) != prefs.archive.as_ref())
+            .collect();
+        if !others.is_empty() {
+            text.push_str("\nRecent archives:\n");
+            for root in &others {
+                writeln!(text, "  {}", root.display()).unwrap();
+            }
+        }
+        return Ok(Report::new(
+            text,
+            json!({ "archive": prefs.archive, "recent": known }),
+        ));
     };
-    let archive = Archive::find(path)?;
-    let root =
-        std::fs::canonicalize(archive.root()).map_err(|e| Failure::io(archive.root(), &e))?;
+    let (archive, root) = open_archive(path)?;
     prefs.archive = Some(root.clone());
+    prefs.note_archive(&root);
     prefs.save()?;
     let mut text = format!(
         "Commands outside an archive now use “{}” ({})\n",
@@ -205,6 +219,19 @@ pub fn open(path: Option<&Path>) -> Result<Report, Failure> {
         text,
         json!({ "archive": archive_json(&archive) }),
     ))
+}
+
+/// The archive `path` is in, or is, and its root with links resolved, as `carrel open` and
+/// the interactive mode's archive switcher find it.
+///
+/// # Errors
+///
+/// [`Failure`] if `path` isn't in an archive.
+pub fn open_archive(path: &Path) -> Result<(Archive, PathBuf), Failure> {
+    let archive = Archive::find(path)?;
+    let root =
+        std::fs::canonicalize(archive.root()).map_err(|e| Failure::io(archive.root(), &e))?;
+    Ok((archive, root))
 }
 
 /// A card read from disk along with where it is.

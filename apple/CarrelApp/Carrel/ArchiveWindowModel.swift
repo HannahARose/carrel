@@ -84,6 +84,12 @@ final class ArchiveWindowModel {
     /// The archive's queues and operations, through the core, once it's open.
     private(set) var archive: ArchiveModel?
 
+    // Search and adding items (#236).
+    /// Search in the toolbar.
+    private(set) var search: SearchModel?
+    /// Adding items, and the worker drafting them.
+    private(set) var intake: IntakeModel?
+
     // Review, Questions, corrections and editing (#234).
     private(set) var review: ReviewModel?
     private(set) var questions: QuestionsModel?
@@ -95,6 +101,9 @@ final class ArchiveWindowModel {
     // Active and History (#235).
     private(set) var activeScreen: ActiveScreenModel?
     private(set) var historyScreen: HistoryScreenModel?
+
+    // Browse's actions: new collections, renaming and expanding (#268).
+    private(set) var browse: BrowseActionsModel?
 
     var screen: Screen? = .status {
         didSet { if screen != oldValue { selectedItemID = nil } }
@@ -145,6 +154,13 @@ final class ArchiveWindowModel {
             historyScreen = HistoryScreenModel(archive: archive) { [weak self] in
                 await self?.refreshItems()
             }
+            search = SearchModel(archive: archive)
+            intake = IntakeModel(archive: archive)
+            let browse = BrowseActionsModel(archive: archive) { [weak self] in
+                await self?.refreshItems()
+            }
+            browse.created = { [weak self] path in self?.screen = .collection(path) }
+            self.browse = browse
             try? await archive.refreshAll()
         } catch {
             problem = message(for: error)

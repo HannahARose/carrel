@@ -16,7 +16,7 @@ Exit status is `0` on success, `1` when the command failed, and `2` for a usage 
 | Command | What it does |
 | --- | --- |
 | `carrel init [PATH] [--name NAME] [--allow-existing-files] [--embedding-model NAME]` | Creates an archive in `PATH` (or the current folder) and starts its history. With `--allow-existing-files`, files already there become uncataloged items to ingest. `--embedding-model` chooses the model every device uses to search the archive by meaning: `embeddinggemma-300m` (the default), `qwen3-embedding-0.6b`, or `apple-nl-sentence-en`, which needs no download but works only on Apple devices. Inside an archive that has no history yet, it starts the history. |
-| `carrel open [PATH]` | Chooses the archive commands use outside one; with no path, shows the choice. |
+| `carrel open [PATH]` | Chooses the archive commands use outside one; with no path, shows the choice and the archives opened or created on this device lately. |
 | `carrel status` | Summarizes the archive: items by kind, cards with problems, names that won't work everywhere, **Structure** signals, the last change and backup, who is writing, and **Recent**: the latest changes and work sessions, archive-wide. Also suggests folders on the Desktop or in `~/Code` that look like active work (changed in the last two weeks, or a Git repository) to put on the desk, and desk items unchanged for 60 days to archive; nothing is tracked or moved unless you ask. |
 | `carrel show ITEM` | Shows an item's card; under Related, its links and the five items nearest it in the meaning index (by its card, which is already embedded, so it needs no model), or why only the links are listed; and every change that touched it, newest first (undo one with `carrel undo CHANGE`). `ITEM` is its identifier, or the path of the item or its card. See [Related items](user-guide.md#related-items). |
 | `carrel search QUERY... [-n COUNT]` | Finds items by the words in their cards and text, and collection documents and glossary facts, best first, with the passage that matched and why. Filters narrow it: `collection:NAME`, `tag:TAG`, `kind:KIND`, `after:DATE`, `before:DATE` (a year, month or day), `sensitivity:LEVEL` and `checked-out`. Restricted items are found by their card only. Reads the text of items not read yet first. `-n`/`--limit` shows at most `COUNT` results (20). See [Searching](user-guide.md#searching). |
@@ -122,17 +122,17 @@ Backups need [Kopia](https://kopia.io), beside `carrel` or on `PATH`.
 
 | Key | Screen |
 | --- | --- |
-| `1` | **Status**: what `carrel status` shows, including Recent, and what's waiting for you |
+| `1` | **Status**: what `carrel status` shows, including Recent, what's waiting for you, and the search index, as `carrel index status` shows it |
 | `2` | **Review**: `a` approve, `h` hold, `m` move, `e` edit, `x` reject, `z` unpack a zip or keep it compressed, `Space` mark, `A` approve all high-confidence |
 | `3` | **Active**: what's checked out and on this device's desk, with their pending history entries; `r` return the chosen checkout, `x` cancel it, `o` open the working copy, `a` approve, `c` combine, `d` drop pending entries (all, or those marked with `Space`); `n` put a file or folder on the desk, and on a desk item `x` take it off, `f` archive it |
 | `4` | **Questions**: `Enter` to answer, `d` to dismiss |
 | `5` | **Browse**: collections and items; `/` to search, as `carrel search` does; `Enter` on an item for its changes and links, then `u` to undo the chosen change, `Enter` to go to a linked item; on an item, `o` check it out, `r` rename it, `z` expand a compressed file; `n` new collection |
 | `6` | **History**: `u` to undo the chosen change |
 | `7` | **Ingest**: the queue; `x` remove, `t` to the front, `r` retry |
-| `8` | **Settings**: `Enter` to change the chosen setting |
+| `8` | **Settings**: `Enter` to change the chosen setting. **Search index** rebuilds it with a progress bar (`carrel index rebuild`), switches the archive's model or carries on or stops a switch (`carrel index model NAME`), and downloads an embedding model after asking. **Providers** and **File types** show `carrel providers` and `carrel formats`; **Archive** switches archives |
 | `9` | **Backups**: the snapshots, each with its change; `n` snapshot now, `v` verify, `r` restore an item as of the chosen snapshot, `s` set up or connect a repository, choosing its folder with the file picker |
 
-`i` on any screen chooses files to ingest. `Ctrl-R` reads everything again, and `q` quits; the worker keeps going.
+`i` on any screen chooses files to ingest. `Ctrl-O` on any screen switches to another archive: one opened lately, one by its path, as `carrel open` does (commands outside an archive then use it too), or a new one, as `carrel init` does. `Ctrl-R` reads everything again, and finds the providers again, and `q` quits; the worker keeps going.
 
 ## Environment
 

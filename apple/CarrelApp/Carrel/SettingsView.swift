@@ -1,5 +1,6 @@
-// Settings (⌘,): what's set today, read only, and the agent's switch. Choosing models,
-// downloads and backups become editable as CarrelKit gains those operations (#233).
+// Settings (⌘,): this Mac's and the archive's settings, the models, the embedding index, the
+// providers and file types, backups, and the agent's switch. The archive's are those of the
+// window last in front.
 
 import AppKit
 import ServiceManagement
@@ -8,71 +9,28 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(AppModel.self) private var app
     @State private var settings: LocalSettings?
+    @State private var model: SettingsModel?
 
     var body: some View {
         TabView {
-            Tab("Models", systemImage: "cpu") { ModelsTab(settings: settings) }
-            Tab("Search", systemImage: "magnifyingglass") { SearchTab(settings: settings) }
+            Tab("General", systemImage: "gearshape") { GeneralTab(model: model) }
+            Tab("Models", systemImage: "cpu") {
+                ModelsTab(model: model, folder: settings?.modelsFolder)
+            }
+            Tab("Search", systemImage: "magnifyingglass") { SearchTab(model: model) }
+            Tab("Providers", systemImage: "puzzlepiece.extension") { ProvidersTab(model: model) }
             Tab("Backups", systemImage: "externaldrive.badge.timemachine") {
                 BackupsTab(settings: settings)
             }
             Tab("Agent", systemImage: "person.badge.clock") { AgentTab() }
         }
-        .frame(width: 520, height: 380)
+        .frame(width: 640, height: 540)
         .task(id: app.activeArchive) {
             let archive = app.activeArchive
             settings = await Task.detached { LocalSettings.read(archive: archive) }.value
+            model = archive.map { SettingsModel(url: $0) }
+            await model?.load()
         }
-    }
-}
-
-private struct ModelsTab: View {
-    let settings: LocalSettings?
-
-    var body: some View {
-        Form {
-            Section("Drafting") {
-                LabeledContent("Drafts cards", value: settings?.draftingModel ?? "Best available")
-                LabeledContent(
-                    "Asked again", value: settings?.secondModel ?? "Recommended, if installed")
-            }
-            Section("Installed") {
-                if let settings, !settings.installedModels.isEmpty {
-                    ForEach(settings.installedModels, id: \.self) { Text($0) }
-                } else {
-                    Text("No models downloaded yet.").foregroundStyle(.secondary)
-                }
-                if let folder = settings?.modelsFolder {
-                    RevealButton(title: "Show Models Folder", url: folder)
-                }
-            }
-            Section {
-                Text(
-                    "Choosing models and downloading them come to the app in a later build. Until then, use `carrel models`."
-                )
-                .foregroundStyle(.secondary)
-            }
-        }
-        .formStyle(.grouped)
-    }
-}
-
-private struct SearchTab: View {
-    let settings: LocalSettings?
-
-    var body: some View {
-        Form {
-            if let archive = settings?.archive {
-                Section("Embedding model for “\(archive.name)”") {
-                    LabeledContent("Model", value: archive.embeddingModel ?? "Not chosen")
-                    Text("Every device searches this archive with the same embedding model.")
-                        .foregroundStyle(.secondary)
-                }
-            } else {
-                Text("Open an archive to see its embedding model.").foregroundStyle(.secondary)
-            }
-        }
-        .formStyle(.grouped)
     }
 }
 

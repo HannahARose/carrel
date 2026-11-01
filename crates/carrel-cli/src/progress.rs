@@ -115,10 +115,8 @@ impl Display {
         }
         line.push_str(step);
         if self.mode == Mode::Terminal {
-            let filled = (done * BAR).checked_div(total).unwrap_or(BAR).min(BAR);
             line.push(' ');
-            line.push_str(&"█".repeat(filled));
-            line.push_str(&"░".repeat(BAR - filled));
+            line.push_str(&bar(done, total));
         }
         let _ = write!(line, " {done}/{total}");
         if let Some(left) = left(
@@ -145,6 +143,14 @@ impl Drop for Display {
     fn drop(&mut self) {
         self.finish();
     }
+}
+
+/// A bar showing that `done` of `total` are finished, as the terminal display and the
+/// interactive mode draw it.
+#[must_use]
+pub fn bar(done: usize, total: usize) -> String {
+    let filled = (done * BAR).checked_div(total).unwrap_or(BAR).min(BAR);
+    format!("{}{}", "█".repeat(filled), "░".repeat(BAR - filled))
 }
 
 /// About how long is left, given that `done` took `elapsed` and `remaining` are to go.
