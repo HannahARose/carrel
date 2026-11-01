@@ -204,7 +204,10 @@ private struct Inspector: View {
                     if let previews = model.previews {
                         ItemPreviewView(item: item, store: previews)
                     }
-                    ItemCardView(item: item, card: model.card(for: item), root: model.root) {
+                    ItemCardView(
+                        item: item, card: model.card(for: item), root: model.root,
+                        archive: model.archive, open: model.open(item:)
+                    ) {
                         ItemActions(model: model, item: item)
                     }
                 }

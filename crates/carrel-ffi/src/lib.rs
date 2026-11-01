@@ -956,7 +956,10 @@ mod tests {
         std::fs::write(&out.working, "part,source\nLED strip,shop\n").unwrap();
         let preview = sample.handle.return_preview(item.clone(), None).unwrap();
         assert_eq!(preview.title, "Desk lamp parts list");
-        let returned = sample.handle.return_item(item.clone(), None, false).unwrap();
+        let returned = sample
+            .handle
+            .return_item(item.clone(), None, false)
+            .unwrap();
         assert!(returned.commit.is_some());
         assert!(!sample.handle.active().unwrap().iter().any(|a| a.id == item));
         assert!(matches!(

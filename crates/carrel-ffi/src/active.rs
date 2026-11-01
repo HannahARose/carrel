@@ -315,8 +315,9 @@ impl ArchiveHandle {
         let archive = self.fresh()?;
         let item = Self::item(&archive, &item)?;
         let plan = plan_return(&archive, &item, from.as_deref().map(crate::path))?;
-        let sessions = crate::backups(&archive)
-            .map_or(0, |b| carrel_core::sessions::return_snapshots(&archive, &item, &*b).len());
+        let sessions = crate::backups(&archive).map_or(0, |b| {
+            carrel_core::sessions::return_snapshots(&archive, &item, &*b).len()
+        });
         Ok(ReturnPreview {
             item: plan.item.to_string(),
             title: plan.title,

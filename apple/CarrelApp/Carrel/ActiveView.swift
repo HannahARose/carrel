@@ -113,6 +113,8 @@ struct ActiveActions: View {
         if let item = model.selectedItem {
             if item.kind == .checkedOut {
                 Button("Return…") { Task { await model.askToReturn() } }
+                Button("Return From…") { chooseMovedWorkingCopy(for: model) }
+                    .help("Return it from where its working copy has moved to")
                 Button("Cancel Checkout…", role: .destructive) { model.askToCancel() }
             }
             Button("Show in Finder") { openWorkingCopy(item, of: model) }
@@ -131,7 +133,7 @@ struct ActiveActions: View {
             }
             if item.kind == .desk {
                 Divider()
-                Button("Take Off Desk") { Task { await model.removeFromDesk() } }
+                Button("Take Off Desk…") { model.askToTakeOff() }
             }
         }
     }
@@ -151,7 +153,21 @@ func chooseDeskItem(for model: ActiveScreenModel) {
     panel.prompt = "Add to Desk"
     panel.message = "Choose a folder or file to work on where it is."
     guard panel.runModal() == .OK, let url = panel.url else { return }
-    Task { await model.addToDesk(url) }
+    model.startAddingToDesk(url)
+}
+
+/// Asks where the chosen checkout's working copy has moved to, then what returning it from
+/// there brings back.
+func chooseMovedWorkingCopy(for model: ActiveScreenModel) {
+    guard let item = model.selectedItem, item.kind == .checkedOut else { return }
+    let panel = NSOpenPanel()
+    panel.canChooseDirectories = true
+    panel.canChooseFiles = true
+    panel.allowsMultipleSelection = false
+    panel.prompt = "Return From Here"
+    panel.message = "Choose where the working copy of “\(item.title)” is now."
+    guard panel.runModal() == .OK, let url = panel.url else { return }
+    Task { await model.askToReturn(from: url) }
 }
 
 /// The inspector for Active: the chosen item, what changed, and its pending entries.

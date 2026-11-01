@@ -179,10 +179,15 @@ mod tests {
             .handle
             .edit_card_body(item.clone(), edited.clone())
             .unwrap();
-        assert!(matches!(saved, EditOutcome::Saved { ref fields, commit: Some(_) } if fields == &["notes"]));
+        assert!(
+            matches!(saved, EditOutcome::Saved { ref fields, commit: Some(_) } if fields == &["notes"])
+        );
         assert_eq!(sample.handle.card_body(item.clone()).unwrap(), edited);
         assert_eq!(
-            sample.handle.edit_card_body(item.clone(), edited.clone()).unwrap(),
+            sample
+                .handle
+                .edit_card_body(item.clone(), edited.clone())
+                .unwrap(),
             EditOutcome::Unchanged
         );
         if edited.contains("<!-- carrel:history -->") {

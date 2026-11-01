@@ -173,8 +173,8 @@ pub fn save_body(
                 .collect::<Vec<_>>()
         })
     };
-    let was = managed(file.body())
-        .map_err(|e| ActionError::Invalid(format!("{}: {e}", item.card)))?;
+    let was =
+        managed(file.body()).map_err(|e| ActionError::Invalid(format!("{}: {e}", item.card)))?;
     match managed(body) {
         Err(e) => return Ok(Saved::Problems(vec![format!("the body's sections: {e}")])),
         Ok(now) if now != was => {

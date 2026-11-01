@@ -477,6 +477,39 @@ private struct ActivityPage: View {
                 ProgressView().padding()
             }
         }
+        .toolbar {
+            ToolbarItemGroup {
+                DatePicker(
+                    "From", selection: day(\.activityFrom, or: yearAgo),
+                    displayedComponents: .date)
+                DatePicker(
+                    "To", selection: day(\.activityTo, or: .now), displayedComponents: .date)
+                Button("Last Year") {
+                    discover.activityFrom = nil
+                    discover.activityTo = nil
+                }
+                .disabled(discover.activityFrom == nil && discover.activityTo == nil)
+                .help("Show the year to today")
+            }
+        }
+        .onChange(of: [discover.activityFrom, discover.activityTo]) {
+            Task { await discover.refresh(.activity) }
+        }
+    }
+
+    private var yearAgo: Date {
+        Calendar.current.date(byAdding: .year, value: -1, to: .now) ?? .now
+    }
+
+    /// A day of the range, `fallback` until it's chosen.
+    private func day(_ path: ReferenceWritableKeyPath<DiscoverModel, Date?>, or fallback: Date)
+        -> Binding<Date>
+    {
+        Binding {
+            discover[keyPath: path] ?? fallback
+        } set: {
+            discover[keyPath: path] = $0
+        }
     }
 
     private func totals(_ activity: ArchiveActivity) -> String {
