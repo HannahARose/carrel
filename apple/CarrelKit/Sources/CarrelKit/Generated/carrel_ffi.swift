@@ -1880,6 +1880,23 @@ public protocol ArchiveHandleProtocol: AnyObject, Sendable {
      */
     func settings() throws  -> [Setting]
     
+    /**
+     * Notes that the item `id` was opened, so a search it came from records where it
+     * ranked.
+     */
+    func noteOpened(id: String) 
+    
+    /**
+     * The report since `since` (a span such as `14d`, `today`, or a date), with collections
+     * by path when `names` is true, for the owner alone.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if `since` can't be read, or [`CarrelError::Failed`] if
+     * there's no configuration folder.
+     */
+    func usageReport(since: String, names: Bool) throws  -> UsageReportText
+    
 }
 /**
  * An open archive.
@@ -3923,6 +3940,39 @@ open func settings()throws  -> [Setting]  {
         uniffiCallStatus in
     uniffi_carrel_ffi_fn_method_archivehandle_settings(
             self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Notes that the item `id` was opened, so a search it came from records where it
+     * ranked.
+     */
+open func noteOpened(id: String)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_note_opened(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(id),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * The report since `since` (a span such as `14d`, `today`, or a date), with collections
+     * by path when `names` is true, for the owner alone.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if `since` can't be read, or [`CarrelError::Failed`] if
+     * there's no configuration folder.
+     */
+open func usageReport(since: String, names: Bool)throws  -> UsageReportText  {
+    return try  FfiConverterTypeUsageReportText_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_usage_report(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(since),
+        FfiConverterBool.lower(names),uniffiCallStatus
     )
 })
 }
@@ -7460,6 +7510,75 @@ public func FfiConverterTypeDayInYear_lift(_ buf: RustBuffer) throws -> DayInYea
 #endif
 public func FfiConverterTypeDayInYear_lower(_ value: DayInYear) -> RustBuffer {
     return FfiConverterTypeDayInYear.lower(value)
+}
+
+
+/**
+ * This device's decision log preferences.
+ */
+public struct DecisionLogSettings: Equatable, Hashable {
+    /**
+     * Whether the log is kept (`report.log`).
+     */
+    public var on: Bool
+    /**
+     * How many days it keeps (`report.keep_days`).
+     */
+    public var keepDays: UInt32
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Whether the log is kept (`report.log`).
+         */on: Bool, 
+        /**
+         * How many days it keeps (`report.keep_days`).
+         */keepDays: UInt32) {
+        self.on = on
+        self.keepDays = keepDays
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension DecisionLogSettings: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeDecisionLogSettings: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> DecisionLogSettings {
+        return
+            try DecisionLogSettings(
+                on: FfiConverterBool.read(from: &buf), 
+                keepDays: FfiConverterUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: DecisionLogSettings, into buf: inout [UInt8]) {
+        FfiConverterBool.write(value.on, into: &buf)
+        FfiConverterUInt32.write(value.keepDays, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDecisionLogSettings_lift(_ buf: RustBuffer) throws -> DecisionLogSettings {
+    return try FfiConverterTypeDecisionLogSettings.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDecisionLogSettings_lower(_ value: DecisionLogSettings) -> RustBuffer {
+    return FfiConverterTypeDecisionLogSettings.lower(value)
 }
 
 
@@ -14691,6 +14810,85 @@ public func FfiConverterTypeUnreadType_lower(_ value: UnreadType) -> RustBuffer 
 
 
 /**
+ * The report, for people and as JSON to share.
+ */
+public struct UsageReportText: Equatable, Hashable {
+    /**
+     * The report in words.
+     */
+    public var text: String
+    /**
+     * The same as JSON, the form `carrel report --json` gives, safe to share.
+     */
+    public var json: String
+    /**
+     * Whether nothing has been recorded yet.
+     */
+    public var empty: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The report in words.
+         */text: String, 
+        /**
+         * The same as JSON, the form `carrel report --json` gives, safe to share.
+         */json: String, 
+        /**
+         * Whether nothing has been recorded yet.
+         */empty: Bool) {
+        self.text = text
+        self.json = json
+        self.empty = empty
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension UsageReportText: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeUsageReportText: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UsageReportText {
+        return
+            try UsageReportText(
+                text: FfiConverterString.read(from: &buf), 
+                json: FfiConverterString.read(from: &buf), 
+                empty: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: UsageReportText, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.text, into: &buf)
+        FfiConverterString.write(value.json, into: &buf)
+        FfiConverterBool.write(value.empty, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeUsageReportText_lift(_ buf: RustBuffer) throws -> UsageReportText {
+    return try FfiConverterTypeUsageReportText.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeUsageReportText_lower(_ value: UsageReportText) -> RustBuffer {
+    return FfiConverterTypeUsageReportText.lower(value)
+}
+
+
+/**
  * One step of a walk through the stacks.
  */
 public struct WanderStep: Equatable, Hashable {
@@ -18559,6 +18757,46 @@ public func thumbnailPixels() -> UInt32  {
     )
 })
 }
+/**
+ * This device's decision log preferences.
+ *
+ * # Errors
+ *
+ * [`CarrelError::Failed`] if the preferences can't be read.
+ */
+public func decisionLogSettings()throws  -> DecisionLogSettings  {
+    return try  FfiConverterTypeDecisionLogSettings_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_func_decision_log_settings(uniffiCallStatus
+    )
+})
+}
+/**
+ * Turns the decision log on or off and sets how many days it keeps, for this device, as
+ * `carrel settings set report.log` and `report.keep_days` do.
+ *
+ * # Errors
+ *
+ * [`CarrelError::Invalid`] for fewer than one day, or [`CarrelError::Failed`] if the
+ * preferences can't be saved.
+ */
+public func setDecisionLog(settings: DecisionLogSettings)throws   {try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_func_set_decision_log(
+        FfiConverterTypeDecisionLogSettings_lower(settings),uniffiCallStatus
+    )
+}
+}
+/**
+ * Starts this device's decision log, unless `report.log` is off. The app calls it once as
+ * it starts, as the command line does.
+ */
+public func startDecisionLog()  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_func_start_decision_log(uniffiCallStatus
+    )
+}
+}
 
 private enum InitializationResult {
     case ok
@@ -18585,6 +18823,15 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_func_thumbnail_pixels() != 32344) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_func_decision_log_settings() != 63067) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_func_set_decision_log() != 20313) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_func_start_decision_log() != 10234) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_collections() != 26221) {
@@ -18903,6 +19150,12 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_settings() != 47688) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_note_opened() != 42251) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_usage_report() != 37808) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_progresslistener_update() != 58359) {

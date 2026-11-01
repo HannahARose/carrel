@@ -221,18 +221,38 @@ pub fn describe_return(plan: &ReturnPlan) -> String {
     text
 }
 
-/// Returns the item `query` names from where it was checked out to, without asking: what
-/// `carrel return --yes` does, and `r` on the Active screen once the owner has said yes.
+/// Returns the item `query` names, from where it was checked out to or from `from` if it
+/// moved, without asking: what `carrel return --yes [--from PATH] [--trim-snapshots]` does,
+/// and `r` on the Active screen once the owner has said yes. With `trim` and backups, the
+/// checkout's session snapshots are forgotten once the returned version is snapshotted.
 ///
 /// # Errors
 ///
 /// [`Failure`] if the item isn't checked out or can't be returned.
-pub fn return_now(archive: Option<&Path>, query: &str) -> Result<Report, Failure> {
+pub fn return_now(
+    archive: Option<&Path>,
+    query: &str,
+    from: Option<&Path>,
+    trim: bool,
+) -> Result<Report, Failure> {
     let archive = locate(archive)?;
     let items = archive.items()?;
     let item = find_item(&archive, &items, query)?;
-    let plan = plan_return(&archive, item, None)?;
-    finish(&archive, &plan)
+    let from = from.map(|p| crate::paths::expand(&p.to_string_lossy()));
+    let plan = plan_return(&archive, item, from.as_deref())?;
+    let (backups, _) = crate::backup::for_batch(&archive);
+    let sessions = backups
+        .as_ref()
+        .filter(|_| trim)
+        .map(|kopia| session_snapshots(&archive, item, kopia))
+        .unwrap_or_default();
+    let mut report = finish(&archive, &plan)?;
+    if let Some(kopia) = backups.as_ref().filter(|_| !sessions.is_empty()) {
+        let (trimmed, trimming) = trim_sessions(kopia, &plan, &sessions, true, true)?;
+        report.text.push_str(&trimmed);
+        report.json["session_snapshots"] = trimming;
+    }
+    Ok(report)
 }
 
 /// Cancels the checkout of the item `query` names, without asking: what

@@ -25,6 +25,6 @@ swift test
 swift run CarrelPoC ../../fixtures/sample-archive
 ```
 
-Setup, including the Rust targets for iOS, is on the wiki's [Development Setup](https://github.com/HannahARose/carrel/wiki/Development-Setup) page.
+Setup, including the Rust targets for iOS, is on the wiki's [Development Setup](https://github.com/Horizon-Labs/carrel/wiki/Development-Setup) page.
 
 The framework has Apple-silicon slices only: macOS, iOS and the iOS Simulator.

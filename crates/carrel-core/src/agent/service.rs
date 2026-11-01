@@ -201,7 +201,7 @@ impl Definition {
             "[Unit]\n",
             "Description=Carrel agent: drafts the queue, keeps the index current, ",
             "notices work sessions and takes scheduled snapshots\n",
-            "Documentation=https://github.com/HannahARose/carrel/blob/dev/docs/guide/user-guide.md\n",
+            "Documentation=https://github.com/Horizon-Labs/carrel/blob/dev/docs/guide/user-guide.md\n",
             "\n[Service]\n",
             "Type=simple\n",
         ));

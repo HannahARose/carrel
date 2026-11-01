@@ -3833,6 +3833,55 @@ fn questions_come_up_on_status_in_show_on_a_wander_and_from_the_librarian() {
 }
 
 #[test]
+fn report_sums_up_the_decision_log_without_titles_or_queries() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    let empty = sandbox.ok(&root, &["report"]);
+    assert!(empty.contains("Nothing recorded yet"), "{empty}");
+
+    sandbox.ok(&root, &["review", "reject", "01a18701"]);
+    let found = sandbox.json(&root, &["search", "oscillators"]);
+    let first = found["results"][0]["found"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    sandbox.ok(&root, &["show", &first]);
+
+    let report = sandbox.json(&root, &["report", "--since", "1d"]);
+    assert_eq!(report["models"][0]["rejected"], 1, "{report}");
+    assert_eq!(report["search"][0]["opened"], 1, "{report}");
+    let log = std::fs::read_dir(sandbox.path("config/decisions"))
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|e| e.path().extension().is_some_and(|x| x == "jsonl"))
+        .map(|e| std::fs::read_to_string(e.path()).unwrap())
+        .collect::<String>();
+    let text = sandbox.ok(&root, &["report"]);
+    for shared in [&log, &report.to_string(), &text] {
+        assert!(!shared.to_lowercase().contains("oscillat"), "{shared}");
+    }
+    assert!(text.contains("carrel report --names"), "{text}");
+
+    sandbox.ok(&root, &["settings", "set", "report.log", "off"]);
+    let settings = sandbox.json(&root, &["settings"]);
+    assert_eq!(settings["device"]["report.log"], "off");
+    sandbox.ok(&root, &["search", "oscillators"]);
+    let after = std::fs::read_dir(sandbox.path("config/decisions"))
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|e| e.path().extension().is_some_and(|x| x == "jsonl"))
+        .map(|e| std::fs::read_to_string(e.path()).unwrap())
+        .collect::<String>();
+    assert_eq!(after, log, "nothing is logged while it's off");
+    assert!(sandbox.ok(&root, &["report"]).contains("is off"));
+    let bad = sandbox.run_in(&root, &["settings", "set", "report.keep_days", "0"]);
+    assert_eq!(bad.status.code(), Some(1));
+    let bad = sandbox.run_in(&root, &["report", "--since", "sometime"]);
+    assert_eq!(bad.status.code(), Some(1));
+}
+
+#[test]
 fn discover_graph_lists_the_strongest_connections() {
     let sandbox = Sandbox::new();
     let root = sandbox.sample();

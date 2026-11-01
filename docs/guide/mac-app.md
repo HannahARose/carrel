@@ -12,7 +12,7 @@ Until v1.0 there are two ways to get it. **Signed and notarized builds**, which 
 
 Every push to `dev` builds the app. To download the latest:
 
-1. Open the repository's [Actions](https://github.com/HannahARose/carrel/actions/workflows/ci.yml?query=branch%3Adev), and choose the newest successful run on `dev`.
+1. Open the repository's [Actions](https://github.com/Horizon-Labs/carrel/actions/workflows/ci.yml?query=branch%3Adev), and choose the newest successful run on `dev`.
 2. Under **Artifacts**, download **Carrel**. It's a zip holding `Carrel.app`, kept for 30 days. You need to be signed in to GitHub to download it.
 3. Unzip it and move `Carrel.app` to Applications.
 

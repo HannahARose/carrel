@@ -25,7 +25,7 @@ With [lazy.nvim](https://github.com/folke/lazy.nvim):
 
 ```lua
 {
-  "HannahARose/carrel",
+  "Horizon-Labs/carrel",
   cmd = { "CarrelSearch", "CarrelShow", "CarrelIndex" },
   config = function(plugin)
     vim.opt.rtp:append(plugin.dir .. "/editors/nvim")
@@ -39,7 +39,7 @@ With [packer.nvim](https://github.com/wbthomason/packer.nvim):
 
 ```lua
 use({
-  "HannahARose/carrel",
+  "Horizon-Labs/carrel",
   rtp = "editors/nvim",
   config = function()
     require("carrel").setup({})
@@ -50,7 +50,7 @@ use({
 By hand, link the folder into a package from a clone of the repository:
 
 ```bash
-git clone https://github.com/HannahARose/carrel ~/src/carrel
+git clone https://github.com/Horizon-Labs/carrel ~/src/carrel
 ```
 
 ```bash
@@ -107,7 +107,7 @@ On Emacs 30, `use-package` can fetch it itself:
 
 ```elisp
 (use-package carrel
-  :vc (:url "https://github.com/HannahARose/carrel" :lisp-dir "editors/emacs")
+  :vc (:url "https://github.com/Horizon-Labs/carrel" :lisp-dir "editors/emacs")
   :bind (("C-c a s" . carrel-search)
          ("C-c a c" . carrel-show)))
 ```
@@ -116,7 +116,7 @@ With [straight.el](https://github.com/radian-software/straight.el):
 
 ```elisp
 (straight-use-package
- '(carrel :type git :host github :repo "HannahARose/carrel"
+ '(carrel :type git :host github :repo "Horizon-Labs/carrel"
           :files ("editors/emacs/carrel.el")))
 ```
 
