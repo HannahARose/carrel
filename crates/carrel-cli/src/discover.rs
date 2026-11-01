@@ -14,6 +14,7 @@ use carrel_core::discover::today::{self, OnThisDay};
 use carrel_core::discover::visits::{Forgotten, Visits};
 use carrel_core::discover::wander::{self, Reason, Step, Surroundings, Walk};
 use carrel_core::discover::{Catalog, DateKind, Item, map};
+use carrel_core::graph::{Connection, Edge, Graph};
 use carrel_core::human_size;
 use carrel_core::search::query::Query;
 use jiff::civil::Date;
@@ -542,6 +543,137 @@ pub fn activity(
         activity_text(&found),
         serde_json::to_value(&found)?,
     ))
+}
+
+/// `carrel discover graph`: the strongest connections between collections, or with `items`
+/// between items in different collections, at most `limit` of each. `--json` gives both.
+pub fn graph(archive: Option<&Path>, items: bool, limit: usize) -> Result<Report, Failure> {
+    let archive = locate(archive)?;
+    let found = Graph::build(&Catalog::read(&archive)?);
+    let connections: Vec<Connection> = found.connections().into_iter().take(limit).collect();
+    let edges: Vec<&Edge> = found
+        .strongest_item_edges()
+        .into_iter()
+        .take(limit)
+        .collect();
+    let text = if items {
+        item_edges_text(&found, &edges)
+    } else {
+        connections_text(&connections)
+    };
+    let node = |id| {
+        found.item(id).map(|i| {
+            json!({
+                "id": i.id,
+                "title": i.title,
+                "card": i.card,
+                "collection": i.collection,
+                "sensitivity": i.sensitivity,
+            })
+        })
+    };
+    let json = json!({
+        "connections": connections,
+        "items": edges.iter().map(|e| json!({
+            "a": node(e.a),
+            "b": node(e.b),
+            "weight": e.weight,
+            "tags": e.tags,
+            "links": e.links,
+            "days": e.days,
+        })).collect::<Vec<_>>(),
+    });
+    Ok(Report::new(text, json))
+}
+
+/// Why two things are connected, in words: their links, days worked on together and tags.
+fn ties_text(links: usize, link_types: &[String], days: usize, tags: &[String]) -> String {
+    let mut parts = Vec::new();
+    if links > 0 && link_types.is_empty() {
+        parts.push(plural(links, "link"));
+    } else if links > 0 {
+        let mut types = link_types.to_vec();
+        types.dedup();
+        parts.push(format!("{} ({})", plural(links, "link"), types.join(", ")));
+    }
+    if days > 0 {
+        parts.push(format!("worked on together on {}", plural(days, "day")));
+    }
+    if !tags.is_empty() {
+        let shown: Vec<&str> = tags.iter().take(5).map(String::as_str).collect();
+        let more = tags.len().saturating_sub(shown.len());
+        let mut listed = shown.join(", ");
+        if more > 0 {
+            write!(listed, " and {more} more").unwrap();
+        }
+        parts.push(format!("tags {listed}"));
+    }
+    parts.join("; ")
+}
+
+pub(crate) fn connections_text(connections: &[Connection]) -> String {
+    if connections.is_empty() {
+        return "No collections are connected yet: their items share no tags, links or days \
+                of work.\n"
+            .into();
+    }
+    let mut text = String::from("The strongest connections between collections:\n");
+    for c in connections {
+        let branches = if c.separate_branches {
+            ""
+        } else {
+            " (one inside the other)"
+        };
+        writeln!(
+            text,
+            "  {} ↔ {}{branches}  {:.1}\n    {} tied: {}",
+            c.a,
+            c.b,
+            c.weight,
+            plural(c.pairs, "pair"),
+            ties_text(
+                c.links,
+                &[],
+                c.days,
+                &c.tags
+                    .iter()
+                    .map(|t| format!("{} ({})", t.tag, t.pairs))
+                    .collect::<Vec<_>>()
+            )
+        )
+        .unwrap();
+    }
+    text
+}
+
+pub(crate) fn item_edges_text(graph: &Graph, edges: &[&Edge]) -> String {
+    if edges.is_empty() {
+        return "No items in different collections are connected yet.\n".into();
+    }
+    let name = |id| {
+        graph.item(id).map_or_else(String::new, |i| {
+            format!(
+                "{}{} ({})",
+                i.title,
+                crate::related::mark(i.sensitivity),
+                i.collection
+            )
+        })
+    };
+    let mut text =
+        String::from("The strongest connections between items in different collections:\n");
+    for e in edges {
+        let ties = ties_text(e.links.len(), &e.links, e.days, &e.tags);
+        writeln!(
+            text,
+            "  {} ↔ {}  {:.1}\n    {ties}",
+            name(e.a),
+            name(e.b),
+            e.weight
+        )
+        .unwrap();
+    }
+    text
 }
 
 /// The shades of a heatmap's cells, from nothing to the busiest.
