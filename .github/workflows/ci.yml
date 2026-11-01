@@ -5,26 +5,33 @@ name: CI
 # - The "Changes" job (.github/scripts/ci-changes.sh) lists the files a pull request or push
 #   changes and says which areas they touch. Each job below runs only for its area: a docs-only
 #   change runs Format, Docs hygiene and nothing else. Format and Docs hygiene always run.
-# - Everything runs for a change to any workflow, the weekly schedule, a manual run and a pull
+# - Everything runs for a change to any workflow, a scheduled run, a manual run and a pull
 #   request into main (or a merge queue's group into main).
-# - A merge queue's group (merge_group, #298) runs the jobs for what the group changes against
-#   its base, and "CI passed" reports on it, since the queue waits for that check.
-# - A push to dev (a merged pull request) runs the jobs for what that merge changed, which
-#   checks dev against merge skew and keeps the caches warm. Each push gets its own run, so a
-#   later merge can't cancel the check of an earlier one.
+# - A pull request into dev runs only the Linux jobs, so a session's pushes and merges of dev
+#   don't queue for the few macOS runners.
+# - A merge queue's group into dev (merge_group, #298) runs the Linux and Windows jobs for what
+#   the group changes against its base, and "CI passed" reports on it, since the queue waits
+#   for that check. Until the first stable release it leaves macOS out (#39): the org has five
+#   macOS runners, and waiting for them doubled a group's time.
+# - An hourly scheduled run checks dev on every platform, macOS included, and does nothing when
+#   dev hasn't moved since the last scheduled run that passed. What breaks on macOS shows up
+#   there and is fixed after the fact. The weekly run also checks every link in the docs.
+# - A push to dev (a merged pull request) runs the Linux jobs for what that merge changed,
+#   which keeps their caches warm. Its macOS and Windows jobs run only when the dependencies
+#   changed, to refresh those caches. Each push gets its own run, so a later merge can't
+#   cancel an earlier one.
+# - A pull request into main runs everything, on every platform, from a clean build: it's the
+#   gate a release passes.
 # - Caches are restored everywhere and saved only on dev, so pull requests don't evict them.
-#   Pull requests into main restore none: a release is checked from a clean build.
-# - A pull request into dev runs only the Linux jobs: the macOS and Windows ones (and their
-#   matrix entries) run once, in the merge queue's group, so a session's pushes and merges of
-#   dev don't queue for the few macOS runners. Nothing reaches dev without the queue, so
-#   nothing unchecked lands. A pull request into main still runs everything.
-# - The org has five macOS runners, so a run takes at most three (#39): "Rust on macOS"
-#   (Clippy, the tests, llama.cpp, CAD and Kopia), "Swift package and Mac app" (with Swift
-#   format) and "MLX provider". Their steps run by area, as the separate jobs did.
+#   Pull requests into main restore none.
+# - A run takes at most three macOS runners (#39): "Rust on macOS" (Clippy, the tests,
+#   llama.cpp, CAD and Kopia), "Swift package and Mac app" (with Swift format) and "MLX
+#   provider". Their steps run by area, as separate jobs did.
 # - Coverage, which reports and never fails on a number, waits for a ready pull request.
 #   Performance benchmarks are their own workflow (perf.yml), on dev only.
-# - "CI passed" is the required check. It passes when every job passed or was skipped because
-#   its area didn't change, and fails if "Changes" itself failed.
+# - "CI passed" is the required check, reported by pull requests and merge queue groups; dev's
+#   runs report "Dev check". It passes when every job passed or was skipped because its area
+#   didn't change, and fails if "Changes" itself failed.
 
 on:
   pull_request:
@@ -37,9 +44,14 @@ on:
   # The merge queue's combined commits, once the queue is on (#298).
   merge_group:
   workflow_dispatch:
-  # Weekly, so new security advisories against existing dependencies show up even when
-  # nothing changes.
   schedule:
+    # Hourly, dev's check on every platform, macOS included: until the first stable release,
+    # the merge queue leaves macOS out, and this run finds what breaks there after the fact. It
+    # does nothing when dev hasn't moved since the last one that passed.
+    - cron: "7 * * * *"
+    # Weekly, so new security advisories against existing dependencies show up even when
+    # nothing changes, and every link in the docs is checked, not only those within the
+    # repository.
     - cron: "17 6 * * 1"
 
 permissions:
@@ -59,7 +71,13 @@ jobs:
   changes:
     name: Changes
     runs-on: ubuntu-latest
+    permissions:
+      contents: read # check out the code
+      actions: read # the hourly run looks up the last one that passed
     outputs:
+      # "true" for an hourly run on the commit the last passing scheduled run checked: every
+      # other output is then empty, so every job is skipped.
+      skip: ${{ steps.skip.outputs.skip }}
       rust: ${{ steps.areas.outputs.rust }}
       swift: ${{ steps.areas.outputs.swift }}
       app: ${{ steps.areas.outputs.app }}
@@ -74,18 +92,37 @@ jobs:
       workflows: ${{ steps.areas.outputs.workflows }}
       cache: ${{ steps.areas.outputs.cache }}
       save: ${{ steps.areas.outputs.save }}
-      # "false" for a pull request into dev: its macOS and Windows jobs run in the merge queue.
+      # Whether the macOS jobs run: "false" for a pull request into dev, a merge queue group into
+      # dev, and a push to dev that leaves the dependencies as they were.
       heavy: ${{ steps.weight.outputs.heavy }}
-      # Matrix entries to leave out for a pull request into dev: macOS and Windows.
+      # Matrix entries to leave out: macOS and Windows for a pull request into dev or a light
+      # push, macOS for a merge queue group into dev.
       light-exclude: ${{ steps.weight.outputs.exclude }}
-      # The platforms for jobs that run on all three: only Linux for a pull request into dev.
+      # The platforms for jobs that run on all three, without those left out.
       oses: ${{ steps.weight.outputs.oses }}
     steps:
+      - id: skip
+        if: github.event_name == 'schedule' && github.event.schedule == '7 * * * *'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          last=$(gh run list --repo "$REPO" --workflow ci.yml --event schedule --branch dev \
+            --status success --limit 1 --json headSha --jq '.[0].headSha // ""')
+          if [ "$last" = "$SHA" ]; then
+            echo "The last scheduled run that passed checked $SHA already: nothing to do."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Checking $SHA (the last scheduled run that passed checked ${last:-nothing})."
+          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.skip.outputs.skip != 'true'
         with:
           persist-credentials: false
           fetch-depth: 0 # a push's earlier commit, and a pull request's base
       - id: areas
+        if: steps.skip.outputs.skip != 'true'
         env:
           EVENT: ${{ github.event_name }}
           # A pull request's base branch, or a merge queue group's (refs/heads/...).
@@ -96,25 +133,63 @@ jobs:
           SHA: ${{ github.sha }}
         run: .github/scripts/ci-changes.sh
       - id: weight
+        if: steps.skip.outputs.skip != 'true'
         env:
-          INTO_DEV: ${{ github.event_name == 'pull_request' && github.base_ref == 'dev' }}
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref }}
+          BEFORE: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
         run: |
-          if [ "$INTO_DEV" = true ]; then
-            {
-              echo "heavy=false"
-              echo 'exclude=[{"os":"macos-latest"},{"os":"windows-latest"}]'
-              echo 'oses=["ubuntu-latest"]'
-            } >> "$GITHUB_OUTPUT"
-          else
-            {
-              echo "heavy=true"
-              echo 'exclude=[]'
-              echo 'oses=["macos-latest","ubuntu-latest","windows-latest"]'
-            } >> "$GITHUB_OUTPUT"
-          fi
+          base=${BASE_REF#refs/heads/}
+          weight=all
+          case "$EVENT" in
+            # A pull request into dev runs only Linux; its other platforms run in the queue.
+            pull_request) [ "$base" = dev ] && weight=linux ;;
+            # Until the first stable release, the queue leaves macOS out to keep its waits
+            # short; the hourly scheduled run checks dev there. Windows waits little, so stays.
+            merge_group) [ "$base" != main ] && weight=no-macos ;;
+            # A push to dev is a merge the queue has just tested, so its macOS and Windows jobs
+            # would only repeat that run and take the few macOS runners from it. They run on a
+            # push only when the dependencies change, to refresh those caches (the scheduled
+            # runs refresh them too).
+            push)
+              weight=linux
+              if ! git cat-file -e "$BEFORE^{commit}" 2> /dev/null \
+                || git diff --name-only "$BEFORE" "$SHA" \
+                | grep -qE '(^|/)(Cargo\.lock|Package\.resolved|rust-toolchain\.toml)$'; then
+                weight=all
+              fi
+              ;;
+          esac
+          echo "Platforms: $weight"
+          case "$weight" in
+            linux)
+              {
+                echo "heavy=false"
+                echo 'exclude=[{"os":"macos-latest"},{"os":"windows-latest"}]'
+                echo 'oses=["ubuntu-latest"]'
+              } >> "$GITHUB_OUTPUT"
+              ;;
+            no-macos)
+              {
+                echo "heavy=false"
+                echo 'exclude=[{"os":"macos-latest"}]'
+                echo 'oses=["ubuntu-latest","windows-latest"]'
+              } >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              {
+                echo "heavy=true"
+                echo 'exclude=[]'
+                echo 'oses=["macos-latest","ubuntu-latest","windows-latest"]'
+              } >> "$GITHUB_OUTPUT"
+              ;;
+          esac
 
   fmt:
     name: Format
+    needs: changes
+    if: needs.changes.outputs.skip != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -550,6 +625,8 @@ jobs:
     # Spelling (_typos.toml), Markdown style (.markdownlint-cli2.yaml) and links in the
     # project's documents.
     name: Docs hygiene
+    needs: changes
+    if: needs.changes.outputs.skip != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -560,11 +637,11 @@ jobs:
       - name: Check links
         uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
-          # Pull requests check links within the repository only, so another site being
-          # down can't fail them; the weekly run checks every link.
+          # Other runs check links within the repository only, so another site being down
+          # can't fail them; the weekly run checks every link.
           args: >-
             --no-progress --include-fragments
-            ${{ github.event_name != 'schedule' && '--offline' || '' }}
+            ${{ github.event.schedule != '17 6 * * 1' && '--offline' || '' }}
             README.md CONTRIBUTING.md FORMAT.md fixtures/README.md 'docs/**/*.md' 'apple/**/*.md'
           jobSummary: false
         env:
@@ -725,11 +802,13 @@ jobs:
     # The single required check for branch protection. It passes only if "Changes" passed and
     # every other job above passed or was skipped because its area didn't change. A job whose
     # area changed can only be skipped if "Changes" failed, which this catches.
-    # A push to dev reports under another name: it runs on the same commit a release pull
-    # request into main is opened from, and its result must not stand in for that pull
-    # request's own clean run of every job. Pull requests and merge queue groups report as
-    # "CI passed", the required check.
-    name: ${{ github.event_name == 'push' && 'Dev check' || 'CI passed' }}
+    # A push to dev, a scheduled run and a manual one report under another name: they run on
+    # the same commit a release pull request into main is opened from, and their result must
+    # not stand in for that pull request's own clean run of every job. Pull requests and merge
+    # queue groups report as "CI passed", the required check.
+    name: >-
+      ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group')
+      && 'CI passed' || 'Dev check' }}
     if: always()
     needs: [changes, fmt, test, macos, docs, coverage, apple, mlx, llama, cad, extract, kopia, editors, deny, zizmor, hygiene]
     runs-on: ubuntu-latest

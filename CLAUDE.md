@@ -16,7 +16,8 @@ The board moves itself from pull requests (`.github/scripts/project-status.sh`):
 
 Many sessions work at once, and macOS runners are few, so:
 
-- **Stay a draft while you work.** A PR into `dev` runs only CI's Linux jobs, and its macOS and Windows jobs run once, in the merge queue, so run the checks below locally (the Mac app's too, when you change it) before marking it ready. A failure in the queue drops the PR out and rebuilds the PRs behind it.
+- **Stay a draft while you work.** A PR into `dev` runs only CI's Linux jobs, and its Windows jobs run once, in the merge queue, so run the checks below locally before marking it ready. A failure in the queue drops the PR out and rebuilds the PRs behind it.
+- **macOS is checked after merging, until the first stable release.** The merge queue leaves macOS out; an hourly run on `dev` checks it, and the coordinating session assigns what breaks. So when you change Swift, the Mac app or anything they build on (`carrel-core`, `carrel-ffi`), run their tests on your Mac before marking the PR ready (below): nothing else will before it lands.
 - **One PR for issues that share files.** When you're given several issues that touch the same files, build them on one branch, with every issue in the body ("Closes #1, closes #2").
 - **After merging `origin/dev` in, rerun the checks before pushing,** not just the conflict markers: two branches can each pass and still clash, as two `archive_work` functions once did.
 - **Name things specifically.** A new function, type or test helper gets a name that says what it's for (`index_or_switch_work`, not `archive_work`), so it can't collide with another branch's.
@@ -41,7 +42,7 @@ npx markdownlint-cli2
 ```
 
 - Clippy runs pedantic: no function over 100 lines, no struct with more than three bools.
-- Swift changes: `swift test` in `apple/CarrelProviders` (and `apple/CarrelKit`), and `scripts/swift-format.sh --check`.
+- Swift changes: `swift test` in `apple/CarrelProviders` (and `apple/CarrelKit`), and `scripts/swift-format.sh --check`. The Mac app: `scripts/build-xcframework.sh`, then `xcodebuild -project apple/CarrelApp/CarrelApp.xcodeproj -scheme Carrel test`.
 - When `FORMAT.md` changes, copy it to `fixtures/sample-archive/_System/FORMAT.md`; a test checks they match.
 
 ## Rules that protect the owner
