@@ -6,7 +6,7 @@ use std::collections::BTreeSet;
 use carrel_core::archive::{Archive, Collection};
 use carrel_core::card::Id;
 use carrel_core::history::{Entry, History, HistoryError};
-use carrel_core::questions::{QuestionEntry, QuestionQueue};
+use carrel_core::questions::QuestionEntry;
 use carrel_core::review::{ReviewEntry, ReviewQueue};
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 
@@ -130,6 +130,18 @@ pub enum Confirm {
         /// Its title.
         title: String,
     },
+    /// Answering a sender question by gathering its items in a collection, and whether to
+    /// add a routing rule for future ones too.
+    Rule {
+        /// The question.
+        id: Id,
+        /// The answer: a suggestion's number, yes, or a collection's path.
+        answer: String,
+        /// The sender or project.
+        subject: String,
+        /// The collection.
+        path: String,
+    },
     /// Adding a fact a correction stated to the glossary.
     Learn {
         /// The word or name it's about.
@@ -195,6 +207,8 @@ pub enum Step {
         target: super::screens::Correcting,
         /// What the owner typed.
         words: String,
+        /// The item question it answers, which leaves the queue once it's saved.
+        answering: Option<Id>,
     },
     /// Save the correction shown in the pop-up.
     Save,
@@ -264,9 +278,13 @@ pub enum Effect {
     Answer {
         /// The question.
         id: Id,
-        /// A sentence for a term, or a collection's path.
+        /// A suggestion's number, a sentence for a term, a collection's path, or yes or no.
         answer: String,
+        /// For a sender, whether the owner said yes to a routing rule for future items.
+        learn: bool,
     },
+    /// Skip this question for now.
+    Skip(Id),
     /// Dismiss this question.
     Dismiss(Id),
     /// Add these paths to the intake queue, and start a worker.
@@ -408,8 +426,12 @@ pub struct App {
     pub active_chosen: usize,
     /// Pending entries marked for a decision together.
     pub active_marked: super::active::Marks,
-    /// The questions, most items first.
+    /// The questions, the most worth answering first.
     pub asked: Vec<QuestionEntry>,
+    /// How many items an answer to each question would settle.
+    pub asked_settles: Vec<usize>,
+    /// How many questions are resting after a skip.
+    pub resting: usize,
     /// The chosen question.
     pub asked_chosen: usize,
     /// The collections, for Browse.
@@ -512,6 +534,8 @@ impl App {
             active_chosen: 0,
             active_marked: BTreeSet::new(),
             asked: Vec::new(),
+            asked_settles: Vec::new(),
+            resting: 0,
             asked_chosen: 0,
             collections: Vec::new(),
             browse_collection: 0,
@@ -581,14 +605,14 @@ impl App {
             Err(e) => return Err(e.into()),
         };
         self.selected = self.selected.min(self.history.len().saturating_sub(1));
+        let ranked = carrel_core::questions::answer::tidy(&self.archive)?;
         let (entries, _) = ReviewQueue::of(&self.archive).list()?;
-        let (questions, _) = QuestionQueue::of(&self.archive).list()?;
         self.waiting = (
             entries.iter().filter(|e| e.state.is_open()).count(),
-            questions.len(),
+            ranked.open.len(),
         );
         self.load_queue(entries);
-        self.load_questions(questions);
+        self.load_questions(ranked);
         self.load_browse()?;
         self.load_intake();
         self.load_settings();
@@ -934,10 +958,22 @@ fn confirmed(confirm: Confirm, key: KeyCode) -> Option<Effect> {
             delete_card: true,
         });
     }
+    if let (Confirm::Rule { id, answer, .. }, KeyCode::Char('n' | 'N')) = (&confirm, key) {
+        return Some(Effect::Answer {
+            id: *id,
+            answer: answer.clone(),
+            learn: false,
+        });
+    }
     if !matches!(key, KeyCode::Char('y' | 'Y')) {
         return None;
     }
     Some(match confirm {
+        Confirm::Rule { id, answer, .. } => Effect::Answer {
+            id,
+            answer,
+            learn: true,
+        },
         Confirm::Undo { id, .. } => Effect::Undo(id),
         Confirm::Reject(ids) => Effect::Reject(ids),
         Confirm::Download { name, .. } => Effect::Download(name),

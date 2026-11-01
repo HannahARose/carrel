@@ -9,9 +9,10 @@
 use std::collections::BTreeMap;
 
 use crate::archive::{Archive, Collection};
-use crate::card::{DateOrTime, Extra, Id};
+use crate::card::Id;
 use crate::ingest::card::{Glossary, Vocabulary};
-use crate::questions::{QuestionEntry, QuestionKind, QuestionMarker};
+use crate::questions::rank::unsureness;
+use crate::questions::{QuestionEntry, QuestionKind, suggest};
 use crate::review::{Confidence, ReviewEntry};
 
 /// Words that recur in names without naming anything.
@@ -155,7 +156,8 @@ fn known_terms(archive: &Archive, collections: &[Collection], glossary: &Glossar
     known
 }
 
-/// The questions a batch raises, most items first. `entries` are the batch's proposals.
+/// The questions a batch raises, the most worth answering first: those whose answer would
+/// settle the most items Carrel is least sure of. `entries` are the batch's proposals.
 #[must_use]
 pub fn ask(
     archive: &Archive,
@@ -198,12 +200,7 @@ pub fn ask(
         })
     });
 
-    let batch = entries.first().map_or_else(Id::new_v7, |e| e.batch);
-    let now = DateOrTime(
-        jiff::Zoned::now()
-            .strftime("%Y-%m-%dT%H:%M:%S%:z")
-            .to_string(),
-    );
+    let batch = entries.first().map(|e| e.batch);
     let choices: Vec<String> = collections
         .iter()
         .filter(|c| c.path != "Holding")
@@ -234,25 +231,125 @@ pub fn ask(
         } else {
             continue;
         };
-        questions.push(QuestionEntry {
-            carrel: QuestionMarker::Question,
-            format: crate::FORMAT_VERSION,
-            id: Id::new_v7(),
-            batch,
-            created: now.clone(),
-            kind,
-            subject: written.clone(),
-            question,
-            items: waiting.iter().map(|e| e.id).collect(),
-            choices: if kind == QuestionKind::Collection {
-                choices.clone()
-            } else {
-                Vec::new()
-            },
-            extra: Extra::new(),
-        });
+        let mut entry = QuestionEntry::new(kind, written.clone(), question);
+        entry.batch = batch;
+        entry.items = waiting.iter().map(|e| e.id).collect();
+        if kind == QuestionKind::Collection {
+            entry.choices.clone_from(&choices);
+            entry.suggestions = suggest::destinations(&waiting);
+        }
+        questions.push(entry);
     }
-    questions.sort_by_key(|q| std::cmp::Reverse(q.items.len()));
+    questions.extend(groups(entries, &known, &questions, &choices, batch));
+    let value = |q: &QuestionEntry| -> f64 {
+        q.items
+            .iter()
+            .filter_map(|id| entries.iter().find(|e| e.id == *id))
+            .map(|e| unsureness(e.destination.confidence))
+            .sum()
+    };
+    questions.sort_by(|a, b| {
+        value(b)
+            .total_cmp(&value(a))
+            .then(b.items.len().cmp(&a.items.len()))
+    });
+    questions
+}
+
+/// The least items a group question gathers.
+pub const GROUP_MIN: usize = 3;
+
+/// Group questions: at least [`GROUP_MIN`] proposals whose names share a known term or a name
+/// (`Dave's Hot Chicken` receipts, `Northbridge Bank` statements), split between collections or
+/// not surely placed, that no other question already covers. Each offers where they were
+/// going, and a new collection named for them.
+fn groups(
+    entries: &[ReviewEntry],
+    known: &[String],
+    asked: &[QuestionEntry],
+    choices: &[String],
+    batch: Option<Id>,
+) -> Vec<QuestionEntry> {
+    let mut by_name: BTreeMap<String, (String, Vec<&ReviewEntry>)> = BTreeMap::new();
+    for entry in entries {
+        let Some(name) = entry.source.path.file_name() else {
+            continue;
+        };
+        let name = name.to_string_lossy();
+        let mut found = crate::questions::about::names_in(&name);
+        found.extend(
+            terms_in(&name)
+                .into_iter()
+                .filter(|t| known.contains(&t.to_lowercase())),
+        );
+        for subject in found {
+            let slot = by_name
+                .entry(subject.to_lowercase())
+                .or_insert_with(|| (subject.clone(), Vec::new()));
+            if !slot.1.iter().any(|e| e.id == entry.id) {
+                slot.1.push(entry);
+            }
+        }
+    }
+    let mut questions: Vec<QuestionEntry> = Vec::new();
+    for (written, items) in by_name.into_values() {
+        if items.len() < GROUP_MIN {
+            continue;
+        }
+        let mut places: Vec<&str> = items.iter().map(|e| e.destination.path.as_str()).collect();
+        places.sort_unstable();
+        places.dedup();
+        let unsure = items.iter().any(|e| {
+            e.destination.confidence != Confidence::High || e.destination.path == "Holding"
+        });
+        if places.len() < 2 && !unsure {
+            continue;
+        }
+        let mut suggestions = suggest::destinations(&items);
+        let main = suggestions
+            .first()
+            .map_or_else(String::new, |s| format!("{}/", s.answer));
+        let new_path = format!("{main}{written}");
+        let new_path_known = choices.iter().any(|c| c.eq_ignore_ascii_case(&new_path));
+        if !new_path_known && crate::names::problems(&written).is_empty() {
+            suggestions.push(suggest::new_collection(
+                &new_path,
+                format!("a collection of their own, for all {}", items.len()),
+            ));
+        }
+        let options: Vec<String> = suggestions
+            .iter()
+            .map(|s| {
+                if s.new_collection {
+                    format!("a new {} collection", s.answer)
+                } else {
+                    s.answer.clone()
+                }
+            })
+            .collect();
+        let question = format!(
+            "These {} items about “{written}”: {}?",
+            items.len(),
+            match options.as_slice() {
+                [] => "where do they go".to_owned(),
+                [one] => one.clone(),
+                [rest @ .., last] => format!("{}, or {last}", rest.join(", ")),
+            }
+        );
+        let mut entry = QuestionEntry::new(QuestionKind::Group, written, question);
+        entry.batch = batch;
+        entry.items = items.iter().map(|e| e.id).collect();
+        entry.choices = choices.to_vec();
+        entry.suggestions = suggestions;
+        if asked
+            .iter()
+            .chain(&questions)
+            .any(|q| crate::questions::rank::same(q, &entry) || q.items == entry.items)
+        {
+            continue;
+        }
+        questions.push(entry);
+    }
     questions
 }
 

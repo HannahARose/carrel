@@ -196,10 +196,16 @@ Editing opens the card's fields in your editor. When you save, Carrel checks the
 
 ## Questions and the glossary
 
-When several items share something Carrel doesn't know, such as a project's code name in their file names, it asks one question instead of guessing on each. Questions wait on the Questions screen (`4`), the most useful first.
+Questions are where you teach Carrel what it can't know. When several items share something it doesn't know, such as a project's code name in their file names, it asks one question instead of guessing on each. Questions wait on the Questions screen (`4`), or in `carrel questions`, the most worth answering first: those whose answer would place or improve the most items Carrel is least sure of. Each shows the items it's about, and likely answers to pick by number, beside your own answer, Skip and Dismiss.
 
 - **A term** ("What is “scope-ds”?"): answer in a sentence. Carrel saves it to `_System/glossary.md`, which every model reads from then on, and puts the waiting items back at the front of the queue, so the worker drafts them again with what you said.
-- **A collection** ("Which collection do items about … belong in?"): choose one, and the waiting items move there.
+- **A collection or a group** ("These 12 items about “Daves Chicken”: Finances, or a new Finances/Daves Chicken collection?"): pick or choose a collection, and the waiting items go there. Picking a new collection creates it; typing one that doesn't exist needs `--create` on the command line.
+- **A sender or project** ("Should “Northbridge Bank” have its own collection?"): yes gathers its items in the collection it suggests, creating it, and each filed item's move can be undone from History. Carrel then asks whether to add a routing rule, so future items named for it go there too; it never adds one without your yes. No settles it for good.
+- **An item** ("What does this photo show?", "Who is J. Okafor?", "What was this project for?", "Does this still matter?"): your answer becomes a correction of its card, shown before and after, and saved only on your yes, as with `c` ([Correcting a card](#correcting-a-card)). If it states something lasting, such as who someone is, Carrel offers to add it to the glossary. `carrel questions about ITEM` asks Carrel's questions about a filed item; browsing and the librarian will ask them as you go.
+
+**Skipping** (`s`, or `carrel questions skip ID`) puts a question aside: it rests for two weeks (`questions.skip_days` in [Settings](#settings)) and then comes back. **Dismissing** (`d`) removes it, and the items stop waiting on it. An answer that changes nothing, such as "it still matters", is remembered, so the question isn't asked again.
+
+Questions the glossary or a routing rule already answers are dropped from the queue, and questions that ask the same thing, such as "What is “scope-ds”?" and "What is “Scope DS”?", are merged into one.
 
 Items waiting on a question aren't approved in bulk until it's answered or dismissed.
 
@@ -313,11 +319,22 @@ Carrel notices work on checked-out and desk items from what's on disk: each file
 
 Carrel looks for sessions whenever it runs, at most every five minutes: before each command that changes the archive, and in the background while the interactive mode is open. It never waits for another program that's writing to the archive; it looks the next time. `carrel sessions` looks right away and lists the pending entries; `carrel sessions approve ITEM`, `edit`, `combine` or `drop` decide them. `carrel sessions edit ITEM N` opens entry `N`'s text in your editor; it stays pending, and anything you add is kept when entries are combined (a line starting `My notes:` goes last).
 
-You can also approve an entry in Obsidian: change `> [!pending] 2026-10-29 · 2h 10m · auto-generated` to a heading, `### 2026-10-29 · 2h 10m`, and take the `>` marks off its lines, or change `pending` to another callout type such as `done`. The next time Carrel looks, it notices, adds the entry to the Journal and records the approval in History, leaving the entry exactly as you wrote it. Until the Mac app watches items live, a file changed and then changed back isn't seen.
+You can also approve an entry in Obsidian: change `> [!pending] 2026-10-29 · 2h 10m · auto-generated` to a heading, `### 2026-10-29 · 2h 10m`, and take the `>` marks off its lines, or change `pending` to another callout type such as `done`. The next time Carrel looks, it notices, adds the entry to the Journal and records the approval in History, leaving the entry exactly as you wrote it. Unless an agent (the Mac app's, or [`carrel agent`](#keeping-work-noticed-without-the-app)) watches items live, a file changed and then changed back isn't seen.
 
 When backups are set up, each time Carrel finds finished sessions on an item it also takes a snapshot of the working copy, so work in progress is backed up before it's returned. That's the state when Carrel noticed, which for most work is the state when the session ended. For large data, such as a 60 GB dataset, add `snapshots: return-only` to the card to skip these and keep only the checkout and return snapshots.
 
 Returning an item lists its session snapshots. Once the item is back, Carrel snapshots the returned version and asks whether to forget the session snapshots, keeping the return's; `--trim-snapshots` forgets them without asking. Without an answer, as with only `--yes`, they're kept: deleting backups is your call.
+
+### Keeping work noticed without the app
+
+Without the Mac app, work is noticed when `carrel` runs, at most every five minutes. **`carrel agent`** does in the background what the Mac app's agent does, on macOS, Linux and Windows. It drafts the queue as soon as something is added, keeps the meaning index current when filed items change, records work sessions as soon as they finish (once a working copy has been idle for `sessions.idle_minutes` and a minute more), and takes a snapshot every day once backups are set up. A snapshot that fails, say because the drive isn't plugged in, is tried again within the hour. The agent hears changes as they happen through the operating system's file events. For archives on network drives, which may not send them, `--poll` has it look every few seconds instead.
+
+- `carrel agent [ARCHIVE...]` runs it in the terminal until you press Ctrl-C, writing a line for each thing it does. With no archives it uses the one found as for any command.
+- `carrel agent install [ARCHIVE...]` starts it at log-in, and now. It writes one file and says which: on macOS a launchd user agent, `~/Library/LaunchAgents/io.github.hannaharose.carrel.agent.plist`; on Linux a systemd user service, `~/.config/systemd/user/carrel-agent.service`; on Windows a Task Scheduler task, "Carrel Agent", made from `carrel-agent.xml` in Carrel's folder. It runs the `carrel` you installed it with, with the `PATH` you installed it from, so it finds Kopia and the providers as your terminal does. Run it again after moving `carrel`, or to change the archives.
+- `carrel agent status` says whether it's installed, for which archives, and whether an agent looks after each one now.
+- `carrel agent uninstall` stops it and removes exactly the file or task `install` made.
+
+There's one agent per archive on each device. While the Mac app's agent looks after an archive, `carrel agent` steps aside and says so, and takes over within a minute once the app's agent stops. While either one runs, `carrel ingest` and changes to filed items start no worker of their own, and `carrel ingest --status` says the agent drafts the queue. Its log is `workers/agent.log` in Carrel's folder on macOS and Windows; on Linux, `journalctl --user -u carrel-agent` shows it.
 
 ## History and undo
 
@@ -382,6 +399,7 @@ The Settings screen (`8`), or `carrel settings`, shows two kinds:
 | `ingest.originals` | `move` the original into the archive on approval, or `keep` it where it was and copy it in | `move` |
 | `compressed_files` | `expand` zips and other compressed files on approval, `keep` them as they are, or `ask` in Review each time (see [Zips and other compressed files](#zips-and-other-compressed-files)) | `expand` |
 | `signals.crowded_items` | How many loose items make a collection crowded | `30` |
+| `questions.skip_days` | How many days a skipped question rests before it's asked again | `14` |
 | `outside_edits` | `flag` changes made outside Carrel for review, `reconcile` them as edits, or treat them as `drift` to undo. Stored now; it takes effect when Carrel starts watching for outside changes, in a later version | `flag` |
 
 Changing an archive setting is a change in history, so it can be undone.

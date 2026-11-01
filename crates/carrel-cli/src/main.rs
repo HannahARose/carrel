@@ -4,6 +4,7 @@
 //! scripts. Errors go to standard error (as `{"error": "…"}` with `--json`) and exit with
 //! status 1; usage mistakes exit with status 2.
 
+mod agent;
 mod backup;
 mod bench;
 mod checkout;
@@ -126,6 +127,10 @@ enum Command {
     /// Draft the items waiting in the intake queue on this device, until none are left.
     /// Adding to the queue starts one in the background, so this is rarely run by hand.
     Worker,
+    /// Run the background agent until stopped: it drafts the queue, keeps the index current,
+    /// records work sessions as they finish and takes scheduled snapshots. With no archives,
+    /// the one found as for any command.
+    Agent(AgentArgs),
     /// Review proposals to file items: list, show, edit, approve, hold, move or reject them.
     Review {
         /// Include proposals already decided (with no subcommand).
@@ -243,7 +248,8 @@ enum Command {
         #[command(subcommand)]
         action: Option<DiscoverAction>,
     },
-    /// Questions ingest needs you to answer, most items first.
+    /// Questions Carrel needs you to answer, the most worth answering first: what a term
+    /// means, where items go, what an item is, and whether a sender deserves a collection.
     Questions {
         #[command(subcommand)]
         action: Option<QuestionsAction>,
@@ -468,6 +474,41 @@ enum CollectionAction {
     },
 }
 
+#[derive(Debug, clap::Args)]
+#[command(args_conflicts_with_subcommands = true)]
+struct AgentArgs {
+    #[command(subcommand)]
+    action: Option<AgentAction>,
+    /// The archives to look after.
+    #[arg(value_name = "ARCHIVE")]
+    archives: Vec<PathBuf>,
+    /// Look for changes every few seconds instead of through file events, as for archives
+    /// on network drives.
+    #[arg(long)]
+    poll: bool,
+    /// Stop after this many seconds, as in tests.
+    #[arg(long, hide = true, value_name = "SECONDS")]
+    stop_after: Option<u64>,
+}
+
+#[derive(Debug, Subcommand)]
+enum AgentAction {
+    /// Start the agent at log-in, and now: a launchd user agent on macOS, a systemd user
+    /// service on Linux, a Task Scheduler task on Windows.
+    Install {
+        /// The archives to look after. With none, the one found as for any command.
+        #[arg(value_name = "ARCHIVE")]
+        archives: Vec<PathBuf>,
+        /// Look for changes every few seconds instead of through file events.
+        #[arg(long)]
+        poll: bool,
+    },
+    /// Stop the agent started at log-in, and remove exactly what `install` wrote.
+    Uninstall,
+    /// Whether the agent is installed, for which archives, and whether it's running.
+    Status,
+}
+
 #[derive(Debug, Subcommand)]
 enum BackupAction {
     /// Create a backup repository at PATH, or connect to the one there. An external drive is
@@ -562,21 +603,50 @@ enum DiscoverAction {
 
 #[derive(Debug, Subcommand)]
 enum QuestionsAction {
-    /// List the questions waiting for an answer.
-    List,
-    /// Answer a question: what a term means, or which collection its items belong in. Items
-    /// waiting on a term are drafted again with the answer.
+    /// List the questions waiting for an answer, the most worth answering first, each with
+    /// the answers it suggests. Questions the glossary or a rule already answers are dropped,
+    /// and questions that ask the same are merged.
+    List {
+        /// Show the questions resting after a skip too.
+        #[arg(long)]
+        all: bool,
+    },
+    /// Answer a question: pick a suggestion by its number, or answer in your own words. A
+    /// term's answer goes in the glossary and its items are drafted again; a collection's,
+    /// group's or sender's answer is a collection, where its items go; an item's answer is a
+    /// correction of its card, shown before it's saved. Without an answer, it's asked here.
     Answer {
         /// The question's identifier, or its start or end.
         id: String,
-        /// The answer: a sentence for a term, or a collection's path.
-        #[arg(required = true, num_args = 1..)]
+        /// A suggestion's number, or your answer.
         answer: Vec<String>,
+        /// Save an item answer's correction without asking.
+        #[arg(long)]
+        yes: bool,
+        /// Add what the answer teaches without asking: a glossary fact from an item answer,
+        /// or a routing rule for a sender.
+        #[arg(long)]
+        learn: bool,
+        /// Create the collection you name, if it doesn't exist.
+        #[arg(long)]
+        create: bool,
+    },
+    /// Skip a question for now; it's asked again after the archive's
+    /// `questions.skip_days` (14 unless changed).
+    Skip {
+        /// The question's identifier, or its start or end.
+        id: String,
     },
     /// Dismiss a question; its items stop waiting on it.
     Dismiss {
         /// The question's identifier, or its start or end.
         id: String,
+    },
+    /// Ask Carrel's questions about a filed item (what a photo shows, who someone is, what a
+    /// project was for, whether it still matters), adding them to the queue.
+    About {
+        /// The item: its identifier, or its card's or its own path.
+        item: String,
     },
 }
 
@@ -672,10 +742,28 @@ fn questions_command(
     archive: Option<&Path>,
     action: Option<QuestionsAction>,
 ) -> Result<Report, Failure> {
-    match action.unwrap_or(QuestionsAction::List) {
-        QuestionsAction::List => questions::list(archive),
-        QuestionsAction::Answer { id, answer } => questions::answer(archive, &id, &answer),
+    match action.unwrap_or(QuestionsAction::List { all: false }) {
+        QuestionsAction::List { all } => questions::list(archive, all),
+        QuestionsAction::Answer {
+            id,
+            answer,
+            yes,
+            learn,
+            create,
+        } => questions::answer(
+            archive,
+            &id,
+            &answer,
+            questions::Options {
+                yes,
+                learn,
+                create,
+                ask: std::io::IsTerminal::is_terminal(&std::io::stdin()),
+            },
+        ),
+        QuestionsAction::Skip { id } => questions::skip(archive, &id),
         QuestionsAction::Dismiss { id } => questions::dismiss(archive, &id),
+        QuestionsAction::About { item } => questions::about(archive, &item),
     }
 }
 
@@ -858,12 +946,8 @@ fn main() -> ExitCode {
             ingest::command(cli.archive.as_deref(), &args.into_request(), cli.json)
         }
         Command::Worker => worker::run(cli.archive.as_deref()),
-        Command::Settings { action } => match action {
-            Some(SettingsAction::Set { key, value }) => {
-                settings::set(cli.archive.as_deref(), &key, &value)
-            }
-            _ => settings::list(cli.archive.as_deref()),
-        },
+        Command::Agent(args) => agent_command(cli.archive.as_deref(), args, cli.json),
+        Command::Settings { action } => settings_command(cli.archive.as_deref(), action),
         Command::Review { all, action } => review_command(cli.archive.as_deref(), all, action),
         Command::Edit { item } => edit::edit(cli.archive.as_deref(), &item),
         Command::Expand { item, anyway } => expand::expand(cli.archive.as_deref(), &item, anyway),
@@ -921,6 +1005,37 @@ fn after(
         worker::after_change(archive);
     }
     result
+}
+
+/// `carrel settings` and its subcommands.
+fn settings_command(
+    archive: Option<&std::path::Path>,
+    action: Option<SettingsAction>,
+) -> Result<Report, Failure> {
+    match action {
+        Some(SettingsAction::Set { key, value }) => settings::set(archive, &key, &value),
+        _ => settings::list(archive),
+    }
+}
+
+/// `carrel agent` and its subcommands.
+fn agent_command(
+    archive: Option<&std::path::Path>,
+    args: AgentArgs,
+    json: bool,
+) -> Result<Report, Failure> {
+    match args.action {
+        None => agent::run(
+            &args.archives,
+            archive,
+            args.poll,
+            args.stop_after.map(std::time::Duration::from_secs),
+            json,
+        ),
+        Some(AgentAction::Install { archives, poll }) => agent::install(&archives, archive, poll),
+        Some(AgentAction::Uninstall) => agent::uninstall(),
+        Some(AgentAction::Status) => agent::status(archive),
+    }
 }
 
 /// `carrel index` and its subcommands.
@@ -1030,7 +1145,9 @@ fn changes_archive(command: &Command) -> bool {
         Command::Backup { action } => {
             matches!(action, BackupAction::Setup { .. } | BackupAction::Now)
         }
-        Command::Questions { action } => !matches!(action, None | Some(QuestionsAction::List)),
+        Command::Questions { action } => {
+            !matches!(action, None | Some(QuestionsAction::List { .. }))
+        }
         _ => false,
     }
 }

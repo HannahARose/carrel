@@ -290,7 +290,10 @@ fn draw_help(frame: &mut Frame, theme: Theme, area: Rect) {
             "a  e  c  d  Space",
             "approve, edit, combine, drop; mark (Active)",
         ),
-        ("Enter  d", "answer or dismiss a question (Questions)"),
+        (
+            "Enter  1-9  s  d",
+            "answer, pick a suggestion, skip or dismiss a question (Questions)",
+        ),
         (
             "←→  e  c  /  Esc",
             "collections, items, an item; edit, correct; search; clear (Browse)",
@@ -440,7 +443,16 @@ fn draw_confirm(frame: &mut Frame, confirm: &Confirm, theme: Theme, area: Rect) 
             Span::raw(" delete its card too   "),
         ]);
     }
-    answers.extend([Span::styled("n", theme.key()), Span::raw(" keep it")]);
+    if matches!(confirm, Confirm::Rule { .. }) {
+        answers.extend([
+            Span::styled("n", theme.key()),
+            Span::raw(" without a rule   "),
+            Span::styled("Esc", theme.key()),
+            Span::raw(" not now"),
+        ]);
+    } else {
+        answers.extend([Span::styled("n", theme.key()), Span::raw(" keep it")]);
+    }
     lines.extend([Line::from(""), Line::from(answers)]);
     let width = if matches!(confirm, Confirm::Return { .. }) {
         area.width.saturating_sub(8).clamp(64, 100)
@@ -637,9 +649,49 @@ fn draw_picker(frame: &mut Frame, picker: &Picker, theme: Theme, area: Rect) {
     );
 }
 
+/// A question's suggestions, numbered, each with why it's likely.
+fn suggestion_lines(
+    question: &carrel_core::questions::QuestionEntry,
+    theme: Theme,
+) -> Vec<Line<'static>> {
+    question
+        .suggestions
+        .iter()
+        .enumerate()
+        .map(|(i, suggestion)| {
+            let mut spans = vec![
+                Span::styled(format!("{}", i + 1), theme.key()),
+                Span::raw(format!("  {}", suggestion.answer)),
+            ];
+            let mut notes = Vec::new();
+            if suggestion.new_collection {
+                notes.push("new".to_owned());
+            }
+            notes.extend(suggestion.why.clone());
+            if !notes.is_empty() {
+                spans.push(Span::styled(
+                    format!("  ({})", notes.join("; ")),
+                    theme.dim(),
+                ));
+            }
+            Line::from(spans)
+        })
+        .collect()
+}
+
 fn draw_questions(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
+    use carrel_core::questions::QuestionKind;
     if app.asked.is_empty() {
-        frame.render_widget(Paragraph::new("No questions"), area);
+        let text = if app.resting == 0 {
+            "No questions".to_owned()
+        } else {
+            format!(
+                "No questions; {} skipped one{} resting",
+                app.resting,
+                if app.resting == 1 { " is" } else { "s are" }
+            )
+        };
+        frame.render_widget(Paragraph::new(text), area);
         return;
     }
     let [list_area, detail_area] =
@@ -647,12 +699,13 @@ fn draw_questions(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
     let items: Vec<ListItem> = app
         .asked
         .iter()
-        .map(|q| {
+        .zip(&app.asked_settles)
+        .map(|(q, settles)| {
             ListItem::new(format!(
                 "{}  ({} item{})",
                 q.question,
-                q.items.len(),
-                if q.items.len() == 1 { "" } else { "s" }
+                settles,
+                if *settles == 1 { "" } else { "s" }
             ))
         })
         .collect();
@@ -666,22 +719,42 @@ fn draw_questions(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
     let mut lines = vec![
         Line::from(question.question.clone()).style(Style::new().add_modifier(Modifier::BOLD)),
         Line::from(""),
-        Line::from("Waiting on the answer:"),
     ];
-    lines.extend(
-        app.waiting_titles(question)
-            .into_iter()
-            .map(|t| Line::from(format!("  {t}"))),
-    );
+    let waiting = app.waiting_titles(question);
+    if !waiting.is_empty() {
+        lines.push(Line::from("Waiting on the answer:"));
+        lines.extend(waiting.into_iter().map(|t| Line::from(format!("  {t}"))));
+    }
+    if !question.about.is_empty() {
+        lines.push(Line::from(format!(
+            "About {} filed item{}",
+            question.about.len(),
+            if question.about.len() == 1 { "" } else { "s" }
+        )));
+    }
+    if !question.suggestions.is_empty() {
+        lines.push(Line::from(""));
+        lines.extend(suggestion_lines(question, theme));
+    }
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
         match question.kind {
-            carrel_core::questions::QuestionKind::Term => {
+            QuestionKind::Term => {
                 "Enter to say what it is; Carrel remembers it and drafts these again."
             }
-            carrel_core::questions::QuestionKind::Collection => {
-                "Enter to choose where they belong."
+            QuestionKind::Collection | QuestionKind::Group => "Enter to choose where they belong.",
+            QuestionKind::Sender => {
+                "Enter to answer yes, no or a collection; Carrel asks before adding a rule."
             }
+            QuestionKind::Item => "Enter to answer; you see what it changes before it's saved.",
+        },
+        theme.dim(),
+    )));
+    lines.push(Line::from(Span::styled(
+        if question.suggestions.is_empty() {
+            "s skips it for now, d dismisses it."
+        } else {
+            "A number picks a suggestion; s skips it for now, d dismisses it."
         },
         theme.dim(),
     )));
