@@ -299,6 +299,20 @@ fn event_loop(
     Ok(())
 }
 
+/// Takes an entry off the intake queue, moves it to the front or retries it, as `effect`
+/// says.
+fn change_queued(root: &Path, effect: &Effect) -> Result<String, String> {
+    let (id, change) = match effect {
+        Effect::Unqueue(id) => (id, crate::ingest::Change::Remove),
+        Effect::Front(id) => (id, crate::ingest::Change::First),
+        Effect::Retry(id) => (id, crate::ingest::Change::Retry),
+        _ => return Ok(String::new()),
+    };
+    crate::ingest::change_queued(Some(root), &id.to_string(), change)
+        .map(|r| r.text)
+        .map_err(|Failure(e)| e)
+}
+
 /// Skips or dismisses a question, as `effect` says.
 fn settle_question(root: &Path, effect: &Effect) -> Result<String, String> {
     let result = match effect {
@@ -520,14 +534,8 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
             finished(app, result.map_err(|Failure(e)| e));
             return None;
         }
-        Effect::Unqueue(id) | Effect::Front(id) | Effect::Retry(id) => {
-            let change = match effect {
-                Effect::Unqueue(_) => crate::ingest::Change::Remove,
-                Effect::Front(_) => crate::ingest::Change::First,
-                _ => crate::ingest::Change::Retry,
-            };
-            let result = crate::ingest::change_queued(Some(&root), &id.to_string(), change);
-            finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
+        effect @ (Effect::Unqueue(_) | Effect::Front(_) | Effect::Retry(_)) => {
+            finished(app, change_queued(&root, &effect));
             return None;
         }
         Effect::Answer { id, answer, learn } => answer_work(root, id, answer, learn),
