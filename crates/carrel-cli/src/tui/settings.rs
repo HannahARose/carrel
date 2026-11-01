@@ -25,6 +25,14 @@ pub enum Row {
     Models,
     /// The worker that drafts queued items.
     Worker,
+    /// The providers on this device, as `carrel providers` lists them.
+    Providers,
+    /// The file types this device reads and those it couldn't, as `carrel formats` lists them.
+    Formats,
+    /// The archive shown, which the archive switcher changes.
+    Archive,
+    /// The embedding index search uses.
+    Index,
     /// A shared setting.
     Shared(Key),
     /// Backups, shown only.
@@ -49,7 +57,14 @@ pub struct Shown {
 pub fn is_device(row: Row) -> bool {
     matches!(
         row,
-        Row::Picker | Row::Editor | Row::Model | Row::SecondModel | Row::Models | Row::Worker
+        Row::Picker
+            | Row::Editor
+            | Row::Model
+            | Row::SecondModel
+            | Row::Models
+            | Row::Worker
+            | Row::Providers
+            | Row::Formats
     )
 }
 
@@ -65,9 +80,14 @@ impl App {
             second_row(&prefs),
             models_row(),
             self.worker_row(),
+            self.providers_row(),
+            self.formats_row(),
+            self.archive_row(),
+            self.index_row(),
         ];
         let settings = self.archive.settings();
-        for key in Key::ALL {
+        // The index's row stands in for the embedding model, which switching changes.
+        for key in Key::ALL.into_iter().filter(|k| *k != Key::EmbeddingModel) {
             let mut detail = vec![key.describe().to_owned(), String::new()];
             match key.choices() {
                 Some(choices) => {
@@ -115,6 +135,62 @@ impl App {
             }
             .into(),
             detail,
+        }
+    }
+
+    fn providers_row(&self) -> Shown {
+        let (value, mut detail) = match &self.here {
+            None => ("finding them…".to_owned(), Vec::new()),
+            Some(here) => {
+                let (count, failed) = here.provider_count;
+                let mut value = crate::commands::plural(count, "provider");
+                if failed > 0 {
+                    value = format!("{value}, {failed} couldn't start");
+                }
+                (value, here.providers.clone())
+            }
+        };
+        detail.push(String::new());
+        detail.push(
+            "The programs that read files, draft cards and embed for search, and which is used              for each; Ctrl-R looks for them again."
+                .into(),
+        );
+        Shown {
+            row: Row::Providers,
+            label: "Providers".into(),
+            value,
+            detail,
+        }
+    }
+
+    fn formats_row(&self) -> Shown {
+        let (value, mut detail) = match &self.here {
+            None => ("finding them…".to_owned(), Vec::new()),
+            Some(here) if here.unread == 0 => {
+                ("every type so far".to_owned(), here.formats.clone())
+            }
+            Some(here) => (
+                format!("{} not read", crate::commands::plural(here.unread, "type")),
+                here.formats.clone(),
+            ),
+        };
+        detail.push(String::new());
+        detail.push(
+            "Items of a type this device can't read are filed by their name and details.".into(),
+        );
+        Shown {
+            row: Row::Formats,
+            label: "File types".into(),
+            value,
+            detail,
+        }
+    }
+
+    /// Finds the providers the first time Settings is shown, since it can take a moment.
+    pub(super) fn settings_shown(&mut self) {
+        if self.tab == super::app::Tab::Settings && self.here.is_none() {
+            self.here = Some(super::embedding::Here::find());
+            self.load_settings();
         }
     }
 
@@ -214,7 +290,9 @@ impl App {
                     });
                 }
             },
-            Row::Worker | Row::Backups => {}
+            Row::Archive => self.archive_picker(),
+            Row::Index => self.index_picker(),
+            Row::Worker | Row::Backups | Row::Providers | Row::Formats => {}
         }
         Handled::Yes(None)
     }

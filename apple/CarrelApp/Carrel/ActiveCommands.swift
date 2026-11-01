@@ -66,7 +66,8 @@ private struct ActiveMenu: View {
     }
 }
 
-/// Browse's quick actions for an item: checking it out.
+/// Browse's quick actions for an item: checking it out, renaming and expanding it; and
+/// creating a collection, with or without one chosen.
 struct BrowseActions: View {
     let model: ArchiveWindowModel
     let ids: Set<ItemSummary.ID>
@@ -75,6 +76,9 @@ struct BrowseActions: View {
         if ids.count == 1, let id = ids.first, let item = model.items.first(where: { $0.id == id })
         {
             Button("Check Out…") { model.activeScreen?.startCheckout(of: id, titled: item.title) }
+            ItemActions(model: model, item: item)
+            Divider()
         }
+        NewCollectionButton(model: model)
     }
 }
