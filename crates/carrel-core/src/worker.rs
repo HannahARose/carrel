@@ -163,6 +163,107 @@ pub trait DeviceLock {
     fn try_lock(&self) -> Result<Option<Self::Held>, WorkerError>;
 }
 
+/// The worker lock the CLI's worker and the app's agent share: an operating-system lock on
+/// a file in the workers' folder (`<archive id>.lock`), which goes with the process, so a
+/// crashed worker never leaves a stale one.
+#[derive(Debug, Clone)]
+pub struct FileLock {
+    /// The lock file.
+    pub path: PathBuf,
+}
+
+/// Held while a worker runs for an archive on this device; dropping it lets go.
+#[derive(Debug)]
+pub struct Held {
+    file: std::fs::File,
+}
+
+impl Drop for Held {
+    fn drop(&mut self) {
+        let _ = self.file.unlock();
+    }
+}
+
+impl FileLock {
+    /// The lock for `archive`'s worker in the workers' folder `folder`.
+    #[must_use]
+    pub fn new(folder: &Path, archive: &Archive) -> Self {
+        Self {
+            path: file_in(folder, archive, "lock"),
+        }
+    }
+
+    /// Takes the lock, creating its file and folder, or `None` if another worker holds it.
+    ///
+    /// # Errors
+    ///
+    /// [`std::io::Error`] if the lock file can't be opened.
+    pub fn take(&self) -> std::io::Result<Option<Held>> {
+        if let Some(dir) = self.path.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(&self.path)?;
+        match file.try_lock() {
+            Ok(()) => Ok(Some(Held { file })),
+            Err(std::fs::TryLockError::WouldBlock) => Ok(None),
+            Err(std::fs::TryLockError::Error(e)) => Err(e),
+        }
+    }
+
+    /// Whether a worker holds the lock. Only looks: a missing lock file means no worker has
+    /// ever run here, and nothing is created.
+    ///
+    /// # Errors
+    ///
+    /// [`std::io::Error`] if the lock file can't be opened.
+    pub fn is_held(&self) -> std::io::Result<bool> {
+        let file = match std::fs::OpenOptions::new().write(true).open(&self.path) {
+            Ok(file) => file,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+            Err(e) => return Err(e),
+        };
+        match file.try_lock() {
+            Ok(()) => {
+                let _ = file.unlock();
+                Ok(false)
+            }
+            Err(std::fs::TryLockError::WouldBlock) => Ok(true),
+            Err(std::fs::TryLockError::Error(e)) => Err(e),
+        }
+    }
+}
+
+/// The lock the Mac app's agent holds for as long as it looks after `archive` on this device
+/// (`<archive id>.agent` in the workers' folder `folder`). While it's held, the CLI's
+/// background worker steps aside and leaves the queue and the index to the agent, which
+/// notices changes as they happen. Like the worker lock, it goes with the process.
+#[must_use]
+pub fn agent_lock(folder: &Path, archive: &Archive) -> FileLock {
+    FileLock {
+        path: file_in(folder, archive, "agent"),
+    }
+}
+
+/// Whether the Mac app's agent looks after `archive` on this device, so the CLI's background
+/// worker steps aside. A lock that can't be checked counts as no agent.
+#[must_use]
+pub fn agent_running(folder: &Path, archive: &Archive) -> bool {
+    agent_lock(folder, archive).is_held().unwrap_or(false)
+}
+
+impl DeviceLock for FileLock {
+    type Held = Held;
+
+    fn try_lock(&self) -> Result<Option<Held>, WorkerError> {
+        self.take()
+            .map_err(|e| WorkerError::Lock(format!("{}: {e}", self.path.display())))
+    }
+}
+
 /// What the loop tells whoever runs it as it goes. Every method does nothing unless
 /// implemented.
 pub trait Progress {
@@ -520,6 +621,33 @@ mod tests {
             file_in(folder, &archive, "log"),
             folder.join(format!("{}.log", archive.info().id))
         );
+    }
+
+    #[test]
+    fn the_agent_is_running_while_it_holds_its_lock_and_apart_from_the_workers() {
+        let (dir, archive) = sample();
+        let folder = dir.path().join("workers");
+        assert!(!agent_running(&folder, &archive), "no lock file yet");
+        assert!(!folder.exists(), "looking creates nothing");
+
+        let held = agent_lock(&folder, &archive).take().unwrap().unwrap();
+        assert!(agent_running(&folder, &archive));
+        assert!(
+            agent_lock(&folder, &archive).take().unwrap().is_none(),
+            "one agent per archive and device"
+        );
+        let worker = FileLock::new(&folder, &archive);
+        assert!(
+            !worker.is_held().unwrap(),
+            "the worker lock is a lock of its own"
+        );
+        assert!(
+            worker.take().unwrap().is_some(),
+            "the agent's own worker takes it"
+        );
+
+        drop(held);
+        assert!(!agent_running(&folder, &archive), "it goes with the agent");
     }
 
     #[test]

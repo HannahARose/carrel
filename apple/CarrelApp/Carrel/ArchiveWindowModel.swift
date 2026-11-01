@@ -17,6 +17,9 @@ enum Screen: Hashable {
     /// Browse, showing the collection at this path.
     case collection(String)
     case history
+    case backups
+    /// A page of Discover.
+    case discover(DiscoverPage)
 }
 
 /// A collection and the collections nested inside it.
@@ -71,6 +74,8 @@ struct ArchiveSummary: Equatable {
 @Observable
 final class ArchiveWindowModel {
     let url: URL
+    /// How the archive is opened; `nil` for the device's own configuration.
+    let options: OpenOptions?
     private(set) var handle: ArchiveHandle?
     private(set) var name: String
     private(set) var isReadOnly = false
@@ -79,14 +84,61 @@ final class ArchiveWindowModel {
     private(set) var items: [ItemSummary] = []
     private(set) var isLoading = false
     private(set) var problem: String?
+    /// The archive's queues and operations, through the core, once it's open.
+    private(set) var archive: ArchiveModel?
+
+    // Search and adding items (#236).
+    /// Search in the toolbar.
+    private(set) var search: SearchModel?
+    /// Adding items, and the worker drafting them.
+    private(set) var intake: IntakeModel?
+
+    // Review, Questions, corrections and editing (#234).
+    private(set) var review: ReviewModel?
+    private(set) var questions: QuestionsModel?
+    private(set) var backups: BackupsModel?
+    /// The correction sheet's, while it's open.
+    var correction: CorrectionModel?
+    /// The filed item whose card the inspector is editing (⌘E).
+    var editing: CardEditModel?
+
+    // Active and History (#235).
+    private(set) var activeScreen: ActiveScreenModel?
+    private(set) var historyScreen: HistoryScreenModel?
+
+    // Browse's actions: new collections, renaming and expanding (#268).
+    private(set) var browse: BrowseActionsModel?
+
+    // The librarian and Discover (#291).
+    private(set) var librarian: LibrarianModel?
+    private(set) var discover: DiscoverModel?
+
+    // Previews and the grid (#256).
+    private(set) var previews: PreviewStore?
+    /// Browse's list or grid, kept for every window.
+    var browseLayout: BrowseLayout {
+        didSet { defaults.set(browseLayout.rawValue, forKey: "browseLayout") }
+    }
+    private let defaults: UserDefaults
 
     var screen: Screen? = .status {
         didSet { if screen != oldValue { selectedItemID = nil } }
     }
-    var selectedItemID: ItemSummary.ID?
+    var selectedItemID: ItemSummary.ID? {
+        didSet {
+            if selectedItemID != oldValue {
+                editing = nil
+                recordOpened()
+            }
+        }
+    }
 
-    init(url: URL) {
+    init(url: URL, options: OpenOptions? = nil, defaults: UserDefaults = .standard) {
         self.url = url
+        self.options = options
+        self.defaults = defaults
+        browseLayout =
+            BrowseLayout(rawValue: defaults.string(forKey: "browseLayout") ?? "") ?? .list
         name = url.lastPathComponent
     }
 
@@ -97,9 +149,15 @@ final class ArchiveWindowModel {
         isLoading = true
         defer { isLoading = false }
         let url = url
+        let options = options
         do {
             let loaded = try await Task.detached {
-                let handle = try ArchiveHandle.open(url)
+                let handle =
+                    if let options {
+                        try ArchiveHandle.open(url, options: options)
+                    } else {
+                        try ArchiveHandle.open(url)
+                    }
                 return (handle, try handle.collections(), try handle.items())
             }.value
             handle = loaded.0
@@ -109,9 +167,57 @@ final class ArchiveWindowModel {
             tree = CollectionNode.tree(loaded.1)
             items = loaded.2
             problem = nil
+            let archive = ArchiveModel(handle: loaded.0)
+            self.archive = archive
+            review = ReviewModel(archive: archive)
+            review?.filed = { [weak self] in await self?.refreshItems() }
+            questions = QuestionsModel(archive: archive)
+            backups = BackupsModel(archive: archive)
+            activeScreen = ActiveScreenModel(archive: archive, checkoutFolder: checkoutFolder) {
+                [weak self] in
+                await self?.refreshItems()
+            }
+            historyScreen = HistoryScreenModel(archive: archive) { [weak self] in
+                await self?.refreshItems()
+            }
+            search = SearchModel(archive: archive)
+            intake = IntakeModel(archive: archive)
+            let browse = BrowseActionsModel(archive: archive) { [weak self] in
+                await self?.refreshItems()
+            }
+            browse.created = { [weak self] path in self?.screen = .collection(path) }
+            self.browse = browse
+            librarian = LibrarianModel(archive: archive)
+            librarian?.didChange = { [weak self] in await self?.refreshItems() }
+            discover = DiscoverModel(archive: archive)
+            let previews = PreviewStore(handle: loaded.0)
+            self.previews = previews
+            await previews.reload()
+            try? await archive.refreshAll()
         } catch {
             problem = message(for: error)
         }
+    }
+
+    /// Where a checkout goes unless changed: the Desktop of the home the archive was opened
+    /// with, as the core checks out by default.
+    private var checkoutFolder: URL {
+        options?.home.map { URL(filePath: $0).appending(path: "Desktop") }
+            ?? FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask)[0]
+    }
+
+    /// Reads the collections and items again, after a change that files or refiles items.
+    func refreshItems() async {
+        guard let handle else { return }
+        guard
+            let loaded = try? await Task.detached(operation: {
+                (try handle.collections(), try handle.items())
+            }).value
+        else { return }
+        collections = loaded.0
+        tree = CollectionNode.tree(loaded.0)
+        items = loaded.1
+        await previews?.reload()
     }
 
     /// The collection an item's card is filed in: the deepest collection folder holding it.
@@ -142,6 +248,8 @@ final class ArchiveWindowModel {
         case .active: "Active"
         case .collection(let path): collections.first { $0.path == path }?.title ?? path
         case .history: "History"
+        case .backups: "Backups"
+        case .discover(let page): page.title
         }
     }
 

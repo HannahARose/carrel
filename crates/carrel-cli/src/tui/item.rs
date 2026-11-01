@@ -67,6 +67,10 @@ pub struct ItemView {
     pub links_only: Option<String>,
     /// The chosen row: a change, then a related item.
     pub chosen: usize,
+    /// The item's file or folder, relative to the archive root, if it has one.
+    pub item: Option<String>,
+    /// Whether it's restricted, so it shows no preview.
+    pub restricted: bool,
 }
 
 impl ItemView {
@@ -112,6 +116,12 @@ impl ItemView {
             related: links.chain(nearby).collect(),
             links_only: near.err(),
             chosen: 0,
+            item: shown
+                .items
+                .iter()
+                .find(|i| i.card == shown.card_path)
+                .and_then(|i| i.item.clone()),
+            restricted: shown.card.sensitivity == Sensitivity::Restricted,
         }
     }
 
@@ -142,6 +152,7 @@ impl App {
             view.chosen = self.item.chosen.min(view.rows().len().saturating_sub(1));
         }
         self.item = view;
+        self.previews.want(&self.archive, &self.item);
     }
 
     /// Handles a key in an item's view: ↑↓ choose a change or related item, `u` undoes the
@@ -177,28 +188,45 @@ impl App {
         Handled::Yes(None::<Effect>)
     }
 
-    /// Browse's keys, for the help line: what the pane the arrows move in answers to.
+    /// Browse's keys, for the help line: what the pane the arrows move in answers to. They
+    /// need the room; the screen keys are in ? help.
     pub(super) fn browse_keys(&self) -> Vec<(&'static str, &'static str)> {
+        let mut keys = vec![("↑↓", "choose")];
         match self.browse_pane {
-            Pane::Collections => vec![("↑↓", "choose"), ("→", "items"), ("/", "search")],
-            Pane::Items => vec![
-                ("↑↓", "choose"),
-                ("←→", "collections/item"),
-                ("e", "edit"),
-                ("c", "correct"),
-                ("/", "search"),
-            ],
+            Pane::Collections => keys.extend([("→", "items"), ("n", "new collection")]),
+            Pane::Items => keys.push(("←→", "collections/item")),
             Pane::Item => {
-                let mut keys = vec![("↑↓", "choose"), ("←", "items")];
+                keys.push(("←", "items"));
                 match self.item.chosen_row() {
                     Some(Row::Change(_)) => keys.push(("u", "undo")),
                     Some(Row::Related(_)) => keys.push(("Enter", "go to it")),
                     None => {}
                 }
-                keys.extend([("e", "edit"), ("c", "correct")]);
-                keys
             }
         }
+        if self.browse_pane != Pane::Collections && !self.browse_items.is_empty() {
+            keys.extend([
+                ("e", "edit"),
+                ("c", "correct"),
+                ("o", "check out"),
+                ("r", "rename"),
+            ]);
+            if self.browsed_is_compressed() {
+                keys.push(("z", "expand"));
+            }
+        }
+        keys.extend([("/", "search"), ("?", "help"), ("q", "quit")]);
+        keys
+    }
+
+    /// Whether the chosen item looks like a compressed file, by its name, so `z` is offered.
+    fn browsed_is_compressed(&self) -> bool {
+        self.browse_items
+            .get(self.browse_item)
+            .and_then(|(card, _)| card.strip_suffix(".md"))
+            .and_then(|item| item.rsplit('/').next())
+            .and_then(carrel_core::detect::Compressed::from_name)
+            .is_some()
     }
 
     /// Moves the choice among the item's rows.

@@ -4,7 +4,7 @@
 //! The list comes from history, which records each snapshot with its change, so the screen
 //! shows without the backup drive; taking, verifying and restoring need it.
 
-use carrel_core::backup::KOPIA_PREFIX;
+use carrel_core::backup::snapshot_entries;
 use carrel_core::history::Entry;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 
@@ -28,14 +28,7 @@ impl std::fmt::Debug for Secret {
 impl App {
     /// The history entries that took a snapshot, newest first.
     pub fn snapshots(&self) -> Vec<&Entry> {
-        self.history
-            .iter()
-            .filter(|e| {
-                e.snapshot
-                    .as_deref()
-                    .is_some_and(|s| s.starts_with(KOPIA_PREFIX))
-            })
-            .collect()
+        snapshot_entries(&self.history).collect()
     }
 
     /// Whether this archive has a backup repository set up.

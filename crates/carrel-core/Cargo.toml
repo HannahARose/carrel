@@ -17,6 +17,7 @@ flate2 = "1.1.10"
 git2 = { version = "0.21", default-features = false, features = ["vendored-libgit2"] }
 indexmap = { version = "2.14.2", features = ["serde"] }
 jiff = "0.2.38"
+notify = { version = "8.2.1", default-features = false, features = ["macos_fsevent"] }
 lzma-rust2 = { version = "0.24.0", default-features = false, features = ["std", "xz"] }
 regex = "1.13.1"
 ruzstd = "0.9.1"
@@ -31,6 +32,11 @@ zip = { version = "9.1.3", default-features = false, features = ["bzip2", "defla
 
 [lints]
 workspace = true
+
+# Performance benchmarks with a timing harness of their own (benches/scale/main.rs).
+[[bench]]
+name = "scale"
+harness = false
 
 [dev-dependencies]
 jsonschema = { version = "0.60.2", default-features = false }

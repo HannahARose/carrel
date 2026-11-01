@@ -153,13 +153,57 @@ pub struct Settings {
     /// When the structure shows signs of needing a restructure.
     #[serde(default, skip_serializing_if = "SignalSettings::is_default")]
     pub signals: SignalSettings,
+    /// How the question queue behaves (`docs/design/librarian.md`, "Questions").
+    #[serde(default, skip_serializing_if = "QuestionSettings::is_default")]
+    pub questions: QuestionSettings,
     /// What happens to compressed files at ingest: `expand`, `keep` or `ask`
     /// (`docs/design/compressed.md`).
     #[serde(default, skip_serializing_if = "is_default_choice")]
     pub compressed_files: crate::compressed::plan::Choice,
+    /// What the librarian may do on its own (`docs/design/librarian.md`).
+    #[serde(default, skip_serializing_if = "LibrarianSettings::is_default")]
+    pub librarian: LibrarianSettings,
     /// Keys this version doesn't know.
     #[serde(flatten)]
     pub extra: Extra,
+}
+
+/// What the librarian may do on its own (FORMAT.md §7.2, `docs/design/librarian.md`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LibrarianSettings {
+    /// Whether it may make the changes it's sure of without asking (refiling, correcting
+    /// fields, renaming, creating collections), each one undoable. Off, it only suggests them.
+    #[serde(default)]
+    pub changes: bool,
+    /// How sure it must be, from 0 to 1, to make a change on its own.
+    #[serde(default = "default_confidence")]
+    pub confidence: f64,
+    /// Keys this version doesn't know.
+    #[serde(flatten)]
+    pub extra: Extra,
+}
+
+/// How sure the librarian must be to make a change on its own, unless the owner says.
+pub const DEFAULT_CONFIDENCE: f64 = 0.9;
+
+fn default_confidence() -> f64 {
+    DEFAULT_CONFIDENCE
+}
+
+impl Default for LibrarianSettings {
+    fn default() -> Self {
+        Self {
+            changes: false,
+            confidence: DEFAULT_CONFIDENCE,
+            extra: Extra::new(),
+        }
+    }
+}
+
+impl LibrarianSettings {
+    fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
 }
 
 /// Search embedding settings (FORMAT.md §7.2, `docs/design/search.md`).
@@ -223,6 +267,36 @@ pub struct SignalSettings {
     /// Keys this version doesn't know.
     #[serde(flatten)]
     pub extra: Extra,
+}
+
+/// How the question queue behaves (FORMAT.md §7.2).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct QuestionSettings {
+    /// How many days a skipped question rests before it's asked again.
+    #[serde(default = "default_skip_days")]
+    pub skip_days: u32,
+    /// Keys this version doesn't know.
+    #[serde(flatten)]
+    pub extra: Extra,
+}
+
+fn default_skip_days() -> u32 {
+    14
+}
+
+impl Default for QuestionSettings {
+    fn default() -> Self {
+        Self {
+            skip_days: default_skip_days(),
+            extra: Extra::new(),
+        }
+    }
+}
+
+impl QuestionSettings {
+    fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
 }
 
 fn default_crowded_items() -> u32 {
@@ -365,7 +439,9 @@ impl Default for Settings {
             backups: None,
             ingest: IngestSettings::default(),
             signals: SignalSettings::default(),
+            questions: QuestionSettings::default(),
             compressed_files: crate::compressed::plan::Choice::default(),
+            librarian: LibrarianSettings::default(),
             extra: Extra::new(),
         }
     }

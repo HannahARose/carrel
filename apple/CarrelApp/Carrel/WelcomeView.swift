@@ -13,9 +13,11 @@ struct WelcomeView: View {
     var body: some View {
         HStack(spacing: 0) {
             VStack(spacing: 16) {
-                Image(systemName: "archivebox")
-                    .font(.system(size: 56))
-                    .foregroundStyle(.tint)
+                // The app's own icon, so it follows the light, dark and tinted looks.
+                Image(nsImage: NSApplication.shared.applicationIconImage)
+                    .resizable()
+                    .frame(width: 128, height: 128)
+                    .accessibilityHidden(true)
                 Text("Carrel").font(.largeTitle.bold())
                 Text(versionSummary()).font(.callout).foregroundStyle(.secondary)
                 VStack(alignment: .leading, spacing: 8) {
@@ -53,6 +55,7 @@ struct WelcomeView: View {
             .frame(width: 280)
         }
         .frame(height: 360)
+        .onOpenURL { app.open(link: $0, then: show) }
     }
 
     private func show(_ root: URL) {

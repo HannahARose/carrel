@@ -701,6 +701,13 @@ pub fn ingest(
 ) -> Result<Ingested, ActionError> {
     let run = run_with_progress(archive, registry, paths, options, holder.device, progress)?;
     run.save(archive)?;
+    let new: Vec<crate::card::Id> = run.entries.iter().flatten().map(|e| e.id).collect();
+    let (open, _) = ReviewQueue::of(archive).list()?;
+    let senders: Vec<QuestionEntry> = crate::questions::about::senders_in(archive, &open)?
+        .into_iter()
+        .filter(|q| q.items.iter().any(|id| new.contains(id)))
+        .collect();
+    crate::questions::answer::raise(archive, senders)?;
     let chosen = run.filed_by_rule();
     let filed = if chosen.is_empty() {
         None
@@ -762,18 +769,50 @@ pub fn requeue_waiting(
     Ok(entries)
 }
 
-/// The card fields the owner edits in a proposal (`docs/design/interactive.md`).
+/// The card fields the owner edits, in a proposal or a filed card
+/// (`docs/design/interactive.md`): as YAML in an editor, or field by field in the apps.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
-struct DraftFields {
-    title: String,
+pub struct CardFields {
+    /// The title.
+    pub title: String,
+    /// The summary.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    summary: Option<String>,
+    pub summary: Option<String>,
+    /// The tags, by name.
     #[serde(default)]
-    tags: Vec<String>,
+    pub tags: Vec<String>,
+    /// The dates.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    dates: Option<crate::card::Dates>,
-    sensitivity: Sensitivity,
+    pub dates: Option<crate::card::Dates>,
+    /// How sensitive it is.
+    pub sensitivity: Sensitivity,
+}
+
+/// The fields of the proposal `entry` the owner edits, its proposed new tag among its tags.
+#[must_use]
+pub fn draft_fields(entry: &ReviewEntry) -> CardFields {
+    let mut tags: Vec<String> = entry.card.tags.iter().map(|t| t.0.clone()).collect();
+    tags.extend(entry.proposed_tags.iter().map(|t| t.0.clone()));
+    CardFields {
+        title: entry.card.title.clone(),
+        summary: entry.card.summary.clone(),
+        tags,
+        dates: entry.card.dates.clone(),
+        sensitivity: entry.card.sensitivity,
+    }
+}
+
+/// The fields of the filed card `card` the owner edits.
+#[must_use]
+pub fn card_fields(card: &crate::card::Card) -> CardFields {
+    CardFields {
+        title: card.title.clone(),
+        summary: card.summary.clone(),
+        tags: card.tags.iter().map(|t| t.0.clone()).collect(),
+        dates: card.dates.clone(),
+        sensitivity: card.sensitivity,
+    }
 }
 
 /// Problems the owner settles by editing the card themselves.
@@ -803,15 +842,7 @@ pub fn draft_text(
 ) -> Result<String, ActionError> {
     let collections = archive.collections()?;
     let vocabulary = applicable_tags(archive, &collections, &entry.destination.path);
-    let mut tags: Vec<String> = entry.card.tags.iter().map(|t| t.0.clone()).collect();
-    tags.extend(entry.proposed_tags.iter().map(|t| t.0.clone()));
-    let fields = DraftFields {
-        title: entry.card.title.clone(),
-        summary: entry.card.summary.clone(),
-        tags,
-        dates: entry.card.dates.clone(),
-        sensitivity: entry.card.sensitivity,
-    };
+    let fields = draft_fields(entry);
     let mut text = String::new();
     for problem in problems {
         writeln!(text, "# To fix: {problem}").unwrap();
@@ -837,6 +868,17 @@ pub fn draft_text(
     .unwrap();
     text.push_str(&serde_saphyr::to_string(&fields).expect("draft fields always serialize"));
     Ok(text)
+}
+
+/// The tag names that apply in the collection at `path`, from which an edited card's tags
+/// are chosen.
+///
+/// # Errors
+///
+/// [`ActionError::Archive`] if the collections can't be read.
+pub fn tags_at(archive: &Archive, path: &str) -> Result<Vec<String>, ActionError> {
+    let collections = archive.collections()?;
+    Ok(applicable_tags(archive, &collections, path))
 }
 
 /// The tag names that apply at `path`.
@@ -874,7 +916,7 @@ struct Checked {
 }
 
 fn check_fields(
-    fields: DraftFields,
+    fields: CardFields,
     vocabulary: &[String],
     floor: Sensitivity,
 ) -> Result<Checked, Vec<String>> {
@@ -957,10 +999,24 @@ pub fn apply_draft(
     entry: &mut ReviewEntry,
     text: &str,
 ) -> Result<Edited, ActionError> {
-    let fields: DraftFields = match serde_saphyr::from_str(text) {
+    let fields: CardFields = match serde_saphyr::from_str(text) {
         Ok(fields) => fields,
         Err(e) => return Ok(Edited::Problems(vec![format!("the YAML isn't valid: {e}")])),
     };
+    apply_draft_fields(archive, entry, fields)
+}
+
+/// Applies the owner's edited `fields` to the proposal `entry`, checking them first, as
+/// [`apply_draft`] does with YAML.
+///
+/// # Errors
+///
+/// [`ActionError::Archive`] if the collections can't be read.
+pub fn apply_draft_fields(
+    archive: &Archive,
+    entry: &mut ReviewEntry,
+    fields: CardFields,
+) -> Result<Edited, ActionError> {
     let collections = archive.collections()?;
     let vocabulary = applicable_tags(archive, &collections, &entry.destination.path);
     let checked = match check_fields(fields, &vocabulary, entry.card.sensitivity) {
@@ -1175,13 +1231,7 @@ pub fn card_text(
 ) -> Result<String, ActionError> {
     let collections = archive.collections()?;
     let vocabulary = applicable_tags(archive, &collections, collection);
-    let fields = DraftFields {
-        title: card.title.clone(),
-        summary: card.summary.clone(),
-        tags: card.tags.iter().map(|t| t.0.clone()).collect(),
-        dates: card.dates.clone(),
-        sensitivity: card.sensitivity,
-    };
+    let fields = card_fields(card);
     let mut text = String::new();
     for problem in problems {
         writeln!(text, "# To fix: {problem}").unwrap();
@@ -1228,7 +1278,7 @@ pub fn apply_card(
     floor: Sensitivity,
     text: &str,
 ) -> Result<EditedCard, ActionError> {
-    let fields: DraftFields = match serde_saphyr::from_str(text) {
+    let fields: CardFields = match serde_saphyr::from_str(text) {
         Ok(fields) => fields,
         Err(e) => {
             return Ok(EditedCard::Problems(vec![format!(
@@ -1236,6 +1286,22 @@ pub fn apply_card(
             )]));
         }
     };
+    apply_card_fields(archive, card, collection, floor, fields)
+}
+
+/// Applies the owner's edited `fields` to the filed card `card`, in the collection at
+/// `collection`, checking them first, as [`apply_card`] does with YAML.
+///
+/// # Errors
+///
+/// [`ActionError::Archive`] if the collections can't be read.
+pub fn apply_card_fields(
+    archive: &Archive,
+    card: &mut crate::card::Card,
+    collection: &str,
+    floor: Sensitivity,
+    fields: CardFields,
+) -> Result<EditedCard, ActionError> {
     let collections = archive.collections()?;
     let vocabulary = applicable_tags(archive, &collections, collection);
     let checked = match check_fields(fields, &vocabulary, floor) {

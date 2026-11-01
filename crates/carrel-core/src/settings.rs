@@ -13,6 +13,8 @@ pub enum Key {
     Originals,
     /// How many loose items make a collection crowded, as a restructure signal.
     CrowdedItems,
+    /// How many days a skipped question rests before it's asked again.
+    SkipDays,
     /// How changes made outside Carrel are handled.
     OutsideEdits,
     /// What happens to compressed files at ingest.
@@ -20,6 +22,10 @@ pub enum Key {
     /// The model every device embeds with for search. It can be chosen once; switching
     /// models means re-embedding the archive (`docs/design/search.md`).
     EmbeddingModel,
+    /// Whether the librarian may make the changes it's sure of without asking.
+    LibrarianChanges,
+    /// How sure the librarian must be to make a change on its own.
+    LibrarianConfidence,
 }
 
 /// The embedding models an archive can choose: the catalog's, the default first.
@@ -31,12 +37,15 @@ const EMBEDDING_MODELS: [&str; 3] = [
 
 impl Key {
     /// Every setting, in the order they're shown.
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 8] = [
         Self::Originals,
         Self::CompressedFiles,
         Self::CrowdedItems,
+        Self::SkipDays,
         Self::OutsideEdits,
         Self::EmbeddingModel,
+        Self::LibrarianChanges,
+        Self::LibrarianConfidence,
     ];
 
     /// Its key in `settings.json`, as FORMAT.md §7.2 writes it.
@@ -45,9 +54,12 @@ impl Key {
         match self {
             Self::Originals => "ingest.originals",
             Self::CrowdedItems => "signals.crowded_items",
+            Self::SkipDays => "questions.skip_days",
             Self::OutsideEdits => "outside_edits",
             Self::CompressedFiles => "compressed_files",
             Self::EmbeddingModel => "embedding.model",
+            Self::LibrarianChanges => "librarian.changes",
+            Self::LibrarianConfidence => "librarian.confidence",
         }
     }
 
@@ -67,6 +79,7 @@ impl Key {
             Self::CrowdedItems => {
                 "How many loose items make a collection with no subcollections crowded, a sign it may want splitting"
             }
+            Self::SkipDays => "How many days a skipped question rests before Carrel asks it again",
             Self::OutsideEdits => {
                 "What to do with changes made outside Carrel: flag them for review, record them as edits, or offer to undo them"
             }
@@ -75,6 +88,12 @@ impl Key {
             }
             Self::EmbeddingModel => {
                 "The model every device uses to search by meaning; chosen once, as switching re-embeds the archive"
+            }
+            Self::LibrarianChanges => {
+                "Whether the librarian may refile items, correct cards, rename items and create collections on its own when it's sure, each change undoable; off, it only suggests them"
+            }
+            Self::LibrarianConfidence => {
+                "How sure the librarian must be, from 0.5 to 1, to make a change on its own"
             }
         }
     }
@@ -87,7 +106,8 @@ impl Key {
             Self::OutsideEdits => Some(&["flag", "reconcile", "drift"]),
             Self::CompressedFiles => Some(&["expand", "keep", "ask"]),
             Self::EmbeddingModel => Some(&EMBEDDING_MODELS),
-            Self::CrowdedItems => None,
+            Self::LibrarianChanges => Some(&["off", "on"]),
+            Self::CrowdedItems | Self::SkipDays | Self::LibrarianConfidence => None,
         }
     }
 
@@ -100,6 +120,7 @@ impl Key {
                 Originals::Keep => "keep".into(),
             },
             Self::CrowdedItems => settings.signals.crowded_items.to_string(),
+            Self::SkipDays => settings.questions.skip_days.to_string(),
             Self::OutsideEdits => match settings.outside_edits {
                 OutsideEdits::Flag => "flag".into(),
                 OutsideEdits::Reconcile => "reconcile".into(),
@@ -107,6 +128,13 @@ impl Key {
             },
             Self::CompressedFiles => settings.compressed_files.as_str().into(),
             Self::EmbeddingModel => settings.embedding_model().unwrap_or("none").to_owned(),
+            Self::LibrarianChanges => if settings.librarian.changes {
+                "on"
+            } else {
+                "off"
+            }
+            .into(),
+            Self::LibrarianConfidence => settings.librarian.confidence.to_string(),
         }
     }
 
@@ -119,6 +147,9 @@ impl Key {
         let value = value.trim();
         let wrong = || match self.choices() {
             Some(choices) => format!("{} is one of {}", self.as_str(), choices.join(", ")),
+            None if self == Self::LibrarianConfidence => {
+                format!("{} is a number from 0.5 to 1, such as 0.9", self.as_str())
+            }
             None => format!("{} is a whole number, at least 1", self.as_str()),
         };
         match self {
@@ -131,6 +162,10 @@ impl Key {
             }
             Self::CrowdedItems => {
                 settings.signals.crowded_items =
+                    value.parse().ok().filter(|n| *n >= 1).ok_or_else(wrong)?;
+            }
+            Self::SkipDays => {
+                settings.questions.skip_days =
                     value.parse().ok().filter(|n| *n >= 1).ok_or_else(wrong)?;
             }
             Self::OutsideEdits => {
@@ -157,6 +192,20 @@ impl Key {
                     }
                     _ => settings.set_embedding_model(value),
                 }
+            }
+            Self::LibrarianChanges => {
+                settings.librarian.changes = match value {
+                    "on" => true,
+                    "off" => false,
+                    _ => return Err(wrong()),
+                };
+            }
+            Self::LibrarianConfidence => {
+                settings.librarian.confidence = value
+                    .parse::<f64>()
+                    .ok()
+                    .filter(|n| (0.5..=1.0).contains(n))
+                    .ok_or_else(wrong)?;
             }
         }
         Ok(())
@@ -313,5 +362,18 @@ mod tests {
         assert_eq!(Key::parse("embedding.model"), Some(Key::EmbeddingModel));
         assert_eq!(Key::parse("outside_edits"), Some(Key::OutsideEdits));
         assert_eq!(Key::parse("nope"), None);
+
+        assert_eq!(
+            Key::LibrarianChanges.get(&settings),
+            "off",
+            "off by default"
+        );
+        Key::LibrarianChanges.set(&mut settings, "on").unwrap();
+        assert!(settings.librarian.changes);
+        assert!(Key::LibrarianChanges.set(&mut settings, "yes").is_err());
+        assert_eq!(Key::LibrarianConfidence.get(&settings), "0.9");
+        Key::LibrarianConfidence.set(&mut settings, "0.75").unwrap();
+        assert!(Key::LibrarianConfidence.set(&mut settings, "0.2").is_err());
+        assert!(Key::LibrarianConfidence.set(&mut settings, "sure").is_err());
     }
 }

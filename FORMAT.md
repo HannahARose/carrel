@@ -483,7 +483,10 @@ Archive-level settings that every device follows. Version 1.0 defines:
 | `backups` | map describing the backup repository: `type` (`kopia`), `repository` (the backup system's identifier for it) and `description`. Never its path, which differs between devices, and never the password | none |
 | `ingest.originals` | `move` (the original is moved into the archive on approval) or `keep` (it's copied, and the original is left for the owner to delete) | `move` |
 | `signals.crowded_items` | integer: how many loose items make a collection with no subcollections crowded, as a restructure signal | `30` |
+| `questions.skip_days` | integer: how many days a question the owner skipped rests before it's asked again (§7.9) | `14` |
 | `compressed_files` | `expand` (a compressed file, such as a zip, is expanded when its proposal is approved, so what it holds can be browsed), `keep` (it's filed as it is) or `ask` (the owner decides for each one in Review). A collection's own `compressed_files` (§6.3) and a routing rule's `keep_compressed` (§7.4) take precedence; software, encrypted, split and unreadable archives are kept, and unsafe or very large expansions ask, whatever the setting | `expand` |
+| `librarian.changes` | `true` (the librarian may refile items, correct model-written card fields, rename items and create collections on its own when it's sure, each an undoable change marked as its own, §8.2) or `false` (it only suggests them, for the owner to confirm) | `false` |
+| `librarian.confidence` | number from 0.5 to 1: how sure the librarian must be to make a change on its own | `0.9` |
 
 Programs **must** preserve unknown keys.
 
@@ -673,22 +676,34 @@ When several items depend on the same unknown, a program asks the owner one ques
   "id": "01a18701-0500-776a-9867-08f000000002",
   "batch": "01a18701-0500-776a-9867-08f0000000b1",
   "created": "2026-10-29T16:20:05-07:00",
-  "kind": "term",
-  "subject": "scope-ds",
-  "question": "What is “scope-ds”?",
-  "items": ["01a18701-0500-776a-9867-08f000000001"]
+  "kind": "group",
+  "subject": "Daves Chicken",
+  "question": "These 3 items about “Daves Chicken”: Finances, or a new Finances/Daves Chicken collection?",
+  "items": ["01a18701-0500-776a-9867-08f000000001"],
+  "choices": ["Finances", "Projects", "Reading"],
+  "suggestions": [
+    {"answer": "Finances", "why": "where all 3 were going"},
+    {"answer": "Finances/Daves Chicken", "why": "a collection of their own", "new_collection": true}
+  ]
 }
 ```
 
 | Field | Meaning |
 | --- | --- |
-| `kind` | `term` (what a recurring term means; the answer becomes a glossary fact, §7.3) or `collection` (which collection the items belong in; the answer is a collection's path) |
-| `subject` | The term the question is about, as it appears in the items' names |
+| `kind` | `term` (what a recurring term means; the answer becomes a glossary fact, §7.3), `collection` (which collection items about a term belong in), `group` (where a group of items that belong together goes, such as a collection they're split across or a new one), `sender` (whether a sender or project that recurs deserves its own collection) or `item` (something about one item, such as what a photo shows or who someone named in it is; the answer is a correction of its card). For `collection`, `group` and `sender`, the answer is a collection's path, or for `sender`, no |
+| `batch` | Optional. The ingest batch that raised it; questions raised outside ingest have none |
+| `subject` | What the question is about: the term as it appears in the items' names, the sender or project, or for `item`, the item's title or the name asked about |
 | `question` | The question in words |
 | `items` | The review entries waiting on the answer. Programs mark each with a problem whose `stage` is `question`, and set it to `needs-owner` |
-| `choices` | For a `collection` question, the collections' paths to choose from |
+| `about` | Optional. Filed items the question is about, by their identifiers. An `item` question is about exactly one item, in `items` or `about` |
+| `choices` | Optional. For `collection`, `group` and `sender`, the collections' paths to choose from |
+| `suggestions` | Optional. Likely answers to offer, most likely first. Each has an `answer`, optionally `why` it's likely, `new_collection: true` when picking it creates that collection, and `no_change: true` when picking it settles the question without changing anything |
+| `skipped`, `skips` | Optional. When the owner last skipped it, and how many times. It isn't asked again until `questions.skip_days` (§7.2) after `skipped` |
+| `declined` | Optional. When the owner answered it with no change, such as "no, it doesn't need its own collection". Programs keep the entry so the question isn't asked again, and don't show it |
 
-Once a question is answered or dismissed, programs remove it and clear the problem from its items. Items waiting on a term are drafted again with the new fact.
+Programs **should** ask the questions whose answers would settle the most items they're least sure of first, **should not** ask a question the glossary or a routing rule already answers, and **should** merge a new question into one already waiting that asks the same about the same subject. An answer becomes a glossary fact or a routing rule only with the owner's agreement.
+
+Once a question is answered or dismissed, programs remove it and clear the problem from its items, except a declined question, which stays with `declined` set. Items waiting on a term are drafted again with the new fact. Question files without the optional fields, as earlier programs wrote them, remain valid.
 
 ### 7.10 Devices
 
@@ -753,6 +768,8 @@ Carrel-Items: 01928f3a-7c41-7d2e-9b6a-3f0c5e2a1b44
 ```
 
 `Carrel-Operation` is one of `create`, `ingest`, `approve`, `edit`, `move`, `checkout`, `return`, `session`, `restructure`, `deaccession`, `purge`, `outside-edit`, `migrate`, `inbox`. `Carrel-Snapshot` names the content backup taken with the change, when there is one. `Carrel-Items` may repeat.
+
+- **Agents:** a change a program made on its own, acting for the person rather than on their word, has a `Carrel-Agent` trailer naming it, such as `Carrel-Agent: librarian` for the librarian's optional changes (`docs/design/librarian.md`). `Carrel-Person` still names the person it acted for. Undoing such a change is the person's own change and has no `Carrel-Agent`.
 
 - **Moves:** each item a change moves is recorded, in the order it was moved, as a `Carrel-Move` trailer whose value is a one-line JSON object: `Carrel-Move: {"item":"01928f3a-…","from":"Research/Code/sim","to":"Research/Projects/sim"}`. Paths are the item's (not the card's), relative to the archive root. Git sees card moves itself; these trailers let undo move item contents, which history doesn't track.
 - **Empty changes** that leave every tracked file unchanged are not committed.
@@ -824,6 +841,8 @@ A mirror's frontmatter is `carrel: desk-mirror`, the desk card's `id`, `card` (i
 ### 9.3 Journal
 
 `Journal/<year>/<year>-<month>.md` lists the month's approved work sessions across all items, newest first, each linking to its card. Journal files are generated from cards and may be regenerated at any time.
+
+A month's Journal may end with conversations with the librarian that the owner saved, under the heading `## Conversations with the librarian`, newest first: each a level-3 heading with when it was saved and its first question, then the questions, answers and links to the items. Everything from that heading to the end of the file is the owner's: programs keep it as it is when they regenerate the Journal, and add newly saved conversations just below the heading.
 
 ### 9.4 Desk items
 

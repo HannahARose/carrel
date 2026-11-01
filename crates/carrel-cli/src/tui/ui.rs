@@ -79,6 +79,8 @@ pub fn tab_starts() -> Vec<u16> {
 /// Draws the whole screen.
 pub fn draw(frame: &mut Frame, app: &App, theme: Theme) {
     let area = frame.area();
+    // Browse's item view leaves room for a picture again if it shows one.
+    app.previews.room.set(None);
     if area.width < MIN_SIZE.0 || area.height < MIN_SIZE.1 {
         let text = format!(
             "Carrel needs a terminal of at least {}×{}; this one is {}×{}.\nMake it larger, or press q to quit.",
@@ -225,7 +227,7 @@ fn draw_history(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
 
 fn draw_help_line(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
     let mut spans = Vec::new();
-    if let Some(busy) = &app.busy {
+    if let Some(busy) = app.busy_line() {
         spans.push(Span::styled(format!(" {busy}  ·"), theme.key()));
     }
     if let Some(worker) = app.worker_line() {
@@ -283,10 +285,17 @@ fn draw_help(frame: &mut Frame, theme: Theme, area: Rect) {
         ),
         ("r  o  x", "return, open, cancel checkout (Active)"),
         (
+            "n  x  f",
+            "put a file or folder on the desk; take off, archive a desk item (Active)",
+        ),
+        (
             "a  e  c  d  Space",
             "approve, edit, combine, drop; mark (Active)",
         ),
-        ("Enter  d", "answer or dismiss a question (Questions)"),
+        (
+            "Enter  1-9  s  d",
+            "answer, pick a suggestion, skip or dismiss a question (Questions)",
+        ),
         (
             "←→  e  c  /  Esc",
             "collections, items, an item; edit, correct; search; clear (Browse)",
@@ -294,6 +303,10 @@ fn draw_help(frame: &mut Frame, theme: Theme, area: Rect) {
         (
             "u  Enter",
             "undo the item's chosen change; go to a related item (Browse)",
+        ),
+        (
+            "o  r  z  n",
+            "check out, rename, expand an item; new collection (Browse)",
         ),
         ("u", "undo the chosen change (History)"),
         (
@@ -305,6 +318,12 @@ fn draw_help(frame: &mut Frame, theme: Theme, area: Rect) {
             "e  w",
             "each entry, or whole folder, before queueing (Ingest)",
         ),
+        (
+            "Enter",
+            "change a setting; rebuild the search index or switch its model; install the agent (Settings)",
+        ),
+        ("x", "uninstall the background agent, on its row (Settings)"),
+        ("Ctrl-O", "open another archive, or create one"),
         ("Ctrl-R", "read everything again"),
         ("?", "this help"),
         ("q, Esc, Ctrl-C", "quit"),
@@ -378,6 +397,14 @@ fn draw_confirm(frame: &mut Frame, confirm: &Confirm, theme: Theme, area: Rect) 
                 .to_owned(),
             " undo   ",
         ),
+        Confirm::Agent(change) => {
+            let (question, about) = super::agent::confirm_text(change);
+            let yes = match change {
+                super::agent::AgentChange::Install(_) => " install   ",
+                super::agent::AgentChange::Uninstall => " uninstall   ",
+            };
+            (" Agent ", question, about, yes)
+        }
         Confirm::Download { name, about } => (
             " Download ",
             format!("Download {name}?"),
@@ -416,18 +443,28 @@ fn draw_confirm(frame: &mut Frame, confirm: &Confirm, theme: Theme, area: Rect) 
                 .to_owned(),
             " cancel it   ",
         ),
+        other => super::actions::confirm_text(other),
     };
     let mut lines = vec![Line::from(question), Line::from("")];
     lines.extend(explanation.lines().map(|l| Line::from(l.to_owned())));
-    lines.extend([
-        Line::from(""),
-        Line::from(vec![
-            Span::styled("y", theme.key()),
-            Span::raw(yes),
+    let mut answers = vec![Span::styled("y", theme.key()), Span::raw(yes)];
+    if matches!(confirm, Confirm::DeskRemove { .. }) {
+        answers.extend([
+            Span::styled("d", theme.key()),
+            Span::raw(" delete its card too   "),
+        ]);
+    }
+    if matches!(confirm, Confirm::Rule { .. }) {
+        answers.extend([
             Span::styled("n", theme.key()),
-            Span::raw(" keep it"),
-        ]),
-    ]);
+            Span::raw(" without a rule   "),
+            Span::styled("Esc", theme.key()),
+            Span::raw(" not now"),
+        ]);
+    } else {
+        answers.extend([Span::styled("n", theme.key()), Span::raw(" keep it")]);
+    }
+    lines.extend([Line::from(""), Line::from(answers)]);
     let width = if matches!(confirm, Confirm::Return { .. }) {
         area.width.saturating_sub(8).clamp(64, 100)
     } else {
@@ -594,13 +631,19 @@ fn draw_picker(frame: &mut Frame, picker: &Picker, theme: Theme, area: Rect) {
     let matching = picker.matching();
     let items: Vec<ListItem> = matching.iter().map(|c| ListItem::new(*c)).collect();
     let height = u16::try_from(matching.len().clamp(1, 12)).unwrap_or(12) + 3;
-    let popup = centered(area, 50, height);
+    let wide = matches!(
+        picker.purpose,
+        super::review::Purpose::Archive(_) | super::review::Purpose::Index(_)
+    );
+    let popup = centered(area, if wide { 76 } else { 50 }, height);
     frame.render_widget(Clear, popup);
     let what = match picker.purpose {
         super::review::Purpose::Move(_) => "Move to",
         super::review::Purpose::Answer(_) => "They belong in",
         super::review::Purpose::Setting(_) => "Set it to",
         super::review::Purpose::Download => "Download",
+        super::review::Purpose::Index(_) => "Search index",
+        super::review::Purpose::Archive(_) => "Archives",
     };
     let title = if picker.filter.is_empty() {
         format!(" {what} (type to narrow) ")
@@ -617,9 +660,49 @@ fn draw_picker(frame: &mut Frame, picker: &Picker, theme: Theme, area: Rect) {
     );
 }
 
+/// A question's suggestions, numbered, each with why it's likely.
+fn suggestion_lines(
+    question: &carrel_core::questions::QuestionEntry,
+    theme: Theme,
+) -> Vec<Line<'static>> {
+    question
+        .suggestions
+        .iter()
+        .enumerate()
+        .map(|(i, suggestion)| {
+            let mut spans = vec![
+                Span::styled(format!("{}", i + 1), theme.key()),
+                Span::raw(format!("  {}", suggestion.answer)),
+            ];
+            let mut notes = Vec::new();
+            if suggestion.new_collection {
+                notes.push("new".to_owned());
+            }
+            notes.extend(suggestion.why.clone());
+            if !notes.is_empty() {
+                spans.push(Span::styled(
+                    format!("  ({})", notes.join("; ")),
+                    theme.dim(),
+                ));
+            }
+            Line::from(spans)
+        })
+        .collect()
+}
+
 fn draw_questions(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
+    use carrel_core::questions::QuestionKind;
     if app.asked.is_empty() {
-        frame.render_widget(Paragraph::new("No questions"), area);
+        let text = if app.resting == 0 {
+            "No questions".to_owned()
+        } else {
+            format!(
+                "No questions; {} skipped one{} resting",
+                app.resting,
+                if app.resting == 1 { " is" } else { "s are" }
+            )
+        };
+        frame.render_widget(Paragraph::new(text), area);
         return;
     }
     let [list_area, detail_area] =
@@ -627,12 +710,13 @@ fn draw_questions(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
     let items: Vec<ListItem> = app
         .asked
         .iter()
-        .map(|q| {
+        .zip(&app.asked_settles)
+        .map(|(q, settles)| {
             ListItem::new(format!(
                 "{}  ({} item{})",
                 q.question,
-                q.items.len(),
-                if q.items.len() == 1 { "" } else { "s" }
+                settles,
+                if *settles == 1 { "" } else { "s" }
             ))
         })
         .collect();
@@ -646,22 +730,42 @@ fn draw_questions(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
     let mut lines = vec![
         Line::from(question.question.clone()).style(Style::new().add_modifier(Modifier::BOLD)),
         Line::from(""),
-        Line::from("Waiting on the answer:"),
     ];
-    lines.extend(
-        app.waiting_titles(question)
-            .into_iter()
-            .map(|t| Line::from(format!("  {t}"))),
-    );
+    let waiting = app.waiting_titles(question);
+    if !waiting.is_empty() {
+        lines.push(Line::from("Waiting on the answer:"));
+        lines.extend(waiting.into_iter().map(|t| Line::from(format!("  {t}"))));
+    }
+    if !question.about.is_empty() {
+        lines.push(Line::from(format!(
+            "About {} filed item{}",
+            question.about.len(),
+            if question.about.len() == 1 { "" } else { "s" }
+        )));
+    }
+    if !question.suggestions.is_empty() {
+        lines.push(Line::from(""));
+        lines.extend(suggestion_lines(question, theme));
+    }
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
         match question.kind {
-            carrel_core::questions::QuestionKind::Term => {
+            QuestionKind::Term => {
                 "Enter to say what it is; Carrel remembers it and drafts these again."
             }
-            carrel_core::questions::QuestionKind::Collection => {
-                "Enter to choose where they belong."
+            QuestionKind::Collection | QuestionKind::Group => "Enter to choose where they belong.",
+            QuestionKind::Sender => {
+                "Enter to answer yes, no or a collection; Carrel asks before adding a rule."
             }
+            QuestionKind::Item => "Enter to answer; you see what it changes before it's saved.",
+        },
+        theme.dim(),
+    )));
+    lines.push(Line::from(Span::styled(
+        if question.suggestions.is_empty() {
+            "s skips it for now, d dismisses it."
+        } else {
+            "A number picks a suggestion; s skips it for now, d dismisses it."
         },
         theme.dim(),
     )));
@@ -823,6 +927,7 @@ fn draw_item(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
         lines.extend(why_lines(hit, theme));
     }
     lines.extend(view.text.iter().map(|l| Line::from(l.as_str())));
+    let card_area = draw_preview(frame, app, theme, card_area);
     frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), card_area);
     let highlight = if app.browse_pane == Pane::Item {
         theme.selected()
@@ -835,6 +940,41 @@ fn draw_item(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
         list_area,
         &mut state,
     );
+}
+
+/// The chosen item's preview, beside its card when there's room and above it when there
+/// isn't: a folder's listing, or room left for the picture the run loop draws after the
+/// frame. Returns what's left for the card.
+fn draw_preview(frame: &mut Frame, app: &App, theme: Theme, area: Rect) -> Rect {
+    let Some(ready) = app.previews.shown(app.item.card.as_deref()) else {
+        return area;
+    };
+    let (card, preview) = if area.width >= 60 {
+        let [card, preview] =
+            Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .areas(area);
+        (card, preview)
+    } else {
+        let [preview, card] =
+            Layout::vertical([Constraint::Percentage(40), Constraint::Percentage(60)]).areas(area);
+        (card, preview)
+    };
+    let block = Block::new()
+        .borders(ratatui::widgets::Borders::LEFT)
+        .title(Line::styled(" Preview ", theme.dim()));
+    let inner = block.inner(preview);
+    frame.render_widget(block, preview);
+    match ready {
+        super::preview::Ready::Listing(lines) => {
+            let lines: Vec<Line> = lines.iter().map(|l| Line::from(l.as_str())).collect();
+            frame.render_widget(Paragraph::new(lines), inner);
+        }
+        super::preview::Ready::Picture(_) if !app.covered() && inner.area() > 0 => {
+            app.previews.room.set(Some(inner));
+        }
+        _ => {}
+    }
+    card
 }
 
 fn draw_input(frame: &mut Frame, input: &Input, theme: Theme, area: Rect) {
@@ -877,6 +1017,18 @@ fn draw_input(frame: &mut Frame, input: &Input, theme: Theme, area: Rect) {
              archive changes:"
                 .to_owned(),
         ),
+        InputPurpose::OpenArchive => (
+            " Archives ",
+            "The archive to open: its folder, or any folder in it (drop it here, or paste):"
+                .to_owned(),
+        ),
+        InputPurpose::CreateArchive => (
+            " Archives ",
+            "The folder for the new archive, which is named after it, as `carrel init` makes \
+             it. An empty or new folder is best:"
+                .to_owned(),
+        ),
+        purpose => super::actions::input_text(purpose).unwrap_or((" ", String::new())),
     };
     let shown = if input.masked() {
         "•".repeat(input.text.chars().count())

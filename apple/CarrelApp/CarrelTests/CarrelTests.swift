@@ -13,8 +13,24 @@ let sampleArchive = URL(filePath: #filePath)
 
 @MainActor
 final class ArchiveWindowModelTests: XCTestCase {
+    private var config: URL!
+    /// A configuration folder and home of the tests' own: opening a window reads what's
+    /// active, which needs this device's identity, and Status, which looks for active work in
+    /// the home's Desktop and Code folders. Never the owner's.
+    private var isolated: OpenOptions { .isolated(config: config) }
+
+    override func setUp() async throws {
+        config = FileManager.default.temporaryDirectory
+            .appending(path: "CarrelTests.\(UUID().uuidString)")
+    }
+
+    override func tearDown() async throws {
+        try? FileManager.default.removeItem(at: config)
+    }
+
     func testLoadsTheSampleArchive() async throws {
-        let model = ArchiveWindowModel(url: sampleArchive.appending(path: "Reading"))
+        let model = ArchiveWindowModel(
+            url: sampleArchive.appending(path: "Reading"), options: isolated)
         await model.load()
         XCTAssertNil(model.problem)
         XCTAssertEqual(model.name, "Sample archive")
@@ -24,7 +40,7 @@ final class ArchiveWindowModelTests: XCTestCase {
     }
 
     func testNestsCollectionsInTheTree() async throws {
-        let model = ArchiveWindowModel(url: sampleArchive)
+        let model = ArchiveWindowModel(url: sampleArchive, options: isolated)
         await model.load()
         let projects = try XCTUnwrap(model.tree.first { $0.collection.path == "Projects" })
         XCTAssertTrue(
@@ -36,7 +52,7 @@ final class ArchiveWindowModelTests: XCTestCase {
     }
 
     func testBrowseListsACollectionsOwnItems() async throws {
-        let model = ArchiveWindowModel(url: sampleArchive)
+        let model = ArchiveWindowModel(url: sampleArchive, options: isolated)
         await model.load()
         XCTAssertEqual(model.listedItems, [], "Status lists no items")
         XCTAssertEqual(model.screenTitle, "Status")
@@ -52,7 +68,7 @@ final class ArchiveWindowModelTests: XCTestCase {
     }
 
     func testChangingScreenClearsTheSelection() async throws {
-        let model = ArchiveWindowModel(url: sampleArchive)
+        let model = ArchiveWindowModel(url: sampleArchive, options: isolated)
         await model.load()
         model.screen = .collection("Reading")
         model.selectedItemID = model.listedItems.first?.id
@@ -62,7 +78,7 @@ final class ArchiveWindowModelTests: XCTestCase {
     }
 
     func testSummaryCountsWhatTheArchiveHolds() async throws {
-        let model = ArchiveWindowModel(url: sampleArchive)
+        let model = ArchiveWindowModel(url: sampleArchive, options: isolated)
         await model.load()
         let summary = model.summary
         XCTAssertEqual(summary.itemCount, 12)
@@ -73,7 +89,7 @@ final class ArchiveWindowModelTests: XCTestCase {
     }
 
     func testReadsTheSelectedItemsCard() async throws {
-        let model = ArchiveWindowModel(url: sampleArchive)
+        let model = ArchiveWindowModel(url: sampleArchive, options: isolated)
         await model.load()
         let book = try XCTUnwrap(
             model.items.first { $0.card == "Reading/On the Origin of Species.md" })
@@ -85,7 +101,8 @@ final class ArchiveWindowModelTests: XCTestCase {
     }
 
     func testReportsFoldersThatArentArchives() async throws {
-        let model = ArchiveWindowModel(url: FileManager.default.temporaryDirectory)
+        let model = ArchiveWindowModel(
+            url: FileManager.default.temporaryDirectory, options: isolated)
         await model.load()
         XCTAssertNotNil(model.problem)
         XCTAssertTrue(model.items.isEmpty)
@@ -170,7 +187,8 @@ final class AppModelTests: XCTestCase {
         let app = AppModel(recents: RecentArchives(defaults: defaults))
         let root = try app.create(at: folder.appending(path: "Letters"))
         XCTAssertEqual(app.recents.urls, [root])
-        let model = ArchiveWindowModel(url: root)
+        let model = ArchiveWindowModel(
+            url: root, options: .isolated(config: folder.appending(path: "config")))
         await model.load()
         XCTAssertEqual(model.name, "Letters")
         XCTAssertTrue(model.collections.contains { $0.path == "Holding" })

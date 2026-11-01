@@ -9,7 +9,9 @@
 //! `unavailable` (the model is unavailable), `fail` (requests fail), `exit` (it exits when
 //! asked anything after `initialize`), `garbage` (it answers with something that isn't JSON),
 //! `silent` (it answers only `initialize`), `old` (it speaks another protocol version),
-//! `card` (it answers every request for structured output with the same card draft) and
+//! `card` (it answers every request for structured output with the same card draft),
+//! `script` (it answers each request for structured output with the next line of the file
+//! `ECHO_SCRIPT` names, each a JSON value, then with an answer saying it has run out) and
 //! `wide` (its embedding model is `echo-embed-wide`, with four numbers, the fourth counting
 //! digits; with `ECHO_EMBED_FAIL_AFTER=N` set, it fails every embedding request after the
 //! first N, as if stopped part way).
@@ -31,6 +33,7 @@ fn main() {
     let stdin = std::io::stdin();
     let mut stdout = std::io::stdout();
     let mut embedded = 0usize;
+    let mut script = Script::from_env(&mode);
     for line in stdin.lock().lines() {
         let Ok(line) = line else { break };
         let Ok(request) = serde_json::from_str::<Value>(&line) else {
@@ -54,7 +57,13 @@ fn main() {
         if method == "text/embed" {
             embedded += 1;
         }
-        let reply = match answer(method, &request["params"], &mode, embedded) {
+        let scripted = (method == "text/complete")
+            .then(|| script.as_mut().map(Script::next))
+            .flatten();
+        let reply = match scripted.map_or_else(
+            || answer(method, &request["params"], &mode, embedded),
+            |json| Ok(json!({"text": json.to_string(), "json": json, "model": "echo/1"})),
+        ) {
             Ok(result) => json!({"jsonrpc": "2.0", "id": id, "result": result}),
             Err((code, message)) => {
                 json!({"jsonrpc": "2.0", "id": id, "error": {"code": code, "message": message}})
@@ -166,4 +175,35 @@ fn embed(text: &str, query: bool, wide: bool) -> Value {
     }
     let length = counts.iter().map(|n| n * n).sum::<f64>().sqrt();
     json!(counts.iter().map(|n| n / length).collect::<Vec<_>>())
+}
+
+/// The answers `carrel-provider-echo-script` gives, in order, from the file `ECHO_SCRIPT`
+/// names.
+struct Script {
+    answers: std::collections::VecDeque<Value>,
+}
+
+impl Script {
+    fn from_env(mode: &str) -> Option<Self> {
+        if mode != "script" {
+            return None;
+        }
+        let text = std::env::var("ECHO_SCRIPT")
+            .ok()
+            .and_then(|path| std::fs::read_to_string(path).ok())
+            .unwrap_or_default();
+        Some(Self {
+            answers: text
+                .lines()
+                .filter(|l| !l.trim().is_empty())
+                .filter_map(|l| serde_json::from_str(l).ok())
+                .collect(),
+        })
+    }
+
+    fn next(&mut self) -> Value {
+        self.answers.pop_front().unwrap_or_else(|| {
+            json!({"action": "answer", "input": "", "answer": "The script has run out.", "items": [], "passages": [], "suggestions": []})
+        })
+    }
 }

@@ -36,6 +36,11 @@ pub struct Model {
     /// Whether the benchmark recommends it for machines with that much memory
     /// (`docs/bench/`).
     pub recommended: bool,
+    /// Whether the librarian benchmark recommends it as the librarian's model for machines with
+    /// that much memory (`docs/bench/`, "Librarian"). When any installed model that fits is
+    /// recommended, the librarian runs on the largest of those by default
+    /// ([`crate::librarian::model::choose`]).
+    pub librarian: bool,
     /// The same model converted for MLX, for `carrel-provider-mlx` (`docs/design/mlx.md`).
     pub mlx: Option<MlxBuild>,
     /// For an embedding model, how to use it; `None` for a text model.
@@ -179,6 +184,7 @@ pub const CATALOG: &[Model] = &[
         license: "Apache-2.0",
         memory_gb: 8,
         recommended: false,
+        librarian: false,
         mlx: Some(MlxBuild {
             repository: "ibm-granite/granite-4.2-3b-q4-mlx",
             revision: "0c6f39b1827afd5eb2c1c3b13751929857434953",
@@ -229,6 +235,7 @@ pub const CATALOG: &[Model] = &[
         license: "Apache-2.0",
         memory_gb: 8,
         recommended: true,
+        librarian: false,
         mlx: Some(MlxBuild {
             repository: "mlx-community/Qwen3.5-4B-MLX-4bit",
             revision: "32f3e8ecf65426fc3306969496342d504bfa13f3",
@@ -279,6 +286,7 @@ pub const CATALOG: &[Model] = &[
         license: "Apache-2.0",
         memory_gb: 16,
         recommended: true,
+        librarian: false,
         mlx: Some(MlxBuild {
             repository: "mlx-community/gemma-4-e4b-it-4bit",
             revision: "475b9088d29754a3379866cf5aeb6b41acd313c2",
@@ -334,6 +342,7 @@ pub const CATALOG: &[Model] = &[
         license: "Apache-2.0",
         memory_gb: 16,
         recommended: false,
+        librarian: false,
         mlx: Some(MlxBuild {
             repository: "ibm-granite/granite-4.2-8b-q4-mlx",
             revision: "9047f073e46c527f70dade07bb55b1700d728e36",
@@ -384,6 +393,7 @@ pub const CATALOG: &[Model] = &[
         license: "Apache-2.0",
         memory_gb: 16,
         recommended: false,
+        librarian: false,
         mlx: Some(MlxBuild {
             repository: "mlx-community/Qwen3.5-9B-MLX-4bit",
             revision: "938d8919941c6e7efd3c7150eff7fe9d12afa631",
@@ -439,6 +449,7 @@ pub const CATALOG: &[Model] = &[
         license: "Gemma",
         memory_gb: 2,
         recommended: false,
+        librarian: false,
         mlx: Some(MlxBuild {
             repository: "mlx-community/embeddinggemma-300m-8bit",
             revision: "c8316c9e35cf8830541b04d315398c67faa6e497",
@@ -486,6 +497,7 @@ pub const CATALOG: &[Model] = &[
         license: "Apache-2.0",
         memory_gb: 2,
         recommended: false,
+        librarian: false,
         mlx: Some(MlxBuild {
             repository: "mlx-community/Qwen3-Embedding-0.6B-8bit",
             revision: "407ad2329cd30702720aafe83f74a1ba30fdfbca",
@@ -533,6 +545,7 @@ pub const CATALOG: &[Model] = &[
         license: "macOS",
         memory_gb: 1,
         recommended: false,
+        librarian: false,
         mlx: None,
         embedding: Some(Embedding {
             dimensions: 512,

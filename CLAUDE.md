@@ -12,6 +12,16 @@ The board moves itself from pull requests (`.github/scripts/project-status.sh`):
 4. **Say when you're stuck,** in a comment on the issue starting `Blocked:`, with what you need.
 5. **When the plan changes,** for example when part of the issue moves elsewhere, say so in a comment on the issue, so the board and the issue agree.
 
+## Keep CI fast, and dev whole
+
+Many sessions work at once, and macOS runners are few, so:
+
+- **Stay a draft while you work.** A draft PR runs only CI's Linux jobs; macOS and Windows run once you mark it ready. Run the checks below locally before marking it ready, so the full run passes the first time.
+- **One PR for issues that share files.** When you're given several issues that touch the same files, build them on one branch, with every issue in the body ("Closes #1, closes #2").
+- **After merging `origin/dev` in, rerun the checks before pushing,** not just the conflict markers: two branches can each pass and still clash, as two `archive_work` functions once did.
+- **Name things specifically.** A new function, type or test helper gets a name that says what it's for (`index_or_switch_work`, not `archive_work`), so it can't collide with another branch's.
+- **Touch the shared files lightly:** `crates/carrel-cli/src/main.rs` (the command list), `crates/carrel-cli/src/tui/mod.rs` (the interactive mode's dispatch), `crates/carrel-core/src/settings.rs` (the setting keys), `crates/carrel-cli/tests/cli.rs`, `apple/CarrelApp/Carrel/ArchiveWindow*.swift`, `docs/dev/interfaces.md` and the user guide. Add to them in one place, and put the rest of your code in its own files.
+
 ## Branches and pull requests
 
 - `dev` is the default branch. Pull requests squash-merge into it. `main` holds releases only; never open a PR into `main` unless you were asked to prepare a release.
@@ -44,3 +54,12 @@ npx markdownlint-cli2
 ## Designs
 
 A large feature starts as a design in `docs/design/`, ending in five decisions the owner accepts before anything is built. Read the feature's design before starting, and follow its "Building it" steps and issue numbers.
+
+## Every interface is fully capable
+
+Anything Carrel can do should be available from the command line (`carrel`), the interactive mode and the app, on every platform each runs on, wherever the interface and platform make it possible (`docs/dev/architecture.md`, idea 4). Each interface does it in its own way; none is a lesser version of another.
+
+- **A design says how each interface offers the feature,** in a short "In each interface" section, and names any deviation with its reason.
+- **A PR that adds a capability to one interface** either adds it to the others too, or opens an issue for each one left, linked from the PR, in the same milestone unless the owner says otherwise.
+- **Put the logic in `carrel-core`,** never in an interface, so that the others only have to present it.
+- **Deviations are for real limits,** such as a terminal that can't draw images or a model that exists only on Apple devices, with the closest equivalent standing in. "It's easier in this interface" isn't one.

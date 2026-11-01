@@ -1,6 +1,6 @@
 //! Restructure signals (`docs/design/signals.md`): where the archive's structure shows signs of
 //! not fitting what's in it. They're computed from the archive as it is, so they're never stale,
-//! and they're information only until restructure proposals (v1.2) start from them.
+//! and they're information only until restructure proposals (v0.7) start from them.
 
 use std::collections::{BTreeMap, BTreeSet};
 

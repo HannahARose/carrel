@@ -1,6 +1,6 @@
 # Design: the Mac app (v0.5)
 
-Status: accepted 2026-10-31, with the five recommendations below. Issue #84; built in #232, #233, #91 (with its CI, #44), #234, #235, #236, #237 and #238.
+Status: accepted 2026-10-31, with the five recommendations below. Issue #84; built in #232, #233, #91 (with its CI, #44), #234, #235, #236, #256, #237 and #238. Item previews and the grid view (#256) were added on 2026-10-31 at the owner's request, from the design spec's browsing.
 
 ## What this adds
 
@@ -26,8 +26,9 @@ Each screen does what its interactive-mode counterpart does, through the same co
 | Review | Approve, hold, move and reject, one at a time or a selection; batches approve together. The inspector edits the card in place. |
 | Questions | Answer a term in a text field or pick a collection; dismiss. |
 | Active | Checked-out and desk items with their pending entries: return, cancel, open the working copy, approve, combine, edit or drop entries. |
-| Browse | The collection tree in the sidebar, items in the content column. Quick actions: check out, correct, edit, show in Finder. |
+| Browse | The collection tree in the sidebar, items in the content column as a list or a grid of thumbnails, and the chosen item's preview above its card in the inspector. Quick actions: check out, correct, edit, show in Finder. |
 | History | Every change, with undo after a confirmation sheet that says what undoing does and doesn't restore. |
+| Backups | What the interactive mode's Backups screen and `carrel backup` do: set up a repository on a folder or drive (the password asked for once and kept in the keychain by Kopia), the snapshots taken with each change, newest first and read from history so they show without the drive, Snapshot Now, Verify, and restoring an item from the chosen snapshot into a new folder beside the archive. |
 
 - **Search** is the toolbar field (⌘F): the same `carrel search` with its filters, results as a list with the matched passage highlighted. Typing filters as you go over words; meaning search runs when you pause, so typing never waits on the model.
 - **Adding items:** drag files or folders onto the window, or File → Add to Archive… (⌘O). They join the intake queue, as `carrel ingest` adds them, and the agent drafts them.
@@ -69,10 +70,25 @@ Each screen does what its interactive-mode counterpart does, through the same co
 - **Locally,** Xcode builds and runs it with the owner's personal team.
 - **Tests:** CarrelKit's Swift tests against the sample archive; the FFI layer's Rust tests; and UI tests for the review, correction and checkout flows against a temporary archive, run on the self-hosted runner because they need a logged-in session.
 
+## Previews
+
+- **The inspector shows the chosen item** above its card: Quick Look's own preview (`QLPreviewView`) for anything it can show, such as PDFs, images, documents, video, USDZ and STL, and a folder's contents for folders and bundles. A restricted item shows its card only, with its preview one click away.
+- **Browse has a grid view** of thumbnails beside the list, made by `QLThumbnailGenerator` in the background.
+- **Formats Quick Look can't show,** such as STEP, IGES or a 3MF, use the drawings the CAD provider and the 3MF reader already make (`docs/design/models-3d.md`).
+- **Thumbnails and drawings are cached on each device,** in Carrel's `cache.nosync` folder, so each is made once. They're never written into the archive, so the archive stays plain files, and history and backups leave them out.
+- **Previews never hold up the window:** until one is ready, the item shows its kind's icon.
+
+The cache is `_System/cache.nosync/previews/`, made and read through `carrel_core::previews` so the interactive mode's previews (#258) share it:
+
+- **`thumbnails/<key>.png`:** a thumbnail at most 512 pixels on its longer side. The Mac app makes them with `QLThumbnailGenerator`.
+- **`drawings/<key>.png`:** Carrel's own drawing of a STEP, IGES or 3MF file: the first picture a text extractor for its type returns, such as the CAD provider's four views or a 3MF's embedded thumbnail.
+- **`<key>`** is the SHA-256, in hex, of the item's path relative to the archive root, its size and its modification time, so a changed or moved file gets a new preview and an old one is never shown. Previews left behind only take up space, and the whole folder is safe to delete.
+- **Nothing is kept for a restricted item:** its thumbnail isn't made, and its drawing, when its preview is asked for, is a temporary file that's deleted once shown.
+
 ## Not in v0.5
 
-- **Finder integration** (badges, context actions), the share sheet, Quick Look previews of cards, Spotlight and App Intents: v1.3, macOS system integration (#35).
-- **iPad and iPhone,** and iCloud with its `CloudKit` coordinator: v2.0 (#7).
+- **Finder integration** (badges, context actions), the share sheet, Quick Look previews of cards, Spotlight and App Intents: v0.8, macOS system integration (#35).
+- **iPad and iPhone,** and iCloud with its `CloudKit` coordinator: v0.9 (#7).
 - **Signed and notarized builds,** TestFlight: v1.0 (#47).
 - **Kopia bundled inside the app:** backups use the installed Kopia, as the CLI does.
 
@@ -84,13 +100,14 @@ Each screen does what its interactive-mode counterpart does, through the same co
 4. Review, Questions, corrections and editing.
 5. Active, checkout and return, the desk, and History with undo.
 6. Search in the toolbar, and adding items by dragging and from the menu.
-7. The agent: the login item, file-system watching for work sessions, the menu bar list, and the CLI's worker stepping aside.
-8. The user guide's Mac app pages, then the gate.
+7. Item previews and the grid view in Browse (#256), below.
+8. The agent: the login item, file-system watching for work sessions, the menu bar list, and the CLI's worker stepping aside.
+9. The user guide's Mac app pages, then the gate.
 
 ## Decisions (accepted 2026-10-31)
 
 1. **One window per archive, a sidebar of the interactive mode's screens with a content list and an inspector,** each screen doing what its interactive-mode counterpart does through the same core functions. Recommended: the owner already knows the screens, the two can't drift apart, and it's the layout the spec and Apple's guidelines describe. The alternative is a document-style app that opens collections as windows, which suits browsing but not the queues.
 2. **The app calls the core in-process through CarrelKit's UniFFI bindings, and logic the app needs moves into `carrel-core` first.** Recommended: the proof of concept already works this way, it's fast, and the CLI and the app share one implementation. The alternative, running `carrel --json` commands, needs no bindings but parses text and can't stream progress or hold a lease.
 3. **The app runs the same provider helpers the CLI does, bundled, rather than calling Apple's models in-process.** Recommended: the same results from the app and the CLI, crash isolation, and one models folder. The cost is a helper process per provider, which the CLI already pays.
-4. **A login-item agent runs the worker, notices work sessions as they happen and shows the menu bar list, coordinating through the archive's files and writer lease, with no new protocol in v0.5.** Recommended: it's what the spec describes, it reuses coordination that already works between the CLI and its worker, and an XPC channel can be added later. The alternative is no agent until v1.3, with work sessions noticed only while something runs.
+4. **A login-item agent runs the worker, notices work sessions as they happen and shows the menu bar list, coordinating through the archive's files and writer lease, with no new protocol in v0.5.** Recommended: it's what the spec describes, it reuses coordination that already works between the CLI and its worker, and an XPC channel can be added later. The alternative is no agent until v0.8, with work sessions noticed only while something runs.
 5. **macOS 26 and Apple silicon only; ad hoc–signed development builds from CI, with Developer ID signing and notarization left for v1.0.** Recommended: Apple's model needs macOS 26, the XCFramework is Apple silicon only, and keeping signing secrets out of CI until v1.0 keeps the repository simple. The owner runs Xcode builds locally with their personal team in the meantime.

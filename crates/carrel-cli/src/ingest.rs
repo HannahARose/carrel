@@ -103,6 +103,8 @@ pub fn ingest(
                 "A worker is"
             } else if crate::worker::running(&archive)? {
                 "The running worker is"
+            } else if crate::worker::agent(&archive) {
+                "The Carrel agent is"
             } else {
                 "No worker is started (CARREL_WORKER is off); run `carrel worker` to start"
             }
@@ -304,6 +306,9 @@ pub fn queue_status(archive: Option<&Path>) -> Result<Report, Failure> {
         )
         .unwrap(),
         (None, true) => text.push_str("Worker: starting\n"),
+        (None, false) if crate::worker::agent(&archive) => {
+            text.push_str("Worker: the Carrel agent, waiting for work\n");
+        }
         (None, false) => text.push_str("Worker: not running\n"),
     }
     if waiting.is_empty() && stuck.is_empty() {
@@ -341,6 +346,7 @@ pub fn queue_status(archive: Option<&Path>) -> Result<Report, Failure> {
         json!({
             "worker": worker,
             "running": running,
+            "agent": crate::worker::agent(&archive),
             "waiting": waiting,
             "failed": stuck,
         }),

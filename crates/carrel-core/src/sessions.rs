@@ -17,7 +17,7 @@ use crate::archive::Archive;
 use crate::backup::{BackupError, Backups, Snapshot};
 use crate::card::{Id, Snapshots};
 use crate::card_file::CardFile;
-use crate::coordinator::WriterLease;
+use crate::coordinator::{Coordinator as _, DEFAULT_LEASE, DiskLock, Holder, WriterLease};
 use crate::desk::Desk;
 use crate::detect::{Rules, is_ignored};
 use crate::entries::HistoryEntry;
@@ -221,7 +221,14 @@ impl Scanned {
     /// The file it's kept in for the archive `archive_id`, in Carrel's folder on this device.
     #[must_use]
     pub fn path(archive_id: &str) -> Option<PathBuf> {
-        crate::local::config_dir().map(|d| d.join("sessions").join(format!("{archive_id}.json")))
+        crate::local::config_dir().map(|d| Self::path_in(&d, archive_id))
+    }
+
+    /// The file it's kept in for the archive `archive_id`, in the configuration folder
+    /// `config`.
+    #[must_use]
+    pub fn path_in(config: &Path, archive_id: &str) -> PathBuf {
+        config.join("sessions").join(format!("{archive_id}.json"))
     }
 
     /// The saved state, or none yet.
@@ -331,12 +338,14 @@ pub enum SessionError {
     Archive(String),
     /// The history couldn't be written.
     History(HistoryError),
+    /// The request doesn't make sense, such as an entry that isn't pending.
+    Invalid(String),
 }
 
 impl std::fmt::Display for SessionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Archive(why) => f.write_str(why),
+            Self::Archive(why) | Self::Invalid(why) => f.write_str(why),
             Self::History(e) => write!(f, "{e}"),
         }
     }
@@ -396,12 +405,26 @@ fn tracked(archive: &Archive, device: Id, now: SystemTime) -> Result<Vec<Tracked
 ///
 /// [`SessionError`] if the archive can't be read or the cards and history written.
 pub fn record(archive: &Archive, lease: &WriterLease) -> Result<Recorded, SessionError> {
+    record_in(archive, lease, Scanned::path(&archive.doc().id.to_string()))
+}
+
+/// [`record`], keeping what's been looked at in `state_path` rather than in Carrel's folder
+/// on this device: for a caller with a configuration folder of its own, such as the Mac
+/// app's. With `None`, everything is looked at as if for the first time and nothing is kept.
+///
+/// # Errors
+///
+/// [`SessionError`] if the archive can't be read or the cards and history written.
+pub fn record_in(
+    archive: &Archive,
+    lease: &WriterLease,
+    state_path: Option<PathBuf>,
+) -> Result<Recorded, SessionError> {
     let fail = |e: &dyn std::fmt::Display| SessionError::Archive(e.to_string());
     let device = lease.info().device;
     let rules = archive.rules().map_err(|e| fail(&e))?;
     let idle = Duration::from_mins(u64::from(archive.settings().sessions.idle_minutes));
     let now = SystemTime::now();
-    let state_path = Scanned::path(&archive.doc().id.to_string());
     let mut scanned = state_path.as_deref().map(Scanned::load).unwrap_or_default();
     let mut recorded = Recorded::default();
     for item in tracked(archive, device, now)? {
@@ -807,4 +830,187 @@ mod tests {
             "rounded up, so the change isn't found again"
         );
     }
+}
+
+/// What to do with an item's pending history entries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Decision {
+    /// Approve them.
+    Approve,
+    /// Drop them.
+    Drop,
+    /// Combine them into one, still pending.
+    Combine,
+}
+
+/// A decision on pending entries, made: what the history says, and its commit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Decided {
+    /// The change's summary.
+    pub summary: String,
+    /// How many entries it concerned.
+    pub entries: usize,
+    /// The history commit.
+    pub commit: Option<String>,
+}
+
+/// `1 history entry`, `2 history entries`.
+#[must_use]
+pub fn entries(n: usize) -> String {
+    if n == 1 {
+        "1 history entry".to_owned()
+    } else {
+        format!("{n} history entries")
+    }
+}
+
+fn read_card(card: &Path) -> Result<CardFile, SessionError> {
+    let fail =
+        |e: &dyn std::fmt::Display| SessionError::Archive(format!("{}: {e}", card.display()));
+    let text = std::fs::read_to_string(card).map_err(|e| fail(&e))?;
+    CardFile::parse(&text).map_err(|e| fail(&e))
+}
+
+/// Where pending entry `n` (numbered from 1, as `carrel sessions` and the Active screen show
+/// them) is among `pending`.
+fn position(pending: &[usize], n: usize) -> Result<usize, SessionError> {
+    pending.get(n.wrapping_sub(1)).copied().ok_or_else(|| {
+        SessionError::Invalid(format!(
+            "there's no pending entry {n}; `carrel sessions` lists them"
+        ))
+    })
+}
+
+/// Approves, drops or combines the pending entries numbered `numbers` (from 1; none means all
+/// of them) on the card at `card`, of the item `item`, as one `session` change made as
+/// `holder`.
+///
+/// # Errors
+///
+/// [`SessionError::Invalid`] for an entry that isn't there or no pending entries, or an error
+/// reading or writing the card or the history.
+pub fn decide(
+    archive: &Archive,
+    card: &Path,
+    item: Id,
+    numbers: &[usize],
+    decision: Decision,
+    holder: Holder,
+) -> Result<Decided, SessionError> {
+    let mut file = read_card(card)?;
+    let invalid = |e: &dyn std::fmt::Display| SessionError::Invalid(e.to_string());
+    let mut log = file.history().map_err(|e| invalid(&e))?;
+    let pending = log.pending();
+    let chosen: Vec<usize> = if numbers.is_empty() {
+        pending.clone()
+    } else {
+        numbers
+            .iter()
+            .map(|&n| position(&pending, n))
+            .collect::<Result<_, _>>()?
+    };
+    if chosen.is_empty() {
+        return Err(SessionError::Invalid("no pending entries to decide".into()));
+    }
+    let title = file.card().title.clone();
+    let summary = match decision {
+        Decision::Approve => {
+            for &i in &chosen {
+                log.approve(i).map_err(|e| invalid(&e))?;
+            }
+            format!("Approve {} of “{title}”", entries(chosen.len()))
+        }
+        Decision::Drop => {
+            // From the last, so earlier positions stay right.
+            let mut sorted = chosen.clone();
+            sorted.sort_unstable();
+            for &i in sorted.iter().rev() {
+                log.drop_entry(i).map_err(|e| invalid(&e))?;
+            }
+            format!("Drop {} of “{title}”", entries(chosen.len()))
+        }
+        Decision::Combine => {
+            log.combine(&chosen).map_err(|e| invalid(&e))?;
+            format!("Combine {} of “{title}”", entries(chosen.len()))
+        }
+    };
+    file.set_history(&log).map_err(|e| invalid(&e))?;
+    let commit = write_and_commit(archive, card, &file, item, &summary, holder)?;
+    Ok(Decided {
+        summary,
+        entries: chosen.len(),
+        commit,
+    })
+}
+
+/// Replaces the text of the pending entry `was` on the card at `card`, of the item `item`,
+/// with `text`, still pending, as one change made as `holder`. The card is read again first,
+/// so changes made meanwhile are kept. `None` when the text is the same.
+///
+/// # Errors
+///
+/// [`SessionError::Invalid`] if the entry is no longer pending as it was, or the text would
+/// break the history section; or an error reading or writing.
+pub fn edit_entry(
+    archive: &Archive,
+    card: &Path,
+    item: Id,
+    was: &HistoryEntry,
+    text: &str,
+    holder: Holder,
+) -> Result<Option<Decided>, SessionError> {
+    let mut file = read_card(card)?;
+    let invalid = |e: &dyn std::fmt::Display| SessionError::Invalid(e.to_string());
+    let mut log = file.history().map_err(|e| invalid(&e))?;
+    let Some(i) = log.pending().into_iter().find(|&i| log.entries[i] == *was) else {
+        return Err(SessionError::Invalid(
+            "the entry changed while it was being edited, so nothing was saved".into(),
+        ));
+    };
+    if !log.edit(i, text).map_err(|e| invalid(&e))? {
+        return Ok(None);
+    }
+    file.set_history(&log).map_err(|e| invalid(&e))?;
+    let summary = format!("Edit a history entry of “{}”", file.card().title);
+    let commit = write_and_commit(archive, card, &file, item, &summary, holder)?;
+    Ok(Some(Decided {
+        summary,
+        entries: 1,
+        commit,
+    }))
+}
+
+/// Writes `file` to `path` and commits it as a `session` change, holding the writer lease.
+fn write_and_commit(
+    archive: &Archive,
+    path: &Path,
+    file: &CardFile,
+    item: Id,
+    summary: &str,
+    holder: Holder,
+) -> Result<Option<String>, SessionError> {
+    let fail = |e: &dyn std::fmt::Display| SessionError::Archive(e.to_string());
+    let text = file.to_text().map_err(|e| fail(&e))?;
+    let lease = DiskLock::for_archive(archive)
+        .acquire(holder, "sessions", DEFAULT_LEASE)
+        .map_err(|e| fail(&e))?;
+    let result = (|| -> Result<Option<String>, SessionError> {
+        let temp = path.with_extension("md.tmp-sessions");
+        std::fs::write(&temp, text).map_err(|e| fail(&e))?;
+        std::fs::rename(&temp, path).map_err(|e| fail(&e))?;
+        let mut change = Change::new(
+            Operation::Session,
+            summary,
+            lease.info().person,
+            lease.info().device,
+        );
+        change.items = vec![item];
+        // The Journal lists approved entries, so it follows the cards.
+        crate::active::regenerate(archive).map_err(|e| fail(&e))?;
+        History::open(archive)
+            .and_then(|h| h.commit(archive, &change, &lease))
+            .map_err(SessionError::History)
+    })();
+    lease.release().map_err(|e| fail(&e))?;
+    result
 }

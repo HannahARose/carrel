@@ -9,6 +9,7 @@
 //! | Module | What it handles | FORMAT.md |
 //! | --- | --- | --- |
 //! | [`actions`] | The owner's decisions on proposals and questions, shared by every interface | §7.9 |
+//! | [`agent`] | The background agent: claiming archives, noticing changes, scheduling jobs, and starting at log-in | `docs/design/mac-app.md` |
 //! | [`archive`] | Creating, opening and finding archives; listing collections | §3, §7.1, §12 |
 //! | [`documents`] | `ARCHIVE.md`, `_collection.md`, `archive.json` and `settings.json` | §6.2, §6.3, §7.1, §7.2 |
 //! | [`card`] | Card frontmatter as typed fields, and checking it conforms | §5 |
@@ -16,6 +17,7 @@
 //! | [`frontmatter`] | Splitting any Markdown document into frontmatter and body | §2.2 |
 //! | [`sections`] | Managed sections, and comparing text while ignoring table padding | §5.3 |
 //! | [`listing`] | The generated listings: collections' contents and `ARCHIVE.md`'s collections | §6.2, §6.3 |
+//! | [`discover`] | Discovery: on this day, wander, the timeline, the map, activity and resurfacing | `docs/design/librarian.md` |
 //! | [`detect`] | Item kinds, sealing, and regenerable folders | §4, §7.5 |
 //! | [`compressed`] | Reading inside compressed files, and expanding them | §5.2, `docs/design/compressed.md` |
 //! | [`manifest`] | Checksums, folder manifests and their diffs | §2.6, §7.7 |
@@ -27,8 +29,10 @@
 //! | [`ingest`] | Ingest: intake, text, cards, routing, sensitivity, and filing approved items | `docs/design/ingest.md` |
 //! | [`review`] | The review queue: proposals to file items, waiting for the owner | §7.9 |
 //! | [`search`] | Search: the word index, the text cache, filters and results | §7.11, §7.12, `docs/design/search.md` |
+//! | [`librarian`] | The librarian: a conversation over the archive through read-only tools, and its optional undoable changes | §8.2, §9.3, `docs/design/librarian.md` |
 //! | [`questions`] | Questions for the owner, and the glossary their answers teach | §7.3, §7.9 |
 //! | [`local`] | Where this device keeps its own data: configuration and models | none |
+//! | [`previews`] | Thumbnails and drawings of items, cached on this device | `docs/design/mac-app.md` |
 //! | [`providers`] | Text models and text extraction from providers, native or portable | `docs/providers.md` |
 //! | [`status`] | What the Status screen shows: counts, problems, Recent and suggestions | none |
 //! | [`worker`] | The worker loop: drafting the intake queue, then catching up the embedding index | `docs/design/tui-ingest.md` |
@@ -52,6 +56,7 @@
 
 pub mod actions;
 pub mod active;
+pub mod agent;
 pub mod archive;
 pub mod backup;
 pub mod bench;
@@ -64,7 +69,9 @@ pub mod coordinator;
 pub mod correct;
 pub mod desk;
 pub mod detect;
+pub mod discover;
 pub mod documents;
+pub mod edit;
 pub mod entries;
 pub mod finder;
 pub mod formats;
@@ -73,12 +80,14 @@ pub mod history;
 pub mod index;
 pub mod ingest;
 pub mod intake;
+pub mod librarian;
 pub mod listing;
 pub mod local;
 pub mod manifest;
 pub mod mirrors;
 pub mod models;
 pub mod names;
+pub mod previews;
 pub mod providers;
 pub mod questions;
 pub mod rename;

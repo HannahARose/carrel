@@ -1,77 +1,36 @@
-// Settings (⌘,): what's set today, read only. Choosing models, downloads, backups and the
-// agent become editable as CarrelKit gains those operations (#233) and the agent arrives (#237).
+// Settings (⌘,): this Mac's and the archive's settings, the models, the embedding index, the
+// providers and file types, backups, and the agent's switch. The archive's are those of the
+// window last in front.
 
 import AppKit
+import ServiceManagement
 import SwiftUI
 
 struct SettingsView: View {
     @Environment(AppModel.self) private var app
     @State private var settings: LocalSettings?
+    @State private var model: SettingsModel?
 
     var body: some View {
         TabView {
-            Tab("Models", systemImage: "cpu") { ModelsTab(settings: settings) }
-            Tab("Search", systemImage: "magnifyingglass") { SearchTab(settings: settings) }
+            Tab("General", systemImage: "gearshape") { GeneralTab(model: model) }
+            Tab("Models", systemImage: "cpu") {
+                ModelsTab(model: model, folder: settings?.modelsFolder)
+            }
+            Tab("Search", systemImage: "magnifyingglass") { SearchTab(model: model) }
+            Tab("Providers", systemImage: "puzzlepiece.extension") { ProvidersTab(model: model) }
             Tab("Backups", systemImage: "externaldrive.badge.timemachine") {
                 BackupsTab(settings: settings)
             }
             Tab("Agent", systemImage: "person.badge.clock") { AgentTab() }
         }
-        .frame(width: 520, height: 380)
+        .frame(width: 640, height: 540)
         .task(id: app.activeArchive) {
             let archive = app.activeArchive
             settings = await Task.detached { LocalSettings.read(archive: archive) }.value
+            model = archive.map { SettingsModel(url: $0) }
+            await model?.load()
         }
-    }
-}
-
-private struct ModelsTab: View {
-    let settings: LocalSettings?
-
-    var body: some View {
-        Form {
-            Section("Drafting") {
-                LabeledContent("Drafts cards", value: settings?.draftingModel ?? "Best available")
-                LabeledContent(
-                    "Asked again", value: settings?.secondModel ?? "Recommended, if installed")
-            }
-            Section("Installed") {
-                if let settings, !settings.installedModels.isEmpty {
-                    ForEach(settings.installedModels, id: \.self) { Text($0) }
-                } else {
-                    Text("No models downloaded yet.").foregroundStyle(.secondary)
-                }
-                if let folder = settings?.modelsFolder {
-                    RevealButton(title: "Show Models Folder", url: folder)
-                }
-            }
-            Section {
-                Text(
-                    "Choosing models and downloading them come to the app in a later build. Until then, use `carrel models`."
-                )
-                .foregroundStyle(.secondary)
-            }
-        }
-        .formStyle(.grouped)
-    }
-}
-
-private struct SearchTab: View {
-    let settings: LocalSettings?
-
-    var body: some View {
-        Form {
-            if let archive = settings?.archive {
-                Section("Embedding model for “\(archive.name)”") {
-                    LabeledContent("Model", value: archive.embeddingModel ?? "Not chosen")
-                    Text("Every device searches this archive with the same embedding model.")
-                        .foregroundStyle(.secondary)
-                }
-            } else {
-                Text("Open an archive to see its embedding model.").foregroundStyle(.secondary)
-            }
-        }
-        .formStyle(.grouped)
     }
 }
 
@@ -107,18 +66,39 @@ private struct BackupsTab: View {
 }
 
 private struct AgentTab: View {
+    @State private var loginItem = AgentLoginItem()
+
     var body: some View {
         Form {
             Section {
-                Toggle("Run the Carrel agent at login", isOn: .constant(false))
-                    .disabled(true)
+                Toggle(
+                    "Run the Carrel agent at login",
+                    isOn: Binding(get: { loginItem.isOn }, set: { loginItem.set($0) }))
                 Text(
-                    "The agent drafts new items, notices work sessions as they happen and keeps search current while the app is closed. It arrives in a later build."
+                    "The agent drafts new items, notices work sessions as they happen, keeps search current and takes scheduled backups, while the app is closed too. Its menu bar list shows what’s checked out and on the desk."
                 )
                 .foregroundStyle(.secondary)
+                if !loginItem.isOn {
+                    Text(
+                        "With it off, Carrel drafts new items while the app is open, as the command line does, and work sessions are noticed when the app or the command line runs."
+                    )
+                    .foregroundStyle(.secondary)
+                }
+            }
+            if loginItem.needsApproval {
+                Section {
+                    Text("Allow the Carrel agent in System Settings → General → Login Items.")
+                    Button("Open Login Items Settings") {
+                        SMAppService.openSystemSettingsLoginItems()
+                    }
+                }
+            }
+            if let problem = loginItem.problem {
+                Section { Text(problem).foregroundStyle(.red) }
             }
         }
         .formStyle(.grouped)
+        .onAppear { loginItem.refresh() }
     }
 }
 

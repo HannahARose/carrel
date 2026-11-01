@@ -1,12 +1,17 @@
 //! The interactive mode (`docs/design/interactive.md`): `carrel` in a terminal, or
 //! `carrel tui`. Everything it does is also a command.
 
+mod actions;
 mod active;
+mod agent;
 mod app;
+mod archives;
 mod backups;
 mod browser;
+mod embedding;
 mod intake;
 mod item;
+mod preview;
 mod review;
 mod screens;
 mod search;
@@ -37,11 +42,25 @@ use carrel_core::card::Id;
 /// Work run in the background, with what it reports.
 type Work = Box<dyn FnOnce() -> Result<Report, Failure> + Send>;
 
+/// `text`'s lines, as a report screen shows them.
+fn lines_of(text: &str) -> Vec<String> {
+    text.lines().map(str::to_owned).collect()
+}
+
 /// Opens the interactive mode on the archive commands would use, and returns when the owner
 /// quits. The terminal is restored however it ends.
 pub fn run(archive: Option<&Path>) -> Result<Report, Failure> {
     let archive = locate(archive)?;
+    // Noted among the recent archives, so the switcher can come back to it.
+    if let Ok(root) = std::fs::canonicalize(archive.root()) {
+        let mut prefs = crate::config::Prefs::load()?;
+        prefs.note_archive(&root);
+        prefs.save()?;
+    }
     let mut app = App::new(archive)?;
+    app.previews = preview::Previews::detected();
+    // The item shown first gets its preview too.
+    app.load_card();
     let theme = ui::Theme::from_env();
     let mut terminal = enter();
     let result = event_loop(&mut terminal, &mut app, theme);
@@ -115,6 +134,34 @@ impl SessionLook {
     }
 }
 
+/// Takes the terminal back after a program that needed it to itself, such as the editor,
+/// which leaves no picture behind.
+fn reenter(terminal: &mut ratatui::DefaultTerminal, painter: &mut preview::Painter) {
+    *terminal = enter();
+    *painter = preview::Painter::default();
+}
+
+/// Draws the screen, then the chosen item's picture, if it has one.
+fn draw(
+    terminal: &mut ratatui::DefaultTerminal,
+    app: &App,
+    theme: ui::Theme,
+    painter: &mut preview::Painter,
+) -> Result<(), Failure> {
+    terminal
+        .draw(|frame| ui::draw(frame, app, theme))
+        .map_err(|e| Failure::new(format!("couldn't draw: {e}")))?;
+    if painter.paint(app) {
+        // A picture was taken away: everything is drawn again, and the next one put in.
+        let _ = terminal.clear();
+        terminal
+            .draw(|frame| ui::draw(frame, app, theme))
+            .map_err(|e| Failure::new(format!("couldn't draw: {e}")))?;
+        painter.paint(app);
+    }
+    Ok(())
+}
+
 fn event_loop(
     terminal: &mut ratatui::DefaultTerminal,
     app: &mut App,
@@ -125,8 +172,10 @@ fn event_loop(
     let mut preparing: Option<Preparing> = None;
     let mut checked = std::time::Instant::now();
     let mut sessions = SessionLook::default();
+    let mut painter = preview::Painter::default();
     while !app.quit {
         sessions.tick(app);
+        app.previews.poll();
         // The worker runs in another process; see what it has done about once a second.
         if checked.elapsed() >= Duration::from_secs(1) {
             checked = std::time::Instant::now();
@@ -150,11 +199,14 @@ fn event_loop(
         {
             running = None;
             app.busy = None;
+            if let Ok(mut progress) = app.progress.lock() {
+                *progress = None;
+            }
             finished(app, result);
+            // After a download, Settings finds what the providers offer again.
+            app.settings_shown();
         }
-        terminal
-            .draw(|frame| ui::draw(frame, app, theme))
-            .map_err(|e| Failure::new(format!("couldn't draw: {e}")))?;
+        draw(terminal, app, theme, &mut painter)?;
         if !event::poll(Duration::from_millis(100))
             .map_err(|e| Failure::new(format!("couldn't read the terminal: {e}")))?
         {
@@ -175,7 +227,7 @@ fn event_loop(
                 // The editor needs the terminal to itself.
                 leave();
                 let result = crate::review::edit(Some(app.archive.root()), &id.to_string());
-                *terminal = enter();
+                reenter(terminal, &mut painter);
                 finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
             }
             Some(Effect::Open(path)) => {
@@ -192,7 +244,7 @@ fn event_loop(
                 // The editor needs the terminal to itself.
                 leave();
                 let result = crate::edit::edit(Some(app.archive.root()), &card);
-                *terminal = enter();
+                reenter(terminal, &mut painter);
                 changed(app.archive.root(), &result);
                 finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
             }
@@ -200,14 +252,14 @@ fn event_loop(
                 // The editor needs the terminal to itself.
                 leave();
                 let result = crate::sessions::edit(Some(app.archive.root()), &item, number);
-                *terminal = enter();
+                reenter(terminal, &mut painter);
                 finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
             }
             Some(Effect::Pick(words)) => {
                 // The picker needs the terminal to itself, as the editor does.
                 leave();
                 let picked = crate::picker::run(&words, &app.start_folder);
-                *terminal = enter();
+                reenter(terminal, &mut painter);
                 picked_files(app, picked);
             }
             Some(effect) if running.is_none() => {
@@ -220,6 +272,30 @@ fn event_loop(
         }
     }
     Ok(())
+}
+
+/// Skips or dismisses a question, as `effect` says.
+fn settle_question(root: &Path, effect: &Effect) -> Result<String, String> {
+    let result = match effect {
+        Effect::Skip(id) => crate::questions::skip(Some(root), &id.to_string()),
+        Effect::Dismiss(id) => crate::questions::dismiss(Some(root), &id.to_string()),
+        _ => return Ok(String::new()),
+    };
+    result.map(|r| r.text).map_err(|Failure(e)| e)
+}
+
+/// Answering a question, in the background: a term's answer queues its items to be drafted
+/// again by the worker, and a sender's adds a routing rule if the owner said yes (`learn`).
+fn answer_work(root: PathBuf, id: Id, answer: String, learn: bool) -> (String, Work) {
+    let id = id.to_string();
+    let options = crate::questions::Options {
+        learn,
+        ..crate::questions::Options::default()
+    };
+    (
+        "Answering…".into(),
+        Box::new(move || crate::questions::answer(Some(&root), &id, &[answer], options)),
+    )
 }
 
 /// Shows how work went and reads everything again.
@@ -247,7 +323,11 @@ type Preparing = Receiver<Result<crate::correct::Prepared, String>>;
 /// pop-up, and adding the fact it stated to the glossary.
 fn correction(app: &mut App, step: Step, preparing: &mut Option<Preparing>) {
     match step {
-        Step::Work { target, words } => {
+        Step::Work {
+            target,
+            words,
+            answering,
+        } => {
             // A model takes seconds, so it works in the background; the pop-up follows.
             let root = app.archive.root().to_owned();
             let (send, receive) = std::sync::mpsc::channel();
@@ -261,6 +341,10 @@ fn correction(app: &mut App, step: Step, preparing: &mut Option<Preparing>) {
                         screens::Correcting::Item(card) => {
                             crate::correct::prepare_filed(&archive, card, &words)
                         }
+                    })
+                    .map(|mut prepared| {
+                        prepared.answering = answering;
+                        prepared
                     });
                 let _ = send.send(result.map_err(|Failure(e)| e));
             });
@@ -363,9 +447,13 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
         | Effect::Pick(_)
         | Effect::Correction(_)
         | Effect::Open(_) => return None,
-        Effect::Dismiss(id) => {
-            let result = crate::questions::dismiss(Some(&root), &id.to_string());
-            finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
+        effect @ (Effect::Dismiss(_) | Effect::Skip(_)) => {
+            finished(app, settle_question(&root, &effect));
+            return None;
+        }
+        Effect::Agent(change) => {
+            let result = app.change_agent(&change);
+            finished(app, result);
             return None;
         }
         Effect::SetSetting { key, value } => {
@@ -376,10 +464,10 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
         effect @ (Effect::Return(_) | Effect::CancelCheckout(_) | Effect::Entries { .. }) => {
             active_work(root, effect)
         }
-        Effect::Download(name) => (
-            format!("Downloading {name}…"),
-            Box::new(move || crate::models::download_quietly(&name)),
-        ),
+        effect @ (Effect::Download(_)
+        | Effect::Index(_)
+        | Effect::OpenArchive(_)
+        | Effect::CreateArchive(_)) => switch_or_index_work(app, root, effect)?,
         Effect::Queue { paths, options } => {
             let result = queue(&root, &paths, options);
             finished(app, result.map_err(|Failure(e)| e));
@@ -395,14 +483,7 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
             finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
             return None;
         }
-        Effect::Answer { id, answer } => {
-            // A term's answer queues its items to be drafted again by the worker.
-            let id = id.to_string();
-            (
-                "Answering…".into(),
-                Box::new(move || crate::questions::answer(Some(&root), &id, &[answer])),
-            )
-        }
+        Effect::Answer { id, answer, learn } => answer_work(root, id, answer, learn),
         Effect::Decide {
             ids: chosen,
             holding,
@@ -420,6 +501,13 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
             }),
         ),
         Effect::Keep { id, kept, target } => keep(root, id, kept, target),
+        effect @ (Effect::Checkout { .. }
+        | Effect::DeskAdd(_)
+        | Effect::DeskRemove { .. }
+        | Effect::DeskArchive(_)
+        | Effect::NewCollection(_)
+        | Effect::Rename { .. }
+        | Effect::Expand { .. }) => archive_work(root, effect),
     };
     app.busy = Some(busy);
     let (send, receive) = std::sync::mpsc::channel();
@@ -430,6 +518,43 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
     Some(receive)
 }
 
+/// The work for downloading a model, the index and switching archives: downloads and the
+/// index's in the background, and switching at once, since the app is replaced.
+fn switch_or_index_work(app: &mut App, root: PathBuf, effect: Effect) -> Option<(String, Work)> {
+    match effect {
+        Effect::Download(name) => {
+            // What the providers offer changes once it's here.
+            app.here = None;
+            Some((
+                format!("Downloading {name}…"),
+                Box::new(move || crate::models::download_quietly(&name)),
+            ))
+        }
+        Effect::Index(work) => Some(embedding::index_work(
+            root,
+            work,
+            app.progress.clone(),
+            Box::new(|| crate::providers::registry().0),
+            Box::new(|| {
+                Ok(crate::commands::holder(
+                    &crate::config::Identity::load_or_create()?,
+                ))
+            }),
+        )),
+        Effect::OpenArchive(path) => {
+            let result = app.switch_archive(&path);
+            app.message = Some(result.unwrap_or_else(|Failure(e)| e));
+            None
+        }
+        Effect::CreateArchive(path) => {
+            let result = app.create_archive(&path);
+            app.message = Some(result.unwrap_or_else(|Failure(e)| e));
+            None
+        }
+        _ => None,
+    }
+}
+
 /// Plans what the picker chose; if the picker couldn't run, says why and opens the built-in
 /// browser instead. Returns the folder picked from, to start in next time.
 fn picked_files(app: &mut App, picked: Result<Vec<PathBuf>, Failure>) {
@@ -437,6 +562,7 @@ fn picked_files(app: &mut App, picked: Result<Vec<PathBuf>, Failure>) {
         Ok(paths) if paths.is_empty() => {
             app.message = Some("Nothing chosen".into());
             app.picking = app::Picking::Ingest;
+            app.checking_out = None;
         }
         Ok(paths) => {
             if let Some(folder) = paths[0].parent().filter(|f| f.is_dir()) {
@@ -531,6 +657,58 @@ fn active_work(root: PathBuf, effect: Effect) -> (String, Work) {
     }
 }
 
+/// Work on the archive at the path it's given.
+type ArchiveWork = Box<dyn FnOnce(&Path) -> Result<Report, Failure> + Send>;
+
+/// The work for checking out, the desk, and Browse's actions, which `carrel checkout`,
+/// `carrel desk`, `carrel collection new`, `carrel rename` and `carrel expand` do. Each changes
+/// the archive, so a worker brings the search index up to date after it.
+fn archive_work(root: PathBuf, effect: Effect) -> (String, Work) {
+    let (busy, work): (&str, ArchiveWork) = match effect {
+        Effect::Checkout { item, to, due } => (
+            "Checking it out…",
+            Box::new(move |root| {
+                crate::checkout::checkout(Some(root), &item, Some(&to), due.as_deref())
+            }),
+        ),
+        Effect::DeskAdd(path) => (
+            "Putting it on the desk and drafting its card…",
+            Box::new(move |root| crate::desk::add_item(Some(root), &path, None, None)),
+        ),
+        Effect::DeskRemove { path, delete_card } => (
+            "Taking it off the desk…",
+            Box::new(move |root| crate::desk::remove_item(Some(root), &path, delete_card)),
+        ),
+        Effect::DeskArchive(path) => (
+            "Queueing it for the archive…",
+            Box::new(move |root| crate::desk::archive_desk_item(Some(root), &path)),
+        ),
+        Effect::NewCollection(new) => (
+            "Creating the collection…",
+            Box::new(move |root| {
+                crate::commands::collection_new(Some(root), &new.path, new.description, &new.tags)
+            }),
+        ),
+        Effect::Rename { item, new_name } => (
+            "Renaming it…",
+            Box::new(move |root| crate::commands::rename(Some(root), &item, Some(&new_name))),
+        ),
+        Effect::Expand { item, anyway } => (
+            "Expanding it…",
+            Box::new(move |root| crate::expand::expand(Some(root), &item, anyway)),
+        ),
+        _ => unreachable!("only the archive's actions come here"),
+    };
+    (
+        busy.into(),
+        Box::new(move || {
+            let result = work(&root);
+            changed(&root, &result);
+            result
+        }),
+    )
+}
+
 /// Opens `path` in the system's own app for it (Finder, a file manager, or what the file's
 /// type opens with), leaving the interactive mode where it is.
 fn open(path: &Path) -> Result<(), Failure> {
@@ -623,7 +801,7 @@ mod tests {
     use super::item::Pane;
     use super::ui;
 
-    fn copy_dir(from: &Path, to: &Path) {
+    pub(super) fn copy_dir(from: &Path, to: &Path) {
         std::fs::create_dir_all(to).unwrap();
         for entry in std::fs::read_dir(from).unwrap() {
             let entry = entry.unwrap();
@@ -636,7 +814,7 @@ mod tests {
         }
     }
 
-    fn sample(with_history: bool) -> (tempfile::TempDir, App) {
+    pub(super) fn sample(with_history: bool) -> (tempfile::TempDir, App) {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().join("archive");
         copy_dir(
@@ -658,7 +836,7 @@ mod tests {
         (dir, App::new(archive).unwrap())
     }
 
-    fn screen(app: &App, width: u16, height: u16) -> String {
+    pub(super) fn screen(app: &App, width: u16, height: u16) -> String {
         let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
         terminal
             .draw(|frame| ui::draw(frame, app, ui::Theme::plain()))
@@ -676,7 +854,7 @@ mod tests {
             .join("\n")
     }
 
-    fn key(code: KeyCode) -> KeyEvent {
+    pub(super) fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
     }
 
@@ -1167,6 +1345,7 @@ mod tests {
             Some(Effect::Correction(super::app::Step::Work {
                 target: super::screens::Correcting::Proposal(first),
                 words: "created: 2019-03-31".into(),
+                answering: None,
             }))
         );
         assert!(app.keys().iter().any(|(k, v)| *k == "c" && *v == "correct"));
@@ -1184,6 +1363,7 @@ mod tests {
             Some(Effect::Correction(super::app::Step::Work {
                 target: super::screens::Correcting::Item(card),
                 words: "x".into(),
+                answering: None,
             }))
         );
     }
@@ -1387,7 +1567,7 @@ mod tests {
 
     /// A unit vector of 32 numbers counting `text`'s words, as the fake embedder in the
     /// core's index tests makes them, so texts sharing words are near each other.
-    fn word_vector(text: &str) -> Vec<f32> {
+    pub(super) fn word_vector(text: &str) -> Vec<f32> {
         let mut v = [0.0f32; 32];
         for word in text
             .split(|c: char| !c.is_alphanumeric())
@@ -1472,7 +1652,11 @@ mod tests {
         let related = &app.item.related;
         assert!(matches!(&related[0].relation, Relation::Link(how) if how == "part-of"));
         let near: Vec<_> = related[1..].iter().collect();
-        assert_eq!(near.len(), crate::related::NEAREST, "{related:?}");
+        assert_eq!(
+            near.len(),
+            carrel_core::index::related::NEAREST,
+            "{related:?}"
+        );
         assert!(near.iter().all(|r| matches!(r.relation, Relation::Near(_))));
         assert!(
             near.iter().all(|r| {
@@ -1511,22 +1695,15 @@ mod tests {
 
     #[test]
     fn questions_are_answered_in_place_or_dismissed() {
-        use carrel_core::questions::{QuestionEntry, QuestionKind, QuestionMarker, QuestionQueue};
+        use carrel_core::questions::{QuestionEntry, QuestionKind, QuestionQueue, Suggestion};
         let (_dir, app) = sample(false);
         let proposal = app.queue[0].id;
         let queue = QuestionQueue::of(&app.archive);
-        let question = |kind, subject: &str, question: &str, choices: Vec<String>| QuestionEntry {
-            carrel: QuestionMarker::Question,
-            format: carrel_core::FORMAT_VERSION,
-            id: Id::new_v7(),
-            batch: Id::new_v7(),
-            created: carrel_core::card::DateOrTime("2026-10-30".into()),
-            kind,
-            subject: subject.into(),
-            question: question.into(),
-            items: vec![proposal],
-            choices,
-            extra: carrel_core::card::Extra::new(),
+        let question = |kind, subject: &str, question: &str, choices: Vec<String>| {
+            let mut entry = QuestionEntry::new(kind, subject, question);
+            entry.items = vec![proposal];
+            entry.choices = choices;
+            entry
         };
         let term = question(QuestionKind::Term, "ABX", "What is “ABX”?", Vec::new());
         let mut place = question(
@@ -1535,17 +1712,38 @@ mod tests {
             "Which collection do items about “lamp” belong in?",
             vec!["Projects".into(), "Projects/Hardware".into()],
         );
-        place.items.push(Id::new_v7());
+        place.suggestions = vec![Suggestion::new(
+            "Projects/Hardware",
+            Some("where one was going".into()),
+        )];
         queue.save(&term).unwrap();
         queue.save(&place).unwrap();
         let mut app = App::new(app.archive.clone()).unwrap();
         app.key(key(KeyCode::Char('4')));
         let text = screen(&app, 160, 30);
         assert!(
-            text.contains("Which collection do items about “lamp” belong in?  (2 items)"),
+            text.contains("Which collection do items about “lamp” belong in?  (1 item)"),
             "{text}"
         );
-        assert_eq!(app.asked[0].id, place.id, "most items first");
+        assert_eq!(
+            app.asked[0].id, term.id,
+            "as worth answering, so the older first"
+        );
+        app.key(key(KeyCode::Down));
+        let text = screen(&app, 160, 30);
+        assert!(
+            text.contains("1  Projects/Hardware  (where one was going)"),
+            "{text}"
+        );
+        assert_eq!(
+            app.key(key(KeyCode::Char('1'))),
+            Some(Effect::Answer {
+                id: place.id,
+                answer: "1".into(),
+                learn: false,
+            }),
+            "a number picks a suggestion"
+        );
 
         app.key(key(KeyCode::Enter));
         assert!(screen(&app, 120, 30).contains("They belong in (type to narrow)"));
@@ -1554,11 +1752,12 @@ mod tests {
             app.key(key(KeyCode::Enter)),
             Some(Effect::Answer {
                 id: place.id,
-                answer: "Projects/Hardware".into()
+                answer: "Projects/Hardware".into(),
+                learn: false,
             })
         );
 
-        app.key(key(KeyCode::Down));
+        app.key(key(KeyCode::Up));
         assert!(
             screen(&app, 120, 30).contains("Desk lamp diffuser (print file)"),
             "what waits on it"
@@ -1572,7 +1771,8 @@ mod tests {
             app.key(key(KeyCode::Enter)),
             Some(Effect::Answer {
                 id: term.id,
-                answer: "An assay kit.".into()
+                answer: "An assay kit.".into(),
+                learn: false,
             })
         );
         app.key(key(KeyCode::Enter));
@@ -1582,8 +1782,87 @@ mod tests {
             "an empty answer isn't sent"
         );
         assert_eq!(
+            app.key(key(KeyCode::Char('s'))),
+            Some(Effect::Skip(term.id))
+        );
+        assert_eq!(
             app.key(key(KeyCode::Char('d'))),
             Some(Effect::Dismiss(term.id))
+        );
+    }
+
+    #[test]
+    fn item_and_sender_questions_ask_before_changing_anything() {
+        use carrel_core::questions::{QuestionEntry, QuestionKind, QuestionQueue, suggest};
+        let (_dir, app) = sample(false);
+        let proposal = app.queue[0].id;
+        let queue = QuestionQueue::of(&app.archive);
+        let mut item = QuestionEntry::new(
+            QuestionKind::Item,
+            "Desk lamp diffuser",
+            "What was this project for?",
+        );
+        item.items = vec![proposal];
+        let mut sender = QuestionEntry::new(
+            QuestionKind::Sender,
+            "Okafor",
+            "Should “Okafor” have its own collection?",
+        );
+        sender.items = vec![proposal];
+        sender.suggestions = vec![
+            suggest::new_collection("Projects/Okafor", "most are in Projects"),
+            suggest::no_change("No, keep them in Projects", None),
+        ];
+        queue.save(&item).unwrap();
+        queue.save(&sender).unwrap();
+        let mut app = App::new(app.archive.clone()).unwrap();
+        app.key(key(KeyCode::Char('4')));
+        assert_eq!(app.asked[0].id, item.id);
+
+        app.key(key(KeyCode::Enter));
+        for c in "A reading light".chars() {
+            app.key(key(KeyCode::Char(c)));
+        }
+        assert_eq!(
+            app.key(key(KeyCode::Enter)),
+            Some(Effect::Correction(super::app::Step::Work {
+                target: super::screens::Correcting::Proposal(proposal),
+                words: "Asked “What was this project for?”, the owner said: A reading light".into(),
+                answering: Some(item.id),
+            })),
+            "an item answer is a correction, shown before it's saved"
+        );
+
+        app.key(key(KeyCode::Down));
+        assert_eq!(app.key(key(KeyCode::Char('1'))), None, "it asks first");
+        let text = screen(&app, 160, 30);
+        assert!(text.contains("y with a rule   n without a rule"), "{text}");
+        assert_eq!(
+            app.key(key(KeyCode::Char('n'))),
+            Some(Effect::Answer {
+                id: sender.id,
+                answer: "1".into(),
+                learn: false,
+            }),
+            "no to the rule still gathers them"
+        );
+        app.key(key(KeyCode::Char('1')));
+        assert_eq!(
+            app.key(key(KeyCode::Char('y'))),
+            Some(Effect::Answer {
+                id: sender.id,
+                answer: "1".into(),
+                learn: true,
+            })
+        );
+        assert_eq!(
+            app.key(key(KeyCode::Char('2'))),
+            Some(Effect::Answer {
+                id: sender.id,
+                answer: "2".into(),
+                learn: false,
+            }),
+            "no change needs no rule"
         );
     }
 
@@ -1714,7 +1993,7 @@ mod tests {
     /// The sample archive with its parts list checked out to `out/`, due back on 30 November,
     /// changed there and with two pending history entries, and a folder on the desk of the
     /// device the app shows.
-    fn active_sample() -> (tempfile::TempDir, App) {
+    pub(super) fn active_sample() -> (tempfile::TempDir, App) {
         use carrel_core::card_file::CardFile;
         use carrel_core::entries::HistoryEntry;
         let (dir, app) = sample(true);
@@ -1762,7 +2041,7 @@ mod tests {
     }
 
     /// Chooses the parts list on the Active screen, and returns it.
-    fn choose_parts_list(app: &mut App) -> super::active::ActiveItem {
+    pub(super) fn choose_parts_list(app: &mut App) -> super::active::ActiveItem {
         let i = app
             .active
             .iter()
@@ -1816,8 +2095,9 @@ mod tests {
         assert!(text.contains("No pending history entries"), "{text}");
         let keys = app.keys();
         assert!(
-            keys.iter()
-                .all(|(k, _)| !["r", "x", "a", "Space"].contains(k)),
+            keys.iter().all(|(k, _)| !["r", "a", "Space"].contains(k))
+                && keys.contains(&("x", "take off"))
+                && keys.contains(&("f", "archive")),
             "only what a desk item without entries answers to: {keys:?}"
         );
         assert_eq!(app.key(key(KeyCode::Char('r'))), None);

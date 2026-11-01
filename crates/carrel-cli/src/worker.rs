@@ -13,6 +13,11 @@
 //! so a crashed worker never leaves a stale one. The worker writes its progress to a status
 //! file, which `carrel ingest --status` and the interactive mode read, and a log beside it.
 //!
+//! While an agent looks after the archive on this device (the Mac app's or `carrel agent`;
+//! it holds the agent lock, [`carrel_core::worker::agent_lock`]), the CLI starts no worker of
+//! its own and `carrel worker` steps aside: the agent notices the queue and changes as they
+//! happen.
+//!
 //! This module keeps what's the CLI's own: starting the worker detached, its lock, and its log.
 
 use std::fmt::Write as _;
@@ -23,7 +28,7 @@ use std::path::{Path, PathBuf};
 use carrel_core::archive::Archive;
 use carrel_core::backup::Backups;
 use carrel_core::intake::Processed;
-use carrel_core::worker::{DeviceLock, Progress, Worker, WorkerError, file_in, now};
+use carrel_core::worker::{FileLock, Progress, Worker, WorkerError, file_in, now};
 use serde_json::json;
 
 use crate::commands::{holder, locate};
@@ -66,14 +71,11 @@ fn open_log(path: &Path) -> Result<File, Failure> {
 }
 
 /// Held while a worker runs for an archive on this device.
-pub struct Lock {
-    file: File,
-}
+pub type Lock = carrel_core::worker::Held;
 
-impl Drop for Lock {
-    fn drop(&mut self) {
-        let _ = self.file.unlock();
-    }
+/// The worker lock for `archive`.
+fn lock_for(archive: &Archive) -> Result<FileLock, Failure> {
+    Ok(FileLock::new(&folder()?, archive))
 }
 
 /// Takes the worker lock for `archive`, or `None` if another worker holds it.
@@ -82,32 +84,8 @@ impl Drop for Lock {
 ///
 /// [`Failure`] if the lock file can't be opened.
 pub fn try_lock(archive: &Archive) -> Result<Option<Lock>, Failure> {
-    let path = file_for(archive, "lock")?;
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| Failure::io(dir, &e))?;
-    }
-    let file = std::fs::OpenOptions::new()
-        .create(true)
-        .truncate(false)
-        .write(true)
-        .open(&path)
-        .map_err(|e| Failure::io(&path, &e))?;
-    match file.try_lock() {
-        Ok(()) => Ok(Some(Lock { file })),
-        Err(std::fs::TryLockError::WouldBlock) => Ok(None),
-        Err(std::fs::TryLockError::Error(e)) => Err(Failure::io(&path, &e)),
-    }
-}
-
-/// The worker lock for one archive, as the core's loop takes it.
-struct Locks<'a>(&'a Archive);
-
-impl DeviceLock for Locks<'_> {
-    type Held = Lock;
-
-    fn try_lock(&self) -> Result<Option<Lock>, WorkerError> {
-        try_lock(self.0).map_err(|Failure(e)| WorkerError::Lock(e))
-    }
+    let lock = lock_for(archive)?;
+    lock.take().map_err(|e| Failure::io(&lock.path, &e))
 }
 
 /// Whether a worker is running for `archive` on this device.
@@ -116,22 +94,15 @@ impl DeviceLock for Locks<'_> {
 ///
 /// [`Failure`] if the lock file can't be opened.
 pub fn running(archive: &Archive) -> Result<bool, Failure> {
-    // Only looks: a missing lock file means no worker has ever run here, and nothing is
-    // created, so asking never writes to the configuration folder.
-    let path = file_for(archive, "lock")?;
-    let file = match std::fs::OpenOptions::new().write(true).open(&path) {
-        Ok(file) => file,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-        Err(e) => return Err(Failure::io(&path, &e)),
-    };
-    match file.try_lock() {
-        Ok(()) => {
-            let _ = file.unlock();
-            Ok(false)
-        }
-        Err(std::fs::TryLockError::WouldBlock) => Ok(true),
-        Err(std::fs::TryLockError::Error(e)) => Err(Failure::io(&path, &e)),
-    }
+    let lock = lock_for(archive)?;
+    lock.is_held().map_err(|e| Failure::io(&lock.path, &e))
+}
+
+/// Whether an agent (the Mac app's or `carrel agent`) looks after `archive` on this device, so
+/// the CLI's worker steps aside.
+#[must_use]
+pub fn agent(archive: &Archive) -> bool {
+    folder().is_ok_and(|folder| carrel_core::worker::agent_running(&folder, archive))
 }
 
 /// The running worker's status, if there is a worker and it has written one.
@@ -143,14 +114,17 @@ pub fn status(archive: &Archive) -> Option<Status> {
     carrel_core::worker::read_status(&file_for(archive, "json").ok()?)
 }
 
-/// Starts a worker for `archive` in the background unless one is running or `CARREL_WORKER`
-/// is `off`. Returns whether one was started.
+/// Starts a worker for `archive` in the background unless one is running, the agent looks
+/// after the archive, or `CARREL_WORKER` is `off`. Returns whether one was started.
 ///
 /// # Errors
 ///
 /// [`Failure`] if the worker can't be started.
 pub fn start(archive: &Archive) -> Result<bool, Failure> {
-    if std::env::var(WORKER_ENV).is_ok_and(|v| v.eq_ignore_ascii_case("off")) || running(archive)? {
+    if std::env::var(WORKER_ENV).is_ok_and(|v| v.eq_ignore_ascii_case("off"))
+        || agent(archive)
+        || running(archive)?
+    {
         return Ok(false);
     }
     let exe =
@@ -246,7 +220,7 @@ pub fn work(
     let backups = backups.as_ref().map(|b| b as &dyn Backups);
     let worker = worker(archive, &registry, backups)?;
     let mut calls = Calls { on_item, on_done };
-    Ok(worker.draft(&Locks(archive), lock, &mut calls)?)
+    Ok(worker.draft(&lock_for(archive)?, lock, &mut calls)?)
 }
 
 /// Starts a worker for the archive at `archive` (or the current one) after a change to filed
@@ -261,15 +235,45 @@ pub fn after_change(archive: Option<&Path>) {
     }
 }
 
+/// The worker loop as `carrel agent` runs it, holding the agent lock: drafts the queue for
+/// this device, then embeds what's behind in the index, logging to standard error. `None` if
+/// another worker (one started before the agent claimed the archive) is still drafting.
+///
+/// # Errors
+///
+/// [`Failure`] if the archive or its queues can't be read or written.
+pub fn run_for_agent(archive: &Archive) -> Result<Option<carrel_core::worker::Ran>, Failure> {
+    let Some(lock) = try_lock(archive)? else {
+        return Ok(None);
+    };
+    let (registry, _) = crate::providers::registry();
+    let (backups, _) = crate::backup::for_batch(archive);
+    let backups = backups.as_ref().map(|b| b as &dyn Backups);
+    let worker = worker(archive, &registry, backups)?;
+    Ok(Some(worker.run(
+        &lock_for(archive)?,
+        lock,
+        &mut Log::default(),
+    )?))
+}
+
 /// `carrel worker`: drafts the queue for this device until it's empty, then embeds what's
 /// behind in the index. It's what adding to the queue and changing filed items start in the
-/// background; run by hand, it says if another is already running.
+/// background; run by hand, it says if another is already running. It steps aside while the
+/// Mac app's agent looks after the archive, which a worker started before the agent was may
+/// find.
 ///
 /// # Errors
 ///
 /// [`Failure`] if the archive or its queues can't be read or written.
 pub fn run(archive: Option<&Path>) -> Result<Report, Failure> {
     let archive = locate(archive)?;
+    if agent(&archive) {
+        return Ok(Report::new(
+            "The Carrel agent looks after this archive's queue and index on this device.\n",
+            json!({ "running": true, "agent": true, "done": 0 }),
+        ));
+    }
     let Some(lock) = try_lock(&archive)? else {
         return Ok(Report::new(
             "A worker is already drafting this archive's queue on this device.\n",
@@ -280,7 +284,7 @@ pub fn run(archive: Option<&Path>) -> Result<Report, Failure> {
     let (backups, _) = crate::backup::for_batch(&archive);
     let backups = backups.as_ref().map(|b| b as &dyn Backups);
     let worker = worker(&archive, &registry, backups)?;
-    let ran = worker.run(&Locks(&archive), lock, &mut Log::default())?;
+    let ran = worker.run(&lock_for(&archive)?, lock, &mut Log::default())?;
     let (done, embedded) = (ran.drafted, ran.embedded);
     let mut text = format!("Drafted {done} queued items.\n");
     if embedded > 0 {

@@ -7,7 +7,9 @@
 //! as soon as it's done. Stopping a run (Ctrl-C) loses at most the item in progress, and
 //! running again with the same `--out` carries on where it stopped; `--fresh` starts over.
 //!
-//! `--search` runs the findability test instead ([`crate::findability`]).
+//! `--search` runs the findability test instead ([`crate::findability`]), `--librarian` the
+//! librarian's questions ([`crate::bench_librarian`]), and `--questions` question value
+//! ([`crate::bench_questions`]).
 
 use std::fmt::Write as _;
 use std::io::Write as _;
@@ -27,11 +29,11 @@ use serde_json::{Value, json};
 use crate::{Failure, Report};
 
 /// A model to measure: a provider's text-model offer.
-struct Model {
-    provider: String,
-    offer: String,
-    label: String,
-    version: Option<String>,
+pub(crate) struct Model {
+    pub(crate) provider: String,
+    pub(crate) offer: String,
+    pub(crate) label: String,
+    pub(crate) version: Option<String>,
 }
 
 /// One model's results.
@@ -70,16 +72,37 @@ pub struct BenchArgs {
     /// ingest does with a recommended model. Without it, each model is measured alone.
     #[arg(long, value_name = "MODEL")]
     pub second: Option<String>,
+    /// What to measure, when it isn't filing.
+    #[command(flatten)]
+    pub mode: BenchMode,
+    /// With `--search`: title and summarize each item's card as a model drafted it in an
+    /// earlier run's `results.json`, instead of by its file name; repeat for more.
+    #[arg(long, value_name = "RESULTS", requires = "search", conflicts_with_all = ["librarian", "questions"])]
+    pub cards: Vec<PathBuf>,
+}
+
+/// What `carrel bench` measures instead of filing: one at most.
+#[derive(Debug, clap::Args)]
+#[group(multiple = false)]
+#[allow(clippy::struct_excessive_bools)] // one flag per mode, and clap allows only one
+pub struct BenchMode {
     /// Measure search instead of filing: look up the test set's hand-written descriptions
     /// (`descriptions.yaml`) by words, by meaning and by both, with each embedding model, and
     /// write `results.json` and `report.md` to `search/` in `--out`. Each model's index is
     /// kept there and reused by the next run.
     #[arg(long, conflicts_with_all = ["compare", "second"])]
     pub search: bool,
-    /// With `--search`: title and summarize each item's card as a model drafted it in an
-    /// earlier run's `results.json`, instead of by its file name; repeat for more.
-    #[arg(long, value_name = "RESULTS", requires = "search")]
-    pub cards: Vec<PathBuf>,
+    /// Measure the librarian instead of filing: ask each text model the test set's
+    /// hand-written questions (`librarian.yaml`) over the filed test set, and write
+    /// `results.json` and `report.md` to `librarian/` in `--out`.
+    #[arg(long, conflicts_with_all = ["compare", "second"])]
+    pub librarian: bool,
+    /// Measure question value instead of filing: with each text model, ingest the test set in
+    /// one batch, answer each question it raises with the known answer, and compare what each
+    /// answer wins with the question queue's ranking. Writes `results.json` and `report.md` to
+    /// `questions/` in `--out`.
+    #[arg(long, conflicts_with_all = ["compare", "second"])]
+    pub questions: bool,
 }
 
 /// `carrel bench`.
@@ -89,8 +112,12 @@ pub struct BenchArgs {
 /// [`Failure`] if the test set is inconsistent, a model asked for isn't available, or the
 /// results can't be written; or, with `--compare`, if a model no longer meets the bar.
 pub fn bench(args: &BenchArgs, json: bool) -> Result<Report, Failure> {
-    if args.search {
+    if args.mode.search {
         crate::findability::findability(args, json)
+    } else if args.mode.librarian {
+        crate::bench_librarian::librarian_bench(args, json)
+    } else if args.mode.questions {
+        crate::bench_questions::question_value_bench(args, json)
     } else {
         filing(args, json)
     }
@@ -397,7 +424,7 @@ fn file_name(path: &Path) -> Option<&str> {
 }
 
 /// A name usable as a file name everywhere.
-fn file_safe(name: &str) -> String {
+pub(crate) fn file_safe(name: &str) -> String {
     name.chars()
         .map(|c| {
             if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_') {
@@ -411,7 +438,7 @@ fn file_safe(name: &str) -> String {
 
 /// The models to measure: those named (as `provider/offer`, or an offer alone), or every
 /// available text model.
-fn choose(registry: &Registry, wanted: &[String]) -> Result<Vec<Model>, Failure> {
+pub(crate) fn choose(registry: &Registry, wanted: &[String]) -> Result<Vec<Model>, Failure> {
     let available: Vec<Model> = registry
         .ranked(Capability::TextModel)
         .into_iter()
@@ -462,7 +489,7 @@ fn choose(registry: &Registry, wanted: &[String]) -> Result<Vec<Model>, Failure>
     Ok(chosen)
 }
 
-fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
+pub(crate) fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(to)?;
     for entry in std::fs::read_dir(from)? {
         let entry = entry?;
@@ -545,7 +572,7 @@ fn summary_table(measured: &[Measured]) -> String {
 }
 
 /// A table cell's text: one line, with pipes escaped.
-fn cell(text: &str) -> String {
+pub(crate) fn cell(text: &str) -> String {
     text.replace('|', "\\|").replace('\n', " ")
 }
 

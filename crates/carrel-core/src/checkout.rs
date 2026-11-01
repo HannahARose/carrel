@@ -706,6 +706,29 @@ fn set_writable(path: &Path, writable: bool) -> Result<(), CheckoutError> {
     std::fs::set_permissions(path, permissions).map_err(io(path))
 }
 
+/// How the working copy at `working` compares with `item` as it went out: `unchanged`,
+/// `changed`, `missing` or not compared, with what changed when it could tell.
+#[must_use]
+pub fn compared(
+    archive: &Archive,
+    rules: &Rules,
+    item: Id,
+    working: &Path,
+) -> (&'static str, Option<Diff>) {
+    let Some(then) = std::fs::read_to_string(manifest_path(archive, item))
+        .ok()
+        .and_then(|t| Manifest::parse(&t).ok())
+    else {
+        return ("not compared (no saved manifest)", None);
+    };
+    match compare(&then, working, rules) {
+        Ok(diff) if diff.is_empty() => ("unchanged", Some(diff)),
+        Ok(diff) => ("changed", Some(diff)),
+        Err(CheckoutError::Missing(_)) => ("missing", None),
+        Err(_) => ("not compared", None),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

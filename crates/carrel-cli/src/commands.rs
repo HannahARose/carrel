@@ -129,6 +129,11 @@ pub fn init(
         History::init(&archive, &lease)?;
     }
     lease.release()?;
+    if let Ok(root) = std::fs::canonicalize(archive.root()) {
+        let mut prefs = Prefs::load()?;
+        prefs.note_archive(&root);
+        prefs.save()?;
+    }
 
     let mut warnings = Vec::new();
     if DiskLock::is_synced_folder(archive.root()) {
@@ -170,31 +175,37 @@ pub fn init(
 }
 
 pub(crate) fn holder(identity: &Identity) -> Holder {
-    Holder {
-        person: identity.person,
-        device: identity.device,
-    }
+    identity.holder()
 }
 
-/// `carrel open`.
+/// `carrel open`: with a path, makes that archive the one commands outside an archive use;
+/// without, says which that is and lists the archives opened or created on this device.
 pub fn open(path: Option<&Path>) -> Result<Report, Failure> {
     let mut prefs = Prefs::load()?;
     let Some(path) = path else {
-        return Ok(match prefs.archive {
-            Some(chosen) => Report::new(
-                format!("Commands outside an archive use {}\n", chosen.display()),
-                json!({ "archive": chosen }),
-            ),
-            None => Report::new(
-                "No archive chosen; commands only work inside one\n",
-                json!({ "archive": null }),
-            ),
-        });
+        let known = prefs.known_archives();
+        let mut text = match &prefs.archive {
+            Some(chosen) => format!("Commands outside an archive use {}\n", chosen.display()),
+            None => "No archive chosen; commands only work inside one\n".to_owned(),
+        };
+        let others: Vec<&PathBuf> = known
+            .iter()
+            .filter(|r| Some(*r) != prefs.archive.as_ref())
+            .collect();
+        if !others.is_empty() {
+            text.push_str("\nRecent archives:\n");
+            for root in &others {
+                writeln!(text, "  {}", root.display()).unwrap();
+            }
+        }
+        return Ok(Report::new(
+            text,
+            json!({ "archive": prefs.archive, "recent": known }),
+        ));
     };
-    let archive = Archive::find(path)?;
-    let root =
-        std::fs::canonicalize(archive.root()).map_err(|e| Failure::io(archive.root(), &e))?;
+    let (archive, root) = open_archive(path)?;
     prefs.archive = Some(root.clone());
+    prefs.note_archive(&root);
     prefs.save()?;
     let mut text = format!(
         "Commands outside an archive now use “{}” ({})\n",
@@ -208,6 +219,19 @@ pub fn open(path: Option<&Path>) -> Result<Report, Failure> {
         text,
         json!({ "archive": archive_json(&archive) }),
     ))
+}
+
+/// The archive `path` is in, or is, and its root with links resolved, as `carrel open` and
+/// the interactive mode's archive switcher find it.
+///
+/// # Errors
+///
+/// [`Failure`] if `path` isn't in an archive.
+pub fn open_archive(path: &Path) -> Result<(Archive, PathBuf), Failure> {
+    let archive = Archive::find(path)?;
+    let root =
+        std::fs::canonicalize(archive.root()).map_err(|e| Failure::io(archive.root(), &e))?;
+    Ok((archive, root))
 }
 
 /// A card read from disk along with where it is.
@@ -344,6 +368,8 @@ pub fn status(archive: Option<&Path>) -> Result<Report, Failure> {
     text.push_str(&crate::backup::status_line(&archive, history));
     text.push_str(&writer_line(summary.writer.as_ref(), this_device));
     text.push_str(&recent_section(&summary.recent));
+    let (librarian_text, librarian) = crate::ask::status_section(history);
+    text.push_str(&librarian_text);
     if !summary.problems.is_empty() {
         writeln!(
             text,
@@ -362,6 +388,8 @@ pub fn status(archive: Option<&Path>) -> Result<Report, Failure> {
     text.push_str(&signals_section(&summary.signals));
     let (desk_text, desk) = crate::desk::suggestions_section(&summary.desk);
     text.push_str(&desk_text);
+    let (resurfaced_text, resurfaced) = crate::discover::resurfaced(&archive);
+    text.push_str(&resurfaced_text);
     let mut warnings = Vec::new();
     if summary.synced {
         warnings.push(SYNCED_WARNING);
@@ -383,7 +411,9 @@ pub fn status(archive: Option<&Path>) -> Result<Report, Failure> {
         "writer": writer_json(summary.writer.as_ref()),
         "recent": summary.recent.iter().map(|r| recent_line(r).1).collect::<Vec<_>>(),
         "signals": summary.signals,
+        "librarian": librarian,
         "desk": desk,
+        "resurfaced": resurfaced,
         "names": summary.names.iter().map(|f| json!({
             "path": f.path,
             "problems": f.problems,
@@ -646,7 +676,10 @@ pub(crate) fn describe(archive: &Archive, query: &str) -> Result<Shown, Failure>
 pub fn show(archive: Option<&Path>, query: &str) -> Result<Report, Failure> {
     let archive = locate(archive)?;
     let mut shown = describe(&archive, query)?;
-    let near = crate::related::open(&archive)
+    if let Some((collection, _)) = shown.card_path.rsplit_once('/') {
+        crate::discover::opened(&archive, collection);
+    }
+    let near = carrel_core::index::related::open(&archive)
         .and_then(|index| crate::related::nearest(&archive, &index, &shown));
     let mut text = std::mem::take(&mut shown.text);
     text.push_str(&related_section(&shown.links, &near));
@@ -664,7 +697,7 @@ pub fn show(archive: Option<&Path>, query: &str) -> Result<Report, Failure> {
     });
     json["near"] = Value::Array(
         near.as_ref()
-            .map(|n| n.iter().map(crate::related::Neighbour::json).collect())
+            .map(|n| n.iter().map(crate::related::json).collect())
             .unwrap_or_default(),
     );
     json["links_only"] = near.err().map_or(Value::Null, Value::String);
@@ -724,15 +757,20 @@ fn item_history_section(entries: &[Entry]) -> String {
 /// A change on one line: its short identifier, when, the operation and the summary.
 pub(crate) fn log_line(entry: &Entry) -> String {
     format!(
-        "{}  {}  {:<11} {}",
+        "{}  {}  {:<11} {}{}",
         &entry.id[..entry.id.len().min(10)],
         local_time(entry.time),
         entry.operation.map_or("", |o| o.as_str()),
-        entry.summary
+        entry.summary,
+        entry
+            .agent
+            .as_ref()
+            .map(|a| format!("  (by the {a})"))
+            .unwrap_or_default()
     )
 }
 
-fn entry_json(entry: &Entry) -> Value {
+pub(crate) fn entry_json(entry: &Entry) -> Value {
     json!({
         "id": entry.id,
         "summary": entry.summary,
@@ -743,12 +781,17 @@ fn entry_json(entry: &Entry) -> Value {
         "items": entry.items,
         "moves": entry.moves.iter().map(|m| json!({ "item": m.item, "from": m.from, "to": m.to })).collect::<Vec<_>>(),
         "reverts": entry.reverts,
+        "agent": entry.agent,
         "time": jiff::Timestamp::from_second(entry.time).map(|t| t.to_string()).unwrap_or_default(),
     })
 }
 
 /// `carrel log`.
-pub fn log(archive: Option<&Path>, max_count: Option<usize>) -> Result<Report, Failure> {
+pub fn log(
+    archive: Option<&Path>,
+    max_count: Option<usize>,
+    librarian: bool,
+) -> Result<Report, Failure> {
     let archive = locate(archive)?;
     let history = match History::open(&archive) {
         Ok(history) => history,
@@ -760,6 +803,9 @@ pub fn log(archive: Option<&Path>, max_count: Option<usize>) -> Result<Report, F
         Err(e) => return Err(e.into()),
     };
     let mut entries = history.log()?;
+    if librarian {
+        entries.retain(|e| e.agent.as_deref() == Some(carrel_core::librarian::changes::AGENT));
+    }
     if let Some(max) = max_count {
         entries.truncate(max);
     }

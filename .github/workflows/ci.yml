@@ -1,10 +1,37 @@
 name: CI
 
+# Which jobs run when (docs/dev/development-setup.md, "Which CI jobs run when"):
+#
+# - The "Changes" job (.github/scripts/ci-changes.sh) lists the files a pull request or push
+#   changes and says which areas they touch. Each job below runs only for its area: a docs-only
+#   change runs Format, Docs hygiene and nothing else. Format and Docs hygiene always run.
+# - Everything runs for a change to any workflow, the weekly schedule, a manual run and a pull
+#   request into main (or a merge queue's group into main).
+# - A merge queue's group (merge_group, #298) runs the jobs for what the group changes against
+#   its base, and "CI passed" reports on it, since the queue waits for that check.
+# - A push to dev (a merged pull request) runs the jobs for what that merge changed, which
+#   checks dev against merge skew and keeps the caches warm. Each push gets its own run, so a
+#   later merge can't cancel the check of an earlier one.
+# - Caches are restored everywhere and saved only on dev, so pull requests don't evict them.
+#   Pull requests into main restore none: a release is checked from a clean build.
+# - While a pull request is a draft, only the Linux jobs run: the macOS and Windows ones (and
+#   their matrix entries) wait until it's marked ready, so a session's pushes while it works
+#   don't queue for the few macOS runners. A draft can't merge, so nothing unchecked lands.
+# - Coverage, which reports and never fails on a number, waits for a ready pull request too.
+#   Performance benchmarks are their own workflow (perf.yml), on dev only.
+# - "CI passed" is the required check. It passes when every job passed or was skipped because
+#   its area didn't change, and fails if "Changes" itself failed.
+
 on:
   pull_request:
     branches: [dev, main]
+    # ready_for_review: a draft's macOS and Windows jobs run when it's marked ready.
+    types: [opened, synchronize, reopened, ready_for_review]
+  # main gets only merges of dev that its pull request has already checked from scratch.
   push:
-    branches: [dev, main]
+    branches: [dev]
+  # The merge queue's combined commits, once the queue is on (#298).
+  merge_group:
   workflow_dispatch:
   # Weekly, so new security advisories against existing dependencies show up even when
   # nothing changes.
@@ -15,7 +42,9 @@ permissions:
   contents: read # check out the code
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # A pull request's newer push cancels its older run; every push to dev and every merge
+  # queue group runs to the end.
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -23,6 +52,63 @@ env:
   RUSTFLAGS: -D warnings
 
 jobs:
+  changes:
+    name: Changes
+    runs-on: ubuntu-latest
+    outputs:
+      rust: ${{ steps.areas.outputs.rust }}
+      swift: ${{ steps.areas.outputs.swift }}
+      app: ${{ steps.areas.outputs.app }}
+      mlx: ${{ steps.areas.outputs.mlx }}
+      swift-format: ${{ steps.areas.outputs.swift_format }}
+      llama: ${{ steps.areas.outputs.llama }}
+      cad: ${{ steps.areas.outputs.cad }}
+      extract: ${{ steps.areas.outputs.extract }}
+      kopia: ${{ steps.areas.outputs.kopia }}
+      editors: ${{ steps.areas.outputs.editors }}
+      deny: ${{ steps.areas.outputs.deny }}
+      workflows: ${{ steps.areas.outputs.workflows }}
+      cache: ${{ steps.areas.outputs.cache }}
+      save: ${{ steps.areas.outputs.save }}
+      # "false" while a pull request is a draft: macOS and Windows jobs wait for it to be ready.
+      heavy: ${{ steps.weight.outputs.heavy }}
+      # Matrix entries to leave out while a draft: macOS and Windows.
+      light-exclude: ${{ steps.weight.outputs.exclude }}
+      # The platforms for jobs that run on all three: only Linux while a draft.
+      oses: ${{ steps.weight.outputs.oses }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # a push's earlier commit, and a pull request's base
+      - id: areas
+        env:
+          EVENT: ${{ github.event_name }}
+          # A pull request's base branch, or a merge queue group's (refs/heads/...).
+          BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref }}
+          REF: ${{ github.ref }}
+          BEFORE: ${{ github.event.before }}
+          BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          SHA: ${{ github.sha }}
+        run: .github/scripts/ci-changes.sh
+      - id: weight
+        env:
+          DRAFT: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft }}
+        run: |
+          if [ "$DRAFT" = true ]; then
+            {
+              echo "heavy=false"
+              echo 'exclude=[{"os":"macos-latest"},{"os":"windows-latest"}]'
+              echo 'oses=["ubuntu-latest"]'
+            } >> "$GITHUB_OUTPUT"
+          else
+            {
+              echo "heavy=true"
+              echo 'exclude=[]'
+              echo 'oses=["macos-latest","ubuntu-latest","windows-latest"]'
+            } >> "$GITHUB_OUTPUT"
+          fi
+
   fmt:
     name: Format
     runs-on: ubuntu-latest
@@ -34,20 +120,28 @@ jobs:
 
   clippy:
     name: Clippy
+    needs: changes
+    if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.heavy == 'true'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        if: needs.changes.outputs.cache == 'true'
+        with:
+          save-if: ${{ needs.changes.outputs.save == 'true' }}
       # The llama.cpp provider has its own job: building llama.cpp takes minutes.
       - run: cargo clippy --workspace --exclude carrel-provider-llama --all-targets --locked -- -D warnings
 
   test:
     name: Test (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     strategy:
       fail-fast: false
       matrix:
+        exclude: ${{ fromJSON(needs.changes.outputs.light-exclude) }}
         # macOS is the main platform; Linux and Windows keep the core and CLI portable.
         os: [macos-latest, ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
@@ -56,6 +150,9 @@ jobs:
         with:
           persist-credentials: false
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        if: needs.changes.outputs.cache == 'true'
+        with:
+          save-if: ${{ needs.changes.outputs.save == 'true' }}
       - run: cargo test --workspace --exclude carrel-provider-llama --all-targets --locked --no-fail-fast
       - run: cargo test --workspace --exclude carrel-provider-llama --doc --locked
       - name: CLI reports its version
@@ -63,6 +160,8 @@ jobs:
 
   docs:
     name: Docs
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     env:
       # Broken intra-doc links and other rustdoc warnings fail the build, including links in
@@ -73,12 +172,69 @@ jobs:
         with:
           persist-credentials: false
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        if: needs.changes.outputs.cache == 'true'
+        with:
+          save-if: ${{ needs.changes.outputs.save == 'true' }}
       - run: cargo doc --workspace --exclude carrel-provider-llama --no-deps --document-private-items --locked
+
+  coverage:
+    # Line coverage of the Rust workspace's tests on Linux, written to the job summary: the
+    # total, each crate, and the lines the change added. Report only: no number fails it, and
+    # failing tests don't either (Test reports those). It runs on ready pull requests that touch
+    # Rust, never on drafts, and on pushes to dev, which save its cache.
+    name: Coverage
+    needs: changes
+    if: >-
+      needs.changes.outputs.rust == 'true' && needs.changes.outputs.heavy == 'true'
+      && (github.event_name == 'pull_request' || needs.changes.outputs.save == 'true')
+    runs-on: ubuntu-latest
+    env:
+      # cargo-llvm-cov's release, checked against its checksum.
+      LLVM_COV_VERSION: "0.9.1"
+      LLVM_COV_SHA256: b3f68e625481fed9b16444174f3fa5ebcdbde4a1878803a35eabe2dcefcdc41a
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2 # a pull request's base, the merge's first parent
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        if: needs.changes.outputs.cache == 'true'
+        with:
+          save-if: ${{ needs.changes.outputs.save == 'true' }}
+      - run: rustup component add llvm-tools-preview
+      - name: Install cargo-llvm-cov
+        run: |
+          file="$RUNNER_TEMP/cargo-llvm-cov.tar.gz"
+          curl -sSfL -o "$file" "https://github.com/taiki-e/cargo-llvm-cov/releases/download/v$LLVM_COV_VERSION/cargo-llvm-cov-x86_64-unknown-linux-gnu.tar.gz"
+          echo "$LLVM_COV_SHA256  $file" | sha256sum -c -
+          tar -xzf "$file" -C "$HOME/.cargo/bin"
+          cargo llvm-cov --version
+      - name: Measure
+        # As the Test job runs them, without llama.cpp; the tests' own files aren't counted.
+        run: |
+          cargo llvm-cov --workspace --exclude carrel-provider-llama --locked --ignore-run-fail \
+            --ignore-filename-regex '/(tests|benches|examples)/' \
+            --lcov --output-path target/lcov.info
+      - name: Summary
+        env:
+          # A pull request's change against its base; a push reports only the totals.
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" = pull_request ]; then
+            range=(HEAD^1 HEAD)
+          else
+            range=()
+          fi
+          # The summary goes to the job summary; its ::notice line to the log, as an annotation.
+          python3 .github/scripts/coverage-summary.py target/lcov.info ${range[@]+"${range[@]}"} \
+            2>&1 >> "$GITHUB_STEP_SUMMARY"
 
   swift:
     # The Swift side: build the XCFramework and bindings, test them from Swift, check the
     # package also builds for iOS, and test the Apple provider on its own and through Carrel.
     name: Swift package
+    needs: changes
+    if: needs.changes.outputs.swift == 'true' && needs.changes.outputs.heavy == 'true'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -86,6 +242,26 @@ jobs:
           persist-credentials: false
       # Caches target/, including each Apple target's build under target/<triple>.
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        if: needs.changes.outputs.cache == 'true'
+        with:
+          save-if: ${{ needs.changes.outputs.save == 'true' }}
+      # SwiftPM and Xcode build products of both packages. Restored from dev's latest, saved only on dev. The key names the Xcode
+      # version, since a build from another Xcode can't be reused.
+      - name: Xcode version
+        id: xcode
+        if: needs.changes.outputs.cache == 'true'
+        run: echo "version=$(xcodebuild -version | tr -s ' \n' '-')" >> "$GITHUB_OUTPUT"
+      - name: Restore the Swift build
+        id: swift-cache
+        if: needs.changes.outputs.cache == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            apple/CarrelKit/.build
+            apple/CarrelProviders/.build
+            !apple/*/.build/xcode/Logs
+          key: swift-${{ steps.xcode.outputs.version }}-${{ hashFiles('apple/CarrelKit/Package.swift', 'apple/CarrelProviders/Package.swift') }}-${{ hashFiles('apple/CarrelKit/Sources/**', 'apple/CarrelKit/Tests/**', 'apple/CarrelProviders/Sources/**', 'apple/CarrelProviders/Tests/**') }}
+          restore-keys: swift-${{ steps.xcode.outputs.version }}-${{ hashFiles('apple/CarrelKit/Package.swift', 'apple/CarrelProviders/Package.swift') }}-
       - run: rustup target add aarch64-apple-ios aarch64-apple-ios-sim
       - name: Build the XCFramework and Swift bindings
         run: PROFILE=dev scripts/build-xcframework.sh
@@ -114,32 +290,70 @@ jobs:
           swift build --package-path apple/CarrelProviders --product carrel-provider-apple
           CARREL_TEST_APPLE_PROVIDER="$bin/carrel-provider-apple" cargo test --locked -p carrel-core --test apple_provider
           PATH="$bin:$PATH" cargo run --locked --bin carrel -- providers
+      - name: Save the Swift build
+        if: needs.changes.outputs.save == 'true' && steps.swift-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            apple/CarrelKit/.build
+            apple/CarrelProviders/.build
+            !apple/*/.build/xcode/Logs
+          key: ${{ steps.swift-cache.outputs.cache-primary-key }}
 
   app:
     # The Mac app (apple/CarrelApp): its tests, then a development build, signed ad hoc and
     # kept as the "Carrel" artifact for 30 days. Developer ID signing and notarization wait
     # for v1.0 (#47), so there are no signing secrets here.
     name: Mac app
+    needs: changes
+    if: needs.changes.outputs.app == 'true' && needs.changes.outputs.heavy == 'true'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        if: needs.changes.outputs.cache == 'true'
+        with:
+          save-if: ${{ needs.changes.outputs.save == 'true' }}
+      # The app's Xcode build products. Restored from dev's latest, saved only on dev. The key names the Xcode
+      # version, since a build from another Xcode can't be reused.
+      - name: Xcode version
+        id: xcode
+        if: needs.changes.outputs.cache == 'true'
+        run: echo "version=$(xcodebuild -version | tr -s ' \n' '-')" >> "$GITHUB_OUTPUT"
+      - name: Restore the Swift build
+        id: swift-cache
+        if: needs.changes.outputs.cache == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            apple/CarrelApp/.build/xcode
+            !apple/CarrelApp/.build/xcode/Logs
+          key: app-${{ steps.xcode.outputs.version }}-${{ hashFiles('apple/CarrelApp/CarrelApp.xcodeproj/project.pbxproj', 'apple/CarrelKit/Package.swift') }}-${{ hashFiles('apple/CarrelApp/**', 'apple/CarrelKit/Sources/**') }}
+          restore-keys: app-${{ steps.xcode.outputs.version }}-${{ hashFiles('apple/CarrelApp/CarrelApp.xcodeproj/project.pbxproj', 'apple/CarrelKit/Package.swift') }}-
       - run: rustup target add aarch64-apple-ios aarch64-apple-ios-sim
       - name: Build the XCFramework
         run: scripts/build-xcframework.sh
       - name: App tests
         run: |
           xcodebuild -project apple/CarrelApp/CarrelApp.xcodeproj -scheme Carrel \
-            -derivedDataPath target/xcode-app test
+            -derivedDataPath apple/CarrelApp/.build/xcode test
       - name: Build the app
         run: |
           xcodebuild -project apple/CarrelApp/CarrelApp.xcodeproj -scheme Carrel \
-            -configuration Release -derivedDataPath target/xcode-app build
-          app=target/xcode-app/Build/Products/Release/Carrel.app
+            -configuration Release -derivedDataPath apple/CarrelApp/.build/xcode build
+          app=apple/CarrelApp/.build/xcode/Build/Products/Release/Carrel.app
           codesign --verify --strict --verbose=2 "$app"
           ditto -c -k --keepParent "$app" target/Carrel.zip
+      - name: Save the Swift build
+        if: needs.changes.outputs.save == 'true' && steps.swift-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            apple/CarrelApp/.build/xcode
+            !apple/CarrelApp/.build/xcode/Logs
+          key: ${{ steps.swift-cache.outputs.cache-primary-key }}
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: Carrel
@@ -150,6 +364,8 @@ jobs:
   swift-format:
     # Swift style, as set in .swift-format. swift-format comes with Xcode.
     name: Swift format
+    needs: changes
+    if: needs.changes.outputs.swift-format == 'true' && needs.changes.outputs.heavy == 'true'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -167,6 +383,8 @@ jobs:
     # Hosted runners can't run a model, so this builds it and runs the tests that need none;
     # the on-device runner drafts with real MLX models.
     name: MLX provider
+    needs: changes
+    if: needs.changes.outputs.mlx == 'true' && needs.changes.outputs.heavy == 'true'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -177,16 +395,42 @@ jobs:
         run: |
           xcodebuild -showComponent MetalToolchain | grep -q "Status: installed" \
             || xcodebuild -downloadComponent MetalToolchain
+      # SwiftPM's packages (mlx-swift and the rest) and their Xcode build products. Restored from dev's latest, saved only on dev. The key names the Xcode
+      # version, since a build from another Xcode can't be reused.
+      - name: Xcode version
+        id: xcode
+        if: needs.changes.outputs.cache == 'true'
+        run: echo "version=$(xcodebuild -version | tr -s ' \n' '-')" >> "$GITHUB_OUTPUT"
+      - name: Restore the Swift build
+        id: swift-cache
+        if: needs.changes.outputs.cache == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            apple/CarrelMLX/.build/xcode
+            !apple/CarrelMLX/.build/xcode/Logs
+          key: mlx-${{ steps.xcode.outputs.version }}-${{ hashFiles('apple/CarrelMLX/Package.resolved') }}-${{ hashFiles('apple/CarrelMLX/Package.swift', 'apple/CarrelMLX/Sources/**', 'apple/CarrelMLX/Tests/**', 'apple/CarrelProviders/Package.swift', 'apple/CarrelProviders/Sources/**') }}
+          restore-keys: mlx-${{ steps.xcode.outputs.version }}-${{ hashFiles('apple/CarrelMLX/Package.resolved') }}-
       - name: Build and test
         working-directory: apple/CarrelMLX
         run: |
           xcodebuild -scheme CarrelMLX-Package -destination 'platform=macOS' \
             -derivedDataPath .build/xcode -skipMacroValidation test
+      - name: Save the Swift build
+        if: needs.changes.outputs.save == 'true' && steps.swift-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            apple/CarrelMLX/.build/xcode
+            !apple/CarrelMLX/.build/xcode/Logs
+          key: ${{ steps.swift-cache.outputs.cache-primary-key }}
 
   deny:
     # Known vulnerabilities, unmaintained or yanked crates, licenses, duplicate versions and
     # crate sources, as set in deny.toml.
     name: Dependencies
+    needs: changes
+    if: needs.changes.outputs.deny == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -199,6 +443,8 @@ jobs:
   zizmor:
     # Security problems in the workflows themselves, such as injection or broad permissions.
     name: Workflow audit
+    needs: changes
+    if: needs.changes.outputs.workflows == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -251,9 +497,12 @@ jobs:
   llama:
     # The portable model provider, with llama.cpp built in, run against a tiny test model.
     name: llama.cpp provider (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.llama == 'true'
     strategy:
       fail-fast: false
       matrix:
+        exclude: ${{ fromJSON(needs.changes.outputs.light-exclude) }}
         os: [macos-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
     env:
@@ -266,6 +515,9 @@ jobs:
         with:
           persist-credentials: false
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        if: needs.changes.outputs.cache == 'true'
+        with:
+          save-if: ${{ needs.changes.outputs.save == 'true' }}
       - run: cargo clippy -p carrel-provider-llama --all-targets --locked -- -D warnings
       - name: Download the test model
         run: |
@@ -283,9 +535,12 @@ jobs:
     # The CAD provider with OpenCascade from each platform's package manager, so STEP and IGES
     # drawing is tested rather than skipped.
     name: CAD provider (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.cad == 'true'
     strategy:
       fail-fast: false
       matrix:
+        exclude: ${{ fromJSON(needs.changes.outputs.light-exclude) }}
         os: [macos-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
     env:
@@ -295,6 +550,9 @@ jobs:
         with:
           persist-credentials: false
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        if: needs.changes.outputs.cache == 'true'
+        with:
+          save-if: ${{ needs.changes.outputs.save == 'true' }}
       - name: Install OpenCascade
         run: |
           if [ "$RUNNER_OS" = macOS ]; then
@@ -310,6 +568,8 @@ jobs:
     # The portable extraction provider with Tesseract and Poppler installed, so OCR of images
     # and scanned PDFs is tested rather than skipped.
     name: Portable extraction
+    needs: changes
+    if: needs.changes.outputs.extract == 'true'
     runs-on: ubuntu-latest
     env:
       CARREL_REQUIRE_TESSERACT: "1"
@@ -318,6 +578,9 @@ jobs:
         with:
           persist-credentials: false
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        if: needs.changes.outputs.cache == 'true'
+        with:
+          save-if: ${{ needs.changes.outputs.save == 'true' }}
       - name: Install Tesseract and Poppler
         run: sudo apt-get update -q && sudo apt-get install -yq tesseract-ocr poppler-utils
       - run: cargo test -p carrel-provider-extract --locked
@@ -327,6 +590,8 @@ jobs:
     # fixture JSON: headless Neovim tests, ERT, a byte-compile with warnings as errors,
     # checkdoc and package-lint. Neovim and Emacs come from Ubuntu's own packages.
     name: Editor plugins
+    needs: changes
+    if: needs.changes.outputs.editors == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -341,30 +606,21 @@ jobs:
   kopia:
     # Backups against the real kopia program and a throwaway filesystem repository.
     name: Kopia backups (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.kopia == 'true'
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: macos-latest
-            asset: kopia-0.23.1-macOS-arm64
-            sha256: 19e6ed637221f4dfd46a46e978ec4c509c386b522d746db2cd6762b217478111
-            archive: tar.gz
-          - os: ubuntu-latest
-            asset: kopia-0.23.1-linux-x64
-            sha256: 416d0f84a3dbb321a8b2d8f0997b1a0a6e915babe79ee76fa6e4d2bd1e1c5178
-            archive: tar.gz
-          - os: windows-latest
-            asset: kopia-0.23.1-windows-x64
-            sha256: f0369d9657dbe47a1b8b6ff4e308c5958a4813b405d4e32ae9d81b3f2b3d8251
-            archive: zip
+        os: ${{ fromJSON(needs.changes.outputs.oses) }}
     runs-on: ${{ matrix.os }}
     defaults:
       run:
         shell: bash
     env:
-      ASSET: ${{ matrix.asset }}
-      SHA256: ${{ matrix.sha256 }}
-      ARCHIVE: ${{ matrix.archive }}
+      # Kopia's release for each platform, looked up by matrix.os (a draft runs only Linux).
+      ASSET: ${{ fromJSON('{"macos-latest":"kopia-0.23.1-macOS-arm64","ubuntu-latest":"kopia-0.23.1-linux-x64","windows-latest":"kopia-0.23.1-windows-x64"}')[matrix.os] }}
+      SHA256: ${{ fromJSON('{"macos-latest":"19e6ed637221f4dfd46a46e978ec4c509c386b522d746db2cd6762b217478111","ubuntu-latest":"416d0f84a3dbb321a8b2d8f0997b1a0a6e915babe79ee76fa6e4d2bd1e1c5178","windows-latest":"f0369d9657dbe47a1b8b6ff4e308c5958a4813b405d4e32ae9d81b3f2b3d8251"}')[matrix.os] }}
+      ARCHIVE: ${{ matrix.os == 'windows-latest' && 'zip' || 'tar.gz' }}
       KOPIA_CHECK_FOR_UPDATES: "false"
       CARREL_REQUIRE_KOPIA: "1"
     steps:
@@ -372,6 +628,9 @@ jobs:
         with:
           persist-credentials: false
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        if: needs.changes.outputs.cache == 'true'
+        with:
+          save-if: ${{ needs.changes.outputs.save == 'true' }}
       - name: Install Kopia
         run: |
           file="$RUNNER_TEMP/kopia.$ARCHIVE"
@@ -392,16 +651,18 @@ jobs:
         run: cargo test -p carrel-core --test backup_kopia --locked
 
   ok:
-    # The single required check for branch protection. It passes only if every job above passed.
+    # The single required check for branch protection. It passes only if "Changes" passed and
+    # every other job above passed or was skipped because its area didn't change. A job whose
+    # area changed can only be skipped if "Changes" failed, which this catches.
     name: CI passed
     if: always()
-    needs: [fmt, clippy, test, docs, swift, app, swift-format, mlx, llama, cad, extract, kopia, editors, deny, zizmor, hygiene]
+    needs: [changes, fmt, clippy, test, docs, coverage, swift, app, swift-format, mlx, llama, cad, extract, kopia, editors, deny, zizmor, hygiene]
     runs-on: ubuntu-latest
     steps:
       - name: Check job results
         env:
           NEEDS: ${{ toJSON(needs) }}
-          FAILED: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped') }}
+          FAILED: ${{ needs.changes.result != 'success' || contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
         run: |
           echo "$NEEDS"
           [ "$FAILED" = "false" ]

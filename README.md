@@ -6,7 +6,7 @@ Carrel is a personal archivist with native apps for macOS, iPadOS and iOS and a 
 
 Every document is analyzed on your own devices. Nothing is sent anywhere unless you explicitly opt in.
 
-> **Status:** [v0.4.0](https://github.com/HannahARose/carrel/releases/tag/v0.4.0) is the latest release: ingest from the `carrel` CLI and its interactive mode on macOS, Linux and Windows, checking items out and returning them, corrections and editing of cards, and search in your own words, by meaning and by name, from the command line, Browse, Neovim and Emacs. The Mac app follows in v0.5. New here? Start with [Getting started](docs/guide/getting-started.md).
+> **Status:** [v0.5.0](https://github.com/HannahARose/carrel/releases/tag/v0.5.0) is the latest release: the Mac app, with a background agent, over the same archive as the `carrel` command line and its interactive mode on macOS, Linux and Windows, each fully capable. Filing, checking out and returning work, corrections and edits, search in your own words, previews, history, backups and settings, all on your computer. New here? Start with [Getting started](docs/guide/getting-started.md), or [the Mac app](docs/guide/mac-app.md).
 
 ## Principles
 
@@ -35,7 +35,7 @@ From v0.2, each [release](https://github.com/HannahARose/carrel/releases) has an
 To check a download came from this repository's release workflow:
 
 ```bash
-gh attestation verify carrel-0.4.0-linux-x86_64.tar.gz --repo HannahARose/carrel
+gh attestation verify carrel-0.5.0-linux-x86_64.tar.gz --repo HannahARose/carrel
 ```
 
 The binaries aren't signed yet (that comes with the Mac app), so on macOS a browser download needs `xattr -d com.apple.quarantine` on each program before it runs; downloads with `curl` or `gh release download` don't. Then download a model for drafting cards with `carrel models`, unless your Mac has Apple's on-device model.
@@ -47,7 +47,7 @@ Until then, build from source as [Getting started](docs/guide/getting-started.md
 - **Core:** Rust, shared by the apps and the CLI; builds on macOS, Linux and Windows.
 - **Apps:** SwiftUI for macOS, iPadOS and iOS, using the core through generated Swift bindings (UniFFI).
 - **Providers:** models and text extraction come from separate provider programs: Apple's Foundation Models, MLX, PDFKit and Vision on Apple devices, and portable ones (llama.cpp, a Rust PDF reader, Tesseract) elsewhere.
-- **Sync (planned, v2.0):** iCloud Drive, with a CloudKit lock so only one device writes history at a time.
+- **Sync (planned, v0.9):** iCloud Drive, with a CloudKit lock so only one device writes history at a time.
 
 [docs/dev/architecture.md](docs/dev/architecture.md) explains how it's built today, with diagrams.
 

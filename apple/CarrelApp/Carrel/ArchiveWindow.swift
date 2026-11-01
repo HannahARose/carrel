@@ -9,6 +9,7 @@ struct ArchiveWindow: View {
 
     @Environment(AppModel.self) private var app
     @Environment(\.dismissWindow) private var dismissWindow
+    @Environment(\.openWindow) private var openWindow
     @Environment(\.controlActiveState) private var activeState
     @State private var model: ArchiveWindowModel
 
@@ -27,6 +28,10 @@ struct ArchiveWindow: View {
         } detail: {
             Inspector(model: model)
         }
+        .activeAndHistorySheets(model)
+        .modifier(ArchiveWindowActions(model: model))
+        .browseSheets(model.browse)
+        .librarianPanel(model)
         .navigationTitle(model.name)
         .navigationSubtitle(
             model.isReadOnly ? "\(model.screenTitle) · Read only" : model.screenTitle
@@ -43,13 +48,31 @@ struct ArchiveWindow: View {
                 .background(.background)
             }
         }
+        .sheet(item: $model.correction) { CorrectionSheet(correction: $0) }
+        .archiveErrorAlert(model.archive)
+        .focusedSceneValue(model)
         .task {
             dismissWindow(id: WelcomeView.windowID)
             await model.load()
+            choosePendingItem()
+        }
+        .onChange(of: app.pendingLink) { choosePendingItem() }
+        .handlesExternalEvents(preferring: [AgentLink.scheme], allowing: [AgentLink.scheme])
+        .onOpenURL { url in
+            app.open(link: url) { openWindow(id: Self.windowID, value: $0) }
         }
         .onChange(of: activeState, initial: true) {
             if activeState == .key { app.activeArchive = model.root }
         }
+    }
+}
+
+extension ArchiveWindow {
+    /// Chooses the item a link from the agent's menu asked for, on Active.
+    fileprivate func choosePendingItem() {
+        guard model.handle != nil, let item = app.takePendingItem(for: model.root) else { return }
+        model.screen = .active
+        model.selectedItemID = item
     }
 }
 
@@ -61,8 +84,12 @@ private struct Sidebar: View {
             Section {
                 Label("Status", systemImage: "gauge.with.dots.needle.33percent").tag(Screen.status)
                 Label("Review", systemImage: "tray.full").tag(Screen.review)
+                    .badge(model.archive?.reviewCount ?? 0)
                 Label("Questions", systemImage: "questionmark.bubble").tag(Screen.questions)
-                Label("Active", systemImage: "arrow.up.forward.square").tag(Screen.active)
+                    .badge(model.archive?.questions.count ?? 0)
+                Label("Active", systemImage: "arrow.up.forward.square")
+                    .badge(model.activeScreen?.pendingCount ?? 0)
+                    .tag(Screen.active)
             }
             Section("Collections") {
                 OutlineGroup(model.tree, children: \.children) { node in
@@ -72,8 +99,14 @@ private struct Sidebar: View {
                         .tag(Screen.collection(node.collection.path))
                 }
             }
+            Section("Discover") {
+                ForEach(DiscoverPage.allCases, id: \.self) { page in
+                    Label(page.title, systemImage: page.symbol).tag(Screen.discover(page))
+                }
+            }
             Section {
                 Label("History", systemImage: "clock.arrow.circlepath").tag(Screen.history)
+                Label("Backups", systemImage: "externaldrive.badge.timemachine").tag(Screen.backups)
             }
         }
         .listStyle(.sidebar)
@@ -85,67 +118,102 @@ private struct ScreenContent: View {
     @Bindable var model: ArchiveWindowModel
 
     var body: some View {
+        if let search = model.search, search.isActive {
+            SearchResultsView(model: model, search: search)
+        } else {
+            screen
+        }
+    }
+
+    @ViewBuilder private var screen: some View {
         switch model.screen {
         case .status, nil:
             StatusView(model: model)
         case .collection:
-            List(model.listedItems, selection: $model.selectedItemID) { item in
-                Label(item.title, systemImage: item.kind.symbol)
+            Group {
+                if model.browseLayout == .grid {
+                    BrowseGrid(model: model)
+                } else {
+                    List(model.listedItems, selection: $model.selectedItemID) { item in
+                        Label(item.title, systemImage: item.kind.symbol)
+                    }
+                    .contextMenu(forSelectionType: ItemSummary.ID.self) { ids in
+                        BrowseActions(model: model, ids: ids)
+                    }
+                }
             }
             .overlay {
                 if model.listedItems.isEmpty, !model.isLoading {
                     ContentUnavailableView("No Items", systemImage: "folder")
                 }
             }
+            .toolbar {
+                Picker("View", selection: $model.browseLayout) {
+                    Label("List", systemImage: "list.bullet").tag(BrowseLayout.list)
+                    Label("Grid", systemImage: "square.grid.2x2").tag(BrowseLayout.grid)
+                }
+                .pickerStyle(.segmented)
+                .help("Show the items as a list or a grid")
+            }
         case .review:
-            ComingScreen(
-                title: "Review", systemImage: "tray.full",
-                text: "Drafted proposals, grouped by destination, to approve, hold, move or reject."
-            )
+            if let review = model.review {
+                ReviewView(review: review, collections: model.collections.map(\.path))
+            }
         case .questions:
-            ComingScreen(
-                title: "Questions", systemImage: "questionmark.bubble",
-                text: "Questions about terms and collections, by rank, to answer or dismiss.")
+            if let questions = model.questions { QuestionsView(questions: questions) }
         case .active:
-            ComingScreen(
-                title: "Active", systemImage: "arrow.up.forward.square",
-                text: "Checked-out and desk items with their pending entries, to return or cancel.")
+            if let active = model.activeScreen { ActiveView(model: active) }
         case .history:
-            ComingScreen(
-                title: "History", systemImage: "clock.arrow.circlepath",
-                text: "Every change to the archive, with undo.")
+            if let history = model.historyScreen { HistoryView(model: history) }
+        case .backups:
+            if let backups = model.backups { BackupsView(backups: backups) }
+        case .discover(let page):
+            if let discover = model.discover {
+                DiscoverView(page: page, discover: discover, window: model)
+            }
         }
     }
 }
 
-/// A screen that arrives with CarrelKit's operations (#233) and the app's later steps.
-private struct ComingScreen: View {
-    let title: String
-    let systemImage: String
-    let text: String
-
-    var body: some View {
-        ContentUnavailableView {
-            Label(title, systemImage: systemImage)
-        } description: {
-            Text(text)
-            Text("Coming in a later build. Until then, run `carrel` for the interactive mode.")
-        }
-    }
-}
-
-/// The inspector column: the chosen item's card.
+/// The inspector column: the chosen item's preview and card.
 private struct Inspector: View {
     let model: ArchiveWindowModel
 
     var body: some View {
-        if let item = model.selectedItem {
-            ItemCardView(item: item, card: model.card(for: item), root: model.root)
+        if model.screen == .review, let review = model.review, let proposal = review.inspected {
+            ProposalInspector(proposal: proposal, review: review, correct: model.correct)
+        } else if model.screen == .questions, let questions = model.questions,
+            let question = questions.selected
+        {
+            QuestionInspector(
+                question: question, questions: questions,
+                collections: model.collections.map(\.path))
+        } else if model.screen == .active, let active = model.activeScreen {
+            ActiveInspector(model: active)
+        } else if model.screen == .history, let history = model.historyScreen {
+            ChangeInspector(model: history) { id in model.items.first { $0.id == id }?.title }
+        } else if model.screen == .backups, let backups = model.backups,
+            let change = backups.selected
+        {
+            BackupInspector(change: change, backups: backups, items: model.items)
+        } else if let item = model.selectedItem {
+            if let edit = model.editing, edit.target == .item(item.id) {
+                ItemEditor(item: item, edit: edit) { model.editing = nil }
+            } else {
+                VStack(spacing: 0) {
+                    if let previews = model.previews {
+                        ItemPreviewView(item: item, store: previews)
+                    }
+                    ItemCardView(item: item, card: model.card(for: item), root: model.root) {
+                        ItemActions(model: model, item: item)
+                    }
+                }
                 .id(item.id)
+            }
         } else if case .collection = model.screen {
             ContentUnavailableView(
                 "Nothing Selected", systemImage: "sidebar.right",
-                description: Text("Choose an item to see its card."))
+                description: Text("Choose an item to see its preview and card."))
         } else {
             ContentUnavailableView("Nothing Selected", systemImage: "sidebar.right")
         }
