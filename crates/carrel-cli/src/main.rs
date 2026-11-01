@@ -6,6 +6,7 @@
 
 mod agent;
 mod ask;
+mod asking;
 mod backup;
 mod bench;
 mod bench_librarian;

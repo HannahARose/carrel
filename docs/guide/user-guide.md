@@ -201,13 +201,24 @@ Questions are where you teach Carrel what it can't know. When several items shar
 - **A term** ("What is “scope-ds”?"): answer in a sentence. Carrel saves it to `_System/glossary.md`, which every model reads from then on, and puts the waiting items back at the front of the queue, so the worker drafts them again with what you said.
 - **A collection or a group** ("These 12 items about “Daves Chicken”: Finances, or a new Finances/Daves Chicken collection?"): pick or choose a collection, and the waiting items go there. Picking a new collection creates it; typing one that doesn't exist needs `--create` on the command line.
 - **A sender or project** ("Should “Northbridge Bank” have its own collection?"): yes gathers its items in the collection it suggests, creating it, and each filed item's move can be undone from History. Carrel then asks whether to add a routing rule, so future items named for it go there too; it never adds one without your yes. No settles it for good.
-- **An item** ("What does this photo show?", "Who is J. Okafor?", "What was this project for?", "Does this still matter?"): your answer becomes a correction of its card, shown before and after, and saved only on your yes, as with `c` ([Correcting a card](#correcting-a-card)). If it states something lasting, such as who someone is, Carrel offers to add it to the glossary. `carrel questions about ITEM` asks Carrel's questions about a filed item; browsing and the librarian will ask them as you go.
+- **An item** ("What does this photo show?", "Who is J. Okafor?", "What was this project for?", "Does this still matter?"): your answer becomes a correction of its card, shown before and after, and saved only on your yes, as with `c` ([Correcting a card](#correcting-a-card)). If it states something lasting, such as who someone is, Carrel offers to add it to the glossary. `carrel questions about ITEM` asks Carrel's questions about a filed item, with likely answers.
 
 **Skipping** (`s`, or `carrel questions skip ID`) puts a question aside: it rests for two weeks (`questions.skip_days` in [Settings](#settings)) and then comes back. **Dismissing** (`d`) removes it, and the items stop waiting on it. An answer that changes nothing, such as "it still matters", is remembered, so the question isn't asked again.
 
 Questions the glossary or a routing rule already answers are dropped from the queue, and questions that ask the same thing, such as "What is “scope-ds”?" and "What is “Scope DS”?", are merged into one.
 
 Items waiting on a question aren't approved in bulk until it's answered or dismissed.
+
+### Questions as you go
+
+Carrel also asks about items at natural moments, never in a pop-up, and an answer always goes through the same correction, shown before it's saved, with the fields you wrote yourself kept:
+
+- **Beside an item in Browse:** under **Carrel asks** above its card; `a` answers it. `carrel show` lists the same questions, and `carrel questions about ITEM` adds them to the queue.
+- **On a wander:** now and then a step asks about its item, at most every three steps and never on the first; `a` answers it in Discover, and `carrel discover wander` prints it with the command that answers it.
+- **From the librarian:** when an item it found has a question, it asks after its answer ("While we're here…"), at most once an answer, never after two answers in a row, and never twice about the same item in a conversation. `a` answers it on the Librarian screen; in a conversation at the terminal, `carrel ask` asks for your answer there (a number picks a suggestion, an empty line leaves it for later).
+- **On Status:** at most three new questions a day, the same all day, chosen from all over the archive; they join Questions, and drop off Status once answered or skipped.
+
+A question you skipped rests and one you declined is never asked again, wherever it would have come up.
 
 ## Finding things
 
@@ -305,7 +316,16 @@ Along the way the librarian notices things that could be better: a receipt in th
 - **If you let it,** with `carrel settings set librarian.changes on`, it makes the changes it's sure of itself: those it's at least as sure of as `librarian.confidence` (0.9, out of 1, unless you change it). The rest are still left for you.
 - Each change it makes goes through the same steps as the command would, and is an ordinary change in history marked as the librarian's (**by the librarian** in `carrel log`). `carrel undo CHANGE` reverses one.
 - It never changes a field you wrote yourself (only those a model wrote, as the card's provenance records), never acts on restricted items, and can't delete anything, edit a file's contents, change settings or rules, or send anything anywhere.
-- `carrel status` lists the librarian's changes this week. `carrel log --librarian` lists them all, and `carrel undo --librarian 7d` undoes every one it made in the last seven days, newest first (or since `24h`, `today`, or a date such as `2026-11-01`).
+- `carrel status` lists the librarian's changes this week, as does the Librarian screen. `carrel log --librarian` lists them all, and `carrel undo --librarian 7d` undoes every one it made in the last seven days, newest first (or since `24h`, `today`, or a date such as `2026-11-01`).
+
+### The Librarian screen
+
+In the interactive mode, `L` opens the **Librarian** screen: the conversation on the left, and on the right the item it's discussing, with its preview where the terminal draws one.
+
+- `Enter` asks a question. While the librarian works, the help line shows its steps. Each answer shows the passages it read and the model that gave it; under it are the items it found and the changes it suggests, to choose with `↑↓`. The chosen item's card is on the right, and `o` opens it in Browse.
+- With `librarian.changes` off, `y` makes the chosen suggestion through the usual steps: a refile or a correction is shown before and after and saved only on your yes, and a rename or a new collection asks first. Each is your own change.
+- With it on, the changes it made are listed under **The librarian's changes this week**: `u` undoes the chosen one and `U` all of them, after asking.
+- `s` saves the conversation to the Journal, and `n` starts a new one; an unsaved conversation is gone when you leave.
 
 ## Discovering the archive
 
@@ -317,6 +337,8 @@ Search finds what you ask for. Discovery shows you the archive itself, so you co
 - **The archive map** (`carrel discover map`): collections by the total size of their items and how many there are, as a tree, largest first, with each collection's share of the archive as a bar. `--depth 1` shows only the top level. Sizes are what the cards record; items whose cards record none are counted, but not in the sizes.
 - **Activity** (`carrel discover activity`): when you filed things and worked on them, as a heatmap of the last year, a column a week, Monday at the top, darker for busier days. `--from` and `--to` choose other days. A work session is an entry in an item's history.
 - **Resurfacing:** now and then, `carrel status` names a collection you haven't opened in six months, with an item or two from it. It names the same one all day, then none for a week. Showing an item in it (`carrel show`, or a wander step) counts as opening it.
+
+In the interactive mode, `D` opens the **Discover** screen, with a key for each view: `d` on this day, `w` wander (`Space` takes the next step, `n` starts another walk, `o` opens the item in Browse; the item's preview is beside it where the terminal draws one), `t` the timeline (`p` changes between months, days and years), `m` the archive map as a sized tree, and `h` activity as a block heatmap. Status shows the resurfaced collection, and showing an item in Browse counts as opening its collection.
 
 Which collections you opened, and your last walk, are kept on this device (see [What Carrel keeps on this device](#what-carrel-keeps-on-this-device)), never in the archive: looking around never changes it. A collection this device has never opened counts as last seen when something in it was last filed or worked on.
 
@@ -452,6 +474,7 @@ Outside any archive, in `~/Library/Application Support/Carrel` on macOS, `%APPDA
 | `backups/` | Kopia's configuration for each archive's repository |
 | `sessions/` | When each archive's checked-out and desk items were last looked at for work sessions |
 | `discover/` | For each archive, which collections this device opened when, the collection Status last resurfaced, and the last walk through the stacks |
+| `questions/` | For each archive, the day's few questions Status names, so they stay the same all day |
 | `logs/network.log` | Every request `carrel-fetch` made |
 
 ## Troubleshooting

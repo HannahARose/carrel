@@ -36,11 +36,15 @@ pub enum Tab {
     Settings,
     /// Backups: snapshots, and taking, checking and restoring from them.
     Backups,
+    /// A conversation with the librarian, and the item it's discussing.
+    Librarian,
+    /// Discovery: on this day, wander, the timeline, the map and activity.
+    Discover,
 }
 
 impl Tab {
     /// Every tab, in order.
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 11] = [
         Self::Status,
         Self::Review,
         Self::Active,
@@ -50,6 +54,8 @@ impl Tab {
         Self::Ingest,
         Self::Settings,
         Self::Backups,
+        Self::Librarian,
+        Self::Discover,
     ];
 
     /// The tab's name.
@@ -64,6 +70,17 @@ impl Tab {
             Self::Ingest => "Ingest",
             Self::Settings => "Settings",
             Self::Backups => "Backups",
+            Self::Librarian => "Librarian",
+            Self::Discover => "Discover",
+        }
+    }
+
+    /// The key that shows it: its number, or for the librarian and discovery, `L` and `D`.
+    pub fn key(self) -> char {
+        match self {
+            Self::Librarian => 'L',
+            Self::Discover => 'D',
+            tab => char::from(b'1' + u8::try_from(tab.index()).unwrap_or(0)),
         }
     }
 
@@ -198,6 +215,8 @@ pub enum Confirm {
         /// Why it's kept compressed, when it's expanded all the same.
         anyway: Option<String>,
     },
+    /// Undoing all of the librarian's changes this week, this many.
+    UndoLibrarian(usize),
 }
 
 /// A step of a correction, which the run loop does itself.
@@ -390,6 +409,12 @@ pub enum Effect {
     OpenArchive(std::path::PathBuf),
     /// Create an archive at this path, as `carrel init` does, and show it.
     CreateArchive(std::path::PathBuf),
+    /// Ask the librarian this, in the conversation on the Librarian screen.
+    Ask(String),
+    /// Save the conversation to the Journal, as `carrel ask --save` does.
+    SaveConversation,
+    /// Undo the librarian's changes this week, as `carrel undo --librarian 7d` does.
+    UndoLibrarian,
 }
 
 /// The interactive mode's state.
@@ -507,6 +532,19 @@ pub struct App {
     pub agent_done: Vec<String>,
     /// Item previews in Browse, on terminals that draw images.
     pub previews: super::preview::Previews,
+    /// This device's records of discovery and of the day's questions: saved, or in tests
+    /// kept in memory, so they never write the real configuration.
+    pub records: crate::asking::Records,
+    /// The open questions about the item Browse shows.
+    pub item_questions: Vec<QuestionEntry>,
+    /// The conversation on the Librarian screen.
+    pub talk: super::librarian::Talk,
+    /// The librarian answering in the background.
+    pub asking: super::librarian::Asking,
+    /// The librarian's changes this week, newest first.
+    pub librarian_changes: Vec<Entry>,
+    /// The Discover screen.
+    pub stacks: super::discover::Stacks,
     /// Whether every key is shown.
     pub help: bool,
     /// Whether to leave.
@@ -524,6 +562,7 @@ impl App {
     ///
     /// [`Failure`] if the archive can't be read.
     pub fn new(archive: Archive) -> Result<Self, Failure> {
+        let archive_for_records = archive.clone();
         let mut app = Self {
             archive,
             tab: Tab::Status,
@@ -591,6 +630,16 @@ impl App {
             },
             agent_done: Vec::new(),
             previews: super::preview::Previews::default(),
+            records: if cfg!(test) {
+                crate::asking::Records::in_memory(&archive_for_records)
+            } else {
+                crate::asking::Records::here(&archive_for_records)
+            },
+            item_questions: Vec::new(),
+            talk: super::librarian::Talk::default(),
+            asking: super::librarian::Asking::default(),
+            librarian_changes: Vec::new(),
+            stacks: super::discover::Stacks::default(),
             help: false,
             quit: false,
         };
@@ -613,9 +662,7 @@ impl App {
     /// [`Failure`] if the archive can't be read.
     pub fn reload(&mut self) -> Result<(), Failure> {
         self.archive = Archive::open(self.archive.root())?;
-        let root_path = self.archive.root().to_owned();
-        let root = Some(root_path.as_path());
-        self.status = lines(&crate::commands::status(root)?.text);
+        self.status = lines(&crate::commands::status_on(&self.archive, &mut self.records)?.text);
         self.status.extend(self.index_status());
         self.history = match History::open(&self.archive) {
             Ok(history) => history.log()?,
@@ -623,6 +670,7 @@ impl App {
             Err(e) => return Err(e.into()),
         };
         self.selected = self.selected.min(self.history.len().saturating_sub(1));
+        self.librarian_changes = super::librarian::recent_changes(&self.history);
         let ranked = carrel_core::questions::answer::tidy(&self.archive)?;
         let (entries, _) = ReviewQueue::of(&self.archive).list()?;
         self.waiting = (
@@ -635,6 +683,9 @@ impl App {
         self.load_intake();
         self.load_settings();
         self.load_active();
+        if !self.stacks.lines.is_empty() {
+            self.load_discover();
+        }
         Ok(())
     }
 
@@ -715,6 +766,12 @@ impl App {
         }
         if self.tab == Tab::Review {
             return self.review_keys();
+        }
+        if self.tab == Tab::Librarian && self.picker.is_none() && self.browser.is_none() {
+            return self.talk_keys();
+        }
+        if self.tab == Tab::Discover && self.picker.is_none() && self.browser.is_none() {
+            return self.discover_keys();
         }
         let mut keys = vec![("1-9", "screens")];
         if self.picker.is_some() {
@@ -800,6 +857,10 @@ impl App {
             self.settings_move(delta);
         } else if self.tab == Tab::Backups {
             self.backups_move(delta);
+        } else if self.tab == Tab::Librarian {
+            self.talk_move(delta);
+        } else if self.tab == Tab::Discover {
+            self.discover_move(delta);
         } else if self.tab == Tab::History {
             let last = self.history.len().saturating_sub(1);
             let next = i64::try_from(self.selected).unwrap_or(0) + i64::from(delta);
@@ -818,6 +879,7 @@ impl App {
     pub fn key(&mut self, key: KeyEvent) -> Option<Effect> {
         let effect = self.key_here(key);
         self.settings_shown();
+        self.screen_shown();
         effect
     }
 
@@ -868,6 +930,8 @@ impl App {
             Tab::Ingest => self.intake_key(key),
             Tab::Settings => self.settings_key(key),
             Tab::Backups => self.backups_key(key),
+            Tab::Librarian => self.talk_key(key),
+            Tab::Discover => self.discover_key(key),
             _ => Handled::No,
         };
         if let Handled::Yes(effect) = handled {
@@ -887,8 +951,10 @@ impl App {
                 });
             }
             KeyCode::Char('i') => return self.start_ingest(),
-            KeyCode::Char(c @ '1'..='9') => {
-                self.tab = Tab::ALL[usize::from(c as u8 - b'1')];
+            KeyCode::Char(c) if Tab::ALL.iter().any(|t| t.key() == c) => {
+                if let Some(tab) = Tab::ALL.iter().find(|t| t.key() == c) {
+                    self.tab = *tab;
+                }
             }
             KeyCode::Tab | KeyCode::Right => {
                 self.tab = Tab::ALL[(self.tab.index() + 1) % Tab::ALL.len()];
@@ -964,6 +1030,23 @@ impl App {
             _ => {}
         }
         self.settings_shown();
+        self.screen_shown();
+    }
+
+    /// Readies the screen shown, the first time it's shown and whenever it comes back: the
+    /// preview follows the item the screen shows, and Discover draws its first view.
+    pub(super) fn screen_shown(&mut self) {
+        match self.tab {
+            Tab::Browse => self.previews.want(&self.archive, &self.item),
+            Tab::Discover => {
+                if self.stacks.view == super::discover::View::Wander {
+                    self.previews.want(&self.archive, &self.stacks.item);
+                } else if self.stacks.lines.is_empty() {
+                    self.load_discover();
+                }
+            }
+            _ => {}
+        }
     }
 }
 
@@ -1019,6 +1102,7 @@ fn confirmed(confirm: Confirm, key: KeyCode) -> Option<Effect> {
             item: card,
             anyway: anyway.is_some(),
         },
+        Confirm::UndoLibrarian(_) => Effect::UndoLibrarian,
     })
 }
 

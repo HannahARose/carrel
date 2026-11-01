@@ -21,14 +21,15 @@ The command line and the interactive mode run on macOS, Linux and Windows. The M
 | Questions: answer and dismiss | `questions` | ✓ Questions | ✓ (#234) |
 | Questions: ranked, with suggested answers, skip | `questions`, `questions skip` | ✓ Questions (`1`–`9`, `s`) | ranked; suggestions and skip #291 |
 | Questions about an item, a group, a sender | `questions answer`, `questions about` | ✓ Questions | groups ✓; items and senders #291 |
+| Questions while browsing and wandering, from the librarian, and a few a day on Status | `show`, `discover wander`, `ask`, `status` | ✓ Browse, Discover, Librarian, Status (`a`) | #316 |
 | Browse collections and items | `show`, `status` | ✓ Browse | ✓ Browse |
 | Previews of items | the item's path in `show` | ✓ Browse, in terminals that draw images (#258) | ✓ inspector and grid (#256) |
 | An item's history and related items | `show` | ✓ | ✓ |
 | Search, with filters and reasons | `search` | ✓ `/` | ✓ ⌘F (#236) |
-| Discovery: on this day, timeline | `discover today`, `discover timeline` | #290 | ✓ Discover |
-| Discovery: wander the stacks | `discover wander` | #290 | ✓ Discover, with previews |
-| Discovery: the archive map, activity | `discover map`, `discover activity` | #290 | ✓ a treemap and a heatmap |
-| Resurfacing forgotten collections | `status` | #290 | ✓ Status |
+| Discovery: on this day, timeline | `discover today`, `discover timeline` | ✓ Discover (`D`) | ✓ Discover |
+| Discovery: wander the stacks | `discover wander` | ✓ Discover, with previews where the terminal draws them | ✓ Discover, with previews |
+| Discovery: the archive map, activity | `discover map`, `discover activity` | ✓ a sized tree and a block heatmap | ✓ a treemap and a heatmap |
+| Resurfacing forgotten collections | `status` | ✓ Status | ✓ Status |
 | The embedding index: status, rebuild, switch models | `index` | ✓ Status, Settings | ✓ Settings → Search (#267) |
 | Correct a filed item | `correct` | ✓ `c` | ✓ ⌘K (#234) |
 | Edit a filed item's card | `edit` | ✓ `e` | ✓ ⌘E (#234) |
@@ -41,8 +42,8 @@ The command line and the interactive mode run on macOS, Linux and Windows. The M
 | Desk items: add, remove, archive | `desk` | ✓ Active | ✓ (#235) |
 | Work-session entries: approve, edit, combine, drop | `sessions` | ✓ Active | ✓ (#235) |
 | History and undo | `log`, `undo` | ✓ History | ✓ (#235) |
-| The librarian: ask, converse, save to the Journal | `ask` | #290 | ✓ the Librarian panel (⌥⌘L), Ask About This (⇧⌘L) |
-| The librarian's changes: list and undo them together | `status`, `log --librarian`, `undo --librarian` | #290 | ✓ the Librarian panel, Status and History |
+| The librarian: ask, converse, save to the Journal | `ask` | ✓ the Librarian screen (`L`) | ✓ the Librarian panel (⌥⌘L), Ask About This (⇧⌘L) |
+| The librarian's changes: list and undo them together | `status`, `log --librarian`, `undo --librarian` | ✓ the Librarian screen, Status and History | ✓ the Librarian panel, Status and History |
 | Backups: set up, snapshot, list, verify, restore | `backup` | ✓ Backups | ✓ Backups (#266) |
 | Settings, this device's and the archive's | `settings` | ✓ Settings | ✓ Settings → General (#267) |
 | Models: list, download, remove | `models` | ✓ Settings | ✓ Settings → Models (#267) |

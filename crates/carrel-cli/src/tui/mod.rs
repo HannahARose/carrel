@@ -6,17 +6,21 @@ mod active;
 mod agent;
 mod app;
 mod archives;
+mod asking;
 mod backups;
 mod browser;
+mod discover;
 mod embedding;
 mod intake;
 mod item;
+mod librarian;
 mod preview;
 mod review;
 mod screens;
 mod search;
 mod settings;
 mod ui;
+mod ui_discovery;
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -174,6 +178,7 @@ fn event_loop(
     let mut sessions = SessionLook::default();
     let mut painter = preview::Painter::default();
     while !app.quit {
+        librarian::Asking::poll(app);
         sessions.tick(app);
         app.previews.poll();
         // The worker runs in another process; see what it has done about once a second.
@@ -447,6 +452,10 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
         | Effect::Pick(_)
         | Effect::Correction(_)
         | Effect::Open(_) => return None,
+        effect @ (Effect::Ask(_) | Effect::SaveConversation | Effect::UndoLibrarian) => {
+            librarian::librarian_work(app, effect);
+            return None;
+        }
         effect @ (Effect::Dismiss(_) | Effect::Skip(_)) => {
             finished(app, settle_question(&root, &effect));
             return None;
@@ -868,9 +877,10 @@ mod tests {
             ),
             "{text}"
         );
-        assert!(text.contains(" Sample archive "));
+        assert!(text.contains(" Sample archive "), "{text}");
         assert!(
-            text.contains("Waiting for you: 1 proposal (2 to review), 0 questions (3 to answer).")
+            text.contains("Waiting for you: 1 proposal (2 to review), 1 question (3 to answer)."),
+            "{text}"
         );
         assert!(text.contains("items in"), "the status report");
         assert!(

@@ -37,7 +37,7 @@ impl Theme {
         Self { color: false }
     }
 
-    fn selected(self) -> Style {
+    pub(super) fn selected(self) -> Style {
         let style = Style::new().add_modifier(Modifier::REVERSED);
         if self.color {
             style.fg(Color::Cyan)
@@ -46,7 +46,7 @@ impl Theme {
         }
     }
 
-    fn key(self) -> Style {
+    pub(super) fn key(self) -> Style {
         let style = Style::new().add_modifier(Modifier::BOLD);
         if self.color {
             style.fg(Color::Yellow)
@@ -55,7 +55,7 @@ impl Theme {
         }
     }
 
-    fn dim(self) -> Style {
+    pub(super) fn dim(self) -> Style {
         if self.color {
             Style::new().fg(Color::DarkGray)
         } else {
@@ -109,6 +109,8 @@ pub fn draw(frame: &mut Frame, app: &App, theme: Theme) {
         Tab::Ingest => draw_ingest(frame, app, theme, inner),
         Tab::Settings => draw_settings(frame, app, theme, inner),
         Tab::Backups => draw_backups(frame, app, theme, inner),
+        Tab::Librarian => super::ui_discovery::draw_librarian(frame, app, theme, inner),
+        Tab::Discover => super::ui_discovery::draw_discover(frame, app, theme, inner),
     }
     draw_help_line(frame, app, theme, bottom);
     if app.help {
@@ -133,9 +135,9 @@ pub fn draw(frame: &mut Frame, app: &App, theme: Theme) {
 
 fn draw_tabs(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
     let mut spans = vec![Span::raw(" ")];
-    for (i, tab) in Tab::ALL.iter().enumerate() {
-        let title = format!("{} {}", i + 1, tab.title());
-        let style = if *tab == app.tab {
+    for tab in Tab::ALL {
+        let title = format!("{} {}", tab.key(), tab.title());
+        let style = if tab == app.tab {
             theme.selected()
         } else {
             Style::new()
@@ -258,76 +260,102 @@ fn centered(area: Rect, width: u16, height: u16) -> Rect {
     )
 }
 
+/// Every key, for `?` help.
+const HELP_ROWS: &[(&str, &str)] = &[
+    (
+        "1 to 9, L, D, Tab, ←→",
+        "switch screens; L the librarian, D discover",
+    ),
+    (
+        "i",
+        "add files and folders to ingest, with your file picker or the built-in one",
+    ),
+    ("↑↓, j k, PgUp PgDn, Home End", "scroll, or choose a change"),
+    ("a  h", "approve, or hold in Holding (Review)"),
+    (
+        "m  e  c  x",
+        "move, edit, correct in words, or reject (Review)",
+    ),
+    (
+        "v  b  s  [ ]",
+        "a duplicate: file as a version, keep both, skip; other matches (Review)",
+    ),
+    (
+        "z",
+        "unpack a zip when it's approved, or keep it compressed (Review)",
+    ),
+    (
+        "Space  A",
+        "mark several; approve all high-confidence (Review)",
+    ),
+    ("r  o  x", "return, open, cancel checkout (Active)"),
+    (
+        "n  x  f",
+        "put a file or folder on the desk; take off, archive a desk item (Active)",
+    ),
+    (
+        "a  e  c  d  Space",
+        "approve, edit, combine, drop; mark (Active)",
+    ),
+    (
+        "Enter  1-9  s  d",
+        "answer, pick a suggestion, skip or dismiss a question (Questions)",
+    ),
+    (
+        "←→  e  c  /  Esc",
+        "collections, items, an item; edit, correct; search; clear (Browse)",
+    ),
+    (
+        "u  Enter",
+        "undo the item's chosen change; go to a related item (Browse)",
+    ),
+    (
+        "o  r  z  n",
+        "check out, rename, expand an item; new collection (Browse)",
+    ),
+    (
+        "a",
+        "answer Carrel's question about the item (Browse, Librarian, wander)",
+    ),
+    ("u", "undo the chosen change (History)"),
+    (
+        "Enter  s  n  y",
+        "ask; save to the Journal; new conversation; make a suggestion (Librarian)",
+    ),
+    (
+        "u  U  o",
+        "undo the librarian's change, or all this week's; open the item (Librarian)",
+    ),
+    (
+        "d  w  t  m  h",
+        "on this day, wander, timeline, map, activity (Discover)",
+    ),
+    (
+        "Space  n  p",
+        "next step, new walk (wander); periods (timeline)",
+    ),
+    (
+        "n  v  r  s",
+        "snapshot now, verify, restore an item, set up (Backups)",
+    ),
+    ("x  t  r", "remove, move to the front, retry (Ingest)"),
+    (
+        "e  w",
+        "each entry, or whole folder, before queueing (Ingest)",
+    ),
+    (
+        "Enter",
+        "change a setting; rebuild the search index or switch its model; install the agent (Settings)",
+    ),
+    ("x", "uninstall the background agent, on its row (Settings)"),
+    ("Ctrl-O", "open another archive, or create one"),
+    ("Ctrl-R", "read everything again"),
+    ("?", "this help"),
+    ("q, Esc, Ctrl-C", "quit"),
+];
+
 fn draw_help(frame: &mut Frame, theme: Theme, area: Rect) {
-    let rows = [
-        ("1 to 9, Tab, ←→", "switch screens"),
-        (
-            "i",
-            "add files and folders to ingest, with your file picker or the built-in one",
-        ),
-        ("↑↓, j k, PgUp PgDn, Home End", "scroll, or choose a change"),
-        ("a  h", "approve, or hold in Holding (Review)"),
-        (
-            "m  e  c  x",
-            "move, edit, correct in words, or reject (Review)",
-        ),
-        (
-            "v  b  s  [ ]",
-            "a duplicate: file as a version, keep both, skip; other matches (Review)",
-        ),
-        (
-            "z",
-            "unpack a zip when it's approved, or keep it compressed (Review)",
-        ),
-        (
-            "Space  A",
-            "mark several; approve all high-confidence (Review)",
-        ),
-        ("r  o  x", "return, open, cancel checkout (Active)"),
-        (
-            "n  x  f",
-            "put a file or folder on the desk; take off, archive a desk item (Active)",
-        ),
-        (
-            "a  e  c  d  Space",
-            "approve, edit, combine, drop; mark (Active)",
-        ),
-        (
-            "Enter  1-9  s  d",
-            "answer, pick a suggestion, skip or dismiss a question (Questions)",
-        ),
-        (
-            "←→  e  c  /  Esc",
-            "collections, items, an item; edit, correct; search; clear (Browse)",
-        ),
-        (
-            "u  Enter",
-            "undo the item's chosen change; go to a related item (Browse)",
-        ),
-        (
-            "o  r  z  n",
-            "check out, rename, expand an item; new collection (Browse)",
-        ),
-        ("u", "undo the chosen change (History)"),
-        (
-            "n  v  r  s",
-            "snapshot now, verify, restore an item, set up (Backups)",
-        ),
-        ("x  t  r", "remove, move to the front, retry (Ingest)"),
-        (
-            "e  w",
-            "each entry, or whole folder, before queueing (Ingest)",
-        ),
-        (
-            "Enter",
-            "change a setting; rebuild the search index or switch its model; install the agent (Settings)",
-        ),
-        ("x", "uninstall the background agent, on its row (Settings)"),
-        ("Ctrl-O", "open another archive, or create one"),
-        ("Ctrl-R", "read everything again"),
-        ("?", "this help"),
-        ("q, Esc, Ctrl-C", "quit"),
-    ];
+    let rows = HELP_ROWS;
     let lines: Vec<Line> = rows
         .iter()
         .map(|(key, what)| {
@@ -397,6 +425,7 @@ fn draw_confirm(frame: &mut Frame, confirm: &Confirm, theme: Theme, area: Rect) 
                 .to_owned(),
             " undo   ",
         ),
+        Confirm::UndoLibrarian(count) => super::librarian::confirm_text(*count),
         Confirm::Agent(change) => {
             let (question, about) = super::agent::confirm_text(change);
             let yes = match change {
@@ -926,8 +955,21 @@ fn draw_item(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
     {
         lines.extend(why_lines(hit, theme));
     }
+    if let Some(question) = app.item_questions.first() {
+        for (i, line) in super::asking::question_lines(question)
+            .into_iter()
+            .enumerate()
+        {
+            lines.push(if i == 0 {
+                Line::styled(line, theme.key())
+            } else {
+                Line::from(line)
+            });
+        }
+        lines.push(Line::from(""));
+    }
     lines.extend(view.text.iter().map(|l| Line::from(l.as_str())));
-    let card_area = draw_preview(frame, app, theme, card_area);
+    let card_area = draw_preview(frame, app, theme, card_area, view.card.as_deref());
     frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), card_area);
     let highlight = if app.browse_pane == Pane::Item {
         theme.selected()
@@ -945,8 +987,14 @@ fn draw_item(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
 /// The chosen item's preview, beside its card when there's room and above it when there
 /// isn't: a folder's listing, or room left for the picture the run loop draws after the
 /// frame. Returns what's left for the card.
-fn draw_preview(frame: &mut Frame, app: &App, theme: Theme, area: Rect) -> Rect {
-    let Some(ready) = app.previews.shown(app.item.card.as_deref()) else {
+pub(super) fn draw_preview(
+    frame: &mut Frame,
+    app: &App,
+    theme: Theme,
+    area: Rect,
+    card: Option<&str>,
+) -> Rect {
+    let Some(ready) = app.previews.shown(card) else {
         return area;
     };
     let (card, preview) = if area.width >= 60 {
@@ -980,6 +1028,11 @@ fn draw_preview(frame: &mut Frame, app: &App, theme: Theme, area: Rect) -> Rect 
 fn draw_input(frame: &mut Frame, input: &Input, theme: Theme, area: Rect) {
     let (title, above) = match &input.purpose {
         InputPurpose::Answer { question, .. } => (" Answer ", question.clone()),
+        InputPurpose::Ask => (
+            " Librarian ",
+            "Ask about your archive, in your own words (\"what do I have about the lamp?\"):"
+                .to_owned(),
+        ),
         InputPurpose::Search => (
             " Search ",
             "Words to find, and filters such as tag:receipts, kind:file, after:2025-01:".to_owned(),

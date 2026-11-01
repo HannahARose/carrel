@@ -33,6 +33,8 @@ pub enum InputPurpose {
     },
     /// What to search for: words, and filters such as `tag:receipts`.
     Search,
+    /// A question for the librarian.
+    Ask,
     /// Files and folders to ingest.
     Ingest,
     /// A new value for this setting.
@@ -118,6 +120,7 @@ impl Input {
             } => "your answer; you see what it changes before it's saved",
             InputPurpose::Answer { .. } => "what it is",
             InputPurpose::Search => "words and filters",
+            InputPurpose::Ask => "your question for the librarian",
             InputPurpose::Ingest => "paths to ingest (or drop files here)",
             InputPurpose::Setting(_) => "the new value",
             InputPurpose::BackupRepository => "the backup folder (drop it here)",
@@ -261,6 +264,12 @@ impl App {
     /// Answers the question `id` with what the owner typed.
     fn typed_answer(&mut self, id: Id, text: String) -> Option<Effect> {
         let question = self.asked.iter().find(|q| q.id == id)?.clone();
+        // A suggestion's number picks it, as the number keys do on Questions.
+        if let Ok(n) = text.parse::<usize>()
+            && (1..=question.suggestions.len()).contains(&n)
+        {
+            return self.pick(&question, n);
+        }
         match question.kind {
             QuestionKind::Item => Self::answer_item(&question, &text),
             QuestionKind::Sender if !matches!(text.to_lowercase().as_str(), "no" | "n") => {
@@ -315,6 +324,11 @@ impl App {
                     }
                     InputPurpose::Answer { .. } => {
                         self.message = Some("No answer given; the question still waits".into());
+                    }
+                    InputPurpose::Ask if text.is_empty() => {}
+                    InputPurpose::Ask => {
+                        self.talk.waiting = Some(text.clone());
+                        return Some(Effect::Ask(text));
                     }
                     InputPurpose::Setting(key) => {
                         return Some(super::settings::set(&key, &text));
@@ -475,6 +489,10 @@ impl App {
                     });
                 }
             }
+            KeyCode::Char('a') if on_item => match self.item_questions.first().cloned() {
+                Some(question) => self.answer_moment(&question),
+                None => self.message = Some("Carrel has no question about this item".into()),
+            },
             KeyCode::Char('/') => {
                 self.input = Some(Input {
                     purpose: InputPurpose::Search,

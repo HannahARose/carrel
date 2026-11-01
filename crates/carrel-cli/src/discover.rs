@@ -85,7 +85,7 @@ fn what_text(what: &[DateKind]) -> String {
     words.join(", ")
 }
 
-fn today_text(day: &OnThisDay, date: Date) -> String {
+pub(crate) fn today_text(day: &OnThisDay, date: Date) -> String {
     let mut text = String::new();
     let heading = date.strftime("%-d %B").to_string();
     if day.years.is_empty() {
@@ -168,6 +168,8 @@ pub fn wander(archive: Option<&Path>, args: &WanderArgs, json: bool) -> Result<R
     let texts = carrel_core::search::texts::TextCache::of(&archive);
     let interactive = !json && std::io::stdin().is_terminal() && std::io::stdout().is_terminal();
     let mut steps = Vec::new();
+    let mut questions: Vec<(usize, carrel_core::questions::QuestionEntry)> = Vec::new();
+    let mut asked_at = None;
     let mut done = false;
     let mut around = Surroundings::new().with_texts(&texts);
     if let Some(near) = &near {
@@ -179,8 +181,20 @@ pub fn wander(archive: Option<&Path>, args: &WanderArgs, json: bool) -> Result<R
             break;
         };
         visits.open(&step.item.collection, today());
+        let question = carrel_core::questions::moments::wander_asks(step.number, asked_at)
+            .then(|| crate::asking::question_on(&archive, &step.item.card))
+            .flatten();
+        if let Some(question) = question {
+            asked_at = Some(step.number);
+            questions.push((step.number, question));
+        }
         if interactive {
             print!("{}", step_text(&step, &catalog));
+            if let Some((n, question)) = questions.last()
+                && *n == step.number
+            {
+                print!("{}", crate::asking::wander_question_text(question));
+            }
             steps.push(step);
             eprint!("\nEnter for the next step, q to stop: ");
             let _ = std::io::stderr().flush();
@@ -208,6 +222,9 @@ pub fn wander(archive: Option<&Path>, args: &WanderArgs, json: bool) -> Result<R
                 text.push('\n');
             }
             text.push_str(&step_text(step, &catalog));
+            if let Some((_, question)) = questions.iter().find(|(n, _)| *n == step.number) {
+                text.push_str(&crate::asking::wander_question_text(question));
+            }
         }
     }
     if done {
@@ -229,6 +246,12 @@ pub fn wander(archive: Option<&Path>, args: &WanderArgs, json: bool) -> Result<R
         "steps": steps,
         "visited": visited,
         "done": done,
+        "questions": questions.iter().map(|(n, q)| json!({
+            "step": n,
+            "id": q.id,
+            "question": q.question,
+            "subject": q.subject,
+        })).collect::<Vec<_>>(),
     });
     Ok(Report::new(text, json))
 }
@@ -266,7 +289,7 @@ fn reason_text(reason: &Reason, catalog: &Catalog) -> String {
     }
 }
 
-fn step_text(step: &Step, catalog: &Catalog) -> String {
+pub(crate) fn step_text(step: &Step, catalog: &Catalog) -> String {
     let mut text = String::new();
     writeln!(
         text,
@@ -330,7 +353,7 @@ pub fn timeline(archive: Option<&Path>, args: &TimelineArgs) -> Result<Report, F
     ))
 }
 
-fn timeline_text(timeline: &Timeline, listed: usize) -> String {
+pub(crate) fn timeline_text(timeline: &Timeline, listed: usize) -> String {
     let mut text = String::new();
     if timeline.periods.is_empty() {
         writeln!(text, "Nothing is on the timeline.").unwrap();
@@ -409,7 +432,7 @@ pub fn map(archive: Option<&Path>, depth: Option<usize>) -> Result<Report, Failu
     ))
 }
 
-fn map_text(map: &Map, depth: Option<usize>) -> String {
+pub(crate) fn map_text(map: &Map, depth: Option<usize>) -> String {
     let mut text = String::new();
     writeln!(
         text,
@@ -524,7 +547,7 @@ pub fn activity(
 /// The shades of a heatmap's cells, from nothing to the busiest.
 const SHADES: [char; 5] = ['·', '░', '▒', '▓', '█'];
 
-fn activity_text(activity: &Activity) -> String {
+pub(crate) fn activity_text(activity: &Activity) -> String {
     let mut text = String::new();
     let filed: usize = activity.days.iter().map(|d| d.filed).sum();
     let sessions: usize = activity.days.iter().map(|d| d.sessions).sum();
@@ -598,15 +621,14 @@ fn activity_text(activity: &Activity) -> String {
 
 /// The part of `carrel status` that now and then names a collection not opened in a long
 /// time, and the same for programs.
-pub fn resurfaced(archive: &Archive) -> (String, Value) {
+pub fn resurfaced(archive: &Archive, records: &mut crate::asking::Records) -> (String, Value) {
     let Ok(catalog) = Catalog::read(archive) else {
         return (String::new(), Value::Null);
     };
-    let (mut visits, path) = visits(archive);
-    let before = visits.resurfaced.clone();
-    let found = visits.resurface(&catalog, today());
-    if visits.resurfaced != before {
-        save(&visits, path.as_deref());
+    let before = records.visits.resurfaced.clone();
+    let found = records.visits.resurface(&catalog, today());
+    if records.visits.resurfaced != before {
+        records.save_visits();
     }
     let Some(found) = found else {
         return (String::new(), Value::Null);
