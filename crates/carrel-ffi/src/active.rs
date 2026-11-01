@@ -148,6 +148,10 @@ pub struct Returned {
     pub snapshots_kept: u32,
     /// Why some session snapshots couldn't be forgotten, or all were kept, if they were.
     pub snapshot_problems: Vec<String>,
+    /// Where the working copy was returned from.
+    pub working: String,
+    /// What happened to it afterwards, by `checkout.after_return`.
+    pub working_copy: crate::working_copy::WorkingCopyAfter,
 }
 
 /// What to do with an item's pending history entries.
@@ -333,8 +337,11 @@ impl ArchiveHandle {
     /// Returns the checked-out item `item`, from where it was checked out to or from `from`,
     /// replacing the archive copy with the working copy, with a snapshot first when backups
     /// are set up. Afterwards the returned version is snapshotted, and the checkout's session
-    /// snapshots are forgotten when `trim_snapshots` says so, as the owner chose. Ask the
-    /// owner first, with [`ArchiveHandle::return_preview`].
+    /// snapshots are forgotten when `trim_snapshots` says so, as the owner chose. Then the
+    /// working copy goes to the Trash or is kept, by `checkout.after_return`; when that says
+    /// to ask, [`Returned::working_copy`] says so, and
+    /// [`ArchiveHandle::trash_working_copy`] trashes it if the owner wants. Ask the owner
+    /// first, with [`ArchiveHandle::return_preview`].
     ///
     /// # Errors
     ///
@@ -364,6 +371,8 @@ impl ArchiveHandle {
             snapshots_forgotten: 0,
             snapshots_kept: 0,
             snapshot_problems: Vec::new(),
+            working: crate::text(&plan.working),
+            working_copy: crate::working_copy::after_return(&archive, &plan.working),
         };
         if let Some(backups) = backups.as_deref().filter(|_| !sessions.is_empty()) {
             let kept = carrel_core::sessions::keep_returned_version(

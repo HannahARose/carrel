@@ -96,6 +96,18 @@ private struct ActiveDialogs: ViewModifier {
                     "The archive copy is unlocked as it was. Changes in the working copy aren’t brought back, and the working copy stays where it is."
                 )
             }
+            .confirmationDialog(
+                "Put the Working Copy in the Trash?",
+                isPresented: present($model.askingAboutWorkingCopy),
+                presenting: model.askingAboutWorkingCopy
+            ) { path in
+                Button("Move to Trash") { Task { await model.trashWorkingCopy(path) } }
+                Button("Keep It", role: .cancel) { model.askingAboutWorkingCopy = nil }
+            } message: { path in
+                Text(
+                    "It’s returned, so the archive has its changes. \(path) can be recovered from the Trash. The “After a return” setting can do this, or keep it, without asking."
+                )
+            }
             .alert(
                 "Couldn’t Do That",
                 isPresented: present($model.problem)
