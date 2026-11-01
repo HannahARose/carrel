@@ -128,7 +128,7 @@ final class SettingsModel {
         }
     }
 
-    /// Sets this device's `picker` or `editor`; empty lets Carrel choose.
+    /// Sets this device's `picker`, `editor` or `librarian.model`; empty lets Carrel choose.
     func setDevice(_ key: String, to value: String) async {
         let value = value.trimmingCharacters(in: .whitespaces)
         await perform {

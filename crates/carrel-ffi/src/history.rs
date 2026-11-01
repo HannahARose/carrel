@@ -29,6 +29,9 @@ pub struct Change {
     pub snapshot: Option<String>,
     /// The change it undid, if it's an undo.
     pub reverts: Option<String>,
+    /// Who made it on the owner's behalf without asking, such as `librarian`, when someone
+    /// did (`Carrel-Agent`, FORMAT.md §8.2).
+    pub agent: Option<String>,
 }
 
 impl From<&Entry> for Change {
@@ -43,6 +46,7 @@ impl From<&Entry> for Change {
             device: entry.device.map(|d| d.to_string()),
             snapshot: entry.snapshot.clone(),
             reverts: entry.reverts.clone(),
+            agent: entry.agent.clone(),
         }
     }
 }

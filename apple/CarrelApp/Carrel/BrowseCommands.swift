@@ -38,6 +38,7 @@ struct ItemActions: View {
     let item: ItemSummary
 
     var body: some View {
+        AskAboutButton(model: model, item: item)
         if let browse = model.browse {
             Button("Rename…", systemImage: "pencil") {
                 Task { await browse.startRename(of: item) }

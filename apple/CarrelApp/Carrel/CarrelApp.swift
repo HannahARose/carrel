@@ -29,6 +29,7 @@ struct CarrelApp: App {
             ActiveCommands()
             ArchiveWindowCommands()
             BrowseCommands()
+            LibrarianCommands()
         }
 
         Settings {

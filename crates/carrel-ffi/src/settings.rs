@@ -58,6 +58,9 @@ pub struct DeviceSettings {
     pub picker: Option<String>,
     /// The editor for cards, before `$VISUAL` and `$EDITOR`.
     pub editor: Option<String>,
+    /// The text model the librarian answers with, as `provider/offer`; `None` for the
+    /// strongest this device has.
+    pub librarian_model: Option<String>,
 }
 
 impl From<carrel_core::settings::SettingsError> for CarrelError {
@@ -186,16 +189,18 @@ impl ArchiveHandle {
         Ok(DeviceSettings {
             picker: prefs.picker,
             editor: prefs.editor,
+            librarian_model: prefs.librarian_model,
         })
     }
 
-    /// Sets this device's `picker` or `editor` to `value`, as `carrel settings set` does; an
-    /// empty value, `default` or `None` clears it, so Carrel chooses.
+    /// Sets this device's `picker`, `editor` or `librarian.model` to `value`, as
+    /// `carrel settings set` does; an empty value, `default` or `None` clears it, so Carrel
+    /// chooses. A librarian model must be one that's available.
     ///
     /// # Errors
     ///
-    /// [`CarrelError::Invalid`] for another key, or [`CarrelError::Failed`] if the
-    /// preferences can't be saved.
+    /// [`CarrelError::Invalid`] for another key or a model that isn't available, or
+    /// [`CarrelError::Failed`] if the preferences can't be saved.
     pub fn set_device_setting(
         &self,
         key: String,
@@ -209,10 +214,20 @@ impl ArchiveHandle {
         match key.as_str() {
             "picker" => prefs.picker = value,
             "editor" => prefs.editor = value,
+            "librarian.model" => {
+                prefs.librarian_model = match value {
+                    Some(name) => Some(
+                        resolve_model(&self.registry(), &name)
+                            .map_err(CarrelError::invalid)?
+                            .name(),
+                    ),
+                    None => None,
+                };
+            }
             _ => {
                 return Err(CarrelError::invalid(format!(
-                    "no device setting {key}; they're picker and editor (choose models with \
-                     choose_models)"
+                    "no device setting {key}; they're picker, editor and librarian.model \
+                     (choose models with choose_models)"
                 )));
             }
         }
