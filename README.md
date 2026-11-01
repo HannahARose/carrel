@@ -49,7 +49,7 @@ Until then, build from source as [Getting started](docs/guide/getting-started.md
 - **Core:** Rust, shared by the apps and the CLI; builds on macOS, Linux and Windows.
 - **Apps:** SwiftUI for macOS, iPadOS and iOS, using the core through generated Swift bindings (UniFFI).
 - **Providers:** models and text extraction come from separate provider programs: Apple's Foundation Models, MLX, PDFKit and Vision on Apple devices, and portable ones (llama.cpp, a Rust PDF reader, Tesseract) elsewhere.
-- **Sync (planned, v0.9):** iCloud Drive, with a CloudKit lock so only one device writes history at a time.
+- **Sync (planned, v0.8):** iCloud Drive, with a CloudKit lock so only one device writes history at a time.
 
 [docs/dev/architecture.md](docs/dev/architecture.md) explains how it's built today, with diagrams.
 

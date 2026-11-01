@@ -23,7 +23,7 @@ The spec sets the shape. The librarian is "a chat panel that searches cards thro
   - `on_this_day` and `timeline` (the discovery data, below).
 
   The model picks a tool by answering in a fixed JSON form, the core runs it and hands back the result, and so on, up to a limit per answer. This works with every text provider Carrel has, since all of them can answer to a schema, and it needs no tool-calling support from the model. The final answer gets more room than a step naming a tool, and a step whose reply was cut off is asked again with that room. The answer lists its items before its text, with at most twelve items, four passages and three suggestions; one cut off even with the whole room is asked for once more briefly, without passages or suggestions, and cut off again it ends as out of room, keeping the items found. A tool call the model already made isn't run again or counted as a step: it gets the earlier result back, marked as already done. What the tools returned is trimmed to fit the model's context, the oldest results first.
-- **By default it changes nothing itself.** When it suggests a change, such as "this receipt looks misfiled" or "these five items could be a collection", the suggestion becomes a proposal or a correction you confirm, through the paths that already exist: review, `docs/design/corrections.md`, and restructuring once v0.7 adds it.
+- **By default it changes nothing itself.** When it suggests a change, such as "this receipt looks misfiled" or "these five items could be a collection", the suggestion becomes a proposal or a correction you confirm, through the paths that already exist: review, `docs/design/corrections.md`, and restructuring, which v0.6 added.
 - **Optionally, it may make changes that can be undone.** A setting, off unless you turn it on (`librarian.changes`), lets it make the changes it's sure of without asking first:
   - refiling an item, correcting a card's fields, renaming an item, and creating a collection;
   - each one is an ordinary change in history, marked as the librarian's, that undo reverses;
@@ -42,7 +42,7 @@ Today ingest asks two kinds of question, what a term means and which collection 
 - **New kinds:**
   - **About an item** ("what does this photo show?", "who is J. Okafor?", "what was this project for?", "does this still matter?"), from the librarian or from browsing. The answer goes through the corrections path: the model turns it into card changes you see and confirm, and fields you dictate stay yours.
   - **About a group** ("these 12 receipts from the same restaurant: Finances, or a new Food collection?").
-  - **About a sender or project** ("should Northbridge Bank have its own collection?"), which can lead to a routing rule or, in v0.7, a restructure proposal.
+  - **About a sender or project** ("should Northbridge Bank have its own collection?"), which can lead to a routing rule or, in v0.6, a restructure proposal.
 - **Ranked by what an answer settles:** how many items it would place or improve, and how unsure Carrel is about them now. Questions a rule or the glossary already answers are dropped, and near-duplicates merge.
 - **Easier to answer:** each question shows the items it's about and offers likely answers to pick from, with a free answer and Skip always there. Skipping is cheap and remembered, so a skipped question doesn't come back for a while.
 - **Learned only on your yes:** an answer can become a glossary fact or a routing rule, and Carrel asks before saving either (the corrections path's "learn this?").
@@ -58,7 +58,7 @@ The core computes each view as plain data, and each interface draws it in its ow
 - **The archive map:** collections by size and number of items, as a treemap in the app and a sized tree in the terminal; and which drive holds what, once offline collections exist.
 - **Activity:** when you filed and worked on things, as a heatmap by day.
 - **Resurfacing:** now and then, Status mentions a collection you haven't opened in a long time, with an item or two from it.
-- **The tag and link graph** comes later, with v0.7's restructuring, which needs the same data.
+- **The tag and link graph** comes later, with restructuring (in v0.6), which needs the same data.
 
 ## In each interface
 
@@ -95,4 +95,4 @@ The core computes each view as plain data, and each interface draws it in its ow
 2. **It runs on the strongest local model the device has, chosen automatically and changeable in Settings, with each answer saying which model gave it.** Recommended: the spec asks for the strongest model, and naming it makes the quality of an answer understandable. The benchmark sets the defaults per memory size.
 3. **Questions get one queue with new kinds (about an item, a group, a sender or project), ranked by what an answer would settle, with suggested answers, cheap skipping, and learning only on your yes. They're asked at natural moments: review, browsing, the librarian, and wander sessions, plus a few a day on Status.** Recommended: it's what #195 and your idea in #6 ask for, and it keeps questions from becoming nagging.
 4. **Conversations are kept only when you save them, to the Journal as Markdown.** Recommended: nothing you say to the librarian is written down unless you choose, and what you keep is readable without Carrel. The alternative is keeping every conversation, which helps the librarian remember but writes more of your words into the archive.
-5. **Discovery (on this day, wander, timeline, map, activity, resurfacing) is computed in the core and shown in every interface in its own way, with the tag and link graph left for v0.7.** Recommended: one implementation, a fully capable command line and interactive mode, and the graph built once with the restructuring that needs it.
+5. **Discovery (on this day, wander, timeline, map, activity, resurfacing) is computed in the core and shown in every interface in its own way, with the tag and link graph left for restructuring.** Recommended: one implementation, a fully capable command line and interactive mode, and the graph built once with the restructuring that needs it.

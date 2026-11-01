@@ -1,10 +1,10 @@
-# Design: restructure proposals (v0.7)
+# Design: restructure proposals (planned for v0.7, shipped in v0.6.0)
 
 Status: accepted 2026-11-01, with the five recommendations below and the owner's amendments: a setting for how eager Carrel is to rearrange, scaled by how invasive each change is (decision 2), and crawlers that keep their pace at every eagerness level and refine cards too (decision 4). Issue #34, with #154 (crawlers); built in #322, #323, #324, #325, #154, #326, #327 and #328.
 
 ## What this adds
 
-Filing puts each item where it fits best today, but an archive's shape drifts: a collection fills up with forty loose receipts, a project grows a dozen notes filed in three places, Holding collects what didn't fit anywhere, and a tag turns up in five unrelated collections because there's a group the structure doesn't have. v0.7 lets Carrel notice that and propose a better shape: a **restructure proposal** for one section of the archive, as a list of changes you review, approved all, in part or not at all, and undone as one change. **Crawlers** keep reassessing placements in the background with the strongest model the device has, item by item, and feed what they find into both.
+Filing puts each item where it fits best today, but an archive's shape drifts: a collection fills up with forty loose receipts, a project grows a dozen notes filed in three places, Holding collects what didn't fit anywhere, and a tag turns up in five unrelated collections because there's a group the structure doesn't have. Restructuring lets Carrel notice that and propose a better shape: a **restructure proposal** for one section of the archive, as a list of changes you review, approved all, in part or not at all, and undone as one change. **Crawlers** keep reassessing placements in the background with the strongest model the device has, item by item, and feed what they find into both.
 
 **The gate:** the first whole-archive restructure is reviewed and approved (#34), its findability test shows the new shape is easier to navigate, and undoing it puts everything back.
 
@@ -89,7 +89,7 @@ People feel differently about an archive that moves. Some want Carrel to keep re
 
 ## The tag and link graph
 
-v0.6 left the tag and link graph for now, since it needs the same data as restructuring. v0.7 builds it once, in the core: items and collections as nodes, tags, links and shared work sessions as edges. Restructuring uses it to find groups across branches; discovery shows it as a view (`discover graph`) where you can see which collections connect and why.
+v0.6 left the tag and link graph for now, since it needs the same data as restructuring. Restructuring builds it once, in the core: items and collections as nodes, tags, links and shared work sessions as edges. Restructuring uses it to find groups across branches; discovery shows it as a view (`discover graph`) where you can see which collections connect and why.
 
 ## In each interface
 
