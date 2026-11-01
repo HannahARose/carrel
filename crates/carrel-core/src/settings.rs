@@ -5,6 +5,7 @@ use crate::archive::{Archive, ArchiveError};
 use crate::coordinator::WriterLease;
 use crate::documents::{Originals, OutsideEdits, Settings};
 use crate::history::{Change, History, HistoryError, Operation};
+use crate::restructure::eagerness::{Eagerness, MoveBudget, RestructureSettings};
 
 /// A setting the owner can change from Carrel's interfaces.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -26,6 +27,16 @@ pub enum Key {
     LibrarianChanges,
     /// How sure the librarian must be to make a change on its own.
     LibrarianConfidence,
+    /// How eager Carrel is to rearrange the archive (`docs/design/restructure.md`).
+    RestructureEagerness,
+    /// How much a restructure's benefit must beat its cost, before scaling by invasiveness.
+    RestructureMargin,
+    /// The cost added to restructuring a recently restructured section.
+    RestructureStabilityPenalty,
+    /// How many days a restructured section counts as recently changed.
+    RestructureStabilityDays,
+    /// How many items one restructure may move between branches.
+    RestructureMoveBudget,
     /// Whether the crawler may make the refiles and corrections it's sure of without asking.
     CrawlerChanges,
     /// How much of the device's idle time the crawler uses.
@@ -41,7 +52,7 @@ const EMBEDDING_MODELS: [&str; 3] = [
 
 impl Key {
     /// Every setting, in the order they're shown.
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 15] = [
         Self::Originals,
         Self::CompressedFiles,
         Self::CrowdedItems,
@@ -50,6 +61,11 @@ impl Key {
         Self::EmbeddingModel,
         Self::LibrarianChanges,
         Self::LibrarianConfidence,
+        Self::RestructureEagerness,
+        Self::RestructureMargin,
+        Self::RestructureStabilityPenalty,
+        Self::RestructureStabilityDays,
+        Self::RestructureMoveBudget,
         Self::CrawlerChanges,
         Self::CrawlerPace,
     ];
@@ -66,6 +82,11 @@ impl Key {
             Self::EmbeddingModel => "embedding.model",
             Self::LibrarianChanges => "librarian.changes",
             Self::LibrarianConfidence => "librarian.confidence",
+            Self::RestructureEagerness => "restructure.eagerness",
+            Self::RestructureMargin => "restructure.margin",
+            Self::RestructureStabilityPenalty => "restructure.stability_penalty",
+            Self::RestructureStabilityDays => "restructure.stability_days",
+            Self::RestructureMoveBudget => "restructure.move_budget",
             Self::CrawlerChanges => "crawler.changes",
             Self::CrawlerPace => "crawler.pace",
         }
@@ -103,6 +124,21 @@ impl Key {
             Self::LibrarianConfidence => {
                 "How sure the librarian must be, from 0.5 to 1, to make a change on its own"
             }
+            Self::RestructureEagerness => {
+                "How eager Carrel is to propose rearranging: settled asks for a large gain before moving things between branches, balanced a clear one, eager any real gain; a collection can set its own in its design document"
+            }
+            Self::RestructureMargin => {
+                "How much a restructure's benefit must beat its cost, from 0 to 1, for moves between branches; less invasive changes need less. Unset, the eagerness level decides"
+            }
+            Self::RestructureStabilityPenalty => {
+                "The cost added to restructuring a section restructured recently, from 0 to 1, so the archive doesn't churn. Unset, the eagerness level decides"
+            }
+            Self::RestructureStabilityDays => {
+                "How many days after a restructure its section counts as recently changed. Unset, the eagerness level decides"
+            }
+            Self::RestructureMoveBudget => {
+                "How many items one restructure may move between branches or top-level collections, or none for no limit. Unset, the eagerness level decides"
+            }
             Self::CrawlerChanges => {
                 "Whether the crawler may refile items and correct cards on its own when it's sure, each change undoable; off, its findings wait in Review"
             }
@@ -121,8 +157,15 @@ impl Key {
             Self::CompressedFiles => Some(&["expand", "keep", "ask"]),
             Self::EmbeddingModel => Some(&EMBEDDING_MODELS),
             Self::LibrarianChanges | Self::CrawlerChanges => Some(&["off", "on"]),
+            Self::RestructureEagerness => Some(&["settled", "balanced", "eager"]),
             Self::CrawlerPace => Some(&["off", "gentle", "steady", "brisk"]),
-            Self::CrowdedItems | Self::SkipDays | Self::LibrarianConfidence => None,
+            Self::CrowdedItems
+            | Self::SkipDays
+            | Self::LibrarianConfidence
+            | Self::RestructureMargin
+            | Self::RestructureStabilityPenalty
+            | Self::RestructureStabilityDays
+            | Self::RestructureMoveBudget => None,
         }
     }
 
@@ -150,6 +193,11 @@ impl Key {
             }
             .into(),
             Self::LibrarianConfidence => settings.librarian.confidence.to_string(),
+            Self::RestructureEagerness
+            | Self::RestructureMargin
+            | Self::RestructureStabilityPenalty
+            | Self::RestructureStabilityDays
+            | Self::RestructureMoveBudget => restructure_value(self, &settings.restructure),
             Self::CrawlerChanges => if settings.crawler.changes {
                 "on"
             } else {
@@ -172,6 +220,20 @@ impl Key {
             None if self == Self::LibrarianConfidence => {
                 format!("{} is a number from 0.5 to 1, such as 0.9", self.as_str())
             }
+            None if matches!(
+                self,
+                Self::RestructureMargin | Self::RestructureStabilityPenalty
+            ) =>
+            {
+                format!(
+                    "{} is a number from 0 to 1, such as 0.15, or default for the eagerness level's",
+                    self.as_str()
+                )
+            }
+            None if self == Self::RestructureMoveBudget => format!(
+                "{} is a whole number, none for no limit, or default for the eagerness level's",
+                self.as_str()
+            ),
             None => format!("{} is a whole number, at least 1", self.as_str()),
         };
         match self {
@@ -239,9 +301,81 @@ impl Key {
                     .filter(|n| (0.5..=1.0).contains(n))
                     .ok_or_else(wrong)?;
             }
+            Self::RestructureEagerness
+            | Self::RestructureMargin
+            | Self::RestructureStabilityPenalty
+            | Self::RestructureStabilityDays
+            | Self::RestructureMoveBudget => {
+                set_restructure(self, &mut settings.restructure, value).ok_or_else(wrong)?;
+            }
         }
         Ok(())
     }
+}
+
+/// A `restructure.*` setting's value: what's set directly, else the eagerness level's
+/// preset, marked as such.
+fn restructure_value(key: Key, settings: &RestructureSettings) -> String {
+    let preset = settings.thresholds(settings.eagerness);
+    let or_preset = |set: Option<String>, preset: String| {
+        set.unwrap_or_else(|| format!("{preset} (from {})", settings.eagerness))
+    };
+    match key {
+        Key::RestructureMargin => or_preset(
+            settings.margin.map(|n| n.to_string()),
+            preset.margin.to_string(),
+        ),
+        Key::RestructureStabilityPenalty => or_preset(
+            settings.stability_penalty.map(|n| n.to_string()),
+            preset.stability_penalty.to_string(),
+        ),
+        Key::RestructureStabilityDays => or_preset(
+            settings.stability_days.map(|n| n.to_string()),
+            preset.stability_days.to_string(),
+        ),
+        Key::RestructureMoveBudget => or_preset(
+            settings
+                .move_budget
+                .map(|b| MoveBudget::describe(b.limit())),
+            MoveBudget::describe(preset.move_budget),
+        ),
+        _ => settings.eagerness.as_str().to_owned(),
+    }
+}
+
+/// Sets a `restructure.*` setting to `value`; `default` clears a number back to the eagerness
+/// level's. `None` if the value isn't one it takes.
+fn set_restructure(key: Key, settings: &mut RestructureSettings, value: &str) -> Option<()> {
+    let default = value.eq_ignore_ascii_case("default");
+    let fraction = || {
+        value
+            .parse::<f64>()
+            .ok()
+            .filter(|n| (0.0..=1.0).contains(n))
+    };
+    match key {
+        Key::RestructureEagerness => settings.eagerness = Eagerness::parse(value)?,
+        Key::RestructureMargin => settings.margin = if default { None } else { Some(fraction()?) },
+        Key::RestructureStabilityPenalty => {
+            settings.stability_penalty = if default { None } else { Some(fraction()?) };
+        }
+        Key::RestructureStabilityDays => {
+            settings.stability_days = if default {
+                None
+            } else {
+                Some(value.parse().ok()?)
+            };
+        }
+        Key::RestructureMoveBudget => {
+            settings.move_budget = if default {
+                None
+            } else {
+                Some(MoveBudget::parse(value)?)
+            };
+        }
+        _ => return None,
+    }
+    Some(())
 }
 
 /// Why a setting couldn't be changed.

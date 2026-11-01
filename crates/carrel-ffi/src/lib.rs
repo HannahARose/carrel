@@ -25,6 +25,7 @@
 //! | [`agent`] | The Mac app's agent: its claim on an archive, work sessions and scheduled snapshots |
 //! | [`librarian`] | The librarian: a conversation, saving it to the Journal, and its own changes |
 //! | [`discover`] | Discovery: on this day, wander, the timeline, the archive map, activity, resurfacing |
+//! | [`creating`] | Creating an archive with a chosen embedding model |
 //!
 //! [`TextModel`] and [`ModelProvider`](correct::ModelProvider) are implemented in Swift and called from Rust, as is
 //! [`ProgressListener`], which long operations report to.
@@ -53,6 +54,7 @@ pub mod backups;
 pub mod browse;
 pub mod correct;
 pub mod crawl;
+pub mod creating;
 pub mod discover;
 pub mod edit;
 pub mod graph;
@@ -463,6 +465,7 @@ impl ArchiveHandle {
         create_archive(
             Path::new(&path),
             &name,
+            None,
             &carrel_core::local::config_folder()?,
         )
     }
@@ -564,13 +567,18 @@ impl ArchiveHandle {
     }
 }
 
-fn create_archive(
+pub(crate) fn create_archive(
     root: &Path,
     name: &str,
+    embedding_model: Option<&str>,
     config: &Path,
 ) -> Result<Arc<ArchiveHandle>, CarrelError> {
     let holder = Identity::load_or_create_in(config)?.holder();
-    let archive = Archive::init(root, &InitOptions::new(name))?;
+    let mut init = InitOptions::new(name);
+    if let Some(model) = embedding_model {
+        init.embedding_model = Some(model.to_owned());
+    }
+    let archive = Archive::init(root, &init)?;
     let lease = DiskLock::for_archive(&archive).acquire(holder, "create", DEFAULT_LEASE)?;
     let started = History::init(&archive, &lease);
     lease.release()?;
@@ -697,7 +705,7 @@ mod tests {
             std::env::temp_dir().join(format!("carrel-ffi-{}", carrel_core::card::Id::new_v7()));
         let config = dir.join("config");
         let root = dir.join("New archive");
-        let archive = create_archive(&root, "Letters", &config).unwrap();
+        let archive = create_archive(&root, "Letters", None, &config).unwrap();
         assert_eq!(archive.name(), "Letters");
         assert!(
             archive
@@ -708,9 +716,9 @@ mod tests {
         );
         assert!(History::open(&archive.archive).is_ok());
         let first = std::fs::read_to_string(config.join("identity.json")).unwrap();
-        assert!(create_archive(&root, "Again", &config).is_err());
+        assert!(create_archive(&root, "Again", None, &config).is_err());
         let other = dir.join("Second");
-        create_archive(&other, "Second", &config).unwrap();
+        create_archive(&other, "Second", None, &config).unwrap();
         let second = std::fs::read_to_string(config.join("identity.json")).unwrap();
         assert_eq!(first, second, "the identity is kept, not replaced");
         std::fs::remove_dir_all(&dir).unwrap();
@@ -950,9 +958,12 @@ mod tests {
         assert_eq!(listed.due.as_deref(), Some("2026-12-01"));
         assert_eq!(listed.state, "unchanged");
         std::fs::write(&out.working, "part,source\nLED strip,shop\n").unwrap();
-        let preview = sample.handle.return_preview(item.clone()).unwrap();
+        let preview = sample.handle.return_preview(item.clone(), None).unwrap();
         assert_eq!(preview.title, "Desk lamp parts list");
-        let returned = sample.handle.return_item(item.clone()).unwrap();
+        let returned = sample
+            .handle
+            .return_item(item.clone(), None, false)
+            .unwrap();
         assert!(returned.commit.is_some());
         assert!(!sample.handle.active().unwrap().iter().any(|a| a.id == item));
         assert!(matches!(
