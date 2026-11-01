@@ -55,7 +55,7 @@ final class SidebarTests: XCTestCase {
             await settle()
         }
         let expected: [Screen] =
-            [.status, .review, .questions, .active]
+            [.status, .review, .questions, .restructure, .active]
             + model.tree.map { .collection($0.collection.path) }
             + DiscoverPage.allCases.map { .discover($0) } + [.history, .backups]
         XCTAssertEqual(chosen, expected)
@@ -68,6 +68,7 @@ final class SidebarTests: XCTestCase {
         case .status, .collection: model.handle != nil
         case .review: model.review != nil
         case .questions: model.questions != nil
+        case .restructure: model.restructure != nil
         case .active: model.activeScreen != nil
         case .history: model.historyScreen != nil
         case .backups: model.backups != nil

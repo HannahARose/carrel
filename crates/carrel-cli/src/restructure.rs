@@ -130,7 +130,8 @@ fn describe(proposal: &Proposal) -> String {
     text
 }
 
-fn describe_change(change: &ProposedChange) -> String {
+/// One change for people: what it does, why, and what it touches.
+pub(crate) fn describe_change(change: &ProposedChange) -> String {
     let mut text = format!(
         "{}. {}\n   {}\n",
         change.id,
@@ -201,7 +202,8 @@ fn next_steps(proposal: &Proposal) -> String {
     )
 }
 
-fn approved_text(proposal: &Proposal, approved: &Approved) -> String {
+/// What approving a proposal did, for people.
+pub(crate) fn approved_text(proposal: &Proposal, approved: &Approved) -> String {
     let mut text = if approved.commit.is_some() {
         format!("{}.\n", approved.summary)
     } else {
@@ -216,14 +218,12 @@ fn approved_text(proposal: &Proposal, approved: &Approved) -> String {
         let Some(change) = proposal.change(&outcome.change) else {
             continue;
         };
-        writeln!(
-            text,
-            "{}. {}: {}",
-            change.id,
-            change.change.describe(),
+        let did = if change.items.is_empty() && !outcome.documents.is_empty() {
+            format!("rewrote {}", outcome.documents.join(", "))
+        } else {
             count(outcome.items.len(), "item")
-        )
-        .unwrap();
+        };
+        writeln!(text, "{}. {}: {did}", change.id, change.change.describe()).unwrap();
         for (id, why) in &outcome.skipped {
             let title = titles.get(id).copied().unwrap_or("an item");
             writeln!(text, "   Left {title} alone: {why}").unwrap();

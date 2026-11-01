@@ -32,7 +32,12 @@ pub fn record(run: &Run) {
 /// `carrel formats`.
 #[must_use]
 pub fn list() -> Report {
-    let (registry, _) = crate::providers::registry();
+    list_with(&crate::providers::registry().0)
+}
+
+/// `carrel formats`, for the providers in `registry`.
+#[must_use]
+pub fn list_with(registry: &carrel_core::providers::Registry) -> Report {
     let mut readers: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for (provider, offer) in registry.ranked(Capability::ExtractText) {
         for media_type in &offer.media_types {

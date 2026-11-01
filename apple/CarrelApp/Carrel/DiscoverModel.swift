@@ -13,6 +13,7 @@ enum DiscoverPage: String, CaseIterable, Hashable {
     case timeline
     case map
     case activity
+    case graph
 
     var title: String {
         switch self {
@@ -21,6 +22,7 @@ enum DiscoverPage: String, CaseIterable, Hashable {
         case .timeline: "Timeline"
         case .map: "Archive Map"
         case .activity: "Activity"
+        case .graph: "Connections"
         }
     }
 
@@ -31,6 +33,7 @@ enum DiscoverPage: String, CaseIterable, Hashable {
         case .timeline: "chart.bar.xaxis"
         case .map: "square.grid.3x3.square"
         case .activity: "square.grid.4x3.fill"
+        case .graph: "point.3.connected.trianglepath.dotted"
         }
     }
 }
@@ -77,6 +80,8 @@ final class DiscoverModel {
     private(set) var steps: [WanderStep] = []
     private(set) var walkIsDone = false
     private(set) var isStepping = false
+    /// Whether a walk is being started, so showing the page doesn't start another.
+    private(set) var isStartingWalk = false
 
     /// The timeline's words and filters, which date it goes by and how it groups.
     var timelineQuery = ""
@@ -86,11 +91,21 @@ final class DiscoverModel {
 
     private(set) var map: ArchiveMap?
     private(set) var activity: ArchiveActivity?
+    /// Activity's first and last days, as `carrel discover activity --from` and `--to` take
+    /// them; `nil` for the year to today.
+    var activityFrom: Date?
+    var activityTo: Date?
+    /// The tag and link graph: what ties collections together, and the items that do.
+    private(set) var graph: DiscoveryGraph?
     /// A collection not opened in a long time, for Status.
     private(set) var resurfaced: Resurfaced?
 
     /// What went wrong with the last view read, for the page to say.
     var problem: String?
+
+    /// How many of the strongest connections, and of the strongest ties between items, the
+    /// graph shows.
+    nonisolated static let graphLimit: UInt32 = 40
 
     init(archive: ArchiveModel) {
         self.archive = archive
@@ -103,7 +118,7 @@ final class DiscoverModel {
     func refresh(_ page: DiscoverPage) async {
         switch page {
         case .today: await refreshToday()
-        case .wander: if walk == nil { await startWalk() }
+        case .wander: if walk == nil, !isStartingWalk { await startWalk() }
         case .timeline: await refreshTimeline()
         case .map:
             await read {
@@ -112,10 +127,18 @@ final class DiscoverModel {
                 self.map = $0
             }
         case .activity:
+            let from = activityFrom.map(Self.dayText)
+            let to = activityTo.map(Self.dayText)
             await read {
-                try $0.activity(from: nil, to: nil)
+                try $0.activity(from: from, to: to)
             } into: {
                 self.activity = $0
+            }
+        case .graph:
+            await read {
+                try $0.discoveryGraph(limit: Self.graphLimit)
+            } into: {
+                self.graph = $0
             }
         }
     }
@@ -155,6 +178,8 @@ final class DiscoverModel {
         walk = nil
         steps = []
         walkIsDone = false
+        isStartingWalk = true
+        defer { isStartingWalk = false }
         do {
             walk = try await archive.call { try $0.startWander(start: start, seed: seed) }
         } catch {
@@ -162,6 +187,13 @@ final class DiscoverModel {
             return
         }
         await step()
+    }
+
+    /// Starts a walk from the item `id`, marked as starting at once so that showing the
+    /// Wander page doesn't start another.
+    func wander(from id: String) {
+        isStartingWalk = true
+        Task { await startWalk(from: id) }
     }
 
     /// Takes the walk's next step.

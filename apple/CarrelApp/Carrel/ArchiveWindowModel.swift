@@ -13,6 +13,8 @@ enum Screen: Hashable {
     case status
     case review
     case questions
+    /// Restructure proposals.
+    case restructure
     case active
     /// Browse, showing the collection at this path.
     case collection(String)
@@ -102,6 +104,9 @@ final class ArchiveWindowModel {
     /// The filed item whose card the inspector is editing (⌘E).
     var editing: CardEditModel?
 
+    // Restructure proposals (#327).
+    private(set) var restructure: RestructureModel?
+
     // Active and History (#235).
     private(set) var activeScreen: ActiveScreenModel?
     private(set) var historyScreen: HistoryScreenModel?
@@ -173,6 +178,8 @@ final class ArchiveWindowModel {
             review?.filed = { [weak self] in await self?.refreshItems() }
             questions = QuestionsModel(archive: archive)
             backups = BackupsModel(archive: archive)
+            restructure = RestructureModel(archive: archive)
+            restructure?.didChange = { [weak self] in await self?.refreshItems() }
             activeScreen = ActiveScreenModel(archive: archive, checkoutFolder: checkoutFolder) {
                 [weak self] in
                 await self?.refreshItems()
@@ -245,6 +252,7 @@ final class ArchiveWindowModel {
         case .status, nil: "Status"
         case .review: "Review"
         case .questions: "Questions"
+        case .restructure: "Restructure"
         case .active: "Active"
         case .collection(let path): collections.first { $0.path == path }?.title ?? path
         case .history: "History"

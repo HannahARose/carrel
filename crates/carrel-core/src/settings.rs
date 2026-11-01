@@ -7,6 +7,7 @@ use crate::archive::{Archive, ArchiveError};
 use crate::coordinator::WriterLease;
 use crate::documents::{Originals, OutsideEdits, Settings};
 use crate::history::{Change, History, HistoryError, Operation};
+use crate::restructure::eagerness::{Eagerness, MoveBudget, RestructureSettings};
 
 /// A setting the owner can change from Carrel's interfaces.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -36,6 +37,20 @@ pub enum Key {
     IdleMinutes,
     /// Which reminders are on.
     Reminders,
+    /// How eager Carrel is to rearrange the archive (`docs/design/restructure.md`).
+    RestructureEagerness,
+    /// How much a restructure's benefit must beat its cost, before scaling by invasiveness.
+    RestructureMargin,
+    /// The cost added to restructuring a recently restructured section.
+    RestructureStabilityPenalty,
+    /// How many days a restructured section counts as recently changed.
+    RestructureStabilityDays,
+    /// How many items one restructure may move between branches.
+    RestructureMoveBudget,
+    /// Whether the crawler may make the refiles and corrections it's sure of without asking.
+    CrawlerChanges,
+    /// How much of the device's idle time the crawler uses.
+    CrawlerPace,
 }
 
 /// The embedding models an archive can choose: the catalog's, the default first.
@@ -53,7 +68,7 @@ const DESKTOP: &str = "desktop";
 
 impl Key {
     /// Every setting, in the order they're shown.
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 19] = [
         Self::Originals,
         Self::CompressedFiles,
         Self::CrowdedItems,
@@ -66,6 +81,13 @@ impl Key {
         Self::EmbeddingModel,
         Self::LibrarianChanges,
         Self::LibrarianConfidence,
+        Self::RestructureEagerness,
+        Self::RestructureMargin,
+        Self::RestructureStabilityPenalty,
+        Self::RestructureStabilityDays,
+        Self::RestructureMoveBudget,
+        Self::CrawlerChanges,
+        Self::CrawlerPace,
     ];
 
     /// Its key in `settings.json`, as FORMAT.md §7.2 writes it.
@@ -80,6 +102,13 @@ impl Key {
             Self::EmbeddingModel => "embedding.model",
             Self::LibrarianChanges => "librarian.changes",
             Self::LibrarianConfidence => "librarian.confidence",
+            Self::RestructureEagerness => "restructure.eagerness",
+            Self::RestructureMargin => "restructure.margin",
+            Self::RestructureStabilityPenalty => "restructure.stability_penalty",
+            Self::RestructureStabilityDays => "restructure.stability_days",
+            Self::RestructureMoveBudget => "restructure.move_budget",
+            Self::CrawlerChanges => "crawler.changes",
+            Self::CrawlerPace => "crawler.pace",
             Self::CheckoutDestination => "checkout.destination",
             Self::CheckoutAfterReturn => "checkout.after_return",
             Self::IdleMinutes => "sessions.idle_minutes",
@@ -103,6 +132,13 @@ impl Key {
             Self::CheckoutAfterReturn => "After a return",
             Self::IdleMinutes => "Work sessions end after",
             Self::Reminders => "Reminders",
+            Self::RestructureEagerness => "How eager to rearrange",
+            Self::RestructureMargin => "Gain needed to rearrange",
+            Self::RestructureStabilityPenalty => "Cost of rearranging again",
+            Self::RestructureStabilityDays => "Recently rearranged for",
+            Self::RestructureMoveBudget => "Items moved per proposal",
+            Self::CrawlerChanges => "Crawler's own changes",
+            Self::CrawlerPace => "Crawler's pace",
         }
     }
 
@@ -150,6 +186,27 @@ impl Key {
             Self::Reminders => {
                 "Which reminders are on: when work goes idle, a weekly review, in the menu bar, and when a checkout is due back"
             }
+            Self::RestructureEagerness => {
+                "How eager Carrel is to propose rearranging: settled asks for a large gain before moving things between branches, balanced a clear one, eager any real gain; a collection can set its own in its design document"
+            }
+            Self::RestructureMargin => {
+                "How much a restructure's benefit must beat its cost, from 0 to 1, for moves between branches; less invasive changes need less. Unset, the eagerness level decides"
+            }
+            Self::RestructureStabilityPenalty => {
+                "The cost added to restructuring a section restructured recently, from 0 to 1, so the archive doesn't churn. Unset, the eagerness level decides"
+            }
+            Self::RestructureStabilityDays => {
+                "How many days after a restructure its section counts as recently changed. Unset, the eagerness level decides"
+            }
+            Self::RestructureMoveBudget => {
+                "How many items one restructure may move between branches or top-level collections, or none for no limit. Unset, the eagerness level decides"
+            }
+            Self::CrawlerChanges => {
+                "Whether the crawler may refile items and correct cards on its own when it's sure, each change undoable; off, its findings wait in Review"
+            }
+            Self::CrawlerPace => {
+                "How much of the device's idle time the crawler uses to recheck where items are filed: off, gentle, steady or brisk"
+            }
         }
     }
 
@@ -165,6 +222,15 @@ impl Key {
                 format!("one of {}", self.choices().unwrap_or_default().join(", "))
             }
             Self::LibrarianConfidence => "a number from 0.5 to 1, such as 0.9".into(),
+            Self::RestructureMargin | Self::RestructureStabilityPenalty => {
+                "a number from 0 to 1, such as 0.15, or default for the eagerness level's".into()
+            }
+            Self::RestructureMoveBudget => {
+                "a whole number, none for no limit, or default for the eagerness level's".into()
+            }
+            Self::RestructureStabilityDays => {
+                "a whole number of days, or default for the eagerness level's".into()
+            }
             Self::CheckoutDestination => {
                 "desktop, or a folder's full path (~ for the home folder)".into()
             }
@@ -187,14 +253,20 @@ impl Key {
             Self::OutsideEdits => Some(&["flag", "reconcile", "drift"]),
             Self::CompressedFiles => Some(&["expand", "keep", "ask"]),
             Self::EmbeddingModel => Some(&EMBEDDING_MODELS),
-            Self::LibrarianChanges => Some(&["off", "on"]),
+            Self::LibrarianChanges | Self::CrawlerChanges => Some(&["off", "on"]),
+            Self::RestructureEagerness => Some(&["settled", "balanced", "eager"]),
+            Self::CrawlerPace => Some(&["off", "gentle", "steady", "brisk"]),
             Self::CheckoutAfterReturn => Some(&["ask", "trash", "keep"]),
             Self::Reminders => Some(&REMINDERS),
             Self::CrowdedItems
             | Self::SkipDays
             | Self::LibrarianConfidence
             | Self::CheckoutDestination
-            | Self::IdleMinutes => None,
+            | Self::IdleMinutes
+            | Self::RestructureMargin
+            | Self::RestructureStabilityPenalty
+            | Self::RestructureStabilityDays
+            | Self::RestructureMoveBudget => None,
         }
     }
 
@@ -227,6 +299,18 @@ impl Key {
             Self::IdleMinutes => settings.sessions.idle_minutes.to_string(),
             Self::Reminders if settings.reminders.is_empty() => "none".into(),
             Self::Reminders => settings.reminders.join(", "),
+            Self::RestructureEagerness
+            | Self::RestructureMargin
+            | Self::RestructureStabilityPenalty
+            | Self::RestructureStabilityDays
+            | Self::RestructureMoveBudget => restructure_value(self, &settings.restructure),
+            Self::CrawlerChanges => if settings.crawler.changes {
+                "on"
+            } else {
+                "off"
+            }
+            .into(),
+            Self::CrawlerPace => settings.crawler.pace.as_str().into(),
         }
     }
 
@@ -286,6 +370,16 @@ impl Key {
                     _ => return Err(wrong()),
                 };
             }
+            Self::CrawlerChanges => {
+                settings.crawler.changes = match value {
+                    "on" => true,
+                    "off" => false,
+                    _ => return Err(wrong()),
+                };
+            }
+            Self::CrawlerPace => {
+                settings.crawler.pace = crate::crawl::Pace::parse(value).ok_or_else(wrong)?;
+            }
             Self::LibrarianConfidence => {
                 settings.librarian.confidence = value
                     .parse::<f64>()
@@ -307,6 +401,13 @@ impl Key {
                     value.parse().ok().filter(|n| *n >= 1).ok_or_else(wrong)?;
             }
             Self::Reminders => settings.reminders = reminders(value).ok_or_else(wrong)?,
+            Self::RestructureEagerness
+            | Self::RestructureMargin
+            | Self::RestructureStabilityPenalty
+            | Self::RestructureStabilityDays
+            | Self::RestructureMoveBudget => {
+                set_restructure(self, &mut settings.restructure, value).ok_or_else(wrong)?;
+            }
         }
         Ok(())
     }
@@ -356,6 +457,71 @@ pub fn checkout_folder(settings: &Settings, home: Option<&Path>) -> Option<PathB
         }
         _ => Some(PathBuf::from(destination)),
     }
+}
+
+/// A `restructure.*` setting's value: what's set directly, else the eagerness level's
+/// preset, marked as such.
+fn restructure_value(key: Key, settings: &RestructureSettings) -> String {
+    let preset = settings.thresholds(settings.eagerness);
+    let or_preset = |set: Option<String>, preset: String| {
+        set.unwrap_or_else(|| format!("{preset} (from {})", settings.eagerness))
+    };
+    match key {
+        Key::RestructureMargin => or_preset(
+            settings.margin.map(|n| n.to_string()),
+            preset.margin.to_string(),
+        ),
+        Key::RestructureStabilityPenalty => or_preset(
+            settings.stability_penalty.map(|n| n.to_string()),
+            preset.stability_penalty.to_string(),
+        ),
+        Key::RestructureStabilityDays => or_preset(
+            settings.stability_days.map(|n| n.to_string()),
+            preset.stability_days.to_string(),
+        ),
+        Key::RestructureMoveBudget => or_preset(
+            settings
+                .move_budget
+                .map(|b| MoveBudget::describe(b.limit())),
+            MoveBudget::describe(preset.move_budget),
+        ),
+        _ => settings.eagerness.as_str().to_owned(),
+    }
+}
+
+/// Sets a `restructure.*` setting to `value`; `default` clears a number back to the eagerness
+/// level's. `None` if the value isn't one it takes.
+fn set_restructure(key: Key, settings: &mut RestructureSettings, value: &str) -> Option<()> {
+    let default = value.eq_ignore_ascii_case("default");
+    let fraction = || {
+        value
+            .parse::<f64>()
+            .ok()
+            .filter(|n| (0.0..=1.0).contains(n))
+    };
+    match key {
+        Key::RestructureEagerness => settings.eagerness = Eagerness::parse(value)?,
+        Key::RestructureMargin => settings.margin = if default { None } else { Some(fraction()?) },
+        Key::RestructureStabilityPenalty => {
+            settings.stability_penalty = if default { None } else { Some(fraction()?) };
+        }
+        Key::RestructureStabilityDays => {
+            settings.stability_days = if default {
+                None
+            } else {
+                Some(value.parse().ok()?)
+            };
+        }
+        Key::RestructureMoveBudget => {
+            settings.move_budget = if default {
+                None
+            } else {
+                Some(MoveBudget::parse(value)?)
+            };
+        }
+        _ => return None,
+    }
+    Some(())
 }
 
 /// Why a setting couldn't be changed.

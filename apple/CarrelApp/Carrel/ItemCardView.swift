@@ -1,4 +1,4 @@
-// An item's card in the inspector: its fields, notes and history.
+// An item's card in the inspector: its fields, notes, history and related items.
 
 import AppKit
 import CarrelKit
@@ -11,6 +11,10 @@ struct ItemCardView<Actions: View>: View {
     let item: ItemSummary
     let card: Card?
     let root: URL
+    /// The archive, to read the related items from.
+    var archive: ArchiveModel?
+    /// Opens a related item.
+    var open: (String) -> Void = { _ in }
     /// Browse's actions on the item, beside Show in Finder.
     @ViewBuilder let actions: Actions
 
@@ -56,6 +60,9 @@ struct ItemCardView<Actions: View>: View {
                 Section {
                     Text("The card at \(item.card) can’t be read.").foregroundStyle(.secondary)
                 }
+            }
+            if let archive {
+                ItemRelatedSection(archive: archive, item: item.id, open: open)
             }
             Section {
                 Button("Show in Finder", systemImage: "folder") {

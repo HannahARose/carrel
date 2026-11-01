@@ -32,6 +32,11 @@ pub fn resolve_model(registry: &Registry, name: &str) -> Result<TextModel, Failu
 /// error.
 pub fn list() -> Report {
     let (registry, failed) = registry();
+    list_of(&registry, &failed)
+}
+
+/// `carrel providers`, for the providers in `registry` and those that `failed`.
+pub fn list_of(registry: &Registry, failed: &[Failed]) -> Report {
     let mut text = String::new();
     let mut entries: Vec<Value> = registry
         .providers()
@@ -83,7 +88,7 @@ pub fn list() -> Report {
             .unwrap();
         }
     }
-    for Failed { found, error } in &failed {
+    for Failed { found, error } in failed {
         writeln!(
             text,
             "{} ({}) couldn't start: {error}",
