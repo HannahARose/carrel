@@ -21,12 +21,15 @@ struct ItemCardView<Actions: View, Below: View>: View {
     @ViewBuilder let below: Below
 
     init(
-        item: ItemSummary, card: Card?, root: URL, @ViewBuilder actions: () -> Actions,
+        item: ItemSummary, card: Card?, root: URL, archive: ArchiveModel? = nil,
+        open: @escaping (String) -> Void = { _ in }, @ViewBuilder actions: () -> Actions,
         @ViewBuilder below: () -> Below
     ) {
         self.item = item
         self.card = card
         self.root = root
+        self.archive = archive
+        self.open = open
         self.actions = actions()
         self.below = below()
     }
@@ -91,7 +94,12 @@ struct ItemCardView<Actions: View, Below: View>: View {
 }
 
 extension ItemCardView where Below == EmptyView {
-    init(item: ItemSummary, card: Card?, root: URL, @ViewBuilder actions: () -> Actions) {
-        self.init(item: item, card: card, root: root, actions: actions) { EmptyView() }
+    init(
+        item: ItemSummary, card: Card?, root: URL, archive: ArchiveModel? = nil,
+        open: @escaping (String) -> Void = { _ in }, @ViewBuilder actions: () -> Actions
+    ) {
+        self.init(
+            item: item, card: card, root: root, archive: archive, open: open, actions: actions
+        ) { EmptyView() }
     }
 }
