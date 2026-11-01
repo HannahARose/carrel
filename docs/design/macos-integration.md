@@ -5,6 +5,7 @@ Status: proposed 2026-11-01, for the owner's review. Issue #35.
 ## What this adds
 
 Carrel works inside its own windows and the terminal today. v0.8 brings it into the rest of the Mac:
+
 - **Finder** badges on the archive's items and on working copies, with context actions (Add to Archive, Check Out, Return);
 - a **Share** extension, "Send to Archive", for anything another app can share;
 - **Quick Look** previews of cards;
