@@ -610,8 +610,8 @@ pub fn propose_section<S: std::hash::BuildHasher>(
             proposal.changes.clear();
         }
     }
-    assessment.benefit = chosen.iter().map(|p| p.benefit).sum();
-    assessment.cost = chosen.iter().map(|p| p.cost).sum();
+    assessment.benefit = chosen.iter().fold(0.0, |sum, p| sum + p.benefit);
+    assessment.cost = chosen.iter().fold(0.0, |sum, p| sum + p.cost);
     proposal.invasiveness = proposal
         .changes
         .iter()
@@ -1153,20 +1153,43 @@ fn rationale(section: &str, proposal: &Proposal, assessment: &Assessment) -> Str
         })
         .map(|c| c.items.len())
         .sum();
+    let kinds = |wanted: fn(&Edit) -> bool| {
+        proposal
+            .changes
+            .iter()
+            .filter(|c| wanted(&c.change))
+            .count()
+    };
+    let created = kinds(|e| matches!(e, Edit::CreateCollection { .. }));
+    let merged = kinds(|e| matches!(e, Edit::MergeCollection { .. }));
+    let renamed = kinds(|e| matches!(e, Edit::RenameCollection { .. }));
+    let mut parts = vec![format!(
+        "moves {moved} item{}",
+        if moved == 1 { "" } else { "s" }
+    )];
+    for (n, what) in [
+        (created, "new collection"),
+        (merged, "merged collection"),
+        (renamed, "renamed collection"),
+    ] {
+        if n > 0 {
+            parts.push(format!("{n} {what}{}", if n == 1 { "" } else { "s" }));
+        }
+    }
     let mut text = format!(
-        "{} change{} to {what}, moving {moved} item{}: benefit {:.2} against cost {:.2}, judged at {level}.",
-        proposal.changes.len(),
-        if proposal.changes.len() == 1 { "" } else { "s" },
-        if moved == 1 { "" } else { "s" },
+        "A better shape for {what}, judged at {level}: {}. Its benefit ({:.2}) beats its cost ({:.2}).",
+        parts.join(", "),
         assessment.benefit,
         assessment.cost,
     );
     match (&assessment.findability, &assessment.untested) {
         (Some(f), _) => text.push_str(&format!(
-            " Findability: {} of {} held-out cards found now, {} after.",
-            f.found_now, f.tried, f.found_after
+            " The findability test found {} of {} held-out cards with it, against {} now.",
+            f.found_after, f.tried, f.found_now
         )),
-        (None, Some(why)) => text.push_str(&format!(" Untested: {why}.")),
+        (None, Some(_)) => {
+            text.push_str(" Untested: a device with a text model can run the findability test.")
+        }
         (None, None) => {}
     }
     if !assessment.worded_by_model {

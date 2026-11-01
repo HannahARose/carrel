@@ -537,9 +537,19 @@ pub fn select(proposal: &Proposal, only: Option<&[String]>) -> Result<Selection,
         .map(|c| c.id.clone())
         .collect();
     if selection.approved.is_empty() {
-        return Err(RestructureError::Invalid(
-            "nothing is left to apply; reject the proposal instead".into(),
-        ));
+        let needs: Vec<String> = selection
+            .dropped
+            .iter()
+            .map(|(id, missing)| format!("{id} needs {missing}"))
+            .collect();
+        return Err(RestructureError::Invalid(if needs.is_empty() {
+            "nothing is left to apply; reject the proposal instead".into()
+        } else {
+            format!(
+                "nothing is left to apply: {}, which you left out; add it, or reject the proposal instead",
+                needs.join(", ")
+            )
+        }));
     }
     Ok(selection)
 }
