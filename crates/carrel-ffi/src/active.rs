@@ -128,6 +128,9 @@ pub struct ReturnPreview {
     pub uncommitted: bool,
     /// The history entry the return adds, line by line.
     pub entry: Vec<String>,
+    /// With backups, how many session snapshots of the working copy were taken while it
+    /// was out, which can be forgotten once it's returned.
+    pub session_snapshots: u32,
 }
 
 /// What returning an item did.
@@ -137,6 +140,14 @@ pub struct Returned {
     pub commit: Option<String>,
     /// The backup snapshot taken first, if there are backups.
     pub snapshot: Option<String>,
+    /// With session snapshots, the one taken of the returned version afterwards.
+    pub returned_snapshot: Option<String>,
+    /// How many session snapshots were forgotten.
+    pub snapshots_forgotten: u32,
+    /// How many are kept.
+    pub snapshots_kept: u32,
+    /// Why some session snapshots couldn't be forgotten, or all were kept, if they were.
+    pub snapshot_problems: Vec<String>,
 }
 
 /// What to do with an item's pending history entries.
@@ -289,16 +300,23 @@ impl ArchiveHandle {
     }
 
     /// What returning the checked-out item `item` would bring back, and the history entry it
-    /// adds, from where it was checked out to.
+    /// adds, from where it was checked out to, or from `from` when the working copy has
+    /// moved.
     ///
     /// # Errors
     ///
     /// [`CarrelError::Invalid`] for an unknown item, or [`CarrelError::Failed`] if it isn't
     /// checked out or its working copy can't be read.
-    pub fn return_preview(&self, item: String) -> Result<ReturnPreview, CarrelError> {
+    pub fn return_preview(
+        &self,
+        item: String,
+        from: Option<String>,
+    ) -> Result<ReturnPreview, CarrelError> {
         let archive = self.fresh()?;
         let item = Self::item(&archive, &item)?;
-        let plan = plan_return(&archive, &item, None)?;
+        let plan = plan_return(&archive, &item, from.as_deref().map(crate::path))?;
+        let sessions = crate::backups(&archive)
+            .map_or(0, |b| carrel_core::sessions::return_snapshots(&archive, &item, &*b).len());
         Ok(ReturnPreview {
             item: plan.item.to_string(),
             title: plan.title,
@@ -307,29 +325,70 @@ impl ArchiveHandle {
             commits: plan.commits,
             uncommitted: plan.uncommitted,
             entry: plan.entry.lines,
+            session_snapshots: u32::try_from(sessions).unwrap_or(u32::MAX),
         })
     }
 
-    /// Returns the checked-out item `item`, replacing the archive copy with the working copy,
-    /// with a snapshot first when backups are set up. Ask the owner first, with
-    /// [`ArchiveHandle::return_preview`].
+    /// Returns the checked-out item `item`, from where it was checked out to or from `from`,
+    /// replacing the archive copy with the working copy, with a snapshot first when backups
+    /// are set up. Afterwards the returned version is snapshotted, and the checkout's session
+    /// snapshots are forgotten when `trim_snapshots` says so, as the owner chose. Ask the
+    /// owner first, with [`ArchiveHandle::return_preview`].
     ///
     /// # Errors
     ///
     /// [`CarrelError::Busy`] if another writer holds the archive, or
     /// [`CarrelError::Failed`] if it isn't checked out or can't be returned.
-    pub fn return_item(&self, item: String) -> Result<Returned, CarrelError> {
+    pub fn return_item(
+        &self,
+        item: String,
+        from: Option<String>,
+        trim_snapshots: bool,
+    ) -> Result<Returned, CarrelError> {
         let archive = self.fresh()?;
         let item = Self::item(&archive, &item)?;
-        let plan = plan_return(&archive, &item, None)?;
+        let plan = plan_return(&archive, &item, from.as_deref().map(crate::path))?;
         let backups = crate::backups(&archive);
+        let sessions = backups
+            .as_deref()
+            .map(|b| carrel_core::sessions::return_snapshots(&archive, &item, b))
+            .unwrap_or_default();
         let returned = self.with_lease(&archive, "return", |lease| {
             Ok(finish_return(&archive, &plan, lease, backups.as_deref())?)
         })?;
-        Ok(Returned {
+        let mut done = Returned {
             commit: returned.commit,
             snapshot: returned.snapshot,
-        })
+            returned_snapshot: None,
+            snapshots_forgotten: 0,
+            snapshots_kept: 0,
+            snapshot_problems: Vec::new(),
+        };
+        if let Some(backups) = backups.as_deref().filter(|_| !sessions.is_empty()) {
+            let kept = carrel_core::sessions::keep_returned_version(
+                backups,
+                &plan.working,
+                &plan.title,
+                plan.item,
+                &sessions,
+                trim_snapshots,
+            );
+            let count = |n: usize| u32::try_from(n).unwrap_or(u32::MAX);
+            done.snapshots_forgotten = count(kept.forgotten);
+            done.snapshots_kept = count(kept.kept);
+            match kept.returned {
+                Ok(snapshot) => done.returned_snapshot = Some(snapshot.trailer()),
+                Err(e) => done.snapshot_problems.push(format!(
+                    "the returned version couldn't be snapshotted, so the session snapshots are kept: {e}"
+                )),
+            }
+            done.snapshot_problems.extend(
+                kept.failures
+                    .into_iter()
+                    .map(|(id, e)| format!("couldn't forget snapshot {id}: {e}")),
+            );
+        }
+        Ok(done)
     }
 
     /// Cancels the checkout of `item`: the archive copy is unlocked as it was, and the
@@ -486,5 +545,40 @@ impl ArchiveHandle {
             self.holder()?,
         )?
         .map(Into::into))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::tests::Sample;
+    use crate::text;
+
+    #[test]
+    fn a_checkout_returns_from_where_its_working_copy_moved() {
+        let sample = Sample::new();
+        let item = sample.item_titled("Desk lamp parts list");
+        let to = sample.dir.path().join("Desktop");
+        std::fs::create_dir_all(&to).unwrap();
+        let out = sample
+            .handle
+            .check_out(item.clone(), Some(text(&to)), None)
+            .unwrap();
+        let moved = sample.dir.path().join("moved.csv");
+        std::fs::rename(&out.working, &moved).unwrap();
+        std::fs::write(&moved, "part,source\nLED strip,shop\n").unwrap();
+        assert!(sample.handle.return_preview(item.clone(), None).is_err());
+        let preview = sample
+            .handle
+            .return_preview(item.clone(), Some(text(&moved)))
+            .unwrap();
+        assert_eq!(preview.working, text(&moved));
+        assert_eq!(preview.session_snapshots, 0);
+        let returned = sample
+            .handle
+            .return_item(item.clone(), Some(text(&moved)), true)
+            .unwrap();
+        assert!(returned.commit.is_some());
+        assert_eq!(returned.returned_snapshot, None);
+        assert!(!sample.handle.active().unwrap().iter().any(|a| a.id == item));
     }
 }

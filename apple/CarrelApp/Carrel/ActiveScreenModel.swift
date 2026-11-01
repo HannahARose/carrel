@@ -133,7 +133,7 @@ final class ActiveScreenModel {
         guard let item = selectedItem, item.kind == .checkedOut else { return }
         let id = item.id
         returning = await perform { model in
-            try await model.call { try $0.returnPreview(item: id) }
+            try await model.call { try $0.returnPreview(item: id, from: nil) }
         }
     }
 

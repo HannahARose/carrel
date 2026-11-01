@@ -352,11 +352,16 @@ public final class ArchiveModel {
         return out
     }
 
-    /// Returns the checked-out item `id`. Show `handle.returnPreview(item:)` first.
+    /// Returns the checked-out item `id`, from where it went or from `folder` when the
+    /// working copy has moved; `trimmingSnapshots` forgets the checkout's session snapshots
+    /// afterwards, as the owner chose. Show `handle.returnPreview(item:from:)` first.
     @discardableResult
-    public func returnItem(_ id: String) async throws -> Returned {
+    public func returnItem(_ id: String, from folder: URL? = nil, trimmingSnapshots: Bool = false)
+        async throws -> Returned
+    {
+        let from = folder?.path(percentEncoded: false)
         let returned = try await call(reporting: "Returning") { handle, _ in
-            try handle.returnItem(item: id)
+            try handle.returnItem(item: id, from: from, trimSnapshots: trimmingSnapshots)
         }
         try await changed { try await $0.refreshActive() }
         return returned

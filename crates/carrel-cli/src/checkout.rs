@@ -4,10 +4,9 @@
 use std::fmt::Write as _;
 use std::io::IsTerminal as _;
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
 
 use carrel_core::archive::{Archive, ItemRef};
-use carrel_core::backup::{Backups as _, Kopia, Snapshot};
+use carrel_core::backup::{Kopia, Snapshot};
 use carrel_core::card::DateOrTime;
 use carrel_core::card_file::CardFile;
 use carrel_core::checkout::{ReturnPlan, cancel_checkout, check_out, finish_return, plan_return};
@@ -298,20 +297,7 @@ fn finish(archive: &Archive, plan: &ReturnPlan) -> Result<Report, Failure> {
 /// The session snapshots taken of `item`'s working copy, where it was checked out to, since
 /// then; none when they can't be listed.
 fn session_snapshots(archive: &Archive, item: &ItemRef, kopia: &Kopia) -> Vec<Snapshot> {
-    let Some(out) = std::fs::read_to_string(archive.root().join(&item.card))
-        .ok()
-        .and_then(|t| CardFile::parse(&t).ok())
-        .and_then(|f| f.card().checked_out.clone())
-    else {
-        return Vec::new();
-    };
-    let since = out
-        .since
-        .0
-        .parse::<jiff::Timestamp>()
-        .map_or(SystemTime::UNIX_EPOCH, SystemTime::from);
-    carrel_core::sessions::snapshots_since(kopia, Path::new(&out.to), item.id, since)
-        .unwrap_or_default()
+    carrel_core::sessions::return_snapshots(archive, item, kopia)
 }
 
 /// After a return: snapshots the working copy, which is now the returned version, then
@@ -325,21 +311,6 @@ fn trim_sessions(
     trim: bool,
     yes: bool,
 ) -> Result<(String, Value), Failure> {
-    let returned = match kopia.snapshot(
-        &plan.working,
-        &format!("Returned “{}” ({})", plan.title, plan.item),
-    ) {
-        Ok(snapshot) => snapshot,
-        Err(e) => {
-            return Ok((
-                format!(
-                    "The {} session snapshot(s) are kept: the returned version couldn't be snapshotted ({e}).\n",
-                    snapshots.len()
-                ),
-                json!({ "kept": snapshots.len(), "error": e.to_string() }),
-            ));
-        }
-    };
     let forget = trim
         || (!yes
             && std::io::stdin().is_terminal()
@@ -350,15 +321,30 @@ fn trim_sessions(
                 ),
                 false,
             )?);
-    let mut forgotten = 0;
-    let mut text = String::new();
-    if forget {
-        for snapshot in snapshots {
-            match kopia.forget(&snapshot.id) {
-                Ok(()) => forgotten += 1,
-                Err(e) => writeln!(text, "Couldn't forget snapshot {}: {e}", snapshot.id).unwrap(),
-            }
+    let kept = carrel_core::sessions::keep_returned_version(
+        kopia,
+        &plan.working,
+        &plan.title,
+        plan.item,
+        snapshots,
+        forget,
+    );
+    let returned = match kept.returned {
+        Ok(snapshot) => snapshot,
+        Err(e) => {
+            return Ok((
+                format!(
+                    "The {} session snapshot(s) are kept: the returned version couldn't be snapshotted ({e}).\n",
+                    snapshots.len()
+                ),
+                json!({ "kept": snapshots.len(), "error": e }),
+            ));
         }
+    };
+    let forgotten = kept.forgotten;
+    let mut text = String::new();
+    for (id, e) in &kept.failures {
+        writeln!(text, "Couldn't forget snapshot {id}: {e}").unwrap();
     }
     writeln!(
         text,
