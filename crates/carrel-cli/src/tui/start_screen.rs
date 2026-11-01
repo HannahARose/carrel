@@ -66,7 +66,7 @@ mod tests {
         app.start_on_screen(StartScreen::DiscoverMap);
         assert_eq!(app.tab, Tab::Discover);
         assert_eq!(app.stacks.view, View::Map);
-        assert!(!app.stacks.lines.is_empty());
+        assert!(app.stacks.lines.len() > 1, "{:?}", app.stacks.lines);
         app.start_on_screen(StartScreen::DiscoverWander);
         assert_eq!(app.stacks.view, View::Wander);
     }

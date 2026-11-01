@@ -1,6 +1,7 @@
 //! `carrel gui`: opens the Mac app on the archive commands would use, through the
 //! `carrel://open` link the app handles, or on its Welcome window when there's no archive.
 
+use std::fmt::Write as _;
 use std::path::Path;
 
 use serde_json::json;
@@ -60,7 +61,7 @@ fn gui_link(
     Ok(Some(open_link(&root, screen, item.as_deref())))
 }
 
-/// `carrel://open?archive=<root>&item=<id>&screen=<name>`, as `AgentLink` in CarrelKit reads it.
+/// `carrel://open?archive=<root>&item=<id>&screen=<name>`, as `CarrelKit`'s `AgentLink` reads it.
 pub(crate) fn open_link(root: &Path, screen: Option<StartScreen>, item: Option<&str>) -> String {
     let mut link = format!(
         "carrel://open?archive={}",
@@ -97,7 +98,7 @@ fn percent_encode_query(value: &str) -> String {
         if byte.is_ascii_alphanumeric() || b"-._~/:".contains(&byte) {
             encoded.push(char::from(byte));
         } else {
-            encoded.push_str(&format!("%{byte:02X}"));
+            let _ = write!(encoded, "%{byte:02X}");
         }
     }
     encoded

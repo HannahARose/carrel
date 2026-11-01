@@ -98,7 +98,8 @@ final class AppModel {
             pendingLink =
                 link.item == nil && link.screen == nil
                 ? nil
-                : AgentLink(archive: root, item: link.item, action: link.action, screen: link.screen)
+                : AgentLink(
+                    archive: root, item: link.item, action: link.action, screen: link.screen)
             show(root)
         }
     }

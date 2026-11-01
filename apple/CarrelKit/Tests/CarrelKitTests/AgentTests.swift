@@ -359,7 +359,8 @@ func realPath(_ path: String) -> String {
         let wander = AgentLink(archive: archive, screen: .discover(.wander))
         #expect(wander.url.absoluteString.contains("screen=discover:wander"))
         #expect(AgentLink(wander.url) == wander)
-        #expect(AgentLink(wander.url)?.archive.path(percentEncoded: false) == "/Users/me/Tax & Bills")
+        #expect(
+            AgentLink(wander.url)?.archive.path(percentEncoded: false) == "/Users/me/Tax & Bills")
         let questions = AgentLink(archive: archive, item: "0193", screen: .questions)
         #expect(AgentLink(questions.url) == questions)
     }
