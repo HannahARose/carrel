@@ -9,6 +9,7 @@ mod ask;
 mod asking;
 mod backup;
 mod bench;
+mod bench_crawl;
 mod bench_librarian;
 mod bench_questions;
 mod checkout;
