@@ -8,6 +8,13 @@ import SwiftUI
 
 struct RestructureView: View {
     @Bindable var restructure: RestructureModel
+    /// The collections a section proposal can cover.
+    let collections: [String]
+
+    @State private var choosingSection = false
+
+    /// The picker's entry for the whole archive.
+    static let wholeArchive = "The Whole Archive"
 
     var body: some View {
         List(selection: $restructure.selection) {
@@ -37,11 +44,24 @@ struct RestructureView: View {
             }
         }
         .toolbar {
+            Button("Propose Changes…", systemImage: "rectangle.3.group") {
+                choosingSection = true
+            }
+            .help("Look over a section of the archive for a better shape")
+            .disabled(restructure.archive.isWorking)
             Button("Propose Tag Changes", systemImage: "tag") {
                 Task { await restructure.proposeTags() }
             }
             .help("Look over the archive's tags for ones to merge, split or retire")
             .disabled(restructure.archive.isWorking)
+        }
+        .sheet(isPresented: $choosingSection) {
+            CollectionPicker(
+                title: "Propose changes to", collections: [Self.wholeArchive] + collections
+            ) { collection in
+                let section = collection == Self.wholeArchive ? "" : collection
+                Task { await restructure.proposeSection(section) }
+            }
         }
         .safeAreaInset(edge: .bottom) {
             if let report = restructure.report {
@@ -62,6 +82,11 @@ struct RestructureInspector: View {
                     Label(proposal.summary, systemImage: "rectangle.3.group")
                         .font(.caption).foregroundStyle(.secondary)
                     Text(proposal.rationale).font(.title3.bold()).textSelection(.enabled)
+                }
+            }
+            if let assessment = proposal.assessment {
+                Section("How It Was Judged") {
+                    AssessmentView(assessment: assessment)
                 }
             }
             if let preview = restructure.preview {
@@ -227,6 +252,35 @@ private struct BeforeAndAfter: View {
                     Text("None of these tags").font(.callout).foregroundStyle(.secondary)
                 }
             }
+        }
+    }
+}
+
+/// How a section proposal was judged: the eagerness, benefit and cost, the findability test,
+/// and what it held back.
+private struct AssessmentView: View {
+    let assessment: RestructureAssessment
+
+    var body: some View {
+        LabeledContent("Eagerness") {
+            Text(
+                assessment.eagernessFrom.map { "\(assessment.eagerness.capitalized), set by \($0)" }
+                    ?? "\(assessment.eagerness.capitalized), the archive’s")
+        }
+        LabeledContent(
+            "Benefit and cost",
+            value: String(format: "%.2f against %.2f", assessment.benefit, assessment.cost))
+        if let tried = assessment.tried, let now = assessment.foundNow,
+            let after = assessment.foundAfter
+        {
+            LabeledContent("Findability") {
+                Text("\(now) of \(tried) found now, \(after) after")
+            }
+        } else if let untested = assessment.untested {
+            LabeledContent("Findability") { Text("Untested: \(untested)") }
+        }
+        ForEach(assessment.heldBack, id: \.self) { held in
+            Text("Held back: \(held)").font(.callout).foregroundStyle(.secondary)
         }
     }
 }

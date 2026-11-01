@@ -144,6 +144,39 @@ fn count(n: usize) -> u64 {
     n as u64
 }
 
+impl ArchiveHandle {
+    /// A pass of `items` items with the strongest text model in `registry` that fits in
+    /// `memory_gb`, asking `stop` before each.
+    fn pass(
+        &self,
+        archive: &carrel_core::archive::Archive,
+        registry: &carrel_core::providers::Registry,
+        memory_gb: Option<u64>,
+        items: usize,
+        stop: &dyn Fn() -> bool,
+    ) -> Result<CrawlerPassed, CarrelError> {
+        let chosen = carrel_core::librarian::model::choose(registry, None, memory_gb)
+            .map_err(CarrelError::invalid)?
+            .ok_or_else(|| {
+                CarrelError::invalid("the crawler needs a text model, and this Mac has none")
+            })?;
+        let crawler = Crawler {
+            archive,
+            registry,
+            model: chosen,
+            holder: self.holder()?,
+        };
+        let done = crawler.pass(items, stop).map_err(CarrelError::failed)?;
+        Ok(CrawlerPassed {
+            summary: done.summary(),
+            proposed: count(done.proposed),
+            made: done.made,
+            failed: done.failed,
+            stopped: done.stopped,
+        })
+    }
+}
+
 #[uniffi::export]
 impl ArchiveHandle {
     /// The crawler's findings waiting in Review, oldest first.
@@ -266,6 +299,27 @@ impl ArchiveHandle {
         })
     }
 
+    /// A pass of the crawler now, of `items` items (the pace's share when `None`), whatever
+    /// the pace and however idle the Mac, since the owner asked, as `carrel crawl run` does.
+    /// It judges with `model` or the strongest model this Mac has that fits in `memory_gb`.
+    ///
+    /// # Errors
+    ///
+    /// [`CarrelError::Invalid`] if there's no text model, or [`CarrelError::Failed`] if the
+    /// pass failed.
+    pub fn crawl_now(
+        &self,
+        items: Option<u32>,
+        model: Option<Arc<dyn ModelProvider>>,
+        memory_gb: Option<u64>,
+    ) -> Result<CrawlerPassed, CarrelError> {
+        let archive = self.fresh()?;
+        let pace = archive.settings().crawler.pace;
+        let items = items.map_or_else(|| pace.items().max(1), |n| n as usize);
+        let registry = self.correction_registry(model);
+        self.pass(&archive, &registry, memory_gb, items, &|| false)
+    }
+
     /// A pass of the crawler, when its pace says one is due and this Mac (idle for
     /// `idle_seconds`, on mains power when `on_power`; `None` when unknown) allows: what it
     /// did, or `None` when it didn't run. It judges with `model` or, when it's `None`, the
@@ -299,33 +353,14 @@ impl ArchiveHandle {
             return Ok(None);
         }
         let registry = self.correction_registry(model);
-        let chosen = carrel_core::librarian::model::choose(&registry, None, memory_gb)
-            .map_err(CarrelError::invalid)?
-            .ok_or_else(|| {
-                CarrelError::invalid("the crawler needs a text model, and this Mac has none")
-            })?;
-        let crawler = Crawler {
-            archive: &archive,
-            registry: &registry,
-            model: chosen,
-            holder: identity.holder(),
-        };
         let device_id = identity.device;
         let should_stop = || {
             stop.as_ref().is_some_and(|s| s.should_stop())
                 || carrel_core::intake::waiting(&archive, device_id, false)
                     .is_ok_and(|w| !w.is_empty())
         };
-        let done = crawler
-            .pass(pace.items(), &should_stop)
-            .map_err(CarrelError::failed)?;
-        Ok(Some(CrawlerPassed {
-            summary: done.summary(),
-            proposed: count(done.proposed),
-            made: done.made,
-            failed: done.failed,
-            stopped: done.stopped,
-        }))
+        self.pass(&archive, &registry, memory_gb, pace.items(), &should_stop)
+            .map(Some)
     }
 }
 
@@ -458,5 +493,24 @@ mod tests {
         let undone = sample.handle.undo_crawler_changes(0).unwrap();
         assert_eq!(undone.undone.len(), made.len());
         assert_eq!(sample.handle.crawler_changes(0).unwrap(), Vec::new());
+    }
+
+    #[test]
+    fn a_pass_now_runs_whatever_the_pace_and_idle_time() {
+        let sample = Sample::new();
+        sample
+            .handle
+            .set_setting("crawler.pace".into(), "off".into())
+            .unwrap();
+        assert_eq!(pass(&sample, 3600), None, "off doesn't run by itself");
+        let passed = sample
+            .handle
+            .crawl_now(Some(2), Some(Arc::new(ToReading::default())), Some(16))
+            .unwrap();
+        assert!(
+            passed
+                .summary
+                .is_some_and(|s| s.starts_with("checked 2 items"))
+        );
     }
 }

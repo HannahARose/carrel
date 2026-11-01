@@ -126,6 +126,9 @@ struct StatusCrawlerSection: View {
             if let crawler = window.crawler, let status = crawler.status {
                 Section {
                     Text(status.line)
+                    if let report = crawler.report {
+                        Text(report).font(.callout).foregroundStyle(.secondary)
+                    }
                     ForEach(status.waiting, id: \.stage) { stage in
                         LabeledContent(stage.stage.capitalized, value: "\(stage.items) due")
                     }
@@ -146,10 +149,14 @@ struct StatusCrawlerSection: View {
                         Text("and \(crawler.changes.count - 5) more, in History")
                             .foregroundStyle(.secondary)
                     }
-                    if !crawler.changes.isEmpty {
-                        Button("Undo All of Them…") { confirmingUndo = true }
-                            .disabled(window.isReadOnly)
+                    HStack {
+                        Button("Check Some Now") { Task { await crawler.checkNow() } }
+                            .help("Let the crawler check a few items now, whatever its pace")
+                        if !crawler.changes.isEmpty {
+                            Button("Undo All of Them…") { confirmingUndo = true }
+                        }
                     }
+                    .disabled(window.isReadOnly || crawler.archive.isWorking)
                 } header: {
                     Text(
                         crawler.changes.isEmpty ? "The Crawler" : "The Crawler’s Changes This Week")

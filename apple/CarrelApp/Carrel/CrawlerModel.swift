@@ -88,6 +88,21 @@ final class CrawlerModel {
             : "Rejected \(ids.count); the crawler won’t suggest them again."
     }
 
+    /// Lets it check a few items now, whatever its pace, as `carrel crawl run` does.
+    func checkNow() async {
+        report = nil
+        do {
+            let passed = try await archive.crawlNow(
+                model: provider, memoryGB: LibrarianModel.thisMac)
+            report = passed.summary.map { "The crawler \($0)." } ?? "Nothing was due to check."
+            await refresh()
+            if !passed.made.isEmpty { await didChange() }
+        } catch {
+            archive.lastError = nil
+            report = message(for: error)
+        }
+    }
+
     /// Undoes every change it made on its own this week, newest first.
     func undoAll() async {
         do {

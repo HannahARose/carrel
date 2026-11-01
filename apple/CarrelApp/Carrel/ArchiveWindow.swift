@@ -182,7 +182,10 @@ struct ArchiveScreenContent: View {
         case .questions:
             if let questions = model.questions { QuestionsView(questions: questions) }
         case .restructure:
-            if let restructure = model.restructure { RestructureView(restructure: restructure) }
+            if let restructure = model.restructure {
+                RestructureView(
+                    restructure: restructure, collections: model.collections.map(\.path))
+            }
         case .active:
             if let active = model.activeScreen { ActiveView(model: active) }
         case .history:
@@ -247,10 +250,10 @@ private struct Inspector: View {
                 }
                 .id(item.id)
             }
-        } else if case .collection = model.screen {
-            ContentUnavailableView(
-                "Nothing Selected", systemImage: "sidebar.right",
-                description: Text("Choose an item to see its preview and card."))
+        } else if case .collection(let path) = model.screen,
+            let collection = model.collections.first(where: { $0.path == path })
+        {
+            CollectionInspector(collection: collection, window: model)
         } else {
             ContentUnavailableView("Nothing Selected", systemImage: "sidebar.right")
         }

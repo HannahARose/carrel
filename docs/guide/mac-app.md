@@ -74,6 +74,8 @@ What the archive holds: its name and folder, whether it's read only, its format 
 
 **The Librarian's Changes This Week** lists what the librarian changed on its own, when you've let it ([What the librarian may change](user-guide.md#what-the-librarian-may-change)), with **Undo All of Them…**.
 
+**The Crawler** says how far the crawler has got through the archive, as `carrel crawl status` does ([The crawler](user-guide.md#the-crawler)): its pace, whether it makes the changes it's sure of itself, how many items it has checked, what's due next, and its findings waiting in Review. **Check Some Now** lets it check a few items straight away, whatever its pace, as `carrel crawl run` does. With `crawler.changes` on, it lists **The Crawler's Changes This Week**, with **Undo All of Them…**.
+
 Status doesn't show Recent, structure signals, suggestions or the day's few questions yet; `carrel status` and the interactive mode do.
 
 ### Review
@@ -92,6 +94,8 @@ Proposals waiting for your decision, grouped by the collection each would go to.
 | `v` | File as Version | For a duplicate, files it as a new version of the item it duplicates |
 | `b` | Keep Both | For a duplicate, files it beside the item it duplicates |
 
+**From the Crawler** (`f`, or the switch above the list) shows the crawler's findings instead: an item it thinks belongs in another collection, or a card field it would improve, each with why and how sure the model was. `a` approves the chosen ones, making each change as yours, undone from History; `r` rejects them, and the crawler won't suggest them again. `f` switches back.
+
 A duplicate shows the archived item beside it in the inspector, so you can compare them. A bar at the bottom of the list says what the last decision did. Approving and holding file items, which is a change in [History](#history), so it can be undone there. Rejecting changes nothing in the archive, so there's nothing to undo; add the file again instead.
 
 ### Questions
@@ -105,7 +109,9 @@ Both are in the Questions menu. Suggested answers, skipping a question for now, 
 
 ### Restructure
 
-Proposals to reorganize the archive wait here, as `carrel restructure` lists them ([Tidying tags](user-guide.md#tidying-tags)). **Propose Tag Changes** in the toolbar looks over the archive's tags for ones to merge, split or retire. Choose a proposal to see, in the inspector:
+Proposals to reorganize the archive wait here, as `carrel restructure` lists them ([Reorganizing a section](user-guide.md#reorganizing-a-section), [Tidying tags](user-guide.md#tidying-tags)). **Propose Changes…** in the toolbar looks over a collection, or the whole archive, for a better shape: grouping items that belong together, renaming, merging or moving collections, judged by how eager Carrel is to rearrange there. **Propose Tag Changes** looks over the archive's tags for ones to merge, split or retire. When nothing is worth proposing, the bar at the bottom says why. Choose a proposal to see, in the inspector:
+
+- **How it was judged,** for a section: the eagerness that applied and where it was set, its benefit against its cost, and the findability test (how many held-out cards a model found in the archive as it is and in the new shape), with any groups it held back and why.
 
 - **Before and after,** side by side: the collections, each with how many items it holds, and the tags the proposal touches, as they are now and as the changes you've chosen would leave them.
 - **Each change,** with why it's proposed and how invasive it is, from rewriting tags and design documents (one dot) to moving top-level collections (five), the items it changes and those it leaves alone, and why. Untick a change to leave it out; one that needs it is dropped too, and the inspector says so.
@@ -136,6 +142,8 @@ Choose a collection in the sidebar to see its items. The toolbar switches betwee
 Choose an item to see it in the inspector: a **preview** above its **card**. The preview is what Quick Look shows for PDFs, images, documents, video and 3D models such as USDZ and STL; Carrel's own drawing for STEP, IGES and 3MF files; and the contents of a folder or bundle. Until a thumbnail is ready, an item shows its kind's icon. A **restricted** item shows only its card, with **Show Preview** to see it once. Thumbnails are kept on this Mac only, never in the archive (see [What Carrel keeps on this device](user-guide.md#what-carrel-keeps-on-this-device)).
 
 The card shows the item's fields, your notes, its history and the items it links to. **Show in Finder** reveals the item.
+
+With no item chosen, the inspector shows the **collection**: what it holds, and **Eagerness**, how readily Carrel proposes reorganizing it ([How eager Carrel is to rearrange](user-guide.md#how-eager-carrel-is-to-rearrange)). **As the archive** follows `restructure.eagerness` in Settings → General, or a collection it's inside that sets its own; **Settled**, **Balanced** or **Eager** sets this collection's own, in its design document, as a change History can undo. **Propose Changes Here** looks it over on the Restructure screen.
 
 | Command | Key | What it does |
 | --- | --- | --- |
@@ -243,9 +251,10 @@ While it runs, the agent has a menu in the menu bar. For each archive it lists:
 
 - what's **checked out** and **on the desk**, with how many pending entries each has;
 - how many **entries** wait to be approved;
-- how many items are **waiting to be drafted**.
+- how many items are **waiting to be drafted**;
+- how many **findings from the crawler** wait in Review, and what its last pass did.
 
-Choosing an item opens it on Active in the app. Below the archives is what the agent is doing now, then:
+Choosing an item opens it on Active in the app. Below the archives is what the agent is doing now, such as rechecking where items are filed: when nothing else is due and the Mac is idle and on power, the agent lets the crawler check a few items at the pace `crawler.pace` sets, and stops as soon as you use the Mac. Then:
 
 - **Pause:** stops the agent's work without quitting it; **Resume** starts it again. While it's paused, the command line's worker drafts and indexes again.
 - **Open Carrel:** opens the app.

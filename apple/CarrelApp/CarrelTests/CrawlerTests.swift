@@ -89,4 +89,14 @@ final class CrawlerTests: XCTestCase {
         let pace = try XCTUnwrap(settings.first { $0.key == "crawler.pace" })
         XCTAssertEqual(pace.choices, ["off", "gentle", "steady", "brisk"])
     }
+
+    func testCheckingNowSaysWhyWithNoModel() async throws {
+        let sample = try await sample()
+        defer { sample.remove() }
+        let crawler = try XCTUnwrap(sample.model.crawler)
+        // The sample's window starts no provider programs, so this Mac has no text model.
+        await crawler.checkNow()
+        XCTAssertEqual(crawler.report, "the crawler needs a text model, and this Mac has none")
+        XCTAssertNil(sample.archive.lastError, "said on Status, not in an alert")
+    }
 }

@@ -40,4 +40,19 @@ extension ArchiveModel {
         if status?.hasHistory == true { try await refreshHistory() }
         return undone
     }
+
+    /// A pass of the crawler now, of `items` items (its pace's share when `nil`), whatever
+    /// its pace, with `model` or this Mac's strongest that fits in `memoryGB`.
+    @discardableResult
+    public func crawlNow(items: UInt32? = nil, model: ModelProvider? = nil, memoryGB: UInt64?)
+        async throws -> CrawlerPassed
+    {
+        let passed = try await call(reporting: "Rechecking where items are filed") { handle, _ in
+            try handle.crawlNow(items: items, model: model, memoryGb: memoryGB)
+        }
+        try await refreshCrawler()
+        try await refreshStatus()
+        if status?.hasHistory == true { try await refreshHistory() }
+        return passed
+    }
 }

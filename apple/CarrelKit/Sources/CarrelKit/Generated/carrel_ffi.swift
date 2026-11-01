@@ -1195,6 +1195,18 @@ public protocol ArchiveHandleProtocol: AnyObject, Sendable {
     func approveCrawlerFinding(id: String, model: ModelProvider?) throws  -> String?
     
     /**
+     * A pass of the crawler now, of `items` items (the pace's share when `None`), whatever
+     * the pace and however idle the Mac, since the owner asked, as `carrel crawl run` does.
+     * It judges with `model` or the strongest model this Mac has that fits in `memory_gb`.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if there's no text model, or [`CarrelError::Failed`] if the
+     * pass failed.
+     */
+    func crawlNow(items: UInt32?, model: ModelProvider?, memoryGb: UInt64?) throws  -> CrawlerPassed
+    
+    /**
      * A pass of the crawler, when its pace says one is due and this Mac (idle for
      * `idle_seconds`, on mains power when `on_power`; `None` when unknown) allows: what it
      * did, or `None` when it didn't run. It judges with `model` or, when it's `None`, the
@@ -1723,6 +1735,31 @@ public protocol ArchiveHandleProtocol: AnyObject, Sendable {
     func approveRestructure(id: String, only: [String]?) throws  -> RestructureApproved
     
     /**
+     * How eager Carrel is to rearrange at `collection` (empty for the archive), and where
+     * that comes from.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the archive can't be read.
+     */
+    func eagernessAt(collection: String) throws  -> EagernessAt
+    
+    /**
+     * Proposes reorganizing the section at `collection` (empty for the whole archive), as
+     * `carrel restructure propose` does: grouping its items by the graph and the meaning
+     * index, judged by how eager Carrel is there, and tested for findability with `model` or
+     * this device's text model when there is one. Puts it in the queue in place of any
+     * proposal waiting for the same section. Returns it, or, when nothing is worth
+     * proposing, a proposal with no changes whose rationale says why, which isn't queued.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if the collection isn't one, or [`CarrelError::Failed`] if the
+     * archive can't be read or the queue written.
+     */
+    func proposeSectionRestructure(collection: String, model: ModelProvider?) throws  -> RestructureProposal
+    
+    /**
      * Proposes tag restructures for the whole archive, as `carrel restructure tags propose`
      * does, putting the proposal in the queue in place of any tag proposal waiting. `None`
      * when there's nothing worth proposing.
@@ -1760,6 +1797,18 @@ public protocol ArchiveHandleProtocol: AnyObject, Sendable {
      * [`CarrelError::Failed`] if the queue can't be read.
      */
     func restructureProposals() throws  -> [RestructureProposal]
+    
+    /**
+     * Sets the collection `collection`'s own eagerness (`settled`, `balanced` or `eager`) in
+     * its design document, or with `None` clears it so the archive's applies, as one change
+     * History can undo. Returns the commit, or `None` when it was already so.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] for an unknown collection or level, [`CarrelError::Busy`] if
+     * another writer holds the archive, or [`CarrelError::Failed`].
+     */
+    func setCollectionEagerness(collection: String, level: String?) throws  -> String?
     
     /**
      * Answers the question `id`: a term's answer is added to the glossary and the
@@ -2868,6 +2917,28 @@ open func approveCrawlerFinding(id: String, model: ModelProvider?)throws  -> Str
 }
     
     /**
+     * A pass of the crawler now, of `items` items (the pace's share when `None`), whatever
+     * the pace and however idle the Mac, since the owner asked, as `carrel crawl run` does.
+     * It judges with `model` or the strongest model this Mac has that fits in `memory_gb`.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if there's no text model, or [`CarrelError::Failed`] if the
+     * pass failed.
+     */
+open func crawlNow(items: UInt32?, model: ModelProvider?, memoryGb: UInt64?)throws  -> CrawlerPassed  {
+    return try  FfiConverterTypeCrawlerPassed_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_crawl_now(
+            self.uniffiCloneHandle(),
+        FfiConverterOptionUInt32.lower(items),
+        FfiConverterOptionTypeModelProvider.lower(model),
+        FfiConverterOptionUInt64.lower(memoryGb),uniffiCallStatus
+    )
+})
+}
+    
+    /**
      * A pass of the crawler, when its pace says one is due and this Mac (idle for
      * `idle_seconds`, on mains power when `on_power`; `None` when unknown) allows: what it
      * did, or `None` when it didn't run. It judges with `model` or, when it's `None`, the
@@ -3813,6 +3884,48 @@ open func approveRestructure(id: String, only: [String]?)throws  -> RestructureA
 }
     
     /**
+     * How eager Carrel is to rearrange at `collection` (empty for the archive), and where
+     * that comes from.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the archive can't be read.
+     */
+open func eagernessAt(collection: String)throws  -> EagernessAt  {
+    return try  FfiConverterTypeEagernessAt_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_eagerness_at(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(collection),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Proposes reorganizing the section at `collection` (empty for the whole archive), as
+     * `carrel restructure propose` does: grouping its items by the graph and the meaning
+     * index, judged by how eager Carrel is there, and tested for findability with `model` or
+     * this device's text model when there is one. Puts it in the queue in place of any
+     * proposal waiting for the same section. Returns it, or, when nothing is worth
+     * proposing, a proposal with no changes whose rationale says why, which isn't queued.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if the collection isn't one, or [`CarrelError::Failed`] if the
+     * archive can't be read or the queue written.
+     */
+open func proposeSectionRestructure(collection: String, model: ModelProvider?)throws  -> RestructureProposal  {
+    return try  FfiConverterTypeRestructureProposal_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_propose_section_restructure(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(collection),
+        FfiConverterOptionTypeModelProvider.lower(model),uniffiCallStatus
+    )
+})
+}
+    
+    /**
      * Proposes tag restructures for the whole archive, as `carrel restructure tags propose`
      * does, putting the proposal in the queue in place of any tag proposal waiting. `None`
      * when there's nothing worth proposing.
@@ -3877,6 +3990,27 @@ open func restructureProposals()throws  -> [RestructureProposal]  {
         uniffiCallStatus in
     uniffi_carrel_ffi_fn_method_archivehandle_restructure_proposals(
             self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Sets the collection `collection`'s own eagerness (`settled`, `balanced` or `eager`) in
+     * its design document, or with `None` clears it so the archive's applies, as one change
+     * History can undo. Returns the commit, or `None` when it was already so.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] for an unknown collection or level, [`CarrelError::Busy`] if
+     * another writer holds the archive, or [`CarrelError::Failed`].
+     */
+open func setCollectionEagerness(collection: String, level: String?)throws  -> String?  {
+    return try  FfiConverterOptionString.lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_set_collection_eagerness(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(collection),
+        FfiConverterOptionString.lower(level),uniffiCallStatus
     )
 })
 }
@@ -9335,6 +9469,87 @@ public func FfiConverterTypeDuplicate_lift(_ buf: RustBuffer) throws -> Duplicat
 #endif
 public func FfiConverterTypeDuplicate_lower(_ value: Duplicate) -> RustBuffer {
     return FfiConverterTypeDuplicate.lower(value)
+}
+
+
+/**
+ * How eager Carrel is to rearrange at a collection, and where that comes from.
+ */
+public struct EagernessAt: Equatable, Hashable {
+    /**
+     * `settled`, `balanced` or `eager`.
+     */
+    public var level: String
+    /**
+     * The collection whose design document sets it (this one or one it's inside), or `None`
+     * when it's the archive's `restructure.eagerness`.
+     */
+    public var fromCollection: String?
+    /**
+     * The archive's own level.
+     */
+    public var archiveLevel: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * `settled`, `balanced` or `eager`.
+         */level: String, 
+        /**
+         * The collection whose design document sets it (this one or one it's inside), or `None`
+         * when it's the archive's `restructure.eagerness`.
+         */fromCollection: String?, 
+        /**
+         * The archive's own level.
+         */archiveLevel: String) {
+        self.level = level
+        self.fromCollection = fromCollection
+        self.archiveLevel = archiveLevel
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension EagernessAt: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeEagernessAt: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> EagernessAt {
+        return
+            try EagernessAt(
+                level: FfiConverterString.read(from: &buf), 
+                fromCollection: FfiConverterOptionString.read(from: &buf), 
+                archiveLevel: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: EagernessAt, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.level, into: &buf)
+        FfiConverterOptionString.write(value.fromCollection, into: &buf)
+        FfiConverterString.write(value.archiveLevel, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeEagernessAt_lift(_ buf: RustBuffer) throws -> EagernessAt {
+    return try FfiConverterTypeEagernessAt.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeEagernessAt_lower(_ value: EagernessAt) -> RustBuffer {
+    return FfiConverterTypeEagernessAt.lower(value)
 }
 
 
@@ -14925,6 +15140,146 @@ public func FfiConverterTypeRestructureApproved_lower(_ value: RestructureApprov
 
 
 /**
+ * How a section proposal was judged: the eagerness it was judged by, its benefit and cost,
+ * the findability test, and what it held back.
+ */
+public struct RestructureAssessment: Equatable, Hashable {
+    /**
+     * The eagerness that applied: `settled`, `balanced` or `eager`.
+     */
+    public var eagerness: String
+    /**
+     * The collection that set it, or `None` for the archive's setting.
+     */
+    public var eagernessFrom: String?
+    /**
+     * Its changes' benefits added up.
+     */
+    public var benefit: Double
+    /**
+     * Their cost, weighted by how invasive each is.
+     */
+    public var cost: Double
+    /**
+     * How many held-out cards the findability test looked for, if it ran.
+     */
+    public var tried: UInt64?
+    /**
+     * How many it found in the archive as it is.
+     */
+    public var foundNow: UInt64?
+    /**
+     * How many it found in the proposed shape.
+     */
+    public var foundAfter: UInt64?
+    /**
+     * Why the findability test didn't run, if it didn't.
+     */
+    public var untested: String?
+    /**
+     * Groups the proposal leaves out, each with why.
+     */
+    public var heldBack: [String]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The eagerness that applied: `settled`, `balanced` or `eager`.
+         */eagerness: String, 
+        /**
+         * The collection that set it, or `None` for the archive's setting.
+         */eagernessFrom: String?, 
+        /**
+         * Its changes' benefits added up.
+         */benefit: Double, 
+        /**
+         * Their cost, weighted by how invasive each is.
+         */cost: Double, 
+        /**
+         * How many held-out cards the findability test looked for, if it ran.
+         */tried: UInt64?, 
+        /**
+         * How many it found in the archive as it is.
+         */foundNow: UInt64?, 
+        /**
+         * How many it found in the proposed shape.
+         */foundAfter: UInt64?, 
+        /**
+         * Why the findability test didn't run, if it didn't.
+         */untested: String?, 
+        /**
+         * Groups the proposal leaves out, each with why.
+         */heldBack: [String]) {
+        self.eagerness = eagerness
+        self.eagernessFrom = eagernessFrom
+        self.benefit = benefit
+        self.cost = cost
+        self.tried = tried
+        self.foundNow = foundNow
+        self.foundAfter = foundAfter
+        self.untested = untested
+        self.heldBack = heldBack
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension RestructureAssessment: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRestructureAssessment: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RestructureAssessment {
+        return
+            try RestructureAssessment(
+                eagerness: FfiConverterString.read(from: &buf), 
+                eagernessFrom: FfiConverterOptionString.read(from: &buf), 
+                benefit: FfiConverterDouble.read(from: &buf), 
+                cost: FfiConverterDouble.read(from: &buf), 
+                tried: FfiConverterOptionUInt64.read(from: &buf), 
+                foundNow: FfiConverterOptionUInt64.read(from: &buf), 
+                foundAfter: FfiConverterOptionUInt64.read(from: &buf), 
+                untested: FfiConverterOptionString.read(from: &buf), 
+                heldBack: FfiConverterSequenceString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: RestructureAssessment, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.eagerness, into: &buf)
+        FfiConverterOptionString.write(value.eagernessFrom, into: &buf)
+        FfiConverterDouble.write(value.benefit, into: &buf)
+        FfiConverterDouble.write(value.cost, into: &buf)
+        FfiConverterOptionUInt64.write(value.tried, into: &buf)
+        FfiConverterOptionUInt64.write(value.foundNow, into: &buf)
+        FfiConverterOptionUInt64.write(value.foundAfter, into: &buf)
+        FfiConverterOptionString.write(value.untested, into: &buf)
+        FfiConverterSequenceString.write(value.heldBack, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRestructureAssessment_lift(_ buf: RustBuffer) throws -> RestructureAssessment {
+    return try FfiConverterTypeRestructureAssessment.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRestructureAssessment_lower(_ value: RestructureAssessment) -> RustBuffer {
+    return FfiConverterTypeRestructureAssessment.lower(value)
+}
+
+
+/**
  * One change in a proposal.
  */
 public struct RestructureChange: Equatable, Hashable {
@@ -15184,6 +15539,10 @@ public struct RestructureProposal: Equatable, Hashable {
      * The changes, in the order they'd be applied.
      */
     public var changes: [RestructureChange]
+    /**
+     * For a section proposal, how it was judged.
+     */
+    public var assessment: RestructureAssessment?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -15208,7 +15567,10 @@ public struct RestructureProposal: Equatable, Hashable {
          */rationale: String, 
         /**
          * The changes, in the order they'd be applied.
-         */changes: [RestructureChange]) {
+         */changes: [RestructureChange], 
+        /**
+         * For a section proposal, how it was judged.
+         */assessment: RestructureAssessment?) {
         self.id = id
         self.kind = kind
         self.section = section
@@ -15216,6 +15578,7 @@ public struct RestructureProposal: Equatable, Hashable {
         self.invasiveness = invasiveness
         self.rationale = rationale
         self.changes = changes
+        self.assessment = assessment
     }
 
     
@@ -15240,7 +15603,8 @@ public struct FfiConverterTypeRestructureProposal: FfiConverterRustBuffer {
                 created: FfiConverterString.read(from: &buf), 
                 invasiveness: FfiConverterTypeInvasiveness.read(from: &buf), 
                 rationale: FfiConverterString.read(from: &buf), 
-                changes: FfiConverterSequenceTypeRestructureChange.read(from: &buf)
+                changes: FfiConverterSequenceTypeRestructureChange.read(from: &buf), 
+                assessment: FfiConverterOptionTypeRestructureAssessment.read(from: &buf)
         )
     }
 
@@ -15252,6 +15616,7 @@ public struct FfiConverterTypeRestructureProposal: FfiConverterRustBuffer {
         FfiConverterTypeInvasiveness.write(value.invasiveness, into: &buf)
         FfiConverterString.write(value.rationale, into: &buf)
         FfiConverterSequenceTypeRestructureChange.write(value.changes, into: &buf)
+        FfiConverterOptionTypeRestructureAssessment.write(value.assessment, into: &buf)
     }
 }
 
@@ -19778,6 +20143,30 @@ fileprivate struct FfiConverterOptionTypeIndexSwitch: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeRestructureAssessment: FfiConverterRustBuffer {
+    typealias SwiftType = RestructureAssessment?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeRestructureAssessment.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeRestructureAssessment.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeRestructureProposal: FfiConverterRustBuffer {
     typealias SwiftType = RestructureProposal?
 
@@ -21777,6 +22166,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_carrel_ffi_checksum_method_archivehandle_approve_crawler_finding() != 13073) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_crawl_now() != 7047) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_crawl_when_idle() != 6415) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -21933,6 +22325,12 @@ private let initializationResult: InitializationResult = {
     if (uniffi_carrel_ffi_checksum_method_archivehandle_approve_restructure() != 42869) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_eagerness_at() != 33767) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_propose_section_restructure() != 32797) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_propose_tag_restructure() != 48551) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -21943,6 +22341,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_restructure_proposals() != 26448) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_set_collection_eagerness() != 44557) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_answer_question() != 10632) {
