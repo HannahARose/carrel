@@ -33,3 +33,4 @@ xcodebuild -project apple/CarrelApp/CarrelApp.xcodeproj -scheme Carrel test
 ```
 
 CI builds the app on every push and pull request and keeps it, zipped and signed ad hoc, as the "Carrel" artifact for 30 days. It isn't notarized, so macOS won't open it at first: try once, then choose Open Anyway in System Settings → Privacy & Security.
+
