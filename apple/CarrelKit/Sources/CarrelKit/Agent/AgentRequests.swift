@@ -21,14 +21,17 @@ public final class AgentRequestHandler {
     private let model: ModelProvider?
     private let memoryGB: UInt64?
     private let opener: @MainActor (AgentLink) -> Void
+    private let sent: URL
 
-    /// Answers for `agent`, asking the librarian with `model` (the device's own when `nil`)
-    /// and showing items in the app with `opener`.
+    /// Answers for `agent`, asking the librarian with `model` (the device's own when `nil`),
+    /// keeping shared text and data in `sent` (a folder in the app group's container unless
+    /// given) and showing items in the app with `opener`.
     public init(
-        agent: Agent, model: ModelProvider? = nil, memoryGB: UInt64? = nil,
+        agent: Agent, model: ModelProvider? = nil, memoryGB: UInt64? = nil, sent: URL? = nil,
         opener: @escaping @MainActor (AgentLink) -> Void
     ) {
         self.agent = agent
+        self.sent = sent ?? AgentService.sentFolder
         self.model = model
         self.memoryGB = memoryGB ?? MacState.memoryGB
         self.opener = opener
@@ -63,6 +66,13 @@ public final class AgentRequestHandler {
         switch request {
         case .addFiles(_, let paths, let each, let whole):
             return try await addFiles(paths, each: each, whole: whole, on: handle)
+        case .addText(_, let text, let title):
+            let name = Self.fileName(title ?? Self.firstWords(of: text), extension: "md")
+            let file = try keep(Data(text.utf8), as: name)
+            return try await addFiles([file], each: false, whole: true, on: handle)
+        case .addData(_, let name, let data):
+            let file = try keep(data, as: Self.fileName(name, extension: nil))
+            return try await addFiles([file], each: false, whole: true, on: handle)
         case .checkOut(_, let item, let folder, let due):
             let out = try await Task.detached {
                 try handle.checkOut(item: item, to: folder, due: due)
@@ -114,6 +124,33 @@ public final class AgentRequestHandler {
             "Added \(what) to the intake queue."
             + (leftOut.isEmpty ? "" : " Left out " + leftOut.joined(separator: "; ") + ".")
         return AgentReply(.done, message, items: items)
+    }
+
+    /// Saves what was shared as `name` in a folder of its own in `sent`, for the intake queue to
+    /// take from there as it takes any file.
+    private func keep(_ data: Data, as name: String) throws -> String {
+        let folder = sent.appending(path: UUID().uuidString.lowercased())
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let file = folder.appending(path: name)
+        try data.write(to: file, options: .atomic)
+        return file.path(percentEncoded: false)
+    }
+
+    /// The first few words of `text`, to name a note by.
+    static func firstWords(of text: String) -> String {
+        let words = text.split(whereSeparator: \.isWhitespace).prefix(8).joined(separator: " ")
+        return words.isEmpty ? "Note" : words
+    }
+
+    /// `name` made safe as a file name, with `extension` added unless it has one.
+    static func fileName(_ name: String, extension wanted: String?) -> String {
+        var safe = name.replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: ".")))
+        if safe.isEmpty { safe = "Shared" }
+        if safe.count > 80 { safe = String(safe.prefix(80)) }
+        if let wanted, URL(filePath: safe).pathExtension.isEmpty { safe += "." + wanted }
+        return safe
     }
 
     private func search(_ query: String, limit: UInt32, on handle: ArchiveHandle) async throws

@@ -37,6 +37,7 @@ final class AgentHost {
     let agent: Agent
     private var loop: Task<Void, Never>?
     private var service: AgentXPCListener?
+    private var quickActions: AgentQuickActions?
 
     init(environment: [String: String] = ProcessInfo.processInfo.environment) {
         agent = Agent(
@@ -46,12 +47,19 @@ final class AgentHost {
             $0.split(separator: ":").map { URL(filePath: String($0)) }
         }
         if UserDefaults.standard.bool(forKey: Self.pausedKey) { agent.pause() }
+        let handler = AgentRequestHandler(agent: agent) { [weak self] in self?.open($0) }
         // Run from the build rather than as a login item, it has no Mach service to offer.
         if override == nil || environment[Self.serviceEnv] != nil {
-            let service = AgentXPCListener(
-                handler: AgentRequestHandler(agent: agent) { [weak self] in self?.open($0) })
+            let service = AgentXPCListener(handler: handler)
             service.resume()
             self.service = service
+        }
+        let quickActions = AgentQuickActions(handler: handler)
+        self.quickActions = quickActions
+        // NSApp exists once the app has finished starting.
+        DispatchQueue.main.async {
+            NSApp.servicesProvider = quickActions
+            NSUpdateDynamicServices()
         }
         loop = Task { [agent] in
             await agent.run { override ?? Self.recentArchives() }

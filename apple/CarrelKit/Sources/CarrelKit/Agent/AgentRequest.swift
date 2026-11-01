@@ -12,6 +12,12 @@ public enum AgentRequest: Codable, Sendable, Equatable {
     /// Adds files and folders to the intake queue, as `carrel ingest` does. A folder is one
     /// item when `whole`, entry by entry when `each`, and as detection decides otherwise.
     case addFiles(archive: String?, paths: [String], each: Bool, whole: Bool)
+    /// Adds shared text as a Markdown note item, titled `title` if given, through the intake
+    /// queue as a file would go.
+    case addText(archive: String?, text: String, title: String?)
+    /// Adds a shared file's contents, such as an image another app shares, as the file `name`,
+    /// through the intake queue. The extension sends the bytes, since it can't share files.
+    case addData(archive: String?, name: String, data: Data)
     /// Checks an item out, as `carrel checkout` does: to `folder` (the checkout folder
     /// setting when `nil`), due back on `due` (`YYYY-MM-DD`) if given.
     case checkOut(archive: String?, item: String, folder: String?, due: String?)
@@ -32,7 +38,8 @@ public enum AgentRequest: Codable, Sendable, Equatable {
     /// The archive the request names, if it names one.
     public var archive: String? {
         switch self {
-        case .addFiles(let archive, _, _, _), .checkOut(let archive, _, _, _),
+        case .addFiles(let archive, _, _, _), .addText(let archive, _, _),
+            .addData(let archive, _, _), .checkOut(let archive, _, _, _),
             .returnItem(let archive, _, _), .cancelCheckout(let archive, _),
             .open(let archive, _), .search(let archive, _, _), .ask(let archive, _),
             .snapshot(let archive):
@@ -44,7 +51,7 @@ public enum AgentRequest: Codable, Sendable, Equatable {
     public var writes: Bool {
         switch self {
         case .open, .search, .ask: false
-        case .addFiles, .checkOut, .returnItem, .cancelCheckout, .snapshot: true
+        case .addFiles, .addText, .addData, .checkOut, .returnItem, .cancelCheckout, .snapshot: true
         }
     }
 }
