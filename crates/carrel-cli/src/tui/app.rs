@@ -126,6 +126,10 @@ pub enum Confirm {
     },
     /// Rejecting these proposals, which history can't undo.
     Reject(Vec<Id>),
+    /// Rejecting these crawler findings, so they aren't suggested again.
+    RejectFindings(Vec<Id>),
+    /// Undoing the crawler's changes this week, this many.
+    UndoCrawler(usize),
     /// Downloading this catalog model.
     Download {
         /// The model's name.
@@ -338,6 +342,10 @@ pub enum Effect {
     },
     /// Download this catalog model.
     Download(String),
+    /// Have the crawler check some items now, as `carrel crawl run` does.
+    CrawlNow,
+    /// Undo the crawler's changes this week, as `carrel crawl undo 7d` does.
+    UndoCrawler,
     /// Return this checkout, as `carrel return --yes [--from] [--trim-snapshots]` does.
     Return(super::active::Returning),
     /// Cancel this checkout, as `carrel return --discard --yes` does.
@@ -447,6 +455,8 @@ pub struct App {
     pub waiting: (usize, usize),
     /// The review queue: everything not yet rejected or filed, by destination.
     pub queue: Vec<ReviewEntry>,
+    /// The crawler's findings waiting in Review.
+    pub crawler: super::review_crawler::CrawlerReview,
     /// The chosen proposal.
     pub chosen: usize,
     /// Proposals marked for a decision together.
@@ -587,6 +597,7 @@ impl App {
             selected: 0,
             waiting: (0, 0),
             queue: Vec::new(),
+            crawler: super::review_crawler::CrawlerReview::default(),
             chosen: 0,
             marked: BTreeSet::new(),
             detail: Vec::new(),
@@ -707,6 +718,7 @@ impl App {
             ranked.open.len(),
         );
         self.load_queue(entries);
+        self.load_crawler_findings();
         self.load_questions(ranked);
         self.load_browse()?;
         self.load_intake();
@@ -728,6 +740,9 @@ impl App {
 
     /// Review's keys: a duplicate's choices when one is shown, otherwise the decisions.
     fn review_keys(&self) -> Vec<(&'static str, &'static str)> {
+        if self.crawler.shown {
+            return super::review_crawler::crawler_keys();
+        }
         if !self.comparisons.is_empty() {
             let mut keys = vec![("v", "file as version"), ("b", "keep both"), ("s", "skip")];
             if self.comparisons.len() > 1 {
@@ -1115,7 +1130,8 @@ fn confirmed(confirm: Confirm, key: KeyCode) -> Option<Effect> {
             learn: true,
         },
         Confirm::Undo { id, .. } => Effect::Undo(id),
-        Confirm::Reject(ids) => Effect::Reject(ids),
+        Confirm::Reject(ids) | Confirm::RejectFindings(ids) => Effect::Reject(ids),
+        Confirm::UndoCrawler(_) => Effect::UndoCrawler,
         Confirm::Download { name, .. } => Effect::Download(name),
         Confirm::Agent(change) => Effect::Agent(change),
         Confirm::Return { id, from, .. } => Effect::Return(super::active::Returning {

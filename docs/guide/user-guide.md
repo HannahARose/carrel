@@ -429,7 +429,7 @@ Filing puts each item where it fits best on the day, with whatever model the dev
 - **Its pace** (`crawler.pace`: `off`, `gentle`, `steady` by default, or `brisk`) is how much of the device's idle time it uses. It runs in `carrel agent` and after the background worker, only when the device has been idle a while and is on power, and stops as soon as you use it or add something to the queue. `restructure.eagerness` doesn't slow it: it gathers the evidence any reorganization needs.
 - **What it learns feeds the structure signals:** a collection whose items keep not fitting shows on Status, as a sign it may want restructuring.
 
-`carrel crawl` shows how far it has got, and `carrel crawl run` checks a few items now. The crawler in the interactive mode (#326) and the Mac app (#327) comes later in v0.7.
+`carrel crawl` shows how far it has got, and `carrel crawl run` checks a few items now. In the interactive mode, `f` on Review shows the crawler's findings, with how far it has got above them: `a` approves one (or those marked with `Space`), `x` rejects it, `r` checks a few items now and `u` undoes the changes it made on its own this week. Its changes are on Status and in History, and its settings in Settings. The crawler in the Mac app comes later in v0.7 (#327).
 
 ### Writing safely
 

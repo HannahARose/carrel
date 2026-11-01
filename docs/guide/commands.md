@@ -170,7 +170,7 @@ Backups need [Kopia](https://kopia.io), beside `carrel` or on `PATH`.
 | Key | Screen |
 | --- | --- |
 | `1` | **Status**: what `carrel status` shows, including Recent, what's waiting for you, the librarian's changes this week, a collection not opened in a while, today's few questions, and the search index, as `carrel index status` shows it |
-| `2` | **Review**: `a` approve, `h` hold, `m` move, `e` edit, `x` reject, `z` unpack a zip or keep it compressed, `Space` mark, `A` approve all high-confidence |
+| `2` | **Review**: `a` approve, `h` hold, `m` move, `e` edit, `x` reject, `z` unpack a zip or keep it compressed, `Space` mark, `A` approve all high-confidence; `f` the crawler's findings, where `a` approves, `x` rejects, `r` checks a few items now and `u` undoes its changes this week |
 | `3` | **Active**: what's checked out and on this device's desk, with their pending history entries; `r` return the chosen checkout, `x` cancel it, `o` open the working copy, `a` approve, `c` combine, `d` drop pending entries (all, or those marked with `Space`); `n` put a file or folder on the desk, and on a desk item `x` take it off, `f` archive it |
 | `4` | **Questions**: `Enter` to answer, `1`–`9` to pick a suggestion, `s` to skip, `d` to dismiss |
 | `5` | **Browse**: collections and items; `/` to search, as `carrel search` does; `Enter` on an item for its changes and links, then `u` to undo the chosen change, `Enter` to go to a linked item; on an item, `a` answer Carrel's question about it, `o` check it out, `r` rename it, `z` expand a compressed file; `n` new collection |

@@ -161,6 +161,9 @@ impl App {
 
     /// Handles a key on the Review screen.
     pub(super) fn review_key(&mut self, key: KeyEvent) -> Handled {
+        if let Some(handled) = self.review_list_key(key) {
+            return handled;
+        }
         if matches!(key.code, KeyCode::Char('[' | ']')) && !self.comparisons.is_empty() {
             let count = self.comparisons.len();
             self.compared = if key.code == KeyCode::Char(']') {

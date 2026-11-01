@@ -52,7 +52,7 @@ The command line and the interactive mode run on macOS, Linux and Windows. The M
 | Restructure tags: merge, split and retire, approved all or in part | `restructure tags` | #326 | ✓ Restructure, before and after side by side |
 | The librarian: ask, converse, save to the Journal | `ask` | ✓ the Librarian screen (`L`) | ✓ the Librarian panel (⌥⌘L), Ask About This (⇧⌘L) |
 | The librarian's changes: list and undo them together | `status`, `log --librarian`, `undo --librarian` | ✓ the Librarian screen, Status and History | ✓ the Librarian panel, Status and History |
-| The crawler: how far it has got, a pass now, its findings, its changes and undoing them | `crawl status`, `crawl run`, `review`, `status`, `crawl undo` | #326 | #327 |
+| The crawler: how far it has got, a pass now, its findings, its changes and undoing them | `crawl status`, `crawl run`, `review`, `status`, `crawl undo` | ✓ Review's crawler findings (`f`): how far it has got, `r` a pass now, `u` undo this week's; its changes on Status and in History (#326) | #327 |
 | Backups: set up, snapshot, list, verify, restore | `backup` | ✓ Backups | ✓ Backups (#266) |
 | Backups: the repository's name | `backup setup --description` | ✓ asked on set up | ✓ the setup sheet |
 | Backups: how much to verify, where to restore | `backup verify --percent`, `backup restore --to` | ✓ asked along the way | #348 |

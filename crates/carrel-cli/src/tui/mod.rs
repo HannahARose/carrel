@@ -17,6 +17,7 @@ mod librarian;
 mod option_lines;
 mod preview;
 mod review;
+mod review_crawler;
 mod screens;
 mod search;
 mod settings;
@@ -474,6 +475,8 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
             active_work(root, effect)
         }
         effect @ (Effect::Download(_)
+        | Effect::CrawlNow
+        | Effect::UndoCrawler
         | Effect::Index(_)
         | Effect::OpenArchive(_)
         | Effect::CreateArchive(_)
@@ -533,6 +536,8 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
 /// index's in the background, and switching at once, since the app is replaced.
 fn switch_or_index_work(app: &mut App, root: PathBuf, effect: Effect) -> Option<(String, Work)> {
     match effect {
+        Effect::CrawlNow => Some(review_crawler::crawler_work(root, false)),
+        Effect::UndoCrawler => Some(review_crawler::crawler_work(root, true)),
         Effect::Download(name) => {
             // What the providers offer changes once it's here.
             app.here = None;
