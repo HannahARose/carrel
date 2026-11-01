@@ -1,4 +1,4 @@
-//! Paths and commands as people type them, and programs on `PATH`.
+//! Paths and commands as people type them.
 
 use std::path::PathBuf;
 
@@ -61,15 +61,6 @@ pub fn expand(path: &str) -> PathBuf {
             ),
         _ => PathBuf::from(path),
     }
-}
-
-/// The program `name` beside `carrel` or on `PATH`.
-#[must_use]
-pub fn program(name: &str) -> Option<PathBuf> {
-    carrel_core::providers::process::find_program(
-        name,
-        &carrel_core::providers::process::default_folders(),
-    )
 }
 
 #[cfg(test)]
