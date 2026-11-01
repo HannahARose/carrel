@@ -29,6 +29,7 @@ struct ArchiveWindow: View {
             Inspector(model: model)
         }
         .activeAndHistorySheets(model)
+        .modifier(ArchiveWindowActions(model: model))
         .browseSheets(model.browse)
         .navigationTitle(model.name)
         .navigationSubtitle(
@@ -110,6 +111,14 @@ private struct ScreenContent: View {
     @Bindable var model: ArchiveWindowModel
 
     var body: some View {
+        if let search = model.search, search.isActive {
+            SearchResultsView(model: model, search: search)
+        } else {
+            screen
+        }
+    }
+
+    @ViewBuilder private var screen: some View {
         switch model.screen {
         case .status, nil:
             StatusView(model: model)

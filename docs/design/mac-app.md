@@ -79,8 +79,8 @@ Each screen does what its interactive-mode counterpart does, through the same co
 
 ## Not in v0.5
 
-- **Finder integration** (badges, context actions), the share sheet, Quick Look previews of cards, Spotlight and App Intents: v1.3, macOS system integration (#35).
-- **iPad and iPhone,** and iCloud with its `CloudKit` coordinator: v2.0 (#7).
+- **Finder integration** (badges, context actions), the share sheet, Quick Look previews of cards, Spotlight and App Intents: v0.8, macOS system integration (#35).
+- **iPad and iPhone,** and iCloud with its `CloudKit` coordinator: v0.9 (#7).
 - **Signed and notarized builds,** TestFlight: v1.0 (#47).
 - **Kopia bundled inside the app:** backups use the installed Kopia, as the CLI does.
 
@@ -101,5 +101,5 @@ Each screen does what its interactive-mode counterpart does, through the same co
 1. **One window per archive, a sidebar of the interactive mode's screens with a content list and an inspector,** each screen doing what its interactive-mode counterpart does through the same core functions. Recommended: the owner already knows the screens, the two can't drift apart, and it's the layout the spec and Apple's guidelines describe. The alternative is a document-style app that opens collections as windows, which suits browsing but not the queues.
 2. **The app calls the core in-process through CarrelKit's UniFFI bindings, and logic the app needs moves into `carrel-core` first.** Recommended: the proof of concept already works this way, it's fast, and the CLI and the app share one implementation. The alternative, running `carrel --json` commands, needs no bindings but parses text and can't stream progress or hold a lease.
 3. **The app runs the same provider helpers the CLI does, bundled, rather than calling Apple's models in-process.** Recommended: the same results from the app and the CLI, crash isolation, and one models folder. The cost is a helper process per provider, which the CLI already pays.
-4. **A login-item agent runs the worker, notices work sessions as they happen and shows the menu bar list, coordinating through the archive's files and writer lease, with no new protocol in v0.5.** Recommended: it's what the spec describes, it reuses coordination that already works between the CLI and its worker, and an XPC channel can be added later. The alternative is no agent until v1.3, with work sessions noticed only while something runs.
+4. **A login-item agent runs the worker, notices work sessions as they happen and shows the menu bar list, coordinating through the archive's files and writer lease, with no new protocol in v0.5.** Recommended: it's what the spec describes, it reuses coordination that already works between the CLI and its worker, and an XPC channel can be added later. The alternative is no agent until v0.8, with work sessions noticed only while something runs.
 5. **macOS 26 and Apple silicon only; ad hoc–signed development builds from CI, with Developer ID signing and notarization left for v1.0.** Recommended: Apple's model needs macOS 26, the XCFramework is Apple silicon only, and keeping signing secrets out of CI until v1.0 keeps the repository simple. The owner runs Xcode builds locally with their personal team in the meantime.
