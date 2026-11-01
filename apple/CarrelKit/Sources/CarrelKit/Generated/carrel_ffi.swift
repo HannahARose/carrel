@@ -8081,9 +8081,18 @@ public struct EmbeddingElsewhere: Equatable, Hashable {
      */
     public var model: String
     /**
-     * How to get it.
+     * How to get it, in words that name no interface's command.
      */
     public var how: String
+    /**
+     * The catalog model to download for it, when it's downloaded; download it with
+     * [`ArchiveHandle::download_model`] once the owner has seen its size.
+     */
+    public var download: CatalogModel?
+    /**
+     * The provider it comes with instead, which only Apple devices have.
+     */
+    public var comesWith: String?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -8092,10 +8101,19 @@ public struct EmbeddingElsewhere: Equatable, Hashable {
          * The model's identifier.
          */model: String, 
         /**
-         * How to get it.
-         */how: String) {
+         * How to get it, in words that name no interface's command.
+         */how: String, 
+        /**
+         * The catalog model to download for it, when it's downloaded; download it with
+         * [`ArchiveHandle::download_model`] once the owner has seen its size.
+         */download: CatalogModel?, 
+        /**
+         * The provider it comes with instead, which only Apple devices have.
+         */comesWith: String?) {
         self.model = model
         self.how = how
+        self.download = download
+        self.comesWith = comesWith
     }
 
     
@@ -8115,13 +8133,17 @@ public struct FfiConverterTypeEmbeddingElsewhere: FfiConverterRustBuffer {
         return
             try EmbeddingElsewhere(
                 model: FfiConverterString.read(from: &buf), 
-                how: FfiConverterString.read(from: &buf)
+                how: FfiConverterString.read(from: &buf), 
+                download: FfiConverterOptionTypeCatalogModel.read(from: &buf), 
+                comesWith: FfiConverterOptionString.read(from: &buf)
         )
     }
 
     public static func write(_ value: EmbeddingElsewhere, into buf: inout [UInt8]) {
         FfiConverterString.write(value.model, into: &buf)
         FfiConverterString.write(value.how, into: &buf)
+        FfiConverterOptionTypeCatalogModel.write(value.download, into: &buf)
+        FfiConverterOptionString.write(value.comesWith, into: &buf)
     }
 }
 
@@ -13443,6 +13465,11 @@ public struct SearchResults: Equatable, Hashable {
      * Why it was by words only, when the query had words and meaning couldn't be used.
      */
     public var wordsOnly: String?
+    /**
+     * When that's because this device doesn't have the archive's embedding model, the
+     * catalog model to download for it.
+     */
+    public var missingModel: CatalogModel?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -13461,12 +13488,17 @@ public struct SearchResults: Equatable, Hashable {
          */behind: UInt64, 
         /**
          * Why it was by words only, when the query had words and meaning couldn't be used.
-         */wordsOnly: String?) {
+         */wordsOnly: String?, 
+        /**
+         * When that's because this device doesn't have the archive's embedding model, the
+         * catalog model to download for it.
+         */missingModel: CatalogModel?) {
         self.hits = hits
         self.total = total
         self.byMeaning = byMeaning
         self.behind = behind
         self.wordsOnly = wordsOnly
+        self.missingModel = missingModel
     }
 
     
@@ -13489,7 +13521,8 @@ public struct FfiConverterTypeSearchResults: FfiConverterRustBuffer {
                 total: FfiConverterUInt64.read(from: &buf), 
                 byMeaning: FfiConverterBool.read(from: &buf), 
                 behind: FfiConverterUInt64.read(from: &buf), 
-                wordsOnly: FfiConverterOptionString.read(from: &buf)
+                wordsOnly: FfiConverterOptionString.read(from: &buf), 
+                missingModel: FfiConverterOptionTypeCatalogModel.read(from: &buf)
         )
     }
 
@@ -13499,6 +13532,7 @@ public struct FfiConverterTypeSearchResults: FfiConverterRustBuffer {
         FfiConverterBool.write(value.byMeaning, into: &buf)
         FfiConverterUInt64.write(value.behind, into: &buf)
         FfiConverterOptionString.write(value.wordsOnly, into: &buf)
+        FfiConverterOptionTypeCatalogModel.write(value.missingModel, into: &buf)
     }
 }
 

@@ -32,6 +32,9 @@ struct SearchResultsView: View {
                 if let notice = search.notice {
                     Label(notice, systemImage: "info.circle")
                         .foregroundStyle(.secondary)
+                    if search.results?.missingModel != nil {
+                        SettingsLink { Text("Download It in Settings…") }
+                    }
                 }
             }
         }
