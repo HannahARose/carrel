@@ -2,7 +2,7 @@
 
 Every interface is fully capable ([Architecture](architecture.md), idea 4): anything Carrel can do is available from the command line, the interactive mode and the app, on every platform each runs on, wherever the interface and platform make it possible. This page is the record of where each capability stands, and of the deviations that are allowed. It's kept up to date with each change that adds a capability or closes a gap.
 
-The command line and the interactive mode run on macOS, Linux and Windows. The Mac app arrives in v0.5. The iPad and iPhone apps follow in v2.0, and Linux and Windows apps later still (#270); until then, the command line and the interactive mode are the fully capable interfaces on those platforms.
+The command line and the interactive mode run on macOS, Linux and Windows. The Mac app arrives in v0.5. The iPad and iPhone apps follow in v0.9, before 1.0, and Linux and Windows apps later, in v2.0 (#270); until then, the command line and the interactive mode are the fully capable interfaces on those platforms.
 
 ## Where each capability stands
 
@@ -20,7 +20,7 @@ The command line and the interactive mode run on macOS, Linux and Windows. The M
 | Review: duplicates (keep both, file as a version) | `review` | ✓ | ✓ (#234) |
 | Questions: answer and dismiss | `questions` | ✓ Questions | ✓ (#234) |
 | Browse collections and items | `show`, `status` | ✓ Browse | ✓ Browse |
-| Previews of items | the item's path in `show` | #258 | #256 |
+| Previews of items | the item's path in `show` | #258 | ✓ inspector and grid (#256) |
 | An item's history and related items | `show` | ✓ | ✓ |
 | Search, with filters and reasons | `search` | ✓ `/` | ✓ ⌘F (#236) |
 | The embedding index: status, rebuild, switch models | `index` | ✓ Status, Settings | ✓ Settings → Search (#267) |
