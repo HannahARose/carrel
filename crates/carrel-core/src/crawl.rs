@@ -2,8 +2,10 @@
 //! reassessing where items are filed, one item at a time, with the strongest text model the
 //! device has.
 //!
-//! Each pass takes a few items in a fixed order ([`order`]): Holding first, then items filed
-//! with low confidence, then the items of crowded collections, then a slow sweep of everything.
+//! Each pass takes a few items in a fixed order ([`order`]): what the owner flagged first, then
+//! Holding, then items filed with low confidence, then the items of crowded collections, then
+//! cards drafted by a weaker model or an older drafting version ([`drafts`]), then a slow sweep
+//! of everything.
 //! For each, the model judges whether it still fits its collection's design document and where
 //! it would go instead, and reads its card again ([`judge`]). What it finds
 //! ([`pass`]):
@@ -21,6 +23,7 @@
 //! does: how idle the device is and whether it's on power are the caller's to find out
 //! ([`Device`]), since the core has no platform-specific code.
 
+pub mod drafts;
 pub mod findings;
 pub mod judge;
 pub mod model;
@@ -245,6 +248,9 @@ pub struct CrawlStatus {
     pub judged: usize,
     /// Those due to be judged, by stage, in the order it takes them.
     pub waiting: Vec<(Stage, usize)>,
+    /// The cards that could get a better draft: those due as outdated drafts, by card path, in
+    /// the order it takes them ([`drafts`]).
+    pub drafts: Vec<String>,
     /// Collections whose items keep failing: each with how many failed and how many were
     /// judged.
     pub misfits: Vec<(String, usize, usize)>,
@@ -268,13 +274,28 @@ pub fn status(
     let settings = archive.settings().crawler.clone();
     let judged = verdicts::all(archive);
     let open = findings::open_items(archive)?;
-    let entries = order::entries(archive)?;
+    // The crawler's model is the one it last judged with on this device.
+    let mine = verdicts::Verdicts::load(archive, device);
+    let crawler = mine
+        .items
+        .values()
+        .max_by(|a, b| a.judged.cmp(&b.judged))
+        .map(|v| v.model.clone());
+    let entries = order::entries(archive, crawler.as_deref())?;
     let crowded = order::crowded(archive)?;
     let due = order::order_of(&entries, &crowded, &judged, &open, now);
+    let drafts = due
+        .iter()
+        .filter(|(_, stage)| *stage == Stage::Outdated)
+        .filter_map(|(id, _)| entries.iter().find(|e| e.id == *id))
+        .map(|e| e.card.clone())
+        .collect();
     let waiting = [
+        Stage::Flagged,
         Stage::Holding,
         Stage::Uncertain,
         Stage::Crowded,
+        Stage::Outdated,
         Stage::Sweep,
     ]
     .into_iter()
@@ -291,8 +312,9 @@ pub fn status(
         items: entries.len(),
         judged: judged_here,
         waiting,
+        drafts,
         misfits: verdicts::misfits(&judged),
         findings: findings::list(archive)?.len(),
-        last_pass: verdicts::Verdicts::load(archive, device).last_pass,
+        last_pass: mine.last_pass,
     })
 }

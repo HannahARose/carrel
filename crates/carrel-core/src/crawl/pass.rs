@@ -102,13 +102,13 @@ impl Crawler<'_> {
         let now = jiff::Timestamp::now();
         let judged = verdicts::all(archive);
         let open = findings::open_items(archive)?;
-        let entries = order::entries(archive)?;
+        let entries = order::entries(archive, Some(&self.model_name()))?;
         let crowded = order::crowded(archive)?;
         let due = order_of(&entries, &crowded, &judged, &open, now);
         let by_id: HashMap<Id, ItemRef> = archive.items()?.into_iter().map(|i| (i.id, i)).collect();
         let places = places(archive)?;
         let mut crawled = Crawled::default();
-        for (id, _) in due.into_iter().take(items) {
+        for (id, stage) in due.into_iter().take(items) {
             if stop() {
                 crawled.stopped = true;
                 break;
@@ -123,7 +123,7 @@ impl Crawler<'_> {
                 continue;
             };
             let collection = folder(&item.card);
-            let judged = self.judge(&card, collection, &places);
+            let judged = self.judge(&card, collection, &places, stage == order::Stage::Outdated);
             self.note_gap(item, &judged);
             let Some(judgment) = judged? else {
                 crawled
@@ -159,6 +159,7 @@ impl Crawler<'_> {
                     model: self.model_name(),
                     judged: jiff::Timestamp::now().to_string(),
                     declined,
+                    drafting: Some(crate::ingest::card::DRAFTING),
                     extra: Extra::new(),
                 },
             )?;
@@ -199,15 +200,17 @@ impl Crawler<'_> {
             return Ok(None);
         };
         let places = places(self.archive)?;
-        self.judge(&card, folder(&item.card), &places)
+        self.judge(&card, folder(&item.card), &places, false)
     }
 
-    /// The model's judgment of `item`, or `None` when its answer wasn't usable.
+    /// The model's judgment of `item`, or `None` when its answer wasn't usable; `redraft`
+    /// when its card is an outdated draft.
     fn judge(
         &self,
         card: &Card,
         collection: &str,
         places: &[Place],
+        redraft: bool,
     ) -> Result<Option<Judgment>, CrawlError> {
         let design = design_document(self.archive, collection);
         let text = card
@@ -219,6 +222,7 @@ impl Crawler<'_> {
             collection,
             design: &design,
             text: text.as_deref(),
+            redraft,
         };
         let paths: Vec<String> = places.iter().map(|p| p.path.clone()).collect();
         let mut request = CompletionRequest {

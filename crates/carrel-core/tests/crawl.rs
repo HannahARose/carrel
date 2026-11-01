@@ -144,7 +144,96 @@ fn holding_comes_first_and_a_pass_takes_only_its_share() {
             .iter()
             .all(|(stage, _)| *stage != Stage::Holding)
     );
-    assert_eq!(status.findings, 2, "a move and a summary");
+    // A move and a summary for the scan, and a better summary for the note an older Carrel
+    // drafted, which comes before the sweep.
+    assert_eq!(status.findings, 3, "a move and two summaries");
+}
+
+const NOTE: &str = "Reading/Coupled oscillators note.pdf.md";
+
+#[test]
+fn outdated_drafts_come_before_the_sweep_and_keep_the_owners_fields() {
+    let (_dir, archive, holder) = sample(true);
+    // The note's card was drafted before drafting versions were kept: an outdated draft.
+    let status =
+        carrel_core::crawl::status(&archive, holder.device, jiff::Timestamp::now()).unwrap();
+    assert_eq!(status.drafts, [NOTE]);
+    assert!(status.waiting.contains(&(Stage::Outdated, 1)));
+
+    let mut sure = verdict(true, "", 0.95);
+    sure["title"] = json!("Coupled oscillators, a two-page note");
+    sure["summary"] = json!("How two coupled oscillators lock in phase, with the condition.");
+    let (registry, model) = scripted(vec![verdict(true, "", 0.95), sure]);
+    let crawler = Crawler {
+        archive: &archive,
+        registry: &registry,
+        model,
+        holder,
+    };
+    let did = crawler.pass(2, &never).unwrap();
+    assert_eq!(did.judged, 2, "Holding, then the outdated draft");
+    let text = std::fs::read_to_string(archive.root().join(NOTE)).unwrap();
+    let card = carrel_core::card_file::CardFile::parse(&text).unwrap();
+    let card = card.card();
+    assert_eq!(
+        card.summary.as_deref(),
+        Some("How two coupled oscillators lock in phase, with the condition."),
+        "the summary a model wrote is redrafted"
+    );
+    assert_eq!(
+        card.title, "A note on coupled oscillators",
+        "the owner's title stays"
+    );
+    let generated = card.generated.as_ref().unwrap();
+    assert_eq!(generated.model.as_deref(), Some("scripted/m"));
+    assert_eq!(
+        generated.drafting,
+        Some(carrel_core::ingest::card::DRAFTING)
+    );
+    let status =
+        carrel_core::crawl::status(&archive, holder.device, jiff::Timestamp::now()).unwrap();
+    assert!(status.drafts.is_empty(), "redrafted, it's current");
+}
+
+#[test]
+fn a_weaker_models_draft_is_outdated_once_a_stronger_model_judges() {
+    let (_dir, archive, _holder) = sample(false);
+    let path = archive.root().join(NOTE);
+    let text = std::fs::read_to_string(&path).unwrap().replace(
+        "model: \"apple/afm-3-core-advanced\"",
+        &format!(
+            "model: \"llama/qwen3.5-4b\"\n  drafting: {}",
+            carrel_core::ingest::card::DRAFTING
+        ),
+    );
+    std::fs::write(&path, text).unwrap();
+    let stage = |crawler: Option<&str>| {
+        let entries = carrel_core::crawl::order::entries(&archive, crawler).unwrap();
+        let order = carrel_core::crawl::order::order_of(
+            &entries,
+            &std::collections::HashSet::new(),
+            &std::collections::BTreeMap::new(),
+            &std::collections::HashSet::new(),
+            jiff::Timestamp::now(),
+        );
+        let note = entries.iter().find(|e| e.card == NOTE).unwrap().id;
+        order.iter().find(|(id, _)| *id == note).unwrap().1
+    };
+    assert_eq!(
+        stage(Some("llama/qwen3.5-4b")),
+        Stage::Sweep,
+        "the same model"
+    );
+    assert_eq!(
+        stage(Some("llama/qwen3.5-9b")),
+        Stage::Outdated,
+        "a stronger one"
+    );
+    assert_eq!(
+        stage(None),
+        Stage::Sweep,
+        "no crawler model to compare with"
+    );
 }
 
 #[test]

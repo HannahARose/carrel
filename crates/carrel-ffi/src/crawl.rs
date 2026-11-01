@@ -109,6 +109,9 @@ pub struct CrawlerStatus {
     pub judged: u64,
     /// Those due, by stage, in the order it takes them.
     pub waiting: Vec<CrawlerStage>,
+    /// The cards that could get a better draft, from a stronger model or a newer Carrel, by
+    /// card path, in the order it takes them.
+    pub drafts: Vec<String>,
     /// Collections whose items keep failing.
     pub misfits: Vec<CrawlerMisfits>,
     /// Its findings waiting in Review.
@@ -246,6 +249,7 @@ impl ArchiveHandle {
                     items: count(n),
                 })
                 .collect(),
+            drafts: status.drafts,
             misfits: status
                 .misfits
                 .into_iter()
@@ -422,6 +426,10 @@ mod tests {
 
         let status = sample.handle.crawler_status().unwrap();
         assert_eq!(status.pace, "steady");
+        assert!(
+            status.drafts.is_empty() || status.drafts.iter().all(|c| c.ends_with(".md")),
+            "outdated drafts are listed by card"
+        );
         assert!(!status.changes);
         assert!(status.judged > 0 && status.judged <= status.items);
         assert_eq!(status.findings, passed.proposed);

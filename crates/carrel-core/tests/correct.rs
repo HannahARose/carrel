@@ -36,6 +36,7 @@ fn photo_card() -> Fields {
         device: None,
         at: DateOrTime("2026-10-30".into()),
         level: None,
+        drafting: None,
         extra: carrel_core::card::Extra::new(),
     });
     card.fields()

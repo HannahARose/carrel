@@ -127,6 +127,8 @@ pub struct Entry {
     pub placement: Option<PlacementConfidence>,
     /// Whether the owner flagged it as needing work.
     pub flagged: bool,
+    /// What drafted its card, when a model wrote any of it.
+    pub drafted: Option<crate::crawl::drafts::Drafted>,
 }
 
 impl Entry {
@@ -230,6 +232,7 @@ fn entry(card: &Card, card_path: &str, history: &[String]) -> Entry {
             .flatten(),
         placement: card.placement.as_ref().map(|p| p.confidence),
         flagged: card.needs_work.is_some(),
+        drafted: crate::crawl::drafts::Drafted::of(card),
     }
 }
 
@@ -395,6 +398,7 @@ pub(crate) mod tests {
             text: None,
             placement: None,
             flagged: false,
+            drafted: None,
         }
     }
 

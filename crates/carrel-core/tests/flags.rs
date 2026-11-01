@@ -176,7 +176,7 @@ fn flagging_a_collection_writes_its_design_document_and_feeds_the_signals() {
     );
 
     // The crawler takes the flagged collection's items first.
-    let entries = carrel_core::crawl::order::entries(&archive).unwrap();
+    let entries = carrel_core::crawl::order::entries(&archive, None).unwrap();
     let order = carrel_core::crawl::order::order_of(
         &entries,
         &std::collections::HashSet::new(),

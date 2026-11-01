@@ -586,6 +586,10 @@ pub struct Provenance {
     /// Whether a stronger device should re-check the result.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub level: Option<QualityLevel>,
+    /// The drafting version that wrote the fields ([`crate::ingest::card::DRAFTING`]):
+    /// with `model`, what drafted the card. Unset, an unknown older version.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drafting: Option<u32>,
     /// Keys this version doesn't know.
     #[serde(flatten)]
     #[schemars(skip)]

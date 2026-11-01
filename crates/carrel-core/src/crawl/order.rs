@@ -1,7 +1,8 @@
 //! The order the crawler takes items in (`docs/design/restructure.md`, "Crawlers"): what the
 //! owner flagged as needing work first (FORMAT.md §5.9), items and the items of collections,
-//! then Holding, then items filed with low confidence, then the items of crowded collections, then a
-//! slow sweep of everything. Within each, items never judged come first, then those judged
+//! then Holding, then items filed with low confidence, then the items of crowded collections,
+//! then cards drafted by a weaker model or an older drafting version ([`super::drafts`]),
+//! weakest and oldest first, then a slow sweep of everything. Within each, items never judged come first, then those judged
 //! longest ago. An item judged recently waits until it's due again, sooner the earlier its
 //! stage; one with a finding waiting in Review waits for the owner.
 
@@ -26,6 +27,9 @@ pub enum Stage {
     Uncertain,
     /// It's in a crowded collection.
     Crowded,
+    /// Its card was drafted by a weaker model than the crawler's, or an older drafting
+    /// version.
+    Outdated,
     /// Everything else, slowly.
     Sweep,
 }
@@ -39,6 +43,7 @@ impl Stage {
             Self::Holding => "in Holding",
             Self::Uncertain => "filed with low confidence",
             Self::Crowded => "in crowded collections",
+            Self::Outdated => "drafted by a weaker model or an older Carrel",
             Self::Sweep => "in the sweep of everything",
         }
     }
@@ -48,7 +53,7 @@ impl Stage {
     pub fn again(self) -> jiff::SignedDuration {
         let days = match self {
             Self::Flagged | Self::Holding => 7,
-            Self::Uncertain | Self::Crowded => 30,
+            Self::Uncertain | Self::Crowded | Self::Outdated => 30,
             Self::Sweep => 180,
         };
         jiff::SignedDuration::from_hours(24 * days)
@@ -68,15 +73,18 @@ pub struct Entry {
     pub placement: Option<PlacementConfidence>,
     /// Whether the owner flagged it, or its collection, as needing work.
     pub flagged: bool,
+    /// Why its card's draft is outdated, when it is.
+    pub outdated: Option<super::drafts::Outdated>,
 }
 
 /// The items the crawler may judge in `archive`: every item but restricted ones, whose text it
-/// never reads, checked-out ones, which wait until they're returned, and removed ones.
+/// never reads, checked-out ones, which wait until they're returned, and removed ones. A card
+/// is an outdated draft beside `crawler`, the crawler's model as `provider/offer`, when known.
 ///
 /// # Errors
 ///
 /// [`ArchiveError`] if the cards can't be read.
-pub fn entries(archive: &Archive) -> Result<Vec<Entry>, ArchiveError> {
+pub fn entries(archive: &Archive, crawler: Option<&str>) -> Result<Vec<Entry>, ArchiveError> {
     let catalog = Catalog::read(archive)?;
     let flagged: HashSet<&str> = catalog
         .collections
@@ -98,6 +106,10 @@ pub fn entries(archive: &Archive) -> Result<Vec<Entry>, ArchiveError> {
             collection: e.item.collection.clone(),
             placement: e.placement,
             flagged: e.flagged || flagged.contains(e.item.collection.as_str()),
+            outdated: e
+                .drafted
+                .as_ref()
+                .and_then(|d| super::drafts::outdated(d, crawler)),
         })
         .collect())
 }
@@ -127,13 +139,17 @@ fn stage_of<S: std::hash::BuildHasher>(entry: &Entry, crowded: &HashSet<String, 
         Stage::Uncertain
     } else if crowded.contains(&entry.collection) {
         Stage::Crowded
+    } else if entry.outdated.is_some() {
+        Stage::Outdated
     } else {
         Stage::Sweep
     }
 }
 
 /// The items due to be judged at `now`, in the order the crawler takes them, each with its
-/// stage. `judged` are the verdicts so far, `open` the items with a finding waiting.
+/// stage. `judged` are the verdicts so far, `open` the items with a finding waiting. Outdated
+/// drafts come weakest and oldest first, and one judged by another model than the crawler's
+/// now, or before the current drafting version, is due again at once.
 #[must_use]
 pub fn order_of<S: std::hash::BuildHasher, T: std::hash::BuildHasher>(
     entries: &[Entry],
@@ -142,24 +158,43 @@ pub fn order_of<S: std::hash::BuildHasher, T: std::hash::BuildHasher>(
     open: &HashSet<Id, T>,
     now: jiff::Timestamp,
 ) -> Vec<(Id, Stage)> {
-    let mut due: Vec<(Stage, Option<jiff::Timestamp>, &str, Id)> = entries
+    type Rank = ((u8, u64), u32);
+    let mut due: Vec<(Stage, Rank, Option<jiff::Timestamp>, &str, Id)> = entries
         .iter()
         .filter(|e| !open.contains(&e.id))
         .filter_map(|e| {
             let stage = stage_of(e, crowded);
-            let last = judged.get(&e.id).and_then(Verdict::at);
-            // An item that moved since it was judged is judged again where it is now.
-            let moved = judged
-                .get(&e.id)
-                .is_some_and(|v| v.collection != e.collection);
-            let waiting = last.is_some_and(|at| at + stage.again() > now) && !moved;
-            (!waiting).then_some((stage, last.filter(|_| !moved), e.card.as_str(), e.id))
+            let verdict = judged.get(&e.id);
+            let last = verdict.and_then(Verdict::at);
+            // An item that moved since it was judged is judged again where it is now, and an
+            // outdated draft once there's a stronger model or a newer drafting version.
+            let moved = verdict.is_some_and(|v| v.collection != e.collection);
+            let stale = match (&e.outdated, verdict) {
+                (Some(outdated), Some(v)) if stage == Stage::Outdated => {
+                    super::drafts::stale(outdated, &v.model, v.drafting)
+                }
+                _ => false,
+            };
+            let again = moved || stale;
+            // One the crawler's model has judged at this drafting version waits as the sweep
+            // does, until a stronger model or a newer version.
+            let wait = if stage == Stage::Outdated && verdict.is_some() {
+                Stage::Sweep.again()
+            } else {
+                stage.again()
+            };
+            let waiting = last.is_some_and(|at| at + wait > now) && !again;
+            let rank = match &e.outdated {
+                Some(outdated) if stage == Stage::Outdated => outdated.rank(),
+                _ => ((0, 0), 0),
+            };
+            (!waiting).then_some((stage, rank, last.filter(|_| !again), e.card.as_str(), e.id))
         })
         .collect();
     // `None` sorts before any time: never judged first.
     due.sort();
     due.into_iter()
-        .map(|(stage, _, _, id)| (id, stage))
+        .map(|(stage, _, _, _, id)| (id, stage))
         .collect()
 }
 
@@ -179,6 +214,7 @@ mod tests {
             collection: collection.into(),
             placement,
             flagged: false,
+            outdated: None,
         }
     }
 
@@ -192,6 +228,7 @@ mod tests {
             model: "m/m".into(),
             judged: at.into(),
             declined: Vec::new(),
+            drafting: None,
             extra: Extra::new(),
         }
     }
@@ -265,5 +302,56 @@ mod tests {
             ids,
             [(3, Stage::Flagged), (1, Stage::Holding), (2, Stage::Sweep)]
         );
+    }
+
+    #[test]
+    fn outdated_drafts_come_before_the_sweep_and_a_stronger_model_puts_them_back() {
+        use crate::crawl::drafts::{Drafted, outdated};
+        use crate::ingest::card::DRAFTING;
+        let crawler = Some("llama/qwen3.5-9b");
+        let draft = |n: u128, model: &str, drafting: u32| {
+            let mut e = entry(n, "Home", None);
+            e.outdated = outdated(
+                &Drafted {
+                    model: Some(model.into()),
+                    drafting,
+                },
+                crawler,
+            );
+            e
+        };
+        let entries = [
+            entry(1, "Home", None),
+            draft(2, "llama/qwen3.5-9b", 0),
+            draft(3, "llama/qwen3.5-4b", DRAFTING),
+        ];
+        let now: jiff::Timestamp = "2026-11-01T12:00:00Z".parse().unwrap();
+        let (crowded, open) = (HashSet::<String>::new(), HashSet::<Id>::new());
+        let order = order_of(&entries, &crowded, &BTreeMap::new(), &open, now);
+        let ids: Vec<(u128, Stage)> = order.iter().map(|(i, s)| (i.0.as_u128(), *s)).collect();
+        assert_eq!(
+            ids,
+            [
+                (3, Stage::Outdated),
+                (2, Stage::Outdated),
+                (1, Stage::Sweep)
+            ],
+            "the weakest model's draft first, then the older version's"
+        );
+
+        // Judged yesterday by the crawler's model now, it waits; by a weaker one, it's due.
+        let by = |model: &str| {
+            let mut v = judged("Home", "2026-10-31T12:00:00Z");
+            v.model = model.into();
+            v.drafting = Some(DRAFTING);
+            BTreeMap::from([(id(3), v)])
+        };
+        let due = |judged: &BTreeMap<Id, Verdict>| {
+            order_of(&entries, &crowded, judged, &open, now)
+                .iter()
+                .any(|(i, _)| *i == id(3))
+        };
+        assert!(!due(&by("llama/qwen3.5-9b")));
+        assert!(due(&by("llama/qwen3.5-4b")));
     }
 }

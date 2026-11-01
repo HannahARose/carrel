@@ -40,6 +40,10 @@ pub struct Verdict {
     /// Findings the owner rejected, so they aren't proposed again.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub declined: Vec<Finding>,
+    /// The drafting version current when it was given ([`crate::ingest::card::DRAFTING`]);
+    /// unset before drafting versions were kept.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drafting: Option<u32>,
     /// Keys this version doesn't know.
     #[serde(flatten)]
     pub extra: Extra,
@@ -182,6 +186,7 @@ mod tests {
             model: "m/m".into(),
             judged: "2026-11-01T10:00:00Z".into(),
             declined: Vec::new(),
+            drafting: None,
             extra: Extra::new(),
         }
     }

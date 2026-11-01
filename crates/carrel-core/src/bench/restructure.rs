@@ -362,6 +362,7 @@ pub fn use_crawler_verdicts(
                 model: model.to_owned(),
                 judged: judged_at.clone(),
                 declined: Vec::new(),
+                drafting: None,
                 extra: crate::card::Extra::new(),
             },
         );
