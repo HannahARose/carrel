@@ -7,19 +7,18 @@ name: CI
 #   change runs Format, Docs hygiene and nothing else. Format and Docs hygiene always run.
 # - Everything runs for a change to any workflow, a scheduled run, a manual run and a pull
 #   request into main (or a merge queue's group into main).
-# - A pull request into dev runs only the Linux jobs, so a session's pushes and merges of dev
-#   don't queue for the few macOS runners.
-# - A merge queue's group into dev (merge_group, #298) runs the Linux and Windows jobs for what
-#   the group changes against its base, and "CI passed" reports on it, since the queue waits
-#   for that check. Until the first stable release it leaves macOS out (#39): the org has five
-#   macOS runners, and waiting for them doubled a group's time.
-# - An hourly scheduled run checks dev on every platform, macOS included, and does nothing when
-#   dev hasn't moved since the last scheduled run that passed. What breaks on macOS shows up
-#   there and is fixed after the fact. The weekly run also checks every link in the docs.
-# - A push to dev (a merged pull request) runs the Linux jobs for what that merge changed,
-#   which keeps their caches warm. Its macOS and Windows jobs run only when the dependencies
-#   changed, to refresh those caches. Each push gets its own run, so a later merge can't
-#   cancel an earlier one.
+# - Until the first stable release, macOS and Windows run only in the hourly scheduled run on
+#   dev and in a pull request into main (#39): the org has five macOS runners, and waiting for
+#   them doubled a merge queue group's time. Everything else runs only the Linux jobs:
+#   - A pull request into dev, so a session's pushes and merges of dev don't queue for runners.
+#   - A merge queue's group into dev (merge_group, #298), for what the group changes against
+#     its base. "CI passed" reports on it, since the queue waits for that check.
+#   - A push to dev (a merged pull request), for what that merge changed, which keeps the Linux
+#     caches warm. Each push gets its own run, so a later merge can't cancel an earlier one.
+# - The hourly scheduled run checks dev on every platform, and does nothing when dev hasn't
+#   moved since the last scheduled run that passed. What breaks on macOS or Windows shows up
+#   there and is fixed after the fact; it also keeps their caches warm. The weekly run also
+#   checks every link in the docs.
 # - A pull request into main runs everything, on every platform, from a clean build: it's the
 #   gate a release passes.
 # - Caches are restored everywhere and saved only on dev, so pull requests don't evict them.
@@ -45,9 +44,9 @@ on:
   merge_group:
   workflow_dispatch:
   schedule:
-    # Hourly, dev's check on every platform, macOS included: until the first stable release,
-    # the merge queue leaves macOS out, and this run finds what breaks there after the fact. It
-    # does nothing when dev hasn't moved since the last one that passed.
+    # Hourly, dev's check on every platform: until the first stable release, only this run and
+    # a pull request into main run macOS and Windows, so this finds what breaks there after the
+    # fact. It does nothing when dev hasn't moved since the last one that passed.
     - cron: "7 * * * *"
     # Weekly, so new security advisories against existing dependencies show up even when
     # nothing changes, and every link in the docs is checked, not only those within the
@@ -93,12 +92,11 @@ jobs:
       cache: ${{ steps.areas.outputs.cache }}
       save: ${{ steps.areas.outputs.save }}
       # Whether the macOS jobs run: "false" for a pull request into dev, a merge queue group into
-      # dev, and a push to dev that leaves the dependencies as they were.
+      # dev and a push to dev.
       heavy: ${{ steps.weight.outputs.heavy }}
-      # Matrix entries to leave out: macOS and Windows for a pull request into dev or a light
-      # push, macOS for a merge queue group into dev.
+      # Matrix entries to leave out for those: macOS and Windows.
       light-exclude: ${{ steps.weight.outputs.exclude }}
-      # The platforms for jobs that run on all three, without those left out.
+      # The platforms for jobs that run on all three: only Linux for those.
       oses: ${{ steps.weight.outputs.oses }}
     steps:
       - id: skip
@@ -137,54 +135,29 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref }}
-          BEFORE: ${{ github.event.before }}
-          SHA: ${{ github.sha }}
         run: |
+          # Until the first stable release, macOS and Windows run only in the hourly scheduled
+          # run and in a pull request into main (#39): a pull request into dev, a merge queue
+          # group into dev and a push to dev run Linux only.
           base=${BASE_REF#refs/heads/}
-          weight=all
+          light=false
           case "$EVENT" in
-            # A pull request into dev runs only Linux; its other platforms run in the queue.
-            pull_request) [ "$base" = dev ] && weight=linux ;;
-            # Until the first stable release, the queue leaves macOS out to keep its waits
-            # short; the hourly scheduled run checks dev there. Windows waits little, so stays.
-            merge_group) [ "$base" != main ] && weight=no-macos ;;
-            # A push to dev is a merge the queue has just tested, so its macOS and Windows jobs
-            # would only repeat that run and take the few macOS runners from it. They run on a
-            # push only when the dependencies change, to refresh those caches (the scheduled
-            # runs refresh them too).
-            push)
-              weight=linux
-              if ! git cat-file -e "$BEFORE^{commit}" 2> /dev/null \
-                || git diff --name-only "$BEFORE" "$SHA" \
-                | grep -qE '(^|/)(Cargo\.lock|Package\.resolved|rust-toolchain\.toml)$'; then
-                weight=all
-              fi
-              ;;
+            pull_request | merge_group) [ "$base" != main ] && light=true ;;
+            push) light=true ;;
           esac
-          echo "Platforms: $weight"
-          case "$weight" in
-            linux)
-              {
-                echo "heavy=false"
-                echo 'exclude=[{"os":"macos-latest"},{"os":"windows-latest"}]'
-                echo 'oses=["ubuntu-latest"]'
-              } >> "$GITHUB_OUTPUT"
-              ;;
-            no-macos)
-              {
-                echo "heavy=false"
-                echo 'exclude=[{"os":"macos-latest"}]'
-                echo 'oses=["ubuntu-latest","windows-latest"]'
-              } >> "$GITHUB_OUTPUT"
-              ;;
-            *)
-              {
-                echo "heavy=true"
-                echo 'exclude=[]'
-                echo 'oses=["macos-latest","ubuntu-latest","windows-latest"]'
-              } >> "$GITHUB_OUTPUT"
-              ;;
-          esac
+          if [ "$light" = true ]; then
+            {
+              echo "heavy=false"
+              echo 'exclude=[{"os":"macos-latest"},{"os":"windows-latest"}]'
+              echo 'oses=["ubuntu-latest"]'
+            } >> "$GITHUB_OUTPUT"
+          else
+            {
+              echo "heavy=true"
+              echo 'exclude=[]'
+              echo 'oses=["macos-latest","ubuntu-latest","windows-latest"]'
+            } >> "$GITHUB_OUTPUT"
+          fi
 
   fmt:
     name: Format
