@@ -108,8 +108,7 @@ struct CollectionQuery: EntityStringQuery {
 struct AddToArchiveIntent: AppIntent {
     static let title: LocalizedStringResource = "Add to Archive"
     static let description = IntentDescription(
-        "Adds files or web addresses to the archive's intake queue, to be drafted and filed, "
-            + "with an optional note for their cards.")
+        "Adds files or web addresses to the archive's intake queue, with an optional note.")
 
     @Parameter(title: "Files") var files: [IntentFile]?
     @Parameter(title: "Web Addresses") var urls: [URL]?
