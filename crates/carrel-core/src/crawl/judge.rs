@@ -41,6 +41,9 @@ pub struct Item<'a> {
     pub design: &'a str,
     /// Its text, as search read it, if any.
     pub text: Option<&'a str>,
+    /// Whether its card is an outdated draft, to write again where the model can do better
+    /// ([`super::drafts`]).
+    pub redraft: bool,
 }
 
 /// What the model concluded about an item.
@@ -128,6 +131,11 @@ pub fn prompt(item: &Item<'_>, places: &[Place]) -> String {
             Some(note) => writeln!(text, "The owner flagged it as needing work: {note}").unwrap(),
             None => text.push_str("The owner flagged it as needing work.\n"),
         }
+    }
+    if item.redraft {
+        text.push_str(
+            "The card is an old draft, written by a weaker model or an older version of Carrel: give a clearer title and a better summary wherever yours would be, and what it's missing.\n",
+        );
     }
     match item.text.map(str::trim).filter(|t| !t.is_empty()) {
         Some(body) => writeln!(text, "\nIts text:\n{}", shorten(body, TEXT_CHARS)).unwrap(),

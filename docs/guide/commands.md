@@ -118,11 +118,11 @@ See [The crawler](user-guide.md#the-crawler).
 
 | Command | What it does |
 | --- | --- |
-| `carrel crawl [status]` | Shows the crawler's pace, how many items it has checked, those due in the order it takes them (Holding, items filed with low confidence, crowded collections, then everything), the collections whose items keep not fitting, its findings waiting in Review and the changes it made this week. |
+| `carrel crawl [status]` | Shows the crawler's pace, how many items it has checked, those due in the order it takes them (what you flagged, Holding, items filed with low confidence, crowded collections, cards drafted by a weaker model or an older Carrel, then everything), the cards that could get a better draft, the collections whose items keep not fitting, its findings waiting in Review and the changes it made this week. |
 | `carrel crawl run [--items N]` | Checks a few items now, whatever the pace and however busy the device. |
 | `carrel crawl undo SINCE` | Undoes every change the crawler made on its own since then: a span such as `24h` or `7d`, `today`, or a date. |
 
-It runs by itself in `carrel agent` and after the background worker, only when the device has been idle a while and is on power (on a Mac; elsewhere when the agent has seen no changes for a few minutes), and stops for anything you do. `crawler.pace` sets how much of the idle time it uses (`off`, `gentle`, `steady` or `brisk`), and `crawler.changes` whether it makes the refiles and corrections it's sure of itself, each undoable. With `--json`, `status` prints `{"pace", "changes", "items", "judged", "waiting", "misfits", "findings", "last_pass", "recent"}`, and `run` prints `{"judged", "misfits", "proposed", "made", "failed", "stopped"}`.
+It runs by itself in `carrel agent` and after the background worker, only when the device has been idle a while and is on power (on a Mac; elsewhere when the agent has seen no changes for a few minutes), and stops for anything you do. `crawler.pace` sets how much of the idle time it uses (`off`, `gentle`, `steady` or `brisk`), and `crawler.changes` whether it makes the refiles and corrections it's sure of itself, each undoable. With `--json`, `status` prints `{"pace", "changes", "items", "judged", "waiting", "drafts", "misfits", "findings", "last_pass", "recent"}`, where `drafts` lists the outdated drafts by card, and `run` prints `{"judged", "misfits", "proposed", "made", "failed", "stopped"}`.
 
 ## Questions
 

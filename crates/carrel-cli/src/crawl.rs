@@ -212,6 +212,20 @@ pub fn status(archive: Option<&Path>) -> Result<Report, Failure> {
             writeln!(text, "  {} {}", plural(*count, "item"), stage.describe()).unwrap();
         }
     }
+    if !status.drafts.is_empty() {
+        writeln!(
+            text,
+            "{} could get a better draft, from a stronger model or a newer Carrel:",
+            plural(status.drafts.len(), "card")
+        )
+        .unwrap();
+        for card in status.drafts.iter().take(DRAFTS_LISTED) {
+            writeln!(text, "  {card}").unwrap();
+        }
+        if status.drafts.len() > DRAFTS_LISTED {
+            writeln!(text, "  and {} more", status.drafts.len() - DRAFTS_LISTED).unwrap();
+        }
+    }
     if !status.misfits.is_empty() {
         text.push_str("Collections whose items keep not fitting:\n");
         for (collection, failed, judged) in &status.misfits {
@@ -231,31 +245,54 @@ pub fn status(archive: Option<&Path>) -> Result<Report, Failure> {
         None => text.push_str("No pass has run on this device yet.\n"),
     }
     let history = History::open(&archive).ok().and_then(|h| h.log().ok());
-    let (recent_text, recent) = status_section(history.as_deref());
+    let (recent_text, recent) = status_section(&archive, None, history.as_deref());
     text.push_str(&recent_text);
     let mut value = json!(status);
     value["recent"] = recent;
     Ok(Report::new(text, value))
 }
 
-/// The part of `carrel status` about the crawler's changes this week, for people and for
-/// programs. Empty when it made none.
-pub fn status_section(history: Option<&[Entry]>) -> (String, Value) {
+/// How many outdated drafts `carrel crawl status` lists.
+const DRAFTS_LISTED: usize = 20;
+
+/// The part of `carrel status` about the crawler: how many cards could get a better draft, as
+/// this device (`device`) sees it, and its changes this week, for people and for programs.
+/// Empty when there's neither.
+pub fn status_section(
+    archive: &carrel_core::archive::Archive,
+    device: Option<carrel_core::card::Id>,
+    history: Option<&[Entry]>,
+) -> (String, Value) {
     let since = jiff::Timestamp::now().as_second() - RECENT_DAYS * 86_400;
     let recent = history
         .map(|log| changes::recent_by(log, AGENT, since))
         .unwrap_or_default();
+    let drafts = device
+        .and_then(|d| carrel_core::crawl::status(archive, d, jiff::Timestamp::now()).ok())
+        .map_or(0, |s| s.drafts.len());
     let value = json!({
         "since_days": RECENT_DAYS,
         "changes": recent.iter().map(crate::commands::entry_json).collect::<Vec<_>>(),
+        "better_drafts": drafts,
     });
-    if recent.is_empty() {
-        return (String::new(), value);
+    let mut text = String::new();
+    if drafts > 0 {
+        writeln!(
+            text,
+            "\n{} could get a better draft: `carrel crawl status` lists them",
+            plural(drafts, "card")
+        )
+        .unwrap();
     }
-    let mut text = format!(
+    if recent.is_empty() {
+        return (text, value);
+    }
+    write!(
+        text,
         "\nThe crawler's changes this week ({}; undo them all with `carrel crawl undo {RECENT_DAYS}d`):\n",
         plural(recent.len(), "change")
-    );
+    )
+    .unwrap();
     for entry in recent.iter().take(5) {
         writeln!(text, "  {}", crate::commands::log_line(entry)).unwrap();
     }

@@ -76,10 +76,12 @@ People feel differently about an archive that moves. Some want Carrel to keep re
 ## Crawlers
 
 - **A background pass** in the worker when it's idle, and in the agent from v0.5, looks at items one at a time:
-  1. Holding first;
-  2. then low-confidence placements;
-  3. then crowded collections;
-  4. then a slow sweep of everything.
+  1. what you flagged as needing work first (#451), items and the items of flagged collections;
+  2. then Holding;
+  3. then low-confidence placements;
+  4. then crowded collections;
+  5. then **outdated drafts** (#452): cards drafted by a weaker model than the crawler's (by the catalog's memory and size, as the benchmark ranks them) or by an older drafting version (`generated.model` and `generated.drafting`, FORMAT.md §5.6), weakest and oldest first. Installing a stronger model, or a Carrel whose drafting improved, puts them back here at once; once judged by the crawler's model at the current version, a card waits as the sweep does. Status says how many could get a better draft, and `carrel crawl status` lists them;
+  6. then a slow sweep of everything.
 - **The strongest model judges whether each still fits** its collection's design document, and where it would go instead, and **reads its card again:** a summary a small model wrote, missing tags, a vague title, a date it can now find in the text.
 - **What it finds:**
   - a misplaced item becomes a move proposal in Review;

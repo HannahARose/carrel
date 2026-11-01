@@ -554,6 +554,15 @@
               "type": "null"
             }
           ]
+        },
+        "drafting": {
+          "description": "The drafting version that wrote the fields ([`crate::ingest::card::DRAFTING`]):\nwith `model`, what drafted the card. Unset, an unknown older version.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
         }
       },
       "required": [

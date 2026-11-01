@@ -384,7 +384,7 @@ pub fn status_on(
     text.push_str(&recent_section(&summary.recent));
     let (librarian_text, librarian) = crate::ask::status_section(history);
     text.push_str(&librarian_text);
-    let (crawler_text, crawler) = crate::crawl::status_section(history);
+    let (crawler_text, crawler) = crate::crawl::status_section(&archive, this_device, history);
     text.push_str(&crawler_text);
     if !summary.problems.is_empty() {
         writeln!(

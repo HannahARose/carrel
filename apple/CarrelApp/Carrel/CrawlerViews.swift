@@ -132,6 +132,20 @@ struct StatusCrawlerSection: View {
                     ForEach(status.waiting, id: \.stage) { stage in
                         LabeledContent(stage.stage.capitalized, value: "\(stage.items) due")
                     }
+                    if !status.drafts.isEmpty {
+                        DisclosureGroup(
+                            status.drafts.count == 1
+                                ? "1 card could get a better draft"
+                                : "\(status.drafts.count) cards could get a better draft"
+                        ) {
+                            ForEach(status.drafts.prefix(20), id: \.self) { card in
+                                Text(card).font(.callout).textSelection(.enabled)
+                            }
+                        }
+                        .help(
+                            "Drafted by a weaker model or an older Carrel; the crawler redrafts them first"
+                        )
+                    }
                     if status.findings > 0 {
                         Button(
                             status.findings == 1
