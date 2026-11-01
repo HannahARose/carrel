@@ -275,25 +275,25 @@ impl App {
         }
         match question.kind {
             QuestionKind::Item => Self::answer_item(&question, &text),
-            QuestionKind::Sender if !matches!(text.to_lowercase().as_str(), "no" | "n") => {
-                let path = if matches!(text.to_lowercase().as_str(), "yes" | "y") {
-                    question
-                        .suggestions
-                        .iter()
-                        .find(|s| s.new_collection)
-                        .map(|s| s.answer.clone())
-                        .or_else(|| question.choices.first().cloned())
-                        .unwrap_or_default()
-                } else {
-                    text.clone()
-                };
-                self.confirm = Some(super::app::Confirm::Rule {
-                    id,
-                    answer: text,
-                    subject: question.subject.clone(),
-                    path,
-                });
-                None
+            QuestionKind::Sender => {
+                use carrel_core::questions::answer::{SenderAnswer, sender_answer};
+                match sender_answer(&question, &text, None, false) {
+                    Ok(SenderAnswer::Place { path, .. }) => {
+                        self.confirm = Some(super::app::Confirm::Rule {
+                            id,
+                            answer: text,
+                            subject: question.subject.clone(),
+                            path,
+                        });
+                        None
+                    }
+                    // No settles it, and a yes with no collection to name says so.
+                    Ok(SenderAnswer::Decline) | Err(_) => Some(Effect::Answer {
+                        id,
+                        answer: text,
+                        learn: false,
+                    }),
+                }
             }
             _ => Some(Effect::Answer {
                 id,
@@ -462,6 +462,9 @@ impl App {
             return Handled::Yes(effect);
         }
         let on_item = self.browse_pane != Pane::Collections;
+        if !on_item && let Some(handled) = self.collection_restructure_key(key) {
+            return handled;
+        }
         if let Handled::Yes(effect) = self.browse_action_key(key, on_item) {
             return Handled::Yes(effect);
         }
@@ -486,6 +489,11 @@ impl App {
             KeyCode::Char('e') if on_item => {
                 if let Some((card, _)) = self.browse_items.get(self.browse_item) {
                     return Handled::Yes(Some(Effect::EditItem(card.clone())));
+                }
+            }
+            KeyCode::Char('E') if on_item => {
+                if let Some((card, _)) = self.browse_items.get(self.browse_item) {
+                    return Handled::Yes(Some(Effect::EditItemBody(card.clone())));
                 }
             }
             KeyCode::Char('c') if on_item => {

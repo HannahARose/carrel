@@ -1175,8 +1175,8 @@ public protocol ArchiveHandleProtocol: AnyObject, Sendable {
     
     /**
      * Saves `correction`, as the owner agreed: a proposal back to the queue, or a filed
-     * item's card as one change, refiled when its collection changed. A correction is saved
-     * once.
+     * item's card as one change, refiled when its collection changed. One answering an item
+     * question takes the question off the queue. A correction is saved once.
      *
      * # Errors
      *
@@ -1640,6 +1640,96 @@ public protocol ArchiveHandleProtocol: AnyObject, Sendable {
     func previews() throws  -> [ItemPreview]
     
     /**
+     * Adds a routing rule filing future items named for `subject` into the collection at
+     * `collection`, once the owner agreed after answering a sender's question. Returns the
+     * commit.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] for a collection that doesn't exist, [`CarrelError::Busy`]
+     * if another writer holds the archive, or [`CarrelError::Failed`].
+     */
+    func addQuestionRule(subject: String, collection: String) throws  -> String?
+    
+    /**
+     * Puts the question `question` (its words, as [`ArchiveHandle::questions_about`] gave
+     * them) about the filed item `item` in the queue, so it can be answered, and returns it
+     * as the queue keeps it.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if there's no such item or the question isn't open about it
+     * any more, or [`CarrelError::Failed`].
+     */
+    func askAboutItem(item: String, question: String) throws  -> Question
+    
+    /**
+     * Works out the correction `answer` to the item question `id` makes to its item's
+     * card (a proposal's or a filed item's), with `model` or, when it's `None`, the device's
+     * models. Nothing is saved; once the owner agrees, saving it with
+     * [`ArchiveHandle::save_correction`] also takes the question off the queue.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] for a question that isn't about an item, or
+     * [`CarrelError::Failed`] if it isn't found or the answer can't be worked out.
+     */
+    func prepareQuestionCorrection(id: String, answer: String, model: ModelProvider?) throws  -> Correction
+    
+    /**
+     * The open questions about the filed item `item`, to show beside it: those already in
+     * the queue first, then those Carrel would ask, which aren't added to the queue until
+     * the owner answers one ([`ArchiveHandle::ask_about_item`]).
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if there's no such item, or [`CarrelError::Failed`] if its
+     * card or the queue can't be read.
+     */
+    func questionsAbout(item: String) throws  -> [Question]
+    
+    /**
+     * The day's few new questions for Status, the same all day: chosen the first time
+     * they're asked for each day, added to the queue, and kept on this device in Carrel's
+     * folder. Those answered or skipped since drop out.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the archive or the queue can't be read.
+     */
+    func questionsToday() throws  -> [Question]
+    
+    /**
+     * Takes the question `id` off the queue as answered, for an item question whose answer
+     * changes nothing on the card.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if it isn't found or the queue can't be written.
+     */
+    func settleQuestion(id: String) throws 
+    
+    /**
+     * Skips the question `id`: it rests out of the queue for the archive's
+     * `questions.skip_days`, and its proposals keep waiting on it. Returns it as saved.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if it isn't found or can't be saved.
+     */
+    func skipQuestion(id: String) throws  -> Question
+    
+    /**
+     * The questions resting after a skip, the soonest back first. They come back by
+     * themselves after the archive's `questions.skip_days`, and can be answered before.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the queue can't be read.
+     */
+    func skippedQuestions() throws  -> [Question]
+    
+    /**
      * Approves the proposal `id`: the changes `only` names, or all of them when it's
      * `None`, as one change in history that undoes as one. A change that needs one left out
      * is dropped too.
@@ -1691,14 +1781,18 @@ public protocol ArchiveHandleProtocol: AnyObject, Sendable {
     func restructureProposals() throws  -> [RestructureProposal]
     
     /**
-     * Answers the question `id`: a term's answer is added to the glossary and the
-     * proposals waiting on it are queued to be drafted again; a collection's answer is a
-     * collection's path, where the waiting proposals then go.
+     * Answers the question `id` with `answer`: a suggestion's number or words, or the
+     * owner's own. A suggestion that changes nothing settles it. A term's answer is added
+     * to the glossary and the proposals waiting on it are drafted again. A collection's or
+     * group's is a collection's path, where its items then go, created when the suggestion
+     * is a new collection. A sender's is yes, no or a collection, after which a routing rule
+     * can be offered ([`Answered::rule_for`]). An item question is answered through a
+     * correction instead ([`ArchiveHandle::prepare_question_correction`]).
      *
      * # Errors
      *
-     * [`CarrelError::Invalid`] for an empty answer or an unknown collection,
-     * [`CarrelError::Busy`] if another writer holds the archive, or
+     * [`CarrelError::Invalid`] for an empty answer, an unknown collection or an item
+     * question, [`CarrelError::Busy`] if another writer holds the archive, or
      * [`CarrelError::Failed`].
      */
     func answerQuestion(id: String, answer: String) throws  -> Answered
@@ -1792,9 +1886,7 @@ public protocol ArchiveHandleProtocol: AnyObject, Sendable {
     
     /**
      * The questions waiting for the owner, the most worth answering first (the core's
-     * ranking), without those resting after a skip. Only the kinds the app answers today are
-     * listed: terms, and collection and group questions, answered with a collection's path.
-     * Item and sender questions wait for the app's Questions screen to offer them (#291).
+     * ranking), without those resting after a skip ([`ArchiveHandle::skipped_questions`]).
      *
      * # Errors
      *
@@ -2772,8 +2864,8 @@ open func prepareProposalCorrection(id: String, words: String, model: ModelProvi
     
     /**
      * Saves `correction`, as the owner agreed: a proposal back to the queue, or a filed
-     * item's card as one change, refiled when its collection changed. A correction is saved
-     * once.
+     * item's card as one change, refiled when its collection changed. One answering an item
+     * question takes the question off the queue. A correction is saved once.
      *
      * # Errors
      *
@@ -3604,6 +3696,161 @@ open func previews()throws  -> [ItemPreview]  {
 }
     
     /**
+     * Adds a routing rule filing future items named for `subject` into the collection at
+     * `collection`, once the owner agreed after answering a sender's question. Returns the
+     * commit.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] for a collection that doesn't exist, [`CarrelError::Busy`]
+     * if another writer holds the archive, or [`CarrelError::Failed`].
+     */
+open func addQuestionRule(subject: String, collection: String)throws  -> String?  {
+    return try  FfiConverterOptionString.lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_add_question_rule(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(subject),
+        FfiConverterString.lower(collection),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Puts the question `question` (its words, as [`ArchiveHandle::questions_about`] gave
+     * them) about the filed item `item` in the queue, so it can be answered, and returns it
+     * as the queue keeps it.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if there's no such item or the question isn't open about it
+     * any more, or [`CarrelError::Failed`].
+     */
+open func askAboutItem(item: String, question: String)throws  -> Question  {
+    return try  FfiConverterTypeQuestion_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_ask_about_item(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(item),
+        FfiConverterString.lower(question),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Works out the correction `answer` to the item question `id` makes to its item's
+     * card (a proposal's or a filed item's), with `model` or, when it's `None`, the device's
+     * models. Nothing is saved; once the owner agrees, saving it with
+     * [`ArchiveHandle::save_correction`] also takes the question off the queue.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] for a question that isn't about an item, or
+     * [`CarrelError::Failed`] if it isn't found or the answer can't be worked out.
+     */
+open func prepareQuestionCorrection(id: String, answer: String, model: ModelProvider?)throws  -> Correction  {
+    return try  FfiConverterTypeCorrection_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_prepare_question_correction(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(id),
+        FfiConverterString.lower(answer),
+        FfiConverterOptionTypeModelProvider.lower(model),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * The open questions about the filed item `item`, to show beside it: those already in
+     * the queue first, then those Carrel would ask, which aren't added to the queue until
+     * the owner answers one ([`ArchiveHandle::ask_about_item`]).
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if there's no such item, or [`CarrelError::Failed`] if its
+     * card or the queue can't be read.
+     */
+open func questionsAbout(item: String)throws  -> [Question]  {
+    return try  FfiConverterSequenceTypeQuestion.lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_questions_about(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(item),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * The day's few new questions for Status, the same all day: chosen the first time
+     * they're asked for each day, added to the queue, and kept on this device in Carrel's
+     * folder. Those answered or skipped since drop out.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the archive or the queue can't be read.
+     */
+open func questionsToday()throws  -> [Question]  {
+    return try  FfiConverterSequenceTypeQuestion.lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_questions_today(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Takes the question `id` off the queue as answered, for an item question whose answer
+     * changes nothing on the card.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if it isn't found or the queue can't be written.
+     */
+open func settleQuestion(id: String)throws   {try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_settle_question(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(id),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * Skips the question `id`: it rests out of the queue for the archive's
+     * `questions.skip_days`, and its proposals keep waiting on it. Returns it as saved.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if it isn't found or can't be saved.
+     */
+open func skipQuestion(id: String)throws  -> Question  {
+    return try  FfiConverterTypeQuestion_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_skip_question(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(id),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * The questions resting after a skip, the soonest back first. They come back by
+     * themselves after the archive's `questions.skip_days`, and can be answered before.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the queue can't be read.
+     */
+open func skippedQuestions()throws  -> [Question]  {
+    return try  FfiConverterSequenceTypeQuestion.lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_skipped_questions(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
      * Approves the proposal `id`: the changes `only` names, or all of them when it's
      * `None`, as one change in history that undoes as one. A change that needs one left out
      * is dropped too.
@@ -3694,14 +3941,18 @@ open func restructureProposals()throws  -> [RestructureProposal]  {
 }
     
     /**
-     * Answers the question `id`: a term's answer is added to the glossary and the
-     * proposals waiting on it are queued to be drafted again; a collection's answer is a
-     * collection's path, where the waiting proposals then go.
+     * Answers the question `id` with `answer`: a suggestion's number or words, or the
+     * owner's own. A suggestion that changes nothing settles it. A term's answer is added
+     * to the glossary and the proposals waiting on it are drafted again. A collection's or
+     * group's is a collection's path, where its items then go, created when the suggestion
+     * is a new collection. A sender's is yes, no or a collection, after which a routing rule
+     * can be offered ([`Answered::rule_for`]). An item question is answered through a
+     * correction instead ([`ArchiveHandle::prepare_question_correction`]).
      *
      * # Errors
      *
-     * [`CarrelError::Invalid`] for an empty answer or an unknown collection,
-     * [`CarrelError::Busy`] if another writer holds the archive, or
+     * [`CarrelError::Invalid`] for an empty answer, an unknown collection or an item
+     * question, [`CarrelError::Busy`] if another writer holds the archive, or
      * [`CarrelError::Failed`].
      */
 open func answerQuestion(id: String, answer: String)throws  -> Answered  {
@@ -3878,9 +4129,7 @@ open func proposal(id: String)throws  -> Proposal  {
     
     /**
      * The questions waiting for the owner, the most worth answering first (the core's
-     * ranking), without those resting after a skip. Only the kinds the app answers today are
-     * listed: terms, and collection and group questions, answered with a collection's path.
-     * Item and sender questions wait for the app's Questions screen to offer them (#291).
+     * ranking), without those resting after a skip ([`ArchiveHandle::skipped_questions`]).
      *
      * # Errors
      *
@@ -5644,6 +5893,31 @@ public struct Answered: Equatable, Hashable {
      * For a collection, the proposals pointed there.
      */
     public var moved: [MovedProposal]
+    /**
+     * Whether the answer settled it without changing anything, so it isn't asked again.
+     */
+    public var declined: Bool
+    /**
+     * For a collection, group or sender, the collection the items go in.
+     */
+    public var collection: String?
+    /**
+     * Whether that collection was created for the answer.
+     */
+    public var created: Bool
+    /**
+     * The filed items refiled there, by title.
+     */
+    public var refiled: [String]
+    /**
+     * Filed items that couldn't be refiled, each with why.
+     */
+    public var notRefiled: [String]
+    /**
+     * For a sender or project, the subject a routing rule could file future items by, to
+     * offer before adding one with [`ArchiveHandle::add_question_rule`].
+     */
+    public var ruleFor: String?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -5657,10 +5931,35 @@ public struct Answered: Equatable, Hashable {
          */requeued: [String], 
         /**
          * For a collection, the proposals pointed there.
-         */moved: [MovedProposal]) {
+         */moved: [MovedProposal], 
+        /**
+         * Whether the answer settled it without changing anything, so it isn't asked again.
+         */declined: Bool, 
+        /**
+         * For a collection, group or sender, the collection the items go in.
+         */collection: String?, 
+        /**
+         * Whether that collection was created for the answer.
+         */created: Bool, 
+        /**
+         * The filed items refiled there, by title.
+         */refiled: [String], 
+        /**
+         * Filed items that couldn't be refiled, each with why.
+         */notRefiled: [String], 
+        /**
+         * For a sender or project, the subject a routing rule could file future items by, to
+         * offer before adding one with [`ArchiveHandle::add_question_rule`].
+         */ruleFor: String?) {
         self.commit = commit
         self.requeued = requeued
         self.moved = moved
+        self.declined = declined
+        self.collection = collection
+        self.created = created
+        self.refiled = refiled
+        self.notRefiled = notRefiled
+        self.ruleFor = ruleFor
     }
 
     
@@ -5681,7 +5980,13 @@ public struct FfiConverterTypeAnswered: FfiConverterRustBuffer {
             try Answered(
                 commit: FfiConverterOptionString.read(from: &buf), 
                 requeued: FfiConverterSequenceString.read(from: &buf), 
-                moved: FfiConverterSequenceTypeMovedProposal.read(from: &buf)
+                moved: FfiConverterSequenceTypeMovedProposal.read(from: &buf), 
+                declined: FfiConverterBool.read(from: &buf), 
+                collection: FfiConverterOptionString.read(from: &buf), 
+                created: FfiConverterBool.read(from: &buf), 
+                refiled: FfiConverterSequenceString.read(from: &buf), 
+                notRefiled: FfiConverterSequenceString.read(from: &buf), 
+                ruleFor: FfiConverterOptionString.read(from: &buf)
         )
     }
 
@@ -5689,6 +5994,12 @@ public struct FfiConverterTypeAnswered: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.commit, into: &buf)
         FfiConverterSequenceString.write(value.requeued, into: &buf)
         FfiConverterSequenceTypeMovedProposal.write(value.moved, into: &buf)
+        FfiConverterBool.write(value.declined, into: &buf)
+        FfiConverterOptionString.write(value.collection, into: &buf)
+        FfiConverterBool.write(value.created, into: &buf)
+        FfiConverterSequenceString.write(value.refiled, into: &buf)
+        FfiConverterSequenceString.write(value.notRefiled, into: &buf)
+        FfiConverterOptionString.write(value.ruleFor, into: &buf)
     }
 }
 
@@ -10821,6 +11132,12 @@ public struct LibrarianAnswer: Equatable, Hashable {
      * Why it stopped before it could answer, when it did: `steps` or `tokens`.
      */
     public var stopped: String?
+    /**
+     * Now and then, Carrel's question about an item the answer found, put in the queue to
+     * answer: at most one an answer, never after two in a row, and never twice about one
+     * item in a conversation.
+     */
+    public var asks: Question?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -10851,7 +11168,12 @@ public struct LibrarianAnswer: Equatable, Hashable {
          */tokens: UInt64, 
         /**
          * Why it stopped before it could answer, when it did: `steps` or `tokens`.
-         */stopped: String?) {
+         */stopped: String?, 
+        /**
+         * Now and then, Carrel's question about an item the answer found, put in the queue to
+         * answer: at most one an answer, never after two in a row, and never twice about one
+         * item in a conversation.
+         */asks: Question?) {
         self.question = question
         self.text = text
         self.items = items
@@ -10861,6 +11183,7 @@ public struct LibrarianAnswer: Equatable, Hashable {
         self.model = model
         self.tokens = tokens
         self.stopped = stopped
+        self.asks = asks
     }
 
     
@@ -10887,7 +11210,8 @@ public struct FfiConverterTypeLibrarianAnswer: FfiConverterRustBuffer {
                 steps: FfiConverterSequenceTypeLibrarianStep.read(from: &buf), 
                 model: FfiConverterString.read(from: &buf), 
                 tokens: FfiConverterUInt64.read(from: &buf), 
-                stopped: FfiConverterOptionString.read(from: &buf)
+                stopped: FfiConverterOptionString.read(from: &buf), 
+                asks: FfiConverterOptionTypeQuestion.read(from: &buf)
         )
     }
 
@@ -10901,6 +11225,7 @@ public struct FfiConverterTypeLibrarianAnswer: FfiConverterRustBuffer {
         FfiConverterString.write(value.model, into: &buf)
         FfiConverterUInt64.write(value.tokens, into: &buf)
         FfiConverterOptionString.write(value.stopped, into: &buf)
+        FfiConverterOptionTypeQuestion.write(value.asks, into: &buf)
     }
 }
 
@@ -13167,6 +13492,27 @@ public struct Question: Equatable, Hashable {
      * For a collection question, the collections to choose from.
      */
     public var choices: [String]
+    /**
+     * Which kind of question it is, and so how it's answered.
+     */
+    public var kind: QuestionAsks
+    /**
+     * The filed items it's about: an item question's item, or a group's or sender's items
+     * in the archive.
+     */
+    public var about: [String]
+    /**
+     * Likely answers to pick from, most likely first.
+     */
+    public var suggestions: [QuestionSuggestion]
+    /**
+     * How many times it's been skipped.
+     */
+    public var skips: UInt32
+    /**
+     * When it was last skipped, if it was.
+     */
+    public var skipped: String?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -13188,13 +13534,34 @@ public struct Question: Equatable, Hashable {
          */proposals: [String], 
         /**
          * For a collection question, the collections to choose from.
-         */choices: [String]) {
+         */choices: [String], 
+        /**
+         * Which kind of question it is, and so how it's answered.
+         */kind: QuestionAsks, 
+        /**
+         * The filed items it's about: an item question's item, or a group's or sender's items
+         * in the archive.
+         */about: [String], 
+        /**
+         * Likely answers to pick from, most likely first.
+         */suggestions: [QuestionSuggestion], 
+        /**
+         * How many times it's been skipped.
+         */skips: UInt32, 
+        /**
+         * When it was last skipped, if it was.
+         */skipped: String?) {
         self.id = id
         self.topic = topic
         self.subject = subject
         self.question = question
         self.proposals = proposals
         self.choices = choices
+        self.kind = kind
+        self.about = about
+        self.suggestions = suggestions
+        self.skips = skips
+        self.skipped = skipped
     }
 
     
@@ -13218,7 +13585,12 @@ public struct FfiConverterTypeQuestion: FfiConverterRustBuffer {
                 subject: FfiConverterString.read(from: &buf), 
                 question: FfiConverterString.read(from: &buf), 
                 proposals: FfiConverterSequenceString.read(from: &buf), 
-                choices: FfiConverterSequenceString.read(from: &buf)
+                choices: FfiConverterSequenceString.read(from: &buf), 
+                kind: FfiConverterTypeQuestionAsks.read(from: &buf), 
+                about: FfiConverterSequenceString.read(from: &buf), 
+                suggestions: FfiConverterSequenceTypeQuestionSuggestion.read(from: &buf), 
+                skips: FfiConverterUInt32.read(from: &buf), 
+                skipped: FfiConverterOptionString.read(from: &buf)
         )
     }
 
@@ -13229,6 +13601,11 @@ public struct FfiConverterTypeQuestion: FfiConverterRustBuffer {
         FfiConverterString.write(value.question, into: &buf)
         FfiConverterSequenceString.write(value.proposals, into: &buf)
         FfiConverterSequenceString.write(value.choices, into: &buf)
+        FfiConverterTypeQuestionAsks.write(value.kind, into: &buf)
+        FfiConverterSequenceString.write(value.about, into: &buf)
+        FfiConverterSequenceTypeQuestionSuggestion.write(value.suggestions, into: &buf)
+        FfiConverterUInt32.write(value.skips, into: &buf)
+        FfiConverterOptionString.write(value.skipped, into: &buf)
     }
 }
 
@@ -13245,6 +13622,95 @@ public func FfiConverterTypeQuestion_lift(_ buf: RustBuffer) throws -> Question 
 #endif
 public func FfiConverterTypeQuestion_lower(_ value: Question) -> RustBuffer {
     return FfiConverterTypeQuestion.lower(value)
+}
+
+
+/**
+ * A likely answer to pick.
+ */
+public struct QuestionSuggestion: Equatable, Hashable {
+    /**
+     * The answer, as the owner would give it.
+     */
+    public var answer: String
+    /**
+     * Why it's likely, for people.
+     */
+    public var why: String?
+    /**
+     * For a collection answer, whether picking it creates the collection.
+     */
+    public var newCollection: Bool
+    /**
+     * Whether picking it settles the question without changing anything.
+     */
+    public var noChange: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The answer, as the owner would give it.
+         */answer: String, 
+        /**
+         * Why it's likely, for people.
+         */why: String?, 
+        /**
+         * For a collection answer, whether picking it creates the collection.
+         */newCollection: Bool, 
+        /**
+         * Whether picking it settles the question without changing anything.
+         */noChange: Bool) {
+        self.answer = answer
+        self.why = why
+        self.newCollection = newCollection
+        self.noChange = noChange
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension QuestionSuggestion: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeQuestionSuggestion: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> QuestionSuggestion {
+        return
+            try QuestionSuggestion(
+                answer: FfiConverterString.read(from: &buf), 
+                why: FfiConverterOptionString.read(from: &buf), 
+                newCollection: FfiConverterBool.read(from: &buf), 
+                noChange: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: QuestionSuggestion, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.answer, into: &buf)
+        FfiConverterOptionString.write(value.why, into: &buf)
+        FfiConverterBool.write(value.newCollection, into: &buf)
+        FfiConverterBool.write(value.noChange, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeQuestionSuggestion_lift(_ buf: RustBuffer) throws -> QuestionSuggestion {
+    return try FfiConverterTypeQuestionSuggestion.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeQuestionSuggestion_lower(_ value: QuestionSuggestion) -> RustBuffer {
+    return FfiConverterTypeQuestionSuggestion.lower(value)
 }
 
 
@@ -16381,6 +16847,10 @@ public struct WanderStep: Equatable, Hashable {
      * The start of its text; never for a restricted item.
      */
     public var preview: String?
+    /**
+     * Now and then, a question about the item, put in the queue to answer.
+     */
+    public var question: Question?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -16402,13 +16872,17 @@ public struct WanderStep: Equatable, Hashable {
          */tags: [String], 
         /**
          * The start of its text; never for a restricted item.
-         */preview: String?) {
+         */preview: String?, 
+        /**
+         * Now and then, a question about the item, put in the queue to answer.
+         */question: Question?) {
         self.number = number
         self.item = item
         self.reason = reason
         self.summary = summary
         self.tags = tags
         self.preview = preview
+        self.question = question
     }
 
     
@@ -16432,7 +16906,8 @@ public struct FfiConverterTypeWanderStep: FfiConverterRustBuffer {
                 reason: FfiConverterTypeWanderReason.read(from: &buf), 
                 summary: FfiConverterOptionString.read(from: &buf), 
                 tags: FfiConverterSequenceString.read(from: &buf), 
-                preview: FfiConverterOptionString.read(from: &buf)
+                preview: FfiConverterOptionString.read(from: &buf), 
+                question: FfiConverterOptionTypeQuestion.read(from: &buf)
         )
     }
 
@@ -16443,6 +16918,7 @@ public struct FfiConverterTypeWanderStep: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.summary, into: &buf)
         FfiConverterSequenceString.write(value.tags, into: &buf)
         FfiConverterOptionString.write(value.preview, into: &buf)
+        FfiConverterOptionTypeQuestion.write(value.question, into: &buf)
     }
 }
 
@@ -17900,6 +18376,112 @@ public func FfiConverterTypeProposalState_lower(_ value: ProposalState) -> RustB
 
 
 /**
+ * Which kind of question it is, and so how it's answered.
+ */
+
+public enum QuestionAsks: Equatable, Hashable {
+    
+    /**
+     * What a recurring term means; the answer becomes a glossary fact.
+     */
+    case term
+    /**
+     * Which collection items about a term go in: a collection's path.
+     */
+    case collection
+    /**
+     * Where a group of items goes, together: a collection's path.
+     */
+    case group
+    /**
+     * Whether a sender or project should have its own collection: yes, no or a collection,
+     * then whether to add a routing rule.
+     */
+    case sender
+    /**
+     * Something about one item; the answer is a correction of its card.
+     */
+    case item
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension QuestionAsks: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeQuestionAsks: FfiConverterRustBuffer {
+    typealias SwiftType = QuestionAsks
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> QuestionAsks {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .term
+        
+        case 2: return .collection
+        
+        case 3: return .group
+        
+        case 4: return .sender
+        
+        case 5: return .item
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: QuestionAsks, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .term:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .collection:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .group:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .sender:
+            writeInt(&buf, Int32(4))
+        
+        
+        case .item:
+            writeInt(&buf, Int32(5))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeQuestionAsks_lift(_ buf: RustBuffer) throws -> QuestionAsks {
+    return try FfiConverterTypeQuestionAsks.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeQuestionAsks_lower(_ value: QuestionAsks) -> RustBuffer {
+    return FfiConverterTypeQuestionAsks.lower(value)
+}
+
+
+
+/**
  * What a question is about.
  */
 
@@ -18886,6 +19468,30 @@ fileprivate struct FfiConverterOptionTypeIndexSwitch: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeIndexSwitch.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeQuestion: FfiConverterRustBuffer {
+    typealias SwiftType = Question?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeQuestion.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeQuestion.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -20211,6 +20817,31 @@ fileprivate struct FfiConverterSequenceTypeQuestion: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeQuestionSuggestion: FfiConverterRustBuffer {
+    typealias SwiftType = [QuestionSuggestion]
+
+    public static func write(_ value: [QuestionSuggestion], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeQuestionSuggestion.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [QuestionSuggestion] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [QuestionSuggestion]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeQuestionSuggestion.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeQueued: FfiConverterRustBuffer {
     typealias SwiftType = [Queued]
 
@@ -20812,7 +21443,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_carrel_ffi_checksum_method_archivehandle_prepare_proposal_correction() != 52135) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_carrel_ffi_checksum_method_archivehandle_save_correction() != 28820) {
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_save_correction() != 27213) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_activity() != 27389) {
@@ -20950,6 +21581,30 @@ private let initializationResult: InitializationResult = {
     if (uniffi_carrel_ffi_checksum_method_archivehandle_previews() != 57952) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_add_question_rule() != 28398) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_ask_about_item() != 4573) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_prepare_question_correction() != 37415) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_questions_about() != 23465) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_questions_today() != 12198) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_settle_question() != 1832) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_skip_question() != 40435) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_skipped_questions() != 2080) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_approve_restructure() != 42869) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -20965,7 +21620,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_carrel_ffi_checksum_method_archivehandle_restructure_proposals() != 26448) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_carrel_ffi_checksum_method_archivehandle_answer_question() != 10632) {
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_answer_question() != 51829) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_approve() != 26446) {
@@ -20995,7 +21650,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_carrel_ffi_checksum_method_archivehandle_proposal() != 58719) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_carrel_ffi_checksum_method_archivehandle_questions() != 64099) {
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_questions() != 32486) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_reject() != 61359) {

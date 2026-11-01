@@ -131,6 +131,24 @@ pub fn ask(archive: &Archive, question: &QuestionEntry) -> Result<QuestionEntry,
         .ok_or_else(|| ActionError::Invalid("that question was declined".into()))
 }
 
+/// The first open question about the filed `item` on `today`, put in the queue so it can be
+/// answered by its identifier: what a wander step or the librarian asks. `None` when there's
+/// none open.
+///
+/// # Errors
+///
+/// [`ActionError`] if the queue or the item's card can't be read, or the queue written.
+pub fn ask_about(
+    archive: &Archive,
+    item: &ItemRef,
+    today: Date,
+) -> Result<Option<QuestionEntry>, ActionError> {
+    let Some(question) = about_item(archive, item, today)?.into_iter().next() else {
+        return Ok(None);
+    };
+    ask(archive, &question).map(Some)
+}
+
 /// Whether to ask about the item at step `step` of a wander, when the last question was asked
 /// at `last` (none yet on this walk): at most every [`WANDER_EVERY`] steps, and not on the
 /// first, which is for looking around.

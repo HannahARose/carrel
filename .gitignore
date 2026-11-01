@@ -26,3 +26,6 @@ __pycache__/
 /editors/nvim/doc/tags
 # Emacs byte-compiled files
 *.elc
+
+# Coverage data that test runs under llvm-cov leave behind.
+*.profraw

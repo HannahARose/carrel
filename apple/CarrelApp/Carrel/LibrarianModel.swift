@@ -181,6 +181,8 @@ final class LibrarianModel {
             guard askToken == token else { return }
             answers.append(answer)
             modelLabel = answer.model
+            // Its question about an item is in the queue now, for Questions and the badge.
+            if answer.asks != nil { try? await archive.refreshQuestions() }
             if answer.suggestions.contains(where: \.isMade) {
                 await refreshChanges()
                 await didChange()

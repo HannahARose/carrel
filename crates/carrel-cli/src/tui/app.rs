@@ -126,6 +126,17 @@ pub enum Confirm {
     },
     /// Rejecting these proposals, which history can't undo.
     Reject(Vec<Id>),
+    /// Rejecting these crawler findings, so they aren't suggested again.
+    RejectFindings(Vec<Id>),
+    /// Undoing the crawler's changes this week, this many.
+    UndoCrawler(usize),
+    /// Rejecting this restructure proposal.
+    RejectRestructure {
+        /// The proposal.
+        id: Id,
+        /// What it reorganizes, for people.
+        what: String,
+    },
     /// Downloading this catalog model.
     Download {
         /// The model's name.
@@ -293,6 +304,9 @@ pub enum Effect {
     Edit(Id),
     /// Edit this filed item's card, by its card's path, in the owner's editor.
     EditItem(String),
+    /// Edit this filed item's card body, by its card's path, in the owner's editor, as
+    /// `carrel edit --body` does.
+    EditItemBody(String),
     /// Edit an active item's pending history entry in the owner's editor, as
     /// `carrel sessions edit` does.
     EditEntry {
@@ -340,6 +354,9 @@ pub enum Effect {
     },
     /// Download this catalog model.
     Download(String),
+    /// Propose, approve or reject a restructure, or set a collection's eagerness, as
+    /// `carrel restructure` does.
+    Restructure(super::review_restructure::RestructureAction),
     /// Return this checkout, as `carrel return --yes [--from] [--trim-snapshots]` does.
     Return(super::active::Returning),
     /// Put this returned working copy in the Trash.
@@ -451,6 +468,12 @@ pub struct App {
     pub waiting: (usize, usize),
     /// The review queue: everything not yet rejected or filed, by destination.
     pub queue: Vec<ReviewEntry>,
+    /// Which of Review's lists is shown.
+    pub review_list: super::review_crawler::ReviewList,
+    /// The crawler's findings waiting in Review.
+    pub crawler: super::review_crawler::CrawlerReview,
+    /// Restructure proposals waiting in Review.
+    pub restructure: super::review_restructure::RestructureReview,
     /// The chosen proposal.
     pub chosen: usize,
     /// Proposals marked for a decision together.
@@ -579,6 +602,26 @@ fn lines(text: &str) -> Vec<String> {
     text.lines().map(str::to_owned).collect()
 }
 
+/// Where the interactive mode records what it asks about: in memory under test, so tests
+/// never write the owner's records.
+fn records_for(archive: &Archive) -> crate::asking::Records {
+    if cfg!(test) {
+        crate::asking::Records::in_memory(archive)
+    } else {
+        crate::asking::Records::here(archive)
+    }
+}
+
+/// The home folder Status looks in for active work: none under test, so tests never look in
+/// the owner's.
+fn active_work_home() -> Option<std::path::PathBuf> {
+    if cfg!(test) {
+        None
+    } else {
+        carrel_core::local::home_dir()
+    }
+}
+
 impl App {
     /// The app for `archive`, with everything loaded.
     ///
@@ -596,6 +639,9 @@ impl App {
             selected: 0,
             waiting: (0, 0),
             queue: Vec::new(),
+            review_list: super::review_crawler::ReviewList::default(),
+            crawler: super::review_crawler::CrawlerReview::default(),
+            restructure: super::review_restructure::RestructureReview::default(),
             chosen: 0,
             marked: BTreeSet::new(),
             detail: Vec::new(),
@@ -656,16 +702,8 @@ impl App {
             },
             agent_done: Vec::new(),
             previews: super::preview::Previews::default(),
-            records: if cfg!(test) {
-                crate::asking::Records::in_memory(&archive_for_records)
-            } else {
-                crate::asking::Records::here(&archive_for_records)
-            },
-            active_work_home: if cfg!(test) {
-                None
-            } else {
-                carrel_core::local::home_dir()
-            },
+            records: records_for(&archive_for_records),
+            active_work_home: active_work_home(),
             item_questions: Vec::new(),
             talk: super::librarian::Talk::default(),
             asking: super::librarian::Asking::default(),
@@ -718,6 +756,8 @@ impl App {
             ranked.open.len(),
         );
         self.load_queue(entries);
+        self.load_crawler_findings();
+        self.load_restructures();
         self.load_questions(ranked);
         self.load_browse()?;
         self.load_intake();
@@ -739,6 +779,15 @@ impl App {
 
     /// Review's keys: a duplicate's choices when one is shown, otherwise the decisions.
     fn review_keys(&self) -> Vec<(&'static str, &'static str)> {
+        match self.review_list {
+            super::review_crawler::ReviewList::Crawler => {
+                return super::review_crawler::crawler_keys();
+            }
+            super::review_crawler::ReviewList::Restructure => {
+                return super::review_restructure::restructure_keys();
+            }
+            super::review_crawler::ReviewList::Proposals => {}
+        }
         if !self.comparisons.is_empty() {
             let mut keys = vec![("v", "file as version"), ("b", "keep both"), ("s", "skip")];
             if self.comparisons.len() > 1 {
@@ -1130,7 +1179,13 @@ fn confirmed(confirm: Confirm, key: KeyCode) -> Option<Effect> {
             learn: true,
         },
         Confirm::Undo { id, .. } => Effect::Undo(id),
-        Confirm::Reject(ids) => Effect::Reject(ids),
+        Confirm::Reject(ids) | Confirm::RejectFindings(ids) => Effect::Reject(ids),
+        Confirm::UndoCrawler(_) => {
+            Effect::Restructure(super::review_restructure::RestructureAction::UndoCrawler)
+        }
+        Confirm::RejectRestructure { id, .. } => {
+            Effect::Restructure(super::review_restructure::RestructureAction::Reject(id))
+        }
         Confirm::Download { name, .. } => Effect::Download(name),
         Confirm::Agent(change) => Effect::Agent(change),
         Confirm::Return { id, from, .. } => Effect::Return(super::active::Returning {

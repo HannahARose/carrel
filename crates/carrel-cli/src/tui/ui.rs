@@ -442,14 +442,7 @@ fn draw_confirm(frame: &mut Frame, confirm: &Confirm, theme: Theme, area: Rect) 
             " undo   ",
         ),
         Confirm::UndoLibrarian(count) => super::librarian::confirm_text(*count),
-        Confirm::Agent(change) => {
-            let (question, about) = super::agent::confirm_text(change);
-            let yes = match change {
-                super::agent::AgentChange::Install(_) => " install   ",
-                super::agent::AgentChange::Uninstall => " uninstall   ",
-            };
-            (" Agent ", question, about, yes)
-        }
+        Confirm::Agent(change) => super::agent::confirm_popup(change),
         Confirm::Download { name, about } => (
             " Download ",
             format!("Download {name}?"),
@@ -462,6 +455,11 @@ fn draw_confirm(frame: &mut Frame, confirm: &Confirm, theme: Theme, area: Rect) 
             fact.clone(),
             " add it   ",
         ),
+        Confirm::RejectFindings(ids) => super::review_crawler::reject_findings_confirm(ids),
+        Confirm::UndoCrawler(count) => super::review_crawler::undo_crawler_confirm(*count),
+        Confirm::RejectRestructure { what, .. } => {
+            super::review_restructure::reject_restructure_confirm(what)
+        }
         Confirm::Reject(ids) => (
             " Reject ",
             format!(
@@ -536,10 +534,31 @@ fn confidence(entry: &ReviewEntry) -> String {
 }
 
 fn draw_review(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
+    match app.review_list {
+        super::review_crawler::ReviewList::Crawler => {
+            super::review_crawler::draw_crawler_findings(frame, app, theme, area);
+            return;
+        }
+        super::review_crawler::ReviewList::Restructure => {
+            super::review_restructure::draw_restructures(frame, app, theme, area);
+            return;
+        }
+        super::review_crawler::ReviewList::Proposals => {}
+    }
     if app.queue.is_empty() {
-        frame.render_widget(Paragraph::new("Nothing to review"), area);
+        let also = super::review_crawler::lists_line(app);
+        frame.render_widget(Paragraph::new(format!("Nothing to review. {also}")), area);
         return;
     }
+    let also = super::review_crawler::lists_line(app);
+    let area = if also.is_empty() {
+        area
+    } else {
+        let [line_area, rest] =
+            Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(area);
+        frame.render_widget(Paragraph::new(also), line_area);
+        rest
+    };
     let [list_area, detail_area] =
         Layout::horizontal([Constraint::Percentage(45), Constraint::Percentage(55)]).areas(area);
     let mut items: Vec<ListItem> = Vec::new();
@@ -684,6 +703,7 @@ fn draw_picker(frame: &mut Frame, picker: &Picker, theme: Theme, area: Rect) {
         super::review::Purpose::Setting(_) => "Set it to",
         super::review::Purpose::Download => "Download",
         super::review::Purpose::Index(_) => "Search index",
+        super::review::Purpose::Eagerness(_) => "How eager to rearrange",
         super::review::Purpose::Archive(_) => "Archives",
     };
     let title = if picker.filter.is_empty() {

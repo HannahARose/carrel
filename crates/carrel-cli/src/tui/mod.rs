@@ -17,6 +17,8 @@ mod librarian;
 mod option_lines;
 mod preview;
 mod review;
+mod review_crawler;
+mod review_restructure;
 mod screens;
 mod search;
 mod settings;
@@ -139,6 +141,15 @@ impl SessionLook {
     }
 }
 
+/// Edits the browsed item's card, its fields (`e`) or its body (`E`), in the owner's editor.
+fn edit_browsed(root: &Path, effect: &Effect) -> Result<Report, Failure> {
+    match effect {
+        Effect::EditItemBody(card) => crate::edit::edit_body(Some(root), card),
+        Effect::EditItem(card) => crate::edit::edit(Some(root), card),
+        _ => unreachable!("only the browsed item's two edits"),
+    }
+}
+
 /// Takes the terminal back after a program that needed it to itself, such as the editor,
 /// which leaves no picture behind.
 fn reenter(terminal: &mut ratatui::DefaultTerminal, painter: &mut preview::Painter) {
@@ -241,10 +252,10 @@ fn event_loop(
             Some(Effect::Correction(step)) if preparing.is_none() => {
                 correction(app, step, &mut preparing);
             }
-            Some(Effect::EditItem(card)) => {
+            Some(effect @ (Effect::EditItem(_) | Effect::EditItemBody(_))) => {
                 // The editor needs the terminal to itself.
                 leave();
-                let result = crate::edit::edit(Some(app.archive.root()), &card);
+                let result = edit_browsed(app.archive.root(), &effect);
                 reenter(terminal, &mut painter);
                 changed(app.archive.root(), &result);
                 finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
@@ -456,6 +467,7 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
         // The run loop does these itself, on the terminal or in the pop-up.
         Effect::Edit(_)
         | Effect::EditItem(_)
+        | Effect::EditItemBody(_)
         | Effect::EditEntry { .. }
         | Effect::Pick(_)
         | Effect::Correction(_)
@@ -468,11 +480,7 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
             finished(app, settle_question(&root, &effect));
             return None;
         }
-        Effect::Agent(change) => {
-            let result = app.change_agent(&change);
-            finished(app, result);
-            return None;
-        }
+        Effect::Agent(change) => return agent_now(app, &change),
         Effect::SetSetting { key, value } => {
             let result = crate::settings::set(Some(&root), &key, &value);
             finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
@@ -483,6 +491,7 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
         | Effect::CancelCheckout(_)
         | Effect::Entries { .. }) => active_work(root, effect),
         effect @ (Effect::Download(_)
+        | Effect::Restructure(_)
         | Effect::Index(_)
         | Effect::OpenArchive(_)
         | Effect::CreateArchive(_)
@@ -538,10 +547,12 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
     Some(receive)
 }
 
-/// The work for downloading a model, the index and switching archives: downloads and the
-/// index's in the background, and switching at once, since the app is replaced.
+/// The work for restructuring and the crawler, downloading a model, the index and switching
+/// archives: all in the background but switching, which happens at once, since the app is
+/// replaced.
 fn switch_or_index_work(app: &mut App, root: PathBuf, effect: Effect) -> Option<(String, Work)> {
     match effect {
+        Effect::Restructure(action) => Some(review_restructure::restructure_work(root, action)),
         Effect::Download(name) => {
             // What the providers offer changes once it's here.
             app.here = None;
@@ -784,6 +795,13 @@ fn open(path: &Path) -> Result<(), Failure> {
             std::thread::spawn(move || child.wait());
         })
         .map_err(|e| Failure::new(format!("couldn't run {program}: {e}")))
+}
+
+/// Makes the agent `change` at once, and says what it did.
+fn agent_now(app: &mut App, change: &agent::AgentChange) -> Option<Done> {
+    let result = app.change_agent(change);
+    finished(app, result);
+    None
 }
 
 /// The work for [`Effect::Decide`]: filing proposals where proposed, or in Holding.
@@ -1468,7 +1486,16 @@ mod tests {
         assert!(app.keys().iter().any(|(k, v)| *k == "e" && *v == "edit"));
         assert_eq!(
             app.key(key(KeyCode::Char('e'))),
-            Some(Effect::EditItem(card))
+            Some(Effect::EditItem(card.clone()))
+        );
+        assert!(
+            app.keys()
+                .iter()
+                .any(|(k, v)| *k == "E" && *v == "edit body")
+        );
+        assert_eq!(
+            app.key(key(KeyCode::Char('E'))),
+            Some(Effect::EditItemBody(card))
         );
     }
 

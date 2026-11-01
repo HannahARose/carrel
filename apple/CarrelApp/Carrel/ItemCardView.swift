@@ -7,7 +7,7 @@ import SwiftUI
 /// Fields shown in the header rather than the list.
 private let headerFields: Set<String> = ["carrel", "format", "id", "kind", "title", "summary"]
 
-struct ItemCardView<Actions: View>: View {
+struct ItemCardView<Actions: View, Below: View>: View {
     let item: ItemSummary
     let card: Card?
     let root: URL
@@ -17,6 +17,22 @@ struct ItemCardView<Actions: View>: View {
     var open: (String) -> Void = { _ in }
     /// Browse's actions on the item, beside Show in Finder.
     @ViewBuilder let actions: Actions
+    /// Sections under the card, such as Carrel's questions about the item.
+    @ViewBuilder let below: Below
+
+    init(
+        item: ItemSummary, card: Card?, root: URL, archive: ArchiveModel? = nil,
+        open: @escaping (String) -> Void = { _ in }, @ViewBuilder actions: () -> Actions,
+        @ViewBuilder below: () -> Below
+    ) {
+        self.item = item
+        self.card = card
+        self.root = root
+        self.archive = archive
+        self.open = open
+        self.actions = actions()
+        self.below = below()
+    }
 
     var body: some View {
         Form {
@@ -71,7 +87,19 @@ struct ItemCardView<Actions: View>: View {
                 }
                 actions
             }
+            below
         }
         .formStyle(.grouped)
+    }
+}
+
+extension ItemCardView where Below == EmptyView {
+    init(
+        item: ItemSummary, card: Card?, root: URL, archive: ArchiveModel? = nil,
+        open: @escaping (String) -> Void = { _ in }, @ViewBuilder actions: () -> Actions
+    ) {
+        self.init(
+            item: item, card: card, root: root, archive: archive, open: open, actions: actions
+        ) { EmptyView() }
     }
 }

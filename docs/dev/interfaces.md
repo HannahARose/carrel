@@ -21,9 +21,9 @@ The command line and the interactive mode run on macOS, Linux and Windows. The M
 | Review: expand or keep compressed files | `review expand`, `keep-compressed` | ✓ | ✓ (#234) |
 | Review: duplicates (keep both, file as a version) | `review` | ✓ | ✓ (#234) |
 | Questions: answer and dismiss | `questions` | ✓ Questions | ✓ (#234) |
-| Questions: ranked, with suggested answers, skip | `questions`, `questions skip` | ✓ Questions (`1`–`9`, `s`) | ranked; suggestions and skip #319 |
-| Questions about an item, a group, a sender | `questions answer`, `questions about` | ✓ Questions; `A` in Browse asks for an item's | groups ✓; items and senders #319 |
-| Questions while browsing and wandering, from the librarian, and a few a day on Status | `show`, `discover wander`, `ask`, `status` | ✓ Browse, Discover, Librarian, Status (`a`) | #316 |
+| Questions: ranked, with suggested answers, skip | `questions`, `questions skip` | ✓ Questions (`1`–`9`, `s`) | ✓ Questions (`s`, Show Skipped) |
+| Questions about an item, a group, a sender | `questions answer`, `questions about` | ✓ Questions; `A` in Browse asks for an item's | ✓ Questions; Carrel Asks under an item's card |
+| Questions while browsing and wandering, from the librarian, and a few a day on Status | `show`, `discover wander`, `ask`, `status` | ✓ Browse, Discover, Librarian, Status (`a`) | ✓ inspector, Discover, Librarian, Status |
 | Browse collections and items | `show`, `status` | ✓ Browse | ✓ Browse |
 | Previews of items | the item's path in `show` | ✓ Browse, in terminals that draw images (#258) | ✓ inspector and grid (#256) |
 | An item's history and related items | `show` | ✓ | ✓ the inspector's History and Related |
@@ -34,11 +34,12 @@ The command line and the interactive mode run on macOS, Linux and Windows. The M
 | Discovery: wander from an item | `discover wander ITEM` | ✓ `w` in Browse | ✓ Wander from Here on an item |
 | Discovery: the archive map, activity | `discover map`, `discover activity` | ✓ a sized tree and a block heatmap | ✓ a treemap and a heatmap |
 | Discovery: activity over chosen days | `discover activity --from --to` | ✓ `r` on activity | ✓ From and To on Activity |
-| Discovery: the tag and link graph | `discover graph [--items]` | #326, a text view of the strongest connections | ✓ Discover → Connections, drawn |
+| Discovery: the tag and link graph | `discover graph [--items]` | ✓ Discover's graph (`g`), the strongest connections as text (#326) | ✓ Discover → Connections, drawn |
 | Resurfacing forgotten collections | `status` | ✓ Status | ✓ Status |
 | The embedding index: status, rebuild, switch models | `index` | ✓ Status, Settings | ✓ Settings → Search (#267) |
 | Correct a filed item | `correct` | ✓ `c` | ✓ ⌘K (#234) |
-| Edit a filed item's card | `edit` | ✓ `e` | ✓ ⌘E (#234), its Notes and body too |
+| Edit a filed item's card | `edit` | ✓ `e` | ✓ ⌘E (#234) |
+| Edit a filed item's card body, its notes, Carrel's sections kept | `edit --body` | ✓ `E` in Browse | ✓ ⌘E, Notes and Body |
 | Create collections | `collection` | ✓ `n` in Browse | ✓ ⌥⌘N (#268) |
 | Rename an item | `rename` | ✓ `r` in Browse | ✓ ⇧⌘R (#268) |
 | Expand a filed compressed file | `expand` | ✓ `z` in Browse | ✓ ⇧⌘E (#268) |
@@ -51,12 +52,12 @@ The command line and the interactive mode run on macOS, Linux and Windows. The M
 | Desk items: a title and summary for the card | `desk add --title --summary` | ✓ asked when adding | ✓ asked when adding |
 | Work-session entries: approve, edit, combine, drop | `sessions` | ✓ Active | ✓ (#235) |
 | History and undo | `log`, `undo` | ✓ History | ✓ History, a page at a time or all, and the librarian's alone |
-| Restructure tags: merge, split and retire, approved all or in part | `restructure tags` | #326 | ✓ Restructure, before and after side by side |
-| Restructure a section: propose, list, show, approve all or part, reject | `restructure propose`, `list`, `show`, `approve`, `reject` | #326 | #327 |
-| How eager to rearrange: archive-wide, and per collection | `settings set restructure.eagerness`, `restructure eagerness COLLECTION` | ✓ Settings (archive-wide); a collection's own #326 | ✓ Settings (archive-wide); a collection's inspector #327 |
+| Restructure tags: merge, split and retire, approved all or in part | `restructure tags` | ✓ Review's restructure proposals (`f`): before and after, approve all or part; `t` proposes | ✓ Restructure, before and after side by side |
+| Restructure a section: propose, list, show, approve all or part, reject | `restructure propose`, `list`, `show`, `approve`, `reject` | ✓ Review's restructure proposals (`f`): before and after, approve all or part; `p` proposes for the archive, `R` in Browse for a collection | #327 |
+| How eager to rearrange: archive-wide, and per collection | `settings set restructure.eagerness`, `restructure eagerness COLLECTION` | ✓ Settings (archive-wide); `E` on a collection in Browse | ✓ Settings (archive-wide); a collection's inspector #327 |
 | The librarian: ask, converse, save to the Journal | `ask` | ✓ the Librarian screen (`L`) | ✓ the Librarian panel (⌥⌘L), Ask About This (⇧⌘L) |
 | The librarian's changes: list and undo them together | `status`, `log --librarian`, `undo --librarian` | ✓ the Librarian screen, Status and History | ✓ the Librarian panel, Status and History |
-| The crawler: how far it has got, a pass now, its findings, its changes and undoing them | `crawl status`, `crawl run`, `review`, `status`, `crawl undo` | #326 | #327 |
+| The crawler: how far it has got, a pass now, its findings, its changes and undoing them | `crawl status`, `crawl run`, `review`, `status`, `crawl undo` | ✓ Review's crawler findings (`f`): how far it has got, `r` a pass now, `u` undo this week's; its changes on Status and in History (#326) | #327 |
 | Backups: set up, snapshot, list, verify, restore | `backup` | ✓ Backups | ✓ Backups (#266) |
 | Backups: the repository's name | `backup setup --description` | ✓ asked on set up | ✓ the setup sheet |
 | Backups: how much to verify, where to restore | `backup verify --percent`, `backup restore --to` | ✓ asked along the way | ✓ Verify… asks how much; Restore asks where |
