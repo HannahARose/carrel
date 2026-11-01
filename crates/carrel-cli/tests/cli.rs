@@ -3763,3 +3763,71 @@ fn librarian_settings_are_shown_and_checked() {
 }
 
 const PARTS_LIST: &str = "Projects/Hardware/parts-list.csv.md";
+
+/// The sample item Carrel has a question about: a project with no description.
+const ASKED_ABOUT: &str = "Projects/Hardware/notes.card.md";
+
+#[test]
+fn questions_come_up_on_status_in_show_on_a_wander_and_from_the_librarian() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+
+    // `carrel show` says what Carrel would ask, without adding it to the queue.
+    let shown = sandbox.json(&root, &["show", ASKED_ABOUT]);
+    assert_eq!(shown["questions"], json!(["What was this project for?"]));
+    let text = sandbox.ok(&root, &["show", ASKED_ABOUT]);
+    assert!(
+        text.contains("Carrel asks:\n  What was this project for?"),
+        "{text}"
+    );
+
+    // Status names a few new questions a day, the same all day, from the queue.
+    let status = sandbox.json(&root, &["status"]);
+    let today = status["questions_today"].as_array().unwrap().clone();
+    assert_eq!(today.len(), 1, "{status}");
+    assert_eq!(today[0]["question"], "What was this project for?");
+    assert_eq!(
+        sandbox.json(&root, &["status"])["questions_today"],
+        json!(today),
+        "the same all day"
+    );
+    let text = sandbox.ok(&root, &["status"]);
+    assert!(text.contains("Today's questions"), "{text}");
+    let queued = sandbox.json(&root, &["questions"]);
+    assert!(
+        queued.to_string().contains("What was this project for?"),
+        "{queued}"
+    );
+
+    // The librarian asks about an item that comes up, for answering later.
+    let script = [librarian_answer(
+        "Your hardware notes.",
+        &[ASKED_ABOUT],
+        json!([]),
+    )];
+    let out = with_script(&sandbox, &root, &script, &["ask", "Notes?", "--json"], "");
+    let answer: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(
+        answer["asks"]["question"], "What was this project for?",
+        "{answer}"
+    );
+    let out = with_script(&sandbox, &root, &script, &["ask", "Notes?"], "");
+    let text = String::from_utf8(out.stdout).unwrap();
+    assert!(text.contains("While we're here, about “"), "{text}");
+    assert!(
+        text.contains("Answer with `carrel questions answer "),
+        "{text}"
+    );
+
+    // A wander asks now and then, never on the first step.
+    let walk = sandbox.json(
+        &root,
+        &["discover", "wander", "--steps", "40", "--seed", "3"],
+    );
+    let steps = walk["steps"].as_array().unwrap().len();
+    for question in walk["questions"].as_array().unwrap() {
+        assert!(question["step"].as_u64().unwrap() >= 2, "{walk}");
+    }
+    assert!(steps > 1, "{walk}");
+}

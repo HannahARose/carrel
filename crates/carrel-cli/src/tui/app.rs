@@ -539,6 +539,8 @@ pub struct App {
     pub item_questions: Vec<QuestionEntry>,
     /// The conversation on the Librarian screen.
     pub talk: super::librarian::Talk,
+    /// The librarian answering in the background.
+    pub asking: super::librarian::Asking,
     /// The librarian's changes this week, newest first.
     pub librarian_changes: Vec<Entry>,
     /// The Discover screen.
@@ -635,6 +637,7 @@ impl App {
             },
             item_questions: Vec::new(),
             talk: super::librarian::Talk::default(),
+            asking: super::librarian::Asking::default(),
             librarian_changes: Vec::new(),
             stacks: super::discover::Stacks::default(),
             help: false,

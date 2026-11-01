@@ -132,7 +132,7 @@ pub fn ask(
         .zip(asked.iter().chain(std::iter::repeat(&None)))
         .map(|(answer, question)| {
             let mut value = answer_json(answer);
-            value["question"] = question.as_ref().map_or(
+            value["asks"] = question.as_ref().map_or(
                 Value::Null,
                 |q| json!({"id": q.id, "question": q.question, "subject": q.subject}),
             );
@@ -268,7 +268,7 @@ fn question_after(
         .after(archive, &items, crate::discover::today())
         .ok()
         .flatten()?;
-    moments::ask(archive, question).ok()
+    moments::ask(archive, &question).ok()
 }
 
 /// The librarian's question, for answering later with `carrel questions answer`.

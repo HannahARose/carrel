@@ -177,9 +177,8 @@ fn event_loop(
     let mut checked = std::time::Instant::now();
     let mut sessions = SessionLook::default();
     let mut painter = preview::Painter::default();
-    let mut asking = librarian::Asking::default();
     while !app.quit {
-        asking.poll(app);
+        librarian::Asking::poll(app);
         sessions.tick(app);
         app.previews.poll();
         // The worker runs in another process; see what it has done about once a second.
@@ -243,7 +242,6 @@ fn event_loop(
                     Err(Failure(e)) => e,
                 });
             }
-            Some(Effect::Ask(question)) if !asking.busy() => asking.start(app, question),
             Some(Effect::Correction(step)) if preparing.is_none() => {
                 correction(app, step, &mut preparing);
             }
@@ -453,17 +451,9 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
         | Effect::EditEntry { .. }
         | Effect::Pick(_)
         | Effect::Correction(_)
-        | Effect::Ask(_)
         | Effect::Open(_) => return None,
-        Effect::SaveConversation => {
-            let result = librarian::save_here(app);
-            finished(app, result);
-            return None;
-        }
-        Effect::UndoLibrarian => {
-            let since = format!("{}d", librarian::CHANGES_DAYS);
-            let result = crate::ask::undo(Some(&root), &since);
-            finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
+        effect @ (Effect::Ask(_) | Effect::SaveConversation | Effect::UndoLibrarian) => {
+            librarian::librarian_work(app, effect);
             return None;
         }
         effect @ (Effect::Dismiss(_) | Effect::Skip(_)) => {
@@ -887,9 +877,10 @@ mod tests {
             ),
             "{text}"
         );
-        assert!(text.contains(" Sample archive "));
+        assert!(text.contains(" Sample archive "), "{text}");
         assert!(
-            text.contains("Waiting for you: 1 proposal (2 to review), 0 questions (3 to answer).")
+            text.contains("Waiting for you: 1 proposal (2 to review), 1 question (3 to answer)."),
+            "{text}"
         );
         assert!(text.contains("items in"), "the status report");
         assert!(

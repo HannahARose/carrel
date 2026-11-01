@@ -140,7 +140,7 @@ pub fn question_on(archive: &Archive, card: &str) -> Option<QuestionEntry> {
         .ok()?
         .into_iter()
         .next()?;
-    moments::ask(archive, question).ok()
+    moments::ask(archive, &question).ok()
 }
 
 /// A wander step's question, under the step.

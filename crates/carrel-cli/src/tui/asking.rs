@@ -47,7 +47,7 @@ impl App {
 
     /// Starts answering `question`, asked at a moment: it joins the queue, and the line for
     /// the answer opens. A suggestion's number picks it.
-    pub(super) fn answer_moment(&mut self, question: QuestionEntry) {
+    pub(super) fn answer_moment(&mut self, question: &QuestionEntry) {
         let asked = match moments::ask(&self.archive, question) {
             Ok(asked) => asked,
             Err(e) => {

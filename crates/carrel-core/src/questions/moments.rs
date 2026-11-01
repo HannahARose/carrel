@@ -119,7 +119,7 @@ pub fn about_item(
 /// # Errors
 ///
 /// [`ActionError`] if the queue can't be read or written, or the question was declined.
-pub fn ask(archive: &Archive, question: QuestionEntry) -> Result<QuestionEntry, ActionError> {
+pub fn ask(archive: &Archive, question: &QuestionEntry) -> Result<QuestionEntry, ActionError> {
     let saved = super::answer::raise(archive, vec![question.clone()])?;
     if let Some(saved) = saved.into_iter().next() {
         return Ok(saved);
@@ -127,7 +127,7 @@ pub fn ask(archive: &Archive, question: QuestionEntry) -> Result<QuestionEntry, 
     // Nothing new to save: the queue has it already, as it is.
     queue_of(archive)?
         .into_iter()
-        .find(|q| same(q, &question) && q.declined.is_none())
+        .find(|q| same(q, question) && q.declined.is_none())
         .ok_or_else(|| ActionError::Invalid("that question was declined".into()))
 }
 
@@ -275,7 +275,7 @@ impl Daily {
             let chosen = choose(archive, today)?;
             let mut ids = Vec::new();
             for question in chosen {
-                if let Ok(asked) = ask(archive, question) {
+                if let Ok(asked) = ask(archive, &question) {
                     ids.push(asked.id);
                 }
             }

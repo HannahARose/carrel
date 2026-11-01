@@ -490,7 +490,7 @@ impl App {
                 }
             }
             KeyCode::Char('a') if on_item => match self.item_questions.first().cloned() {
-                Some(question) => self.answer_moment(question),
+                Some(question) => self.answer_moment(&question),
                 None => self.message = Some("Carrel has no question about this item".into()),
             },
             KeyCode::Char('/') => {

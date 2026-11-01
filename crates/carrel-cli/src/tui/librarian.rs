@@ -299,7 +299,7 @@ impl App {
             }
             (KeyCode::Char('a'), _) => {
                 match self.talk.question.take() {
-                    Some(question) => self.answer_moment(question),
+                    Some(question) => self.answer_moment(&question),
                     None => self.message = Some("The librarian hasn't asked anything".into()),
                 }
                 None
@@ -365,6 +365,46 @@ impl App {
     }
 }
 
+/// What asking to undo all of the librarian's changes this week, `count` of them, shows: its
+/// title, the question, what saying yes does, and the word for yes.
+pub fn confirm_text(count: usize) -> (&'static str, String, String, &'static str) {
+    (
+        " Undo ",
+        format!(
+            "Undo {} the librarian made this week?",
+            crate::commands::plural(count, "change")
+        ),
+        "Each is reversed by a change of your own, newest first, as `carrel undo --librarian \
+         7d` does. They stay in History."
+            .to_owned(),
+        " undo them   ",
+    )
+}
+
+/// Does the Librarian screen's work: asking, in the background, and saving or undoing at once.
+pub fn librarian_work(app: &mut App, effect: Effect) {
+    match effect {
+        Effect::Ask(_) if app.asking.busy() => {
+            app.message = Some("The librarian is still answering".into());
+        }
+        Effect::Ask(question) => {
+            let mut asking = std::mem::take(&mut app.asking);
+            asking.start(app, question);
+            app.asking = asking;
+        }
+        Effect::SaveConversation => {
+            let result = save_here(app);
+            super::finished(app, result);
+        }
+        Effect::UndoLibrarian => {
+            let since = format!("{CHANGES_DAYS}d");
+            let result = crate::ask::undo(Some(app.archive.root()), &since);
+            super::finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
+        }
+        _ => {}
+    }
+}
+
 /// The librarian answering in the background, for the run loop.
 #[derive(Default)]
 pub struct Asking {
@@ -391,7 +431,13 @@ impl Asking {
     }
 
     /// Shows the answer once it's come.
-    pub fn poll(&mut self, app: &mut App) {
+    pub fn poll(app: &mut App) {
+        let mut asking = std::mem::take(&mut app.asking);
+        asking.poll_into(app);
+        app.asking = asking;
+    }
+
+    fn poll_into(&mut self, app: &mut App) {
         let Some(answer) = &self.answer else {
             return;
         };
@@ -411,4 +457,294 @@ impl Asking {
 pub fn save_here(app: &App) -> Result<String, String> {
     let identity = crate::config::Identity::load_or_create().map_err(|e| e.to_string())?;
     save(&app.archive, &app.talk.conversation, identity.holder())
+}
+
+#[cfg(test)]
+pub(super) mod tests {
+    use std::collections::VecDeque;
+    use std::sync::Mutex;
+
+    use carrel_core::card::Id;
+    use carrel_core::coordinator::{Coordinator as _, DEFAULT_LEASE, DiskLock, Holder};
+    use carrel_core::librarian::Conversation;
+    use carrel_core::providers::device::AvailableModel;
+    use carrel_core::providers::{
+        Capability, Completion, CompletionRequest, Offer, Provider, ProviderError, Registry,
+    };
+    use ratatui::crossterm::event::KeyCode;
+    use serde_json::{Value, json};
+
+    use super::super::app::{App, Confirm, Effect, Step, Tab};
+    use super::super::screens::{Correcting, InputPurpose};
+    use super::super::tests::{key, sample, screen};
+
+    const PARTS_LIST: &str = "Projects/Hardware/parts-list.csv.md";
+
+    /// A text model that gives scripted answers, one a request.
+    struct Scripted {
+        offers: Vec<Offer>,
+        answers: Mutex<VecDeque<Value>>,
+    }
+
+    impl Provider for Scripted {
+        fn name(&self) -> &'static str {
+            "scripted"
+        }
+        fn offers(&self) -> &[Offer] {
+            &self.offers
+        }
+        fn complete(&self, _: &str, _: &CompletionRequest) -> Result<Completion, ProviderError> {
+            let answer = self
+                .answers
+                .lock()
+                .unwrap()
+                .pop_front()
+                .ok_or_else(|| ProviderError::Failed("out of answers".into()))?;
+            Ok(Completion {
+                text: answer.to_string(),
+                json: Some(answer),
+                model: "scripted/m".into(),
+                usage: None,
+            })
+        }
+    }
+
+    /// A registry with a scripted model giving `answers`, and the model to ask.
+    pub(in super::super) fn scripted(answers: Vec<Value>) -> (Registry, AvailableModel) {
+        let mut extra = serde_json::Map::new();
+        extra.insert("context_tokens".into(), json!(8_000));
+        let model = Scripted {
+            offers: vec![Offer {
+                capability: Capability::TextModel,
+                id: "m".into(),
+                label: None,
+                priority: 10,
+                available: true,
+                reason: None,
+                media_types: Vec::new(),
+                extra,
+            }],
+            answers: Mutex::new(answers.into()),
+        };
+        let mut registry = Registry::with_built_ins();
+        registry.add(Box::new(model));
+        (
+            registry,
+            AvailableModel {
+                provider: "scripted".into(),
+                offer: "m".into(),
+                label: "scripted/m".into(),
+            },
+        )
+    }
+
+    fn tool(action: &str, input: &str) -> Value {
+        json!({"action": action, "input": input, "answer": "", "items": [], "passages": [], "suggestions": []})
+    }
+
+    fn answer(text: &str, items: &[&str], confidence: f64) -> Value {
+        json!({"action": "answer", "input": "", "answer": text, "items": items, "passages": [],
+               "suggestions": [{"change": "refile", "item": PARTS_LIST, "field": "", "value": "Reading",
+                                "why": "It's reference material.", "confidence": confidence}]})
+    }
+
+    fn holder() -> Holder {
+        Holder {
+            person: Id::new_v7(),
+            device: Id::new_v7(),
+        }
+    }
+
+    /// Asks `question` on the screen and answers it with `script`, as the run loop would.
+    fn ask(app: &mut App, question: &str, script: Vec<Value>) {
+        app.key(key(KeyCode::Enter));
+        for c in question.chars() {
+            app.key(key(KeyCode::Char(c)));
+        }
+        assert_eq!(
+            app.key(key(KeyCode::Enter)),
+            Some(Effect::Ask(question.to_owned()))
+        );
+        assert!(screen(app, 120, 30).contains("The librarian is looking…"));
+        let (registry, model) = scripted(script);
+        let result = super::ask_with(
+            app.archive.root(),
+            (&registry, model),
+            app.talk.conversation.clone(),
+            question,
+            holder(),
+            &app.progress,
+        );
+        app.answered(result);
+    }
+
+    #[test]
+    fn the_librarian_answers_beside_the_item_and_its_suggestions_go_through_the_flows() {
+        let (_dir, mut app) = sample(true);
+        app.key(key(KeyCode::Char('L')));
+        assert_eq!(app.tab, Tab::Librarian);
+        assert!(screen(&app, 160, 30).contains("9 Backups   L Librarian   D Discover"));
+        assert!(screen(&app, 120, 30).contains("Ask the librarian about your archive"));
+        ask(
+            &mut app,
+            "What about the lamp?",
+            vec![
+                tool("search", "lamp"),
+                answer(
+                    "Your desk lamp build has a parts list.",
+                    &[PARTS_LIST],
+                    0.95,
+                ),
+            ],
+        );
+        let text = screen(&app, 140, 34);
+        assert!(text.contains("You: What about the lamp?"), "{text}");
+        assert!(text.contains("Your desk lamp build has a parts list."));
+        assert!(
+            text.contains("(scripted/m · 1 step)"),
+            "each answer names its model"
+        );
+        assert!(
+            text.contains("Desk lamp parts list  Projects/Hardware"),
+            "{text}"
+        );
+        assert!(
+            text.contains("refile “Desk lamp parts list” to Reading (95% sure; y to make it)"),
+            "with librarian.changes off, it's for the owner: {text}"
+        );
+        assert_eq!(
+            app.talk.item.card.as_deref(),
+            Some(PARTS_LIST),
+            "the item it's discussing"
+        );
+        let first = app.talk.item.text.first().unwrap().trim().to_owned();
+        assert!(
+            text.contains(&first),
+            "the card on the right, {first}: {text}"
+        );
+
+        // Making the suggestion is a correction, shown before it's saved.
+        app.key(key(KeyCode::Down));
+        assert!(app.keys().contains(&("y", "make it")));
+        assert_eq!(
+            app.key(key(KeyCode::Char('y'))),
+            Some(Effect::Correction(Step::Work {
+                target: Correcting::Item(PARTS_LIST.into()),
+                words: "collection: Reading".into(),
+                answering: None,
+            }))
+        );
+        assert!(
+            app.archive.root().join(PARTS_LIST).exists(),
+            "nothing changed yet"
+        );
+
+        // Saving keeps the conversation in the Journal.
+        assert_eq!(
+            app.key(key(KeyCode::Char('s'))),
+            Some(Effect::SaveConversation)
+        );
+        let saved = super::save(&app.archive, &app.talk.conversation, holder()).unwrap();
+        assert!(
+            saved.starts_with("Saved the conversation to Journal/"),
+            "{saved}"
+        );
+
+        // `o` opens the item in Browse; `n` starts again.
+        app.key(key(KeyCode::Char('L')));
+        app.key(key(KeyCode::Char('o')));
+        assert_eq!(app.tab, Tab::Browse);
+        assert_eq!(app.item.card.as_deref(), Some(PARTS_LIST));
+        app.key(key(KeyCode::Char('L')));
+        app.key(key(KeyCode::Char('n')));
+        assert_eq!(app.talk.conversation, Conversation::default());
+    }
+
+    #[test]
+    fn with_changes_on_its_changes_are_listed_and_undone_one_or_all() {
+        let (_dir, mut app) = sample(true);
+        let lease = DiskLock::for_archive(&app.archive)
+            .acquire(holder(), "test", DEFAULT_LEASE)
+            .unwrap();
+        carrel_core::settings::change(
+            &app.archive,
+            carrel_core::settings::Key::LibrarianChanges,
+            "on",
+            &lease,
+        )
+        .unwrap();
+        lease.release().unwrap();
+        app.reload().unwrap();
+        app.key(key(KeyCode::Char('L')));
+        ask(&mut app, "Tidy?", vec![answer("Done.", &[], 0.95)]);
+        assert!(
+            app.archive.root().join("Reading/parts-list.csv").exists(),
+            "it made it"
+        );
+        assert_eq!(app.librarian_changes.len(), 1);
+        let text = screen(&app, 140, 34);
+        assert!(text.contains("made by the librarian"), "{text}");
+        assert!(text.contains("The librarian's changes this week"), "{text}");
+        // The change is the row after the suggestion.
+        app.key(key(KeyCode::Down));
+        assert!(app.keys().contains(&("u", "undo")));
+        app.key(key(KeyCode::Char('u')));
+        assert!(matches!(app.confirm, Some(Confirm::Undo { .. })));
+        app.key(key(KeyCode::Char('n')));
+        app.key(key(KeyCode::Char('U')));
+        assert_eq!(app.confirm, Some(Confirm::UndoLibrarian(1)));
+        assert!(screen(&app, 120, 30).contains("Undo 1 change the librarian made this week?"));
+        assert_eq!(
+            app.key(key(KeyCode::Char('y'))),
+            Some(Effect::UndoLibrarian)
+        );
+    }
+
+    #[test]
+    fn the_librarian_asks_about_an_item_that_comes_up_and_the_answer_is_a_correction() {
+        let (_dir, mut app) = sample(true);
+        let (card, _) = super::super::discover::tests::asked_item(&app);
+        app.key(key(KeyCode::Char('L')));
+        ask(
+            &mut app,
+            "Anything?",
+            vec![answer("This one.", &[&card], 0.5)],
+        );
+        let asked = app
+            .talk
+            .question
+            .clone()
+            .expect("a question about the item");
+        assert!(screen(&app, 140, 34).contains("While we're here"));
+        app.key(key(KeyCode::Char('a')));
+        assert!(matches!(
+            &app.input.as_ref().unwrap().purpose,
+            InputPurpose::Answer { question, .. } if *question == asked.question
+        ));
+        for c in "It's from the lab".chars() {
+            app.key(key(KeyCode::Char(c)));
+        }
+        let Some(Effect::Correction(Step::Work {
+            target, answering, ..
+        })) = app.key(key(KeyCode::Enter))
+        else {
+            panic!("the answer goes through the corrections path");
+        };
+        let id = super::super::asking::item_at(&app.archive, &card)
+            .unwrap()
+            .id;
+        assert_eq!(target, Correcting::Item(id.to_string()));
+        assert!(
+            answering.is_some(),
+            "the question leaves the queue once it's saved"
+        );
+
+        // Not after the next answer too.
+        ask(
+            &mut app,
+            "More?",
+            vec![answer("Still this one.", &[&card], 0.5)],
+        );
+        assert!(app.talk.question.is_none());
+    }
 }

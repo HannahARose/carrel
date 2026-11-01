@@ -197,7 +197,7 @@ impl App {
                 self.wander_step();
             }
             (View::Wander, KeyCode::Char('a')) => match self.stacks.question.take() {
-                Some(question) => self.answer_moment(question),
+                Some(question) => self.answer_moment(&question),
                 None => self.message = Some("No question on this step".into()),
             },
             (View::Wander, KeyCode::Char('o')) => {
@@ -256,5 +256,151 @@ impl App {
         }
         keys.push(("?", "help"));
         keys
+    }
+}
+
+#[cfg(test)]
+pub(super) mod tests {
+    use carrel_core::questions::QuestionEntry;
+    use carrel_core::questions::moments::WANDER_EVERY;
+    use ratatui::crossterm::event::KeyCode;
+
+    use super::super::app::{App, Effect, Step, Tab};
+    use super::super::item::Pane;
+    use super::super::screens::{Correcting, InputPurpose};
+    use super::super::tests::{key, sample, screen};
+    use super::View;
+
+    /// A sample item Carrel has a question about, and the question.
+    pub(in super::super) fn asked_item(app: &App) -> (String, QuestionEntry) {
+        app.archive
+            .items()
+            .unwrap()
+            .into_iter()
+            .find_map(|item| {
+                let asked = super::super::asking::questions_about(&app.archive, &item.card);
+                asked.into_iter().next().map(|q| (item.card.clone(), q))
+            })
+            .expect("the sample archive has an item to ask about")
+    }
+
+    #[test]
+    fn discover_shows_each_view_as_the_command_draws_it() {
+        let (_dir, mut app) = sample(true);
+        app.key(key(KeyCode::Char('D')));
+        assert_eq!(app.tab, Tab::Discover);
+        let text = screen(&app, 120, 30);
+        assert!(text.contains("d on this day"), "{text}");
+        assert!(
+            text.contains("On this day") || text.contains("in other years"),
+            "{text}"
+        );
+        app.key(key(KeyCode::Char('m')));
+        let text = screen(&app, 120, 30);
+        assert!(text.contains("items in"), "the map's total: {text}");
+        assert!(
+            text.contains("├─ ") || text.contains("└─ "),
+            "a sized tree: {text}"
+        );
+        app.key(key(KeyCode::Char('h')));
+        let text = screen(&app, 120, 30);
+        assert!(
+            text.contains("Mon") && text.contains("Less"),
+            "a heatmap: {text}"
+        );
+        app.key(key(KeyCode::Char('t')));
+        let month = app.stacks.lines.clone();
+        app.key(key(KeyCode::Char('p')));
+        assert_ne!(app.stacks.lines, month, "p groups by day instead");
+        assert!(app.keys().contains(&("p", "periods")));
+    }
+
+    #[test]
+    fn wander_takes_a_step_a_key_and_asks_now_and_then() {
+        let (_dir, mut app) = sample(true);
+        app.key(key(KeyCode::Char('D')));
+        app.key(key(KeyCode::Char('w')));
+        assert_eq!(app.stacks.view, View::Wander);
+        let first = app.stacks.item.card.clone().expect("the first step");
+        assert!(
+            screen(&app, 120, 30).contains("1. "),
+            "{}",
+            screen(&app, 120, 30)
+        );
+        let collection = first.rsplit_once('/').unwrap().0;
+        assert!(
+            app.records.visits.opened.contains_key(collection),
+            "a step opens its collection"
+        );
+        // Every item the walk can reach, a step a key; questions never on two steps close
+        // together, and one about the item Carrel has a question about once it's reached
+        // with room to ask.
+        let mut asked: Vec<usize> = Vec::new();
+        let mut steps = 1;
+        while !app.stacks.done && steps < 100 {
+            app.key(key(KeyCode::Char(' ')));
+            steps += 1;
+            if app.stacks.question.is_some() {
+                asked.push(steps);
+                assert!(screen(&app, 120, 30).contains("Carrel asks:"));
+            }
+        }
+        assert!(app.stacks.done, "the walk ends");
+        for pair in asked.windows(2) {
+            assert!(pair[1] - pair[0] >= WANDER_EVERY, "{asked:?}");
+        }
+        if let Some(n) = app.stacks.asked_at {
+            assert!(asked.contains(&n));
+        }
+        app.key(key(KeyCode::Char('o')));
+        assert_eq!(app.tab, Tab::Browse);
+    }
+
+    #[test]
+    fn browse_asks_about_the_item_beside_it_and_the_answer_is_a_correction() {
+        let (_dir, mut app) = sample(true);
+        let (card, question) = asked_item(&app);
+        let item = super::super::asking::item_at(&app.archive, &card)
+            .unwrap()
+            .id;
+        app.key(key(KeyCode::Char('5')));
+        app.go_to(&card);
+        assert_eq!(app.browse_pane, Pane::Items);
+        let text = screen(&app, 140, 34);
+        assert!(
+            text.contains(&format!("Carrel asks: {}", question.question)),
+            "{text}"
+        );
+        assert!(app.keys().contains(&("a", "answer its question")));
+        app.key(key(KeyCode::Char('a')));
+        let Some(InputPurpose::Answer { id, .. }) = app.input.as_ref().map(|i| i.purpose.clone())
+        else {
+            panic!("a line for the answer");
+        };
+        let (queued, _) = carrel_core::questions::QuestionQueue::of(&app.archive)
+            .list()
+            .unwrap();
+        assert!(queued.iter().any(|q| q.id == id), "it joins the queue");
+        for c in "A photo of the bench".chars() {
+            app.key(key(KeyCode::Char(c)));
+        }
+        assert_eq!(
+            app.key(key(KeyCode::Enter)),
+            Some(Effect::Correction(Step::Work {
+                target: Correcting::Item(item.to_string()),
+                words: format!(
+                    "Asked “{}”, the owner said: A photo of the bench",
+                    question.question
+                ),
+                answering: Some(id),
+            }))
+        );
+    }
+
+    #[test]
+    fn status_names_the_days_questions() {
+        let (_dir, app) = sample(true);
+        let text = screen(&app, 120, 40);
+        assert!(text.contains("Today's questions"), "{text}");
     }
 }

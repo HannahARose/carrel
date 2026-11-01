@@ -260,99 +260,102 @@ fn centered(area: Rect, width: u16, height: u16) -> Rect {
     )
 }
 
+/// Every key, for `?` help.
+const HELP_ROWS: &[(&str, &str)] = &[
+    (
+        "1 to 9, L, D, Tab, ←→",
+        "switch screens; L the librarian, D discover",
+    ),
+    (
+        "i",
+        "add files and folders to ingest, with your file picker or the built-in one",
+    ),
+    ("↑↓, j k, PgUp PgDn, Home End", "scroll, or choose a change"),
+    ("a  h", "approve, or hold in Holding (Review)"),
+    (
+        "m  e  c  x",
+        "move, edit, correct in words, or reject (Review)",
+    ),
+    (
+        "v  b  s  [ ]",
+        "a duplicate: file as a version, keep both, skip; other matches (Review)",
+    ),
+    (
+        "z",
+        "unpack a zip when it's approved, or keep it compressed (Review)",
+    ),
+    (
+        "Space  A",
+        "mark several; approve all high-confidence (Review)",
+    ),
+    ("r  o  x", "return, open, cancel checkout (Active)"),
+    (
+        "n  x  f",
+        "put a file or folder on the desk; take off, archive a desk item (Active)",
+    ),
+    (
+        "a  e  c  d  Space",
+        "approve, edit, combine, drop; mark (Active)",
+    ),
+    (
+        "Enter  1-9  s  d",
+        "answer, pick a suggestion, skip or dismiss a question (Questions)",
+    ),
+    (
+        "←→  e  c  /  Esc",
+        "collections, items, an item; edit, correct; search; clear (Browse)",
+    ),
+    (
+        "u  Enter",
+        "undo the item's chosen change; go to a related item (Browse)",
+    ),
+    (
+        "o  r  z  n",
+        "check out, rename, expand an item; new collection (Browse)",
+    ),
+    (
+        "a",
+        "answer Carrel's question about the item (Browse, Librarian, wander)",
+    ),
+    ("u", "undo the chosen change (History)"),
+    (
+        "Enter  s  n  y",
+        "ask; save to the Journal; new conversation; make a suggestion (Librarian)",
+    ),
+    (
+        "u  U  o",
+        "undo the librarian's change, or all this week's; open the item (Librarian)",
+    ),
+    (
+        "d  w  t  m  h",
+        "on this day, wander, timeline, map, activity (Discover)",
+    ),
+    (
+        "Space  n  p",
+        "next step, new walk (wander); periods (timeline)",
+    ),
+    (
+        "n  v  r  s",
+        "snapshot now, verify, restore an item, set up (Backups)",
+    ),
+    ("x  t  r", "remove, move to the front, retry (Ingest)"),
+    (
+        "e  w",
+        "each entry, or whole folder, before queueing (Ingest)",
+    ),
+    (
+        "Enter",
+        "change a setting; rebuild the search index or switch its model; install the agent (Settings)",
+    ),
+    ("x", "uninstall the background agent, on its row (Settings)"),
+    ("Ctrl-O", "open another archive, or create one"),
+    ("Ctrl-R", "read everything again"),
+    ("?", "this help"),
+    ("q, Esc, Ctrl-C", "quit"),
+];
+
 fn draw_help(frame: &mut Frame, theme: Theme, area: Rect) {
-    let rows = [
-        (
-            "1 to 9, L, D, Tab, ←→",
-            "switch screens; L the librarian, D discover",
-        ),
-        (
-            "i",
-            "add files and folders to ingest, with your file picker or the built-in one",
-        ),
-        ("↑↓, j k, PgUp PgDn, Home End", "scroll, or choose a change"),
-        ("a  h", "approve, or hold in Holding (Review)"),
-        (
-            "m  e  c  x",
-            "move, edit, correct in words, or reject (Review)",
-        ),
-        (
-            "v  b  s  [ ]",
-            "a duplicate: file as a version, keep both, skip; other matches (Review)",
-        ),
-        (
-            "z",
-            "unpack a zip when it's approved, or keep it compressed (Review)",
-        ),
-        (
-            "Space  A",
-            "mark several; approve all high-confidence (Review)",
-        ),
-        ("r  o  x", "return, open, cancel checkout (Active)"),
-        (
-            "n  x  f",
-            "put a file or folder on the desk; take off, archive a desk item (Active)",
-        ),
-        (
-            "a  e  c  d  Space",
-            "approve, edit, combine, drop; mark (Active)",
-        ),
-        (
-            "Enter  1-9  s  d",
-            "answer, pick a suggestion, skip or dismiss a question (Questions)",
-        ),
-        (
-            "←→  e  c  /  Esc",
-            "collections, items, an item; edit, correct; search; clear (Browse)",
-        ),
-        (
-            "u  Enter",
-            "undo the item's chosen change; go to a related item (Browse)",
-        ),
-        (
-            "o  r  z  n",
-            "check out, rename, expand an item; new collection (Browse)",
-        ),
-        (
-            "a",
-            "answer Carrel's question about the item (Browse, Librarian, wander)",
-        ),
-        ("u", "undo the chosen change (History)"),
-        (
-            "Enter  s  n  y",
-            "ask; save to the Journal; new conversation; make a suggestion (Librarian)",
-        ),
-        (
-            "u  U  o",
-            "undo the librarian's change, or all this week's; open the item (Librarian)",
-        ),
-        (
-            "d  w  t  m  h",
-            "on this day, wander, timeline, map, activity (Discover)",
-        ),
-        (
-            "Space  n  p",
-            "next step, new walk (wander); periods (timeline)",
-        ),
-        (
-            "n  v  r  s",
-            "snapshot now, verify, restore an item, set up (Backups)",
-        ),
-        ("x  t  r", "remove, move to the front, retry (Ingest)"),
-        (
-            "e  w",
-            "each entry, or whole folder, before queueing (Ingest)",
-        ),
-        (
-            "Enter",
-            "change a setting; rebuild the search index or switch its model; install the agent (Settings)",
-        ),
-        ("x", "uninstall the background agent, on its row (Settings)"),
-        ("Ctrl-O", "open another archive, or create one"),
-        ("Ctrl-R", "read everything again"),
-        ("?", "this help"),
-        ("q, Esc, Ctrl-C", "quit"),
-    ];
+    let rows = HELP_ROWS;
     let lines: Vec<Line> = rows
         .iter()
         .map(|(key, what)| {
@@ -422,17 +425,7 @@ fn draw_confirm(frame: &mut Frame, confirm: &Confirm, theme: Theme, area: Rect) 
                 .to_owned(),
             " undo   ",
         ),
-        Confirm::UndoLibrarian(count) => (
-            " Undo ",
-            format!(
-                "Undo {} the librarian made this week?",
-                crate::commands::plural(*count, "change")
-            ),
-            "Each is reversed by a change of your own, newest first, as `carrel undo --librarian \
-             7d` does. They stay in History."
-                .to_owned(),
-            " undo them   ",
-        ),
+        Confirm::UndoLibrarian(count) => super::librarian::confirm_text(*count),
         Confirm::Agent(change) => {
             let (question, about) = super::agent::confirm_text(change);
             let yes = match change {
