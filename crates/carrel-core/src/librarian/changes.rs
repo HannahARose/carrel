@@ -390,9 +390,28 @@ pub fn apply(
         let saved = prepare::save_holding(archive, prepared, lease).map_err(|e| e.to_string())?;
         Ok(saved.commit)
     };
+    // A correction is one `field: value` line; a value that ran onto another line would read
+    // as more fields, the owner's included, so it's refused.
+    let one_line = |value: &str| {
+        if value.contains(['\n', '\r']) {
+            Err(format!(
+                "“{}” runs over more than one line",
+                value.lines().next().unwrap_or_default()
+            ))
+        } else {
+            Ok(())
+        }
+    };
     match change {
-        Change::Refile { item, to } => correct(item, format!("collection: {to}")),
-        Change::Correct { item, field, value } => correct(item, format!("{field}: {value}")),
+        Change::Refile { item, to } => {
+            one_line(to)?;
+            correct(item, format!("collection: {to}"))
+        }
+        Change::Correct { item, field, value } => {
+            one_line(field)?;
+            one_line(value)?;
+            correct(item, format!("{field}: {value}"))
+        }
         Change::Rename { item, name } => {
             crate::rename::rename(archive, &item_ref(item)?, name, lease)
                 .map(|r| r.commit)

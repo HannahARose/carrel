@@ -43,6 +43,14 @@ use crate::coordinator::{Coordinator as _, CoordinatorError, DEFAULT_LEASE, Disk
 use crate::history::{Change, History, HistoryError, Move, Operation};
 use crate::review::{Queue, QueueEntry, ReviewError};
 
+/// Whether a collection named `name` would be hidden from the archive: Carrel passes over
+/// folders whose names start with a dot, and keeps those starting with an underscore for
+/// itself.
+#[must_use]
+pub(crate) fn hidden_name(name: &str) -> bool {
+    name.starts_with('.') || name.starts_with('_')
+}
+
 /// Where proposals wait, relative to the archive root (FORMAT.md §7.9).
 pub const PROPOSALS_DIR: &str = "_System/queue/proposals";
 
@@ -640,7 +648,7 @@ pub fn approve_with_snapshot(
     backups: Option<&dyn crate::backup::Backups>,
 ) -> Result<Approved, RestructureError> {
     let selection = select(proposal, only)?;
-    let lease = DiskLock::for_archive(archive).acquire(holder, "restructure", DEFAULT_LEASE)?;
+    let mut lease = DiskLock::for_archive(archive).acquire(holder, "restructure", DEFAULT_LEASE)?;
     let result = (|| -> Result<Approved, RestructureError> {
         let moves_files = selection.approved.iter().any(|id| {
             proposal
@@ -659,20 +667,33 @@ pub fn approve_with_snapshot(
             ),
             None => None,
         };
-        let mut outcomes = Vec::new();
+        let mut outcomes: Vec<Outcome> = Vec::new();
+        // Changes not made, so those that need them aren't made either.
+        let mut unmade: BTreeSet<String> = BTreeSet::new();
         for id in &selection.approved {
             let change = proposal
                 .change(id)
                 .expect("selected changes are in the proposal");
-            outcomes.push(apply_edit(archive, change)?);
+            if let Some(needed) = change.depends_on.iter().find(|d| unmade.contains(*d)) {
+                unmade.insert(id.clone());
+                outcomes.push(Outcome {
+                    change: id.clone(),
+                    not_applied: Some(format!("it needs change {needed}, which wasn't made")),
+                    ..Outcome::default()
+                });
+                continue;
+            }
+            // A snapshot or a long change can outlast the lease: renew it before each change,
+            // so another writer never takes the archive part way through.
+            lease.renew(DEFAULT_LEASE)?;
+            let outcome = apply_edit(archive, change)?;
+            if outcome.not_applied.is_some() {
+                unmade.insert(id.clone());
+            }
+            outcomes.push(outcome);
         }
         if moves_files {
             applying::finish(archive)?;
-        }
-        // A proposal applied straight from where it was built was never queued.
-        match ProposalQueue::of(archive).remove(proposal.id) {
-            Ok(()) | Err(ReviewError::NotFound(..)) => {}
-            Err(e) => return Err(e.into()),
         }
         let summary = summary(proposal, &selection);
         let mut change = Change::new(
@@ -691,6 +712,12 @@ pub fn approve_with_snapshot(
             .filter(|id| seen.insert(*id))
             .collect();
         let commit = History::open(archive)?.commit(archive, &change, &lease)?;
+        // Only once the change is in history, so a failure leaves the proposal to approve
+        // again. A proposal applied straight from where it was built was never queued.
+        match ProposalQueue::of(archive).remove(proposal.id) {
+            Ok(()) | Err(ReviewError::NotFound(..)) => {}
+            Err(e) => return Err(e.into()),
+        }
         Ok(Approved {
             selection: selection.clone(),
             outcomes,

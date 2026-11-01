@@ -408,10 +408,14 @@ impl<'a> Librarian<'a> {
         left: usize,
     ) -> Result<Asked, LibrarianError> {
         let answer_room = self.answer_room(asking.context);
+        // The conversation so far takes at most a quarter of the context, so a long one
+        // still leaves room for the question, what's been done and the answer.
+        let earlier = fit_earlier(asking.earlier, asking.context / 4);
+        let earlier = earlier.as_slice();
         let fixed = estimate_tokens(asking.system)
             + estimate_tokens(&prompts::step(
                 asking.setting,
-                asking.earlier,
+                earlier,
                 asking.question,
                 &[],
                 left,
@@ -423,7 +427,7 @@ impl<'a> Librarian<'a> {
                 / share
         };
         let done = fit_done(&work.done, room(answer_room, 1));
-        let prompt = prompts::step(asking.setting, asking.earlier, asking.question, &done, left);
+        let prompt = prompts::step(asking.setting, earlier, asking.question, &done, left);
         let needed = estimate_tokens(asking.system) + estimate_tokens(&prompt);
         if work.tokens + needed > self.limits.tokens {
             return Ok(Asked::OutOfTokens);
@@ -450,19 +454,26 @@ impl<'a> Librarian<'a> {
             }),
         };
         let completion = match self.complete(&request) {
-            Err(LibrarianError::Model(ProviderError::Failed(_)))
-                if request.max_tokens < Some(answer_room) =>
-            {
+            // An answer cut off before its JSON ended gets the whole room once; cut off with
+            // the whole room, the question ends as out of room, keeping what was found.
+            Err(LibrarianError::Model(ProviderError::Failed(_))) => {
+                if request.max_tokens >= Some(answer_room) {
+                    return Ok(Asked::OutOfTokens);
+                }
                 work.tokens += needed;
                 request.max_tokens = Some(answer_room);
-                self.complete(&request)?
+                match self.complete(&request) {
+                    Err(LibrarianError::Model(ProviderError::Failed(_))) => {
+                        return Ok(Asked::OutOfTokens);
+                    }
+                    other => other?,
+                }
             }
             Err(LibrarianError::Model(ProviderError::Unsupported(_))) => {
                 work.tokens += needed;
                 let done = fit_done(&work.done, room(answer_room, 2));
                 request.prompt =
-                    prompts::step(asking.setting, asking.earlier, asking.question, &done, left)
-                        + nearly;
+                    prompts::step(asking.setting, earlier, asking.question, &done, left) + nearly;
                 self.complete(&request)?
             }
             other => other?,
@@ -667,11 +678,49 @@ impl Work {
     }
 }
 
-/// A tool call, as far as telling a repeat: the tool, and its input lowercased with its white
-/// space run together.
+/// A tool call, as far as telling a repeat: the tool, and its input with its white space run
+/// together, lowercased only for the tools that read it regardless of case. An item's card or
+/// contents path is matched as written, so a call that corrects a path's case is a new call.
 fn call_key(tool: &str, input: &str) -> String {
-    let words: Vec<String> = input.split_whitespace().map(str::to_lowercase).collect();
-    format!("{tool} {}", words.join(" "))
+    let words: Vec<&str> = input.split_whitespace().collect();
+    let input = words.join(" ");
+    match tool {
+        "search" | "collection" => format!("{tool} {}", input.to_lowercase()),
+        _ => format!("{tool} {input}"),
+    }
+}
+
+/// The newest of `earlier`'s questions and answers that fit in `room` tokens, oldest first:
+/// older ones are left out first, then the newest answer is cut short.
+fn fit_earlier(earlier: &[(String, String)], room: u64) -> Vec<(String, String)> {
+    let size = |(q, a): &(String, String)| estimate_tokens(q) + estimate_tokens(a) + 8;
+    let mut kept: Vec<(String, String)> = Vec::new();
+    let mut used = 0;
+    for pair in earlier.iter().rev() {
+        if used + size(pair) > room {
+            if kept.is_empty() {
+                // Even the newest is too long: keep its start.
+                let (question, answer) = pair;
+                let left = room.saturating_sub(estimate_tokens(question) + 16);
+                let keep = usize::try_from(left * 3)
+                    .unwrap_or(usize::MAX)
+                    .min(answer.len());
+                let mut cut = keep;
+                while !answer.is_char_boundary(cut) {
+                    cut -= 1;
+                }
+                kept.push((
+                    question.clone(),
+                    format!("{}… (cut short, to fit)", &answer[..cut]),
+                ));
+            }
+            break;
+        }
+        used += size(pair);
+        kept.push(pair.clone());
+    }
+    kept.reverse();
+    kept
 }
 
 /// `done` shortened to take at most `room` tokens, so the prompt fits the model's context

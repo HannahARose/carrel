@@ -283,7 +283,9 @@ fn recent_restructures(archive: &Archive) -> Vec<(String, i64)> {
     let Ok(log) = History::open(archive).and_then(|h| h.log()) else {
         return Vec::new();
     };
-    let folder = |p: &str| p.rsplit_once('/').map_or("", |(f, _)| f).to_owned();
+    // The folder a move happened in; a top-level collection moved or renamed counts as
+    // itself, not as the whole archive.
+    let folder = |p: &str| p.rsplit_once('/').map_or(p, |(f, _)| f).to_owned();
     let mut found = Vec::new();
     for entry in log
         .iter()
@@ -584,7 +586,7 @@ pub fn propose_section<S: std::hash::BuildHasher>(
         .collect();
     let mut chosen = choose(&survey, &section, plans, &mut assessment.held_back);
     let wording = registry.and_then(|r| ask_for_wording(r, &survey, &section, &chosen));
-    let renames = name_plans(&survey, &mut chosen, wording.as_ref());
+    let renames = name_plans(&survey, &section, &mut chosen, wording.as_ref());
     assessment.worded_by_model = wording.is_some();
     let mut proposal = Proposal::new(ProposalKind::Section, section.clone());
     proposal.changes = changes(&survey, &chosen, &renames);
@@ -885,6 +887,7 @@ fn is_free(survey: &Survey, folder: &str, name: &str, taken: &BTreeSet<String>) 
 /// checks out, else plain ones; returns the renames that check out.
 fn name_plans(
     survey: &Survey,
+    section: &str,
     chosen: &mut [Plan],
     wording: Option<&Wording>,
 ) -> Vec<(String, String, String)> {
@@ -897,6 +900,7 @@ fn name_plans(
         };
         let base = worded
             .map(|(name, _, _)| name.clone())
+            .filter(|name| !super::hidden_name(name))
             .or_else(|| plain_name(survey, &plan.group))
             .unwrap_or_else(|| format!("Group {}", n + 1));
         let mut name = base.clone();
@@ -922,7 +926,9 @@ fn name_plans(
         .filter(|(from, to, _)| {
             let parent = from.rsplit_once('/').map_or("", |(p, _)| p);
             survey.collections.iter().any(|c| c.path == *from)
+                && crate::graph::is_within(from, section)
                 && from != HOLDING
+                && !super::hidden_name(to)
                 && !to.contains('/')
                 && crate::names::problems(to).is_empty()
                 && !survey.has_checked_out(from)

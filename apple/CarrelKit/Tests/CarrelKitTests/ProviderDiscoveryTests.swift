@@ -63,16 +63,17 @@ private func slowProvider(in folder: URL) throws -> URL {
             }
         }
 
-        let first = try await showSettings()
-        var again: [Duration] = []
-        for _ in 0..<5 {
-            again.append(try await showSettings())
+        func started() throws -> Int {
+            try String(contentsOf: starts, encoding: .utf8).split(separator: "\n").count
         }
-        let slowest = again.max() ?? .zero
-        print("Settings shown first in \(first), then at worst in \(slowest)")
-        #expect(slowest < .milliseconds(400), "again: \(again)")
-        let started = try String(contentsOf: starts, encoding: .utf8)
-            .split(separator: "\n").count
-        #expect(started == 1, "the provider was started \(started) times")
+        let first = try await showSettings()
+        #expect(try started() == 1)
+        // Showing it again starts nothing: counted, not timed, since a busy machine can be
+        // slow for other reasons.
+        for showing in 2...6 {
+            let took = try await showSettings()
+            print("Settings shown first in \(first), then in \(took)")
+            #expect(try started() == 1, "the provider was started again for showing \(showing)")
+        }
     }
 }

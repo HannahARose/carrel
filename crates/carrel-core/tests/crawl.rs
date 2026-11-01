@@ -354,3 +354,155 @@ fn a_collection_whose_items_keep_failing_becomes_a_signal() {
         )));
     }
 }
+
+fn card_of(archive: &Archive, id: &str) -> carrel_core::card::Card {
+    let item = archive
+        .items()
+        .unwrap()
+        .into_iter()
+        .find(|i| i.id.to_string() == id)
+        .unwrap();
+    let text = std::fs::read_to_string(archive.root().join(&item.card)).unwrap();
+    carrel_core::card_file::CardFile::parse(&text)
+        .unwrap()
+        .card()
+        .clone()
+}
+
+#[test]
+fn a_suggested_summary_with_a_line_break_cant_rewrite_the_owners_fields() {
+    let (_dir, archive, holder) = sample(true);
+    let mut answer = verdict(true, "", 0.95);
+    // The model's summary runs onto a second line that reads as another field.
+    answer["summary"] = json!("A scanned note.\ntitle: Hijacked\nsensitivity: public");
+    answer["title"] = json!("");
+    let (registry, model) = scripted(vec![answer]);
+    let did = Crawler {
+        archive: &archive,
+        registry: &registry,
+        model,
+        holder,
+    }
+    .pass(1, &never)
+    .unwrap();
+    let card = card_of(&archive, SCAN);
+    // The owner wrote the title, and the crawler never changes sensitivity.
+    assert_eq!(
+        (card.title.as_str(), card.sensitivity),
+        ("Untitled scan", carrel_core::card::Sensitivity::Personal),
+        "{did:?}"
+    );
+}
+
+#[test]
+fn a_rejection_during_a_pass_stays_declined() {
+    let (_dir, archive, holder) = sample(false);
+    let (registry, model) = scripted(vec![verdict(false, "Reading", 0.7)]);
+    Crawler {
+        archive: &archive,
+        registry: &registry,
+        model,
+        holder,
+    }
+    .pass(1, &never)
+    .unwrap();
+    let summary = findings::list(&archive)
+        .unwrap()
+        .into_iter()
+        .find(|f| matches!(&f.finding, Finding::Correct { field, .. } if field == "summary"))
+        .unwrap();
+    // The owner rejects the summary in Review while the next pass is judging other items.
+    let (registry, model) = scripted(vec![verdict(true, "", 0.9)]);
+    let rejected = std::cell::Cell::new(false);
+    let reject_once = || {
+        if !rejected.replace(true) {
+            findings::reject(&archive, &summary, holder.device).unwrap();
+        }
+        false
+    };
+    Crawler {
+        archive: &archive,
+        registry: &registry,
+        model,
+        holder,
+    }
+    .pass(1, &reject_once)
+    .unwrap();
+    let scan = Id(SCAN.parse().unwrap());
+    assert_eq!(
+        verdicts::all(&archive)[&scan].declined,
+        [summary.finding],
+        "the owner's rejection was kept"
+    );
+}
+
+#[test]
+fn a_date_the_card_lacks_is_proposed() {
+    let (_dir, archive, holder) = sample(false);
+    // The scan's card has no created date, and nobody wrote one.
+    assert!(card_of(&archive, SCAN).dates.unwrap().created.is_none());
+    let mut answer = verdict(true, "", 0.8);
+    answer["created"] = json!("2026-10-27");
+    let (registry, model) = scripted(vec![answer]);
+    Crawler {
+        archive: &archive,
+        registry: &registry,
+        model,
+        holder,
+    }
+    .pass(1, &never)
+    .unwrap();
+    let found: Vec<Finding> = findings::list(&archive)
+        .unwrap()
+        .into_iter()
+        .map(|f| f.finding)
+        .collect();
+    assert!(
+        found.contains(&Finding::Correct {
+            field: "created".into(),
+            value: "2026-10-27".into()
+        }),
+        "{found:?}"
+    );
+}
+
+#[test]
+fn a_declined_summary_isnt_proposed_again_in_other_words() {
+    let (_dir, archive, holder) = sample(false);
+    let (registry, model) = scripted(vec![verdict(true, "", 0.7)]);
+    Crawler {
+        archive: &archive,
+        registry: &registry,
+        model,
+        holder,
+    }
+    .pass(1, &never)
+    .unwrap();
+    let summary = findings::list(&archive).unwrap().remove(0);
+    assert!(matches!(&summary.finding, Finding::Correct { field, .. } if field == "summary"));
+    findings::reject(&archive, &summary, holder.device).unwrap();
+    let scan = Id(SCAN.parse().unwrap());
+    let mut mine = Verdicts::load(&archive, holder.device);
+    mine.items.get_mut(&scan).unwrap().judged = "2020-01-01T00:00:00Z".into();
+    mine.save(&archive, holder.device).unwrap();
+    // A week on, the model words its summary a little differently.
+    let mut again = verdict(true, "", 0.7);
+    again["summary"] = json!("A scanned note that moves the oscillator meeting to Thursday.");
+    let (registry, model) = scripted(vec![again]);
+    Crawler {
+        archive: &archive,
+        registry: &registry,
+        model,
+        holder,
+    }
+    .pass(1, &never)
+    .unwrap();
+    assert!(
+        !findings::list(&archive)
+            .unwrap()
+            .iter()
+            .any(|f| f.item == scan
+                && matches!(&f.finding, Finding::Correct { field, .. } if field == "summary")),
+        "the owner said no to a new summary"
+    );
+}

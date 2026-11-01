@@ -880,3 +880,85 @@ fn tool_results_are_trimmed_to_fit_the_models_context() {
         "shortened further"
     );
 }
+
+/// Review of #361: a call that differs from an earlier one only in case is a different call
+/// when the tool tells them apart. Card paths resolve case-sensitively, so the lowercased path
+/// fails and the right one must still run.
+#[test]
+fn a_call_differing_in_case_that_resolves_differently_is_run() {
+    let (_dir, archive, _) = sample();
+    let (registry, asked) = scripted(vec![
+        tool("show", &NOTE_CARD.to_lowercase()),
+        tool("show", NOTE_CARD),
+        answer("The note.", &[NOTE], json!([]), json!([])),
+    ]);
+    let librarian = Librarian::new(&archive, &registry, the_model(), &providers).unwrap();
+    let answer = librarian
+        .ask(&mut Conversation::default(), "What's the oscillators note?")
+        .unwrap()
+        .clone();
+    let asked = asked.lock().unwrap();
+    assert!(
+        !asked[2].prompt.contains("Already done"),
+        "the right path was refused as a repeat: {}",
+        asked[2].prompt
+    );
+    assert_eq!(answer.steps.len(), 2, "{:?}", answer.steps);
+}
+
+/// Review of #361: each step's prompt fits the model's context even when the conversation so
+/// far is long. Only what was done is trimmed, never the earlier answers.
+#[test]
+fn a_long_conversation_still_fits_the_models_context() {
+    use carrel_core::providers::estimate_tokens;
+    let (_dir, archive, _) = sample();
+    let context = 4_096;
+    let long = "The lamp is made of brass and glass, with a cotton cord. ".repeat(50);
+    let mut script: Vec<_> = (0..4)
+        .map(|_| answer(&long, &[], json!([]), json!([])))
+        .collect();
+    script.push(tool("search", "lamp"));
+    script.push(answer("Brass.", &[], json!([]), json!([])));
+    let (registry, asked) = scripted_with_context(context, script);
+    let librarian = Librarian::new(&archive, &registry, the_model(), &providers).unwrap();
+    let mut conversation = Conversation::default();
+    for _ in 0..5 {
+        librarian
+            .ask(&mut conversation, "What's the lamp made of?")
+            .unwrap();
+    }
+    let asked = asked.lock().unwrap();
+    for request in asked.iter().skip(4) {
+        let used = estimate_tokens(request.system.as_deref().unwrap())
+            + estimate_tokens(&request.prompt)
+            + u64::from(request.max_tokens.unwrap());
+        assert!(
+            used <= context,
+            "{used} tokens in a {context}-token context"
+        );
+    }
+}
+
+/// Review of #361: a final answer cut off on the last step doesn't fail the whole question
+/// and lose what was found; it ends as running out does, with the items come across.
+#[test]
+fn a_cut_off_answer_on_the_last_step_keeps_what_was_found() {
+    use carrel_core::providers::ProviderError;
+    let (_dir, archive, _) = sample();
+    let (registry, _) = scripted(vec![
+        tool("search", "lamp"),
+        Err(ProviderError::Failed(
+            "m's answer was cut off at 2400 tokens before the JSON ended".into(),
+        )),
+    ]);
+    let librarian = Librarian::new(&archive, &registry, the_model(), &providers)
+        .unwrap()
+        .with_limits(Limits {
+            steps: 2,
+            ..Limits::default()
+        });
+    let mut conversation = Conversation::default();
+    let answer = librarian.ask(&mut conversation, "What's the lamp made of?");
+    let answer = answer.expect("the question failed outright");
+    assert_ne!(answer.items, []);
+}
