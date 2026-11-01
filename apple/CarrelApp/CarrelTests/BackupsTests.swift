@@ -38,6 +38,9 @@ final class BackupsTests: XCTestCase {
     }
 
     func testBackupsAreSetUpTakenVerifiedAndRestoredAndSayWhenTheDriveIsMissing() async throws {
+        // The test host starts with the system's PATH, which leaves out Homebrew's Kopia.
+        let path = ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin"
+        setenv("PATH", path + ":/opt/homebrew/bin:/usr/local/bin", 1)
         let window = try await SampleWindow()
         defer { window.remove() }
         let backups = BackupsModel(archive: window.archive, passwords: .memory)
@@ -51,8 +54,9 @@ final class BackupsTests: XCTestCase {
         try FileManager.default.createDirectory(at: drive, withIntermediateDirectories: true)
         backups.choose(folder: drive)
         XCTAssertEqual(backups.setup?.isNew, true)
-        backups.setup?.password = "test-\(UUID().uuidString)"
-        backups.setup?.confirmation = backups.setup?.password ?? ""
+        let password = "test-\(UUID().uuidString)"
+        backups.setup?.password = password
+        backups.setup?.confirmation = password
         await backups.setUp()
         XCTAssertNil(window.archive.lastError?.message)
         XCTAssertNil(backups.setup, "the sheet closes")
