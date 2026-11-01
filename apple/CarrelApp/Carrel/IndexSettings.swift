@@ -69,7 +69,10 @@ private struct IndexSection: View {
                 Button(index.rebuilding ? "Carry On Rebuilding" : "Rebuild Index") {
                     Task { await model.rebuildIndex() }
                 }
-                .disabled(model.isWorking)
+                .disabled(model.isWorking || PowerPolicy.heavyWorkWaits != nil)
+                if let waits = PowerPolicy.heavyWorkWaits {
+                    Text(waits).foregroundStyle(.secondary)
+                }
             }
         } header: {
             Text("Search by meaning in “\(model.archive?.name ?? "")”")
@@ -114,7 +117,7 @@ private struct ChoicesSection: View {
     var body: some View {
         Section("Embedding models") {
             if embedding.here.isEmpty {
-                Text("No provider on this Mac embeds.").foregroundStyle(.secondary)
+                Text("No provider on \(thisDevice) embeds.").foregroundStyle(.secondary)
             }
             ForEach(embedding.here) { choice in
                 HStack {
@@ -154,12 +157,13 @@ private struct ChoicesSection: View {
     private func elsewhere(_ other: EmbeddingElsewhere) -> String {
         if let download = other.download {
             let size = download.size.formatted(.byteCount(style: .file))
-            return "Not on this Mac: \(size) to download. Once it’s here, you can switch to it."
+            return
+                "Not on \(thisDevice): \(size) to download. Once it’s here, you can switch to it."
         }
         if let provider = other.comesWith {
-            return "Not on this Mac: it comes with \(provider), which only Apple devices have."
+            return "Not on \(thisDevice): it comes with \(provider), which only Apple devices have."
         }
-        return "Not on this Mac: \(other.how)."
+        return "Not on \(thisDevice): \(other.how)."
     }
 
     private func details(_ choice: EmbeddingChoice) -> String {
@@ -177,7 +181,7 @@ struct ProvidersTab: View {
                 ForEach(model.providers) { ProviderRow(provider: $0) }
             }
             if let formats = model.formats {
-                Section("File types this Mac reads") {
+                Section("File types \(thisDevice) reads") {
                     ForEach(formats.reads) { type in
                         LabeledContent(type.mediaType, value: type.readers.joined(separator: ", "))
                     }

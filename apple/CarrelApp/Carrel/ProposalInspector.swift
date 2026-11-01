@@ -167,7 +167,7 @@ private struct DraftAgainSection: View {
                     .foregroundStyle(.orange)
             }
             HStack {
-                Text("Carrel can draft it again with the models this Mac has now.")
+                Text("Carrel can draft it again with the models \(thisDevice) has now.")
                     .foregroundStyle(.secondary)
                 Spacer()
                 Button("Draft Again") {

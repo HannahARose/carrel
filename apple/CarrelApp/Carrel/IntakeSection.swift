@@ -3,7 +3,6 @@
 // offer them, failures with their reasons, and the worker's progress drafting it, read from
 // the worker's status file.
 
-import AppKit
 import CarrelKit
 import SwiftUI
 
@@ -52,16 +51,27 @@ struct IntakeSection: View {
                 }
             }
             if intake.canDraft, !isReadOnly {
+                let waits = PowerPolicy.heavyWorkWaits
                 LabeledContent {
                     Button("Draft Now") { Task { await intake.draft() } }
+                        .disabled(waits != nil)
                 } label: {
-                    Text("The agent isn’t running to draft what’s waiting.")
-                        .foregroundStyle(.secondary)
+                    Text(
+                        waits
+                            ?? (isMac
+                                ? "The agent isn’t running to draft what’s waiting."
+                                : "Drafting also runs in the background when this device has time.")
+                    )
+                    .foregroundStyle(.secondary)
                 }
             }
             if intake.queue.waiting.isEmpty, intake.worker == nil, !isReadOnly {
-                Text("Drop files or folders on the window, or choose File → Add to Archive…")
-                    .foregroundStyle(.secondary)
+                Text(
+                    isMac
+                        ? "Drop files or folders on the window, or choose File → Add to Archive…"
+                        : "Add photos, scans and files with the + button, or share them to Carrel."
+                )
+                .foregroundStyle(.secondary)
             }
         }
     }
@@ -112,8 +122,8 @@ private struct QueuedActions: View {
             .disabled(first)
         Divider()
         Button("Remove from Queue", role: .destructive) { Task { await intake.remove(entry) } }
-        Button("Show in Finder") {
-            NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: entry.path)])
+        Button("Show in \(fileBrowser)") {
+            revealInFiles([URL(filePath: entry.path)])
         }
     }
 }

@@ -26,7 +26,7 @@ struct StatusDiscoverySections: View {
                         } label: {
                             Label(item.title, systemImage: item.kind.symbol)
                         }
-                        .buttonStyle(.link)
+                        .linkButtonStyle()
                     }
                 }
             }

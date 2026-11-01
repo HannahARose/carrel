@@ -2,8 +2,13 @@
 // Carrel's drawing of what Quick Look can't show, or a folder's contents.
 
 import CarrelKit
-import QuickLookUI
 import SwiftUI
+
+#if os(macOS)
+import QuickLookUI
+#else
+import QuickLook
+#endif
 
 struct ItemPreviewView: View {
     let item: ItemSummary
@@ -85,6 +90,7 @@ private struct FolderPreview: View {
     }
 }
 
+#if os(macOS)
 /// Quick Look's preview of a file, which loads it in the background.
 struct QuickLookPreview: NSViewRepresentable {
     let url: URL
@@ -104,3 +110,37 @@ struct QuickLookPreview: NSViewRepresentable {
         view.close()
     }
 }
+#else
+/// Quick Look's preview of a file, as iPad and iPhone show it.
+struct QuickLookPreview: UIViewControllerRepresentable {
+    let url: URL
+
+    func makeUIViewController(context: Context) -> QLPreviewController {
+        let controller = QLPreviewController()
+        controller.dataSource = context.coordinator
+        return controller
+    }
+
+    func updateUIViewController(_ controller: QLPreviewController, context: Context) {
+        if context.coordinator.url != url {
+            context.coordinator.url = url
+            controller.reloadData()
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(url: url) }
+
+    final class Coordinator: NSObject, QLPreviewControllerDataSource {
+        var url: URL
+        init(url: URL) { self.url = url }
+
+        func numberOfPreviewItems(in controller: QLPreviewController) -> Int { 1 }
+
+        func previewController(_ controller: QLPreviewController, previewItemAt index: Int)
+            -> any QLPreviewItem
+        {
+            url as NSURL
+        }
+    }
+}
+#endif

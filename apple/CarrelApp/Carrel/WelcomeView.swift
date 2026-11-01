@@ -1,5 +1,6 @@
 // The window shown when no archive is open: create or open one, or pick a recent one.
 
+#if os(macOS)
 import CarrelKit
 import SwiftUI
 
@@ -63,3 +64,4 @@ struct WelcomeView: View {
         dismissWindow(id: Self.windowID)
     }
 }
+#endif

@@ -2,7 +2,6 @@
 // shows it, or a strip of thumbnails for a group, each with Open. A restricted item's preview
 // waits until it's asked for, as in Browse.
 
-import AppKit
 import CarrelKit
 import SwiftUI
 
@@ -91,7 +90,7 @@ private struct SubjectRow: View {
             Label {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(subject.title + (subject.proposal ? " (waiting)" : ""))
-                    Text(subject.file ?? "Not on this Mac")
+                    Text(subject.file ?? "Not on \(thisDevice)")
                         .font(.caption).foregroundStyle(.secondary)
                         .lineLimit(1).truncationMode(.middle)
                 }
@@ -99,7 +98,7 @@ private struct SubjectRow: View {
                 Image(systemName: subject.restricted ? "lock" : subject.kind.symbol)
             }
             Spacer()
-            Button("Open") { if let url = subject.url { NSWorkspace.shared.open(url) } }
+            Button("Open") { if let url = subject.url { openExternally(url) } }
                 .disabled(subject.url == nil)
         }
         .textSelection(.enabled)

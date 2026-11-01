@@ -32,8 +32,7 @@ nonisolated struct LocalSettings: Equatable {
         let files = FileManager.default
         let config =
             environment["CARREL_CONFIG_DIR"].map { URL(filePath: $0) }
-            ?? files.homeDirectoryForCurrentUser.appending(
-                path: "Library/Application Support/Carrel")
+            ?? homeFolder(files).appending(path: "Library/Application Support/Carrel")
         let models =
             environment["CARREL_MODELS_DIR"].map { URL(filePath: $0) }
             ?? config.appending(path: "models")
@@ -77,4 +76,13 @@ nonisolated struct LocalSettings: Equatable {
             .map { URL(filePath: $0).appending(path: name) }
             .first { FileManager.default.isExecutableFile(atPath: $0.path(percentEncoded: false)) }
     }
+}
+
+/// This person's home folder; on iPad and iPhone, the app's container.
+nonisolated private func homeFolder(_ files: FileManager) -> URL {
+    #if os(macOS)
+    files.homeDirectoryForCurrentUser
+    #else
+    URL(filePath: NSHomeDirectory(), directoryHint: .isDirectory)
+    #endif
 }

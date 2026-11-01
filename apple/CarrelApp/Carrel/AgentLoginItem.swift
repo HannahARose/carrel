@@ -1,6 +1,7 @@
 // The agent as a login item: Settings' switch registers Carrel Agent, bundled in the app at
 // Contents/Library/LoginItems, with SMAppService, or unregisters it.
 
+#if os(macOS)
 import CarrelKit
 import Observation
 import ServiceManagement
@@ -54,3 +55,4 @@ final class AgentLoginItem {
         status = service.status
     }
 }
+#endif

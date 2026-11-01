@@ -222,8 +222,13 @@ final class ArchiveWindowModel {
     /// Where a checkout goes unless changed: the Desktop of the home the archive was opened
     /// with, as the core checks out by default.
     private var checkoutFolder: URL {
+        #if os(macOS)
         options?.home.map { URL(filePath: $0).appending(path: "Desktop") }
             ?? FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask)[0]
+        #else
+        // Carrel's folder in Files, which has no Desktop.
+        URL.documentsDirectory.appending(path: "Checked Out", directoryHint: .isDirectory)
+        #endif
     }
 
     /// Reads the collections and items again, after a change that files or refiles items.

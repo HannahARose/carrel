@@ -1,6 +1,5 @@
 // An item's card in the inspector: its fields, notes, history and related items.
 
-import AppKit
 import CarrelKit
 import SwiftUI
 
@@ -81,9 +80,9 @@ struct ItemCardView<Actions: View, Below: View>: View {
                 ItemRelatedSection(archive: archive, item: item.id, open: open)
             }
             Section {
-                Button("Show in Finder", systemImage: "folder") {
+                Button("Show in \(fileBrowser)", systemImage: "folder") {
                     let path = item.item ?? item.card
-                    NSWorkspace.shared.activateFileViewerSelecting([root.appending(path: path)])
+                    revealInFiles([root.appending(path: path)])
                 }
                 actions
             }

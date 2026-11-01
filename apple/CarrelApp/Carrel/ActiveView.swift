@@ -2,7 +2,6 @@
 // The single letters work in the list as in the interactive mode: r return, x cancel,
 // o open, a approve, c combine, e edit, d drop.
 
-import AppKit
 import CarrelKit
 import SwiftUI
 
@@ -117,7 +116,7 @@ struct ActiveActions: View {
                     .help("Return it from where its working copy has moved to")
                 Button("Cancel Checkout…", role: .destructive) { model.askToCancel() }
             }
-            Button("Show in Finder") { openWorkingCopy(item, of: model) }
+            Button("Show in \(fileBrowser)") { openWorkingCopy(item, of: model) }
             if model.canDecide {
                 Divider()
                 Button(model.selectedEntries.isEmpty ? "Approve All Entries" : "Approve") {
@@ -141,33 +140,24 @@ struct ActiveActions: View {
 
 /// Shows the working copy, or the desk item, in Finder.
 func openWorkingCopy(_ item: ActiveItem, of model: ActiveScreenModel) {
-    NSWorkspace.shared.activateFileViewerSelecting([model.workingCopy(of: item)])
+    revealInFiles([model.workingCopy(of: item)])
 }
 
 /// Asks for a file or folder to put on the desk.
 func chooseDeskItem(for model: ActiveScreenModel) {
-    let panel = NSOpenPanel()
-    panel.canChooseDirectories = true
-    panel.canChooseFiles = true
-    panel.allowsMultipleSelection = false
-    panel.prompt = "Add to Desk"
-    panel.message = "Choose a folder or file to work on where it is."
-    guard panel.runModal() == .OK, let url = panel.url else { return }
-    model.startAddingToDesk(url)
+    pickFileOrFolder(
+        prompt: "Add to Desk", message: "Choose a folder or file to work on where it is."
+    ) { model.startAddingToDesk($0) }
 }
 
 /// Asks where the chosen checkout's working copy has moved to, then what returning it from
 /// there brings back.
 func chooseMovedWorkingCopy(for model: ActiveScreenModel) {
     guard let item = model.selectedItem, item.kind == .checkedOut else { return }
-    let panel = NSOpenPanel()
-    panel.canChooseDirectories = true
-    panel.canChooseFiles = true
-    panel.allowsMultipleSelection = false
-    panel.prompt = "Return From Here"
-    panel.message = "Choose where the working copy of “\(item.title)” is now."
-    guard panel.runModal() == .OK, let url = panel.url else { return }
-    Task { await model.askToReturn(from: url) }
+    pickFileOrFolder(
+        prompt: "Return From Here",
+        message: "Choose where the working copy of “\(item.title)” is now."
+    ) { url in Task { await model.askToReturn(from: url) } }
 }
 
 /// The inspector for Active: the chosen item, what changed, and its pending entries.

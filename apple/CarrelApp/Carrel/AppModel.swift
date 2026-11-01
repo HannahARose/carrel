@@ -1,9 +1,13 @@
 // What the app keeps between windows: recent archives, the archive last in front (for
 // Settings), and opening and creating archives.
 
-import AppKit
 import CarrelKit
+import Foundation
 import Observation
+
+#if os(macOS)
+import AppKit
+#endif
 
 /// The archives opened most recently, newest first, kept in the app's defaults.
 @Observable
@@ -52,6 +56,9 @@ final class AppModel {
     var pendingLink: AgentLink?
     /// A screen for an archive's window to show, such as Backups from Settings.
     var pendingScreen: PendingScreen?
+    /// Why an archive couldn't be opened, until it's dismissed: on iPad and iPhone, which show
+    /// it in the window rather than in an alert of its own.
+    var openingProblem: String?
 
     init(recents: RecentArchives = RecentArchives()) {
         self.recents = recents
@@ -86,7 +93,7 @@ final class AppModel {
             if !FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) {
                 recents.remove(url)
             }
-            Self.report(error, opening: url)
+            report(error, opening: url)
         }
     }
 
@@ -111,7 +118,7 @@ final class AppModel {
 
     /// The screen the window for the archive at `root` was asked to show, once.
     func takePendingScreen(for root: URL) -> Screen? {
-        guard let pending = pendingScreen, pending.archive == root.standardizedFileURL
+        guard let pending = pendingScreen, Self.isSameFolder(pending.archive, root)
         else { return nil }
         pendingScreen = nil
         return pending.screen
@@ -119,12 +126,21 @@ final class AppModel {
 
     /// The item a link asked the window for the archive at `root` to choose, once.
     func takePendingLink(for root: URL) -> AgentLink? {
-        guard let link = pendingLink, link.archive.standardizedFileURL == root.standardizedFileURL
-        else { return nil }
+        guard let link = pendingLink, Self.isSameFolder(link.archive, root) else { return nil }
         pendingLink = nil
         return link
     }
 
+    /// Whether `a` and `b` are the same folder, whether or not either ends in a slash.
+    static func isSameFolder(_ a: URL, _ b: URL) -> Bool {
+        func path(_ url: URL) -> String {
+            let path = url.standardizedFileURL.path(percentEncoded: false)
+            return path.count > 1 && path.hasSuffix("/") ? String(path.dropLast()) : path
+        }
+        return path(a) == path(b)
+    }
+
+    #if os(macOS)
     func chooseArchive(then show: (URL) -> Void) {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
@@ -149,18 +165,24 @@ final class AppModel {
         do {
             show(try create(at: url, embeddingModel: models.chosen))
         } catch {
-            Self.report(error, opening: url)
+            report(error, opening: url)
         }
     }
 
-    private static func report(_ error: any Error, opening url: URL) {
+    private func report(_ error: any Error, opening url: URL) {
         let alert = NSAlert()
         alert.messageText = "Carrel can’t open “\(url.lastPathComponent)”"
         alert.informativeText = message(for: error)
         alert.runModal()
     }
+    #else
+    private func report(_ error: any Error, opening url: URL) {
+        openingProblem = "Carrel can’t open “\(url.lastPathComponent)”: \(message(for: error))"
+    }
+    #endif
 }
 
+#if os(macOS)
 /// New Archive's choice of embedding model, as `carrel init --embedding-model` takes it, for
 /// the save panel's accessory view.
 @MainActor
@@ -182,6 +204,7 @@ final class EmbeddingModelPicker {
     /// The model chosen.
     var chosen: String? { popUp.titleOfSelectedItem }
 }
+#endif
 
 /// What went wrong, in the core's own words for the core's errors.
 func message(for error: any Error) -> String {

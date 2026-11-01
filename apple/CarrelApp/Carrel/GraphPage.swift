@@ -23,7 +23,7 @@ struct GraphPage: View {
                         "Collections connect when their items share tags or links, or are worked on the same days."
                     ))
             } else {
-                HSplitView {
+                SideBySide {
                     GraphDrawing(graph: graph, chosen: $chosen, focus: $focus)
                         .frame(minWidth: 320, minHeight: 320)
                     ConnectionList(
@@ -209,7 +209,7 @@ private struct ConnectionList: View {
         Button(item.title + (item.sensitivity == .restricted ? " 🔒" : "")) {
             window.open(item: item.id)
         }
-        .buttonStyle(.link)
+        .linkButtonStyle()
         .lineLimit(1)
         .help("\(item.card): show it in Browse")
     }

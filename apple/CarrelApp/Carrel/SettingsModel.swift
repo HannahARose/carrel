@@ -145,7 +145,7 @@ final class SettingsModel {
             device = try await $0.setDevice(key, to: value.isEmpty ? nil : value)
             note =
                 value.isEmpty
-                ? "Cleared \(key); Carrel chooses for itself." : "Set \(key) on this Mac."
+                ? "Cleared \(key); Carrel chooses for itself." : "Set \(key) on \(thisDevice)."
         }
     }
 

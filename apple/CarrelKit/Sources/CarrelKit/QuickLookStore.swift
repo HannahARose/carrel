@@ -20,7 +20,7 @@ public struct QuickLookStore: Sendable, Equatable {
     public static var shared: QuickLookStore {
         let home = getpwuid(getuid()).flatMap { $0.pointee.pw_dir.map { String(cString: $0) } }
         let homeURL =
-            home.map { URL(filePath: $0) } ?? FileManager.default.homeDirectoryForCurrentUser
+            home.map { URL(filePath: $0) } ?? URL(filePath: NSHomeDirectory())
         return QuickLookStore(
             folder: homeURL.appending(path: "Library/Application Support/Carrel/QuickLook"))
     }
