@@ -60,6 +60,8 @@ public final class ArchiveModel {
     public private(set) var skippedQuestions: [Question] = []
     /// The restructure proposals waiting, oldest first.
     public private(set) var restructureProposals: [RestructureProposal] = []
+    /// The crawler's findings waiting in Review, oldest first.
+    public private(set) var crawlerFindings: [CrawlerFinding] = []
     /// What's checked out and on this device's desk.
     public private(set) var active: [ActiveItem] = []
     /// The history, newest first.
@@ -166,6 +168,11 @@ public final class ArchiveModel {
         skippedQuestions = try await call { try $0.skippedQuestions() }
     }
 
+    /// Reads the crawler's findings waiting in Review again.
+    public func refreshCrawler() async throws {
+        crawlerFindings = try await call { try $0.crawlerFindings() }
+    }
+
     /// Reads the restructure proposals waiting again.
     public func refreshRestructure() async throws {
         restructureProposals = try await call { try $0.restructureProposals() }
@@ -201,6 +208,7 @@ public final class ArchiveModel {
         try await refreshReview()
         try await refreshQuestions()
         try await refreshRestructure()
+        try await refreshCrawler()
         try await refreshActive()
         try await refreshIntake()
         try await refreshSettings()

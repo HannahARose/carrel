@@ -1,5 +1,6 @@
 // The menu bar list: what's checked out and on the desk in each archive, with pending
-// entries, what's waiting to be drafted, what the agent is doing now, and Pause. Choosing an
+// entries, the crawler's findings and its last pass, what's waiting to be drafted, what the
+// agent is doing now, and Pause. Choosing an
 // item opens it in the app.
 
 import CarrelKit
@@ -60,6 +61,17 @@ private struct ArchiveItems: View {
             ) {
                 open(AgentLink(archive: archive.root))
             }
+        }
+        if archive.findings > 0 {
+            Button(
+                archive.findings == 1
+                    ? "1 finding from the crawler" : "\(archive.findings) findings from the crawler"
+            ) {
+                open(AgentLink(archive: archive.root))
+            }
+        }
+        if let crawled = archive.crawled {
+            Text(crawled)
         }
         if archive.queued > 0 {
             Text(

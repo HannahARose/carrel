@@ -118,4 +118,92 @@ final class GraphAndRestructureTests: XCTestCase {
             "Restructured the tags Left out 1 change. Dropped 3, which needs 2. Left alone: “Lamp”: checked out. Undo it from History."
         )
     }
+
+    func testACollectionsEagernessIsItsOwnOrInherited() async throws {
+        let sample = try await SampleWindow()
+        defer { sample.remove() }
+        let archive = sample.archive
+        let before = try await archive.eagerness(at: "Projects")
+        XCTAssertEqual(before.level, "balanced")
+        XCTAssertNil(before.fromCollection)
+        try await archive.setEagerness(of: "Projects", to: "eager")
+        let inside = try await archive.eagerness(at: "Projects/Hardware")
+        XCTAssertEqual(inside.level, "eager")
+        XCTAssertEqual(inside.fromCollection, "Projects", "inherited")
+        XCTAssertTrue(
+            archive.history.first?.summary.isEmpty == false, "a change History can undo")
+        try await archive.setEagerness(of: "Projects", to: nil)
+        let after = try await archive.eagerness(at: "Projects")
+        XCTAssertNil(after.fromCollection)
+    }
+
+    func testTheArchivesEagernessIsInSettings() async throws {
+        let sample = try await SampleWindow()
+        defer { sample.remove() }
+        let eagerness = try XCTUnwrap(
+            sample.archive.settings.first { $0.key == "restructure.eagerness" })
+        XCTAssertEqual(eagerness.value, "balanced")
+        XCTAssertEqual(eagerness.choices, ["settled", "balanced", "eager"])
+    }
+
+    func testASectionIsProposedFromTheApp() async throws {
+        let sample = try await SampleWindow()
+        defer { sample.remove() }
+        let restructure = try XCTUnwrap(sample.model.restructure)
+        await restructure.proposeSection("Projects")
+        if let proposal = restructure.selected {
+            XCTAssertEqual(proposal.kind, "section")
+            XCTAssertEqual(proposal.assessment?.eagerness, "balanced")
+        } else {
+            let report = try XCTUnwrap(restructure.report, "says why nothing was proposed")
+            XCTAssertFalse(report.isEmpty)
+        }
+    }
+
+    func testASectionProposalShowsTheNewCollectionAfter() async throws {
+        let sample = try await SampleWindow()
+        defer { sample.remove() }
+        let item = try XCTUnwrap(
+            sample.model.items.first { $0.card.hasPrefix("Projects/Hardware/") })
+        let queue = sample.root.appending(path: "_System/queue/proposals")
+        try FileManager.default.createDirectory(at: queue, withIntermediateDirectories: true)
+        let id = "01a18701-0500-776a-9867-08f0000000e2"
+        let proposal: [String: Any] = [
+            "carrel": "proposal", "format": "1.0", "id": id, "kind": "section",
+            "section": "Projects", "created": "2026-11-01T10:00:00-05:00", "by": "carrel test",
+            "invasiveness": "subdividing", "rationale": "The lamp build has grown.",
+            "changes": [
+                [
+                    "id": "1",
+                    "change": [
+                        "kind": "create-collection", "path": "Projects/Lamp",
+                        "description": "The lamp build",
+                    ],
+                    "reason": "Its items belong together", "invasiveness": "subdividing",
+                ],
+                [
+                    "id": "2", "change": ["kind": "move-items", "to": "Projects/Lamp"],
+                    "reason": "It's part of the build", "invasiveness": "subdividing",
+                    "items": [["id": item.id, "card": item.card, "title": item.title]],
+                    "depends_on": ["1"],
+                ],
+            ],
+        ]
+        try JSONSerialization.data(withJSONObject: proposal)
+            .write(to: queue.appending(path: "\(id).json"))
+        try await sample.archive.refreshRestructure()
+        let restructure = try XCTUnwrap(sample.model.restructure)
+        restructure.selection = id
+        await restructure.refreshPreview()
+        let preview = try XCTUnwrap(restructure.preview)
+        XCTAssertNil(preview.before.first { $0.path == "Projects/Lamp" })
+        let lamp = try XCTUnwrap(preview.after.first { $0.path == "Projects/Lamp" })
+        XCTAssertTrue(lamp.changed)
+        XCTAssertEqual(lamp.items, 1)
+
+        // Leaving out the new collection drops the move that needs it.
+        let shown = try XCTUnwrap(restructure.selected)
+        restructure.choose(shown.changes[0], in: shown, false)
+        XCTAssertEqual(restructure.blocked(in: shown).map(\.id), ["2"])
+    }
 }
