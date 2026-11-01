@@ -287,3 +287,36 @@ fn a_broken_alternative_is_dropped_on_the_last_try_without_failing_the_card() {
             .any(|a| a.message.as_deref() == Some("alternative 1: the title is empty"))
     );
 }
+
+#[test]
+fn drafting_again_replaces_the_question_offering_the_old_readings() {
+    let s = setup();
+    let (_, entry) = ingest(&s, Scripted::new(vec![fish()]));
+    let mut registry = Registry::with_built_ins();
+    registry.add(Box::new(Scripted::new(vec![fish()])));
+    let redrafted = carrel_core::ingest::redraft::redraft(
+        &s.archive,
+        &registry,
+        &entry.id.to_string(),
+        entry.source.device,
+        &mut |_| {},
+    )
+    .unwrap();
+    let (questions, _) = QuestionQueue::of(&s.archive).list().unwrap();
+    let offering: Vec<_> = questions
+        .iter()
+        .filter(|q| !q.suggestions.is_empty())
+        .collect();
+    assert_eq!(offering.len(), 1, "{questions:#?}");
+    assert_eq!(offering[0].items, [entry.id]);
+    let waits: Vec<_> = redrafted
+        .entry
+        .problems
+        .iter()
+        .filter(|p| p.stage == "question")
+        .collect();
+    assert_eq!(waits.len(), 1, "{waits:?}");
+    assert!(waits[0]
+        .message
+        .contains(&carrel_core::review::short_id(offering[0].id)));
+}

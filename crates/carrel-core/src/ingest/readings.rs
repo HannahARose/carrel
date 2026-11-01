@@ -372,17 +372,30 @@ pub fn settle_questions(
     archive: &crate::archive::Archive,
     id: crate::card::Id,
 ) -> Result<(), crate::actions::ActionError> {
-    let (asked, _) = crate::questions::QuestionQueue::of(archive).list()?;
-    for question in asked.iter().filter(|q| {
+    for question in questions_about(archive, id)? {
+        crate::questions::answer::settled(archive, &question)?;
+    }
+    Ok(())
+}
+
+/// The questions offering the readings of the proposal `id`.
+///
+/// # Errors
+///
+/// A queue error.
+pub fn questions_about(
+    archive: &crate::archive::Archive,
+    id: crate::card::Id,
+) -> Result<Vec<QuestionEntry>, crate::review::ReviewError> {
+    let (mut asked, _) = crate::questions::QuestionQueue::of(archive).list()?;
+    asked.retain(|q| {
         q.kind == QuestionKind::Item
             && q.items == [id]
             && q.suggestions
                 .iter()
                 .any(|s| s.extra.contains_key(READING_KEY))
-    }) {
-        crate::questions::answer::settled(archive, question)?;
-    }
-    Ok(())
+    });
+    Ok(asked)
 }
 
 /// A question asking what `entry` is, when its readings are in doubt, with the readings to
