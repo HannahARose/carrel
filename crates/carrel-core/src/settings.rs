@@ -13,6 +13,8 @@ pub enum Key {
     Originals,
     /// How many loose items make a collection crowded, as a restructure signal.
     CrowdedItems,
+    /// How many days a skipped question rests before it's asked again.
+    SkipDays,
     /// How changes made outside Carrel are handled.
     OutsideEdits,
     /// What happens to compressed files at ingest.
@@ -31,10 +33,11 @@ const EMBEDDING_MODELS: [&str; 3] = [
 
 impl Key {
     /// Every setting, in the order they're shown.
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::Originals,
         Self::CompressedFiles,
         Self::CrowdedItems,
+        Self::SkipDays,
         Self::OutsideEdits,
         Self::EmbeddingModel,
     ];
@@ -45,6 +48,7 @@ impl Key {
         match self {
             Self::Originals => "ingest.originals",
             Self::CrowdedItems => "signals.crowded_items",
+            Self::SkipDays => "questions.skip_days",
             Self::OutsideEdits => "outside_edits",
             Self::CompressedFiles => "compressed_files",
             Self::EmbeddingModel => "embedding.model",
@@ -67,6 +71,7 @@ impl Key {
             Self::CrowdedItems => {
                 "How many loose items make a collection with no subcollections crowded, a sign it may want splitting"
             }
+            Self::SkipDays => "How many days a skipped question rests before Carrel asks it again",
             Self::OutsideEdits => {
                 "What to do with changes made outside Carrel: flag them for review, record them as edits, or offer to undo them"
             }
@@ -87,7 +92,7 @@ impl Key {
             Self::OutsideEdits => Some(&["flag", "reconcile", "drift"]),
             Self::CompressedFiles => Some(&["expand", "keep", "ask"]),
             Self::EmbeddingModel => Some(&EMBEDDING_MODELS),
-            Self::CrowdedItems => None,
+            Self::CrowdedItems | Self::SkipDays => None,
         }
     }
 
@@ -100,6 +105,7 @@ impl Key {
                 Originals::Keep => "keep".into(),
             },
             Self::CrowdedItems => settings.signals.crowded_items.to_string(),
+            Self::SkipDays => settings.questions.skip_days.to_string(),
             Self::OutsideEdits => match settings.outside_edits {
                 OutsideEdits::Flag => "flag".into(),
                 OutsideEdits::Reconcile => "reconcile".into(),
@@ -131,6 +137,10 @@ impl Key {
             }
             Self::CrowdedItems => {
                 settings.signals.crowded_items =
+                    value.parse().ok().filter(|n| *n >= 1).ok_or_else(wrong)?;
+            }
+            Self::SkipDays => {
+                settings.questions.skip_days =
                     value.parse().ok().filter(|n| *n >= 1).ok_or_else(wrong)?;
             }
             Self::OutsideEdits => {

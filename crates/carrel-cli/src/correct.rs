@@ -207,6 +207,8 @@ pub struct Prepared {
     pub shown: String,
     /// A lasting fact to offer for the glossary once it's saved.
     pub fact: Option<Fact>,
+    /// The item question it answers, which leaves the queue once it's saved.
+    pub answering: Option<carrel_core::card::Id>,
     inner: prepare::Prepared,
 }
 
@@ -241,6 +243,7 @@ impl Prepared {
             title: prepared.title.clone(),
             shown,
             fact: prepared.fact().cloned(),
+            answering: None,
             inner: prepared,
         }
     }
@@ -298,6 +301,7 @@ pub fn prepare_filed(archive: &Archive, query: &str, words: &str) -> Result<Prep
 ///
 /// [`Failure`] if it can't be written or committed.
 pub fn save(archive: &Archive, prepared: Prepared) -> Result<Saved, Failure> {
+    let answering = prepared.answering;
     let saved = prepare::save(archive, prepared.inner, || {
         crate::config::Identity::load_or_create()
             .map(|i| crate::commands::holder(&i))
@@ -311,6 +315,12 @@ pub fn save(archive: &Archive, prepared: Prepared) -> Result<Saved, Failure> {
     } else {
         format!("Saved the correction to “{}”.", saved.title)
     };
+    if let Some(id) = answering {
+        let queue = carrel_core::questions::QuestionQueue::of(archive);
+        if let Ok(question) = queue.find(&id.to_string()) {
+            carrel_core::questions::answer::settled(archive, &question)?;
+        }
+    }
     Ok(Saved {
         message,
         commit: saved.commit,
@@ -335,7 +345,7 @@ pub fn learn(archive: &Archive, fact: &Fact) -> Result<String, Failure> {
 }
 
 /// Shows a prepared correction, asks for the yes (unless `yes`), saves it, and offers its fact.
-fn finish(
+pub(crate) fn finish(
     archive: &Archive,
     heading: String,
     prepared: Prepared,

@@ -216,7 +216,7 @@ impl ArchiveHandle {
     }
 
     /// Takes the writer lease for `purpose`, runs `change` with it, and lets go.
-    fn with_lease<T>(
+    pub(crate) fn with_lease<T>(
         &self,
         archive: &Archive,
         purpose: &str,

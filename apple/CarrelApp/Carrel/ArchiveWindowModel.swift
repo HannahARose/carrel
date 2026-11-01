@@ -84,6 +84,12 @@ final class ArchiveWindowModel {
     /// The archive's queues and operations, through the core, once it's open.
     private(set) var archive: ArchiveModel?
 
+    // Search and adding items (#236).
+    /// Search in the toolbar.
+    private(set) var search: SearchModel?
+    /// Adding items, and the worker drafting them.
+    private(set) var intake: IntakeModel?
+
     // Review, Questions, corrections and editing (#234).
     private(set) var review: ReviewModel?
     private(set) var questions: QuestionsModel?
@@ -96,6 +102,17 @@ final class ArchiveWindowModel {
     private(set) var activeScreen: ActiveScreenModel?
     private(set) var historyScreen: HistoryScreenModel?
 
+    // Browse's actions: new collections, renaming and expanding (#268).
+    private(set) var browse: BrowseActionsModel?
+
+    // Previews and the grid (#256).
+    private(set) var previews: PreviewStore?
+    /// Browse's list or grid, kept for every window.
+    var browseLayout: BrowseLayout {
+        didSet { defaults.set(browseLayout.rawValue, forKey: "browseLayout") }
+    }
+    private let defaults: UserDefaults
+
     var screen: Screen? = .status {
         didSet { if screen != oldValue { selectedItemID = nil } }
     }
@@ -103,9 +120,12 @@ final class ArchiveWindowModel {
         didSet { if selectedItemID != oldValue { editing = nil } }
     }
 
-    init(url: URL, options: OpenOptions? = nil) {
+    init(url: URL, options: OpenOptions? = nil, defaults: UserDefaults = .standard) {
         self.url = url
         self.options = options
+        self.defaults = defaults
+        browseLayout =
+            BrowseLayout(rawValue: defaults.string(forKey: "browseLayout") ?? "") ?? .list
         name = url.lastPathComponent
     }
 
@@ -146,6 +166,16 @@ final class ArchiveWindowModel {
             historyScreen = HistoryScreenModel(archive: archive) { [weak self] in
                 await self?.refreshItems()
             }
+            search = SearchModel(archive: archive)
+            intake = IntakeModel(archive: archive)
+            let browse = BrowseActionsModel(archive: archive) { [weak self] in
+                await self?.refreshItems()
+            }
+            browse.created = { [weak self] path in self?.screen = .collection(path) }
+            self.browse = browse
+            let previews = PreviewStore(handle: loaded.0)
+            self.previews = previews
+            await previews.reload()
             try? await archive.refreshAll()
         } catch {
             problem = message(for: error)
@@ -170,6 +200,7 @@ final class ArchiveWindowModel {
         collections = loaded.0
         tree = CollectionNode.tree(loaded.0)
         items = loaded.1
+        await previews?.reload()
     }
 
     /// The collection an item's card is filed in: the deepest collection folder holding it.

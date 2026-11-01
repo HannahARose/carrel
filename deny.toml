@@ -45,10 +45,12 @@ allow = [
 confidence-threshold = 0.9
 # The network helper's TLS trust roots: Mozilla's CA list, published as data under a
 # permissive data license. The bzip2 decoder for compressed files (docs/design/compressed.md):
-# a Rust port of libbzip2 under its own BSD-style license.
+# a Rust port of libbzip2 under its own BSD-style license. The agent's file watcher
+# (notify, approved on #269): dedicated to the public domain under CC0-1.0.
 exceptions = [
     { crate = "webpki-roots", allow = ["CDLA-Permissive-2.0"] },
     { crate = "libbz2-rs-sys", allow = ["bzip2-1.0.6"] },
+    { crate = "notify", allow = ["CC0-1.0"] },
 ]
 
 [licenses.private]

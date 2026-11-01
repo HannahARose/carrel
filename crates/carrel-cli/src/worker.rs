@@ -13,9 +13,10 @@
 //! so a crashed worker never leaves a stale one. The worker writes its progress to a status
 //! file, which `carrel ingest --status` and the interactive mode read, and a log beside it.
 //!
-//! While the Mac app's agent looks after the archive on this device (it holds the agent lock,
-//! [`carrel_core::worker::agent_lock`]), the CLI starts no worker of its own and `carrel worker`
-//! steps aside: the agent notices the queue and changes as they happen.
+//! While an agent looks after the archive on this device (the Mac app's or `carrel agent`;
+//! it holds the agent lock, [`carrel_core::worker::agent_lock`]), the CLI starts no worker of
+//! its own and `carrel worker` steps aside: the agent notices the queue and changes as they
+//! happen.
 //!
 //! This module keeps what's the CLI's own: starting the worker detached, its lock, and its log.
 
@@ -97,8 +98,8 @@ pub fn running(archive: &Archive) -> Result<bool, Failure> {
     lock.is_held().map_err(|e| Failure::io(&lock.path, &e))
 }
 
-/// Whether the Mac app's agent looks after `archive` on this device, so the CLI's worker steps
-/// aside.
+/// Whether an agent (the Mac app's or `carrel agent`) looks after `archive` on this device, so
+/// the CLI's worker steps aside.
 #[must_use]
 pub fn agent(archive: &Archive) -> bool {
     folder().is_ok_and(|folder| carrel_core::worker::agent_running(&folder, archive))
@@ -232,6 +233,28 @@ pub fn after_change(archive: Option<&Path>) {
     if archive.settings().embedding_model().is_some() {
         let _ = start(&archive);
     }
+}
+
+/// The worker loop as `carrel agent` runs it, holding the agent lock: drafts the queue for
+/// this device, then embeds what's behind in the index, logging to standard error. `None` if
+/// another worker (one started before the agent claimed the archive) is still drafting.
+///
+/// # Errors
+///
+/// [`Failure`] if the archive or its queues can't be read or written.
+pub fn run_for_agent(archive: &Archive) -> Result<Option<carrel_core::worker::Ran>, Failure> {
+    let Some(lock) = try_lock(archive)? else {
+        return Ok(None);
+    };
+    let (registry, _) = crate::providers::registry();
+    let (backups, _) = crate::backup::for_batch(archive);
+    let backups = backups.as_ref().map(|b| b as &dyn Backups);
+    let worker = worker(archive, &registry, backups)?;
+    Ok(Some(worker.run(
+        &lock_for(archive)?,
+        lock,
+        &mut Log::default(),
+    )?))
 }
 
 /// `carrel worker`: drafts the queue for this device until it's empty, then embeds what's

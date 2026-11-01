@@ -4,13 +4,15 @@ import AppKit
 import CarrelKit
 import SwiftUI
 
-struct ItemCardView: View {
+/// Fields shown in the header rather than the list.
+private let headerFields: Set<String> = ["carrel", "format", "id", "kind", "title", "summary"]
+
+struct ItemCardView<Actions: View>: View {
     let item: ItemSummary
     let card: Card?
     let root: URL
-
-    /// Fields shown in the header rather than the list.
-    private static let header: Set<String> = ["carrel", "format", "id", "kind", "title", "summary"]
+    /// Browse's actions on the item, beside Show in Finder.
+    @ViewBuilder let actions: Actions
 
     var body: some View {
         Form {
@@ -27,7 +29,7 @@ struct ItemCardView: View {
             }
             if let card {
                 Section("Fields") {
-                    ForEach(card.fields.filter { !Self.header.contains($0.key) }) { field in
+                    ForEach(card.fields.filter { !headerFields.contains($0.key) }) { field in
                         LabeledContent(field.key.capitalized) {
                             Text(field.value).textSelection(.enabled)
                         }
@@ -60,6 +62,7 @@ struct ItemCardView: View {
                     let path = item.item ?? item.card
                     NSWorkspace.shared.activateFileViewerSelecting([root.appending(path: path)])
                 }
+                actions
             }
         }
         .formStyle(.grouped)

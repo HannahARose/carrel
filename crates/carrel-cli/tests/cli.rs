@@ -269,6 +269,18 @@ fn open_chooses_the_archive_used_elsewhere() {
         "Other",
         "--archive wins"
     );
+
+    // Archives opened or created here are listed, newest first, for the interactive mode's
+    // switcher too.
+    let opened = sandbox.json(&outside, &["open"]);
+    let canonical = |p: &Path| json!(std::fs::canonicalize(p).unwrap());
+    assert_eq!(opened["recent"], json!([canonical(&root), canonical(&new)]));
+    let text = sandbox.ok(&outside, &["open"]);
+    assert!(text.contains("Recent archives:"), "{text}");
+    assert!(
+        text.contains(new.file_name().unwrap().to_str().unwrap()),
+        "{text}"
+    );
 }
 
 #[test]
@@ -2840,4 +2852,662 @@ fn the_worker_steps_aside_while_the_agent_looks_after_the_archive() {
     let worked = sandbox.json(&root, &["worker"]);
     assert_eq!(worked["done"], 1);
     assert_eq!(sandbox.json(&root, &["ingest", "--status"])["agent"], false);
+}
+
+/// Writes a question file into `root`'s queue, as an older or another program would.
+fn write_question(root: &Path, question: &Value) {
+    let dir = root.join("_System/queue/questions");
+    std::fs::create_dir_all(&dir).unwrap();
+    let id = question["id"].as_str().unwrap();
+    std::fs::write(
+        dir.join(format!("{id}.json")),
+        serde_json::to_string_pretty(question).unwrap(),
+    )
+    .unwrap();
+}
+
+/// Starts history in the sample at `root`, so answers can move items undoably.
+fn init_sample(sandbox: &Sandbox, root: &Path) {
+    let init = std::process::Command::new(env!("CARGO_BIN_EXE_carrel"))
+        .args(["init", root.to_str().unwrap()])
+        .env("CARREL_CONFIG_DIR", sandbox.path("config"))
+        .output()
+        .unwrap();
+    assert!(
+        init.status.success(),
+        "{}",
+        String::from_utf8_lossy(&init.stderr)
+    );
+}
+
+const LAMP_PROPOSAL: &str = "01a18701-0500-776a-9867-08f000000001";
+
+/// Three questions about the sample's lamp proposal: a term, as ingest wrote them before
+/// suggestions, skipping and the new kinds; a group with suggestions; and the term again,
+/// written differently, which merges into the first.
+fn write_lamp_questions(root: &Path) {
+    write_question(
+        root,
+        &json!({
+            "carrel": "question", "format": "1.0",
+            "id": "01a18701-0500-776a-9867-08f0000000a1",
+            "batch": "01a18701-0500-776a-9867-08f0000000b1",
+            "created": "2026-10-29T16:20:05-07:00",
+            "kind": "term", "subject": "ABX", "question": "What is “ABX”?",
+            "items": [LAMP_PROPOSAL]
+        }),
+    );
+    write_question(
+        root,
+        &json!({
+            "carrel": "question", "format": "1.0",
+            "id": "01a18701-0500-776a-9867-08f0000000a2",
+            "created": "2026-10-30T09:00:00-07:00",
+            "kind": "group", "subject": "lamp",
+            "question": "These items about “lamp”: Projects/Hardware, or a new Projects/Lamps collection?",
+            "items": [LAMP_PROPOSAL],
+            "choices": ["Projects", "Projects/Hardware", "Reading"],
+            "suggestions": [
+                {"answer": "Projects/Hardware", "why": "where one was going"},
+                {"answer": "Projects/Lamps", "new_collection": true}
+            ]
+        }),
+    );
+    write_question(
+        root,
+        &json!({
+            "carrel": "question", "format": "1.0",
+            "id": "01a18701-0500-776a-9867-08f0000000a3",
+            "created": "2026-10-31T09:00:00-07:00",
+            "kind": "term", "subject": "abx", "question": "What does “abx” mean?",
+            "items": [LAMP_PROPOSAL]
+        }),
+    );
+}
+
+#[test]
+fn questions_are_ranked_skipped_and_answered_by_picking_a_suggestion() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    init_sample(&sandbox, &root);
+    write_lamp_questions(&root);
+
+    let listed = sandbox.json(&root, &["questions"]);
+    let ids: Vec<&str> = listed["questions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|q| q["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        ids,
+        [
+            "01a18701-0500-776a-9867-08f0000000a1",
+            "01a18701-0500-776a-9867-08f0000000a2"
+        ],
+        "{listed}"
+    );
+    assert_eq!(listed["questions"][0]["settles"], 1);
+    assert_eq!(
+        listed["merged"][0]["into"],
+        "01a18701-0500-776a-9867-08f0000000a1"
+    );
+    assert!(
+        !root
+            .join("_System/queue/questions/01a18701-0500-776a-9867-08f0000000a3.json")
+            .exists()
+    );
+    let text = sandbox.ok(&root, &["questions"]);
+    assert!(
+        text.contains("2  Projects/Lamps  (a new collection)"),
+        "{text}"
+    );
+
+    let skipped = sandbox.json(&root, &["questions", "skip", "a1"]);
+    assert_eq!(skipped["skips"], 1);
+    let listed = sandbox.json(&root, &["questions"]);
+    assert_eq!(listed["questions"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        listed["resting"][0]["id"],
+        "01a18701-0500-776a-9867-08f0000000a1"
+    );
+    assert!(
+        sandbox
+            .ok(&root, &["questions"])
+            .contains("1 skipped question is resting")
+    );
+    assert!(
+        sandbox
+            .ok(&root, &["questions", "list", "--all"])
+            .contains("Resting after a skip:")
+    );
+
+    let answered = sandbox.json(&root, &["questions", "answer", "a2", "2"]);
+    assert_eq!(answered["collection"], "Projects/Lamps", "{answered}");
+    assert_eq!(answered["created"], true);
+    assert!(root.join("Projects/Lamps/_collection.md").exists());
+    let proposal: Value = serde_json::from_str(
+        &std::fs::read_to_string(root.join(format!("_System/queue/review/{LAMP_PROPOSAL}.json")))
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(proposal["destination"]["path"], "Projects/Lamps");
+
+    let wrong = sandbox.run_in(&root, &["questions", "answer", "a1"]);
+    assert!(
+        !wrong.status.success(),
+        "no answer, and no terminal to ask on"
+    );
+}
+
+#[test]
+fn a_sender_answer_gathers_its_items_and_adds_a_rule_only_on_yes() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    init_sample(&sandbox, &root);
+    let sender = |id: &str, subject: &str, about: &str| {
+        json!({
+            "carrel": "question", "format": "1.0", "id": id,
+            "created": "2026-10-30T09:00:00-07:00",
+            "kind": "sender", "subject": subject,
+            "question": format!("Should “{subject}” have its own collection?"),
+            "about": [about],
+            "suggestions": [
+                {"answer": format!("Projects/{subject}"), "new_collection": true},
+                {"answer": "No, keep them in Projects/Hardware", "no_change": true}
+            ]
+        })
+    };
+    write_question(
+        &root,
+        &sender(
+            "01a18701-0500-776a-9867-08f0000000c1",
+            "Lamps",
+            "01a18701-0500-776a-9867-080d24773181",
+        ),
+    );
+    write_question(
+        &root,
+        &sender(
+            "01a18701-0500-776a-9867-08f0000000c2",
+            "Notes",
+            "01a18701-0500-776a-9867-080f706799db",
+        ),
+    );
+    let rules = std::fs::read_to_string(root.join("_System/rules/routing.yaml")).unwrap();
+
+    let answered = sandbox.json(&root, &["questions", "answer", "c1", "1"]);
+    assert_eq!(
+        answered["refiled"].as_array().unwrap().len(),
+        1,
+        "{answered}"
+    );
+    assert_eq!(answered["rule"]["added"], false);
+    assert!(root.join("Projects/Lamps/parts-list.csv").exists());
+    assert_eq!(
+        std::fs::read_to_string(root.join("_System/rules/routing.yaml")).unwrap(),
+        rules,
+        "no rule without the owner's yes"
+    );
+
+    let declined = sandbox.json(&root, &["questions", "answer", "c2", "2"]);
+    assert_eq!(declined["declined"], true);
+    assert!(root.join("Projects/Hardware/notes.md").exists());
+    let listed = sandbox.json(&root, &["questions"]);
+    assert_eq!(listed["questions"].as_array().unwrap().len(), 0, "{listed}");
+    assert!(
+        root.join("_System/queue/questions/01a18701-0500-776a-9867-08f0000000c2.json")
+            .exists(),
+        "a no is remembered, so it isn't asked again"
+    );
+
+    write_question(
+        &root,
+        &sender(
+            "01a18701-0500-776a-9867-08f0000000c3",
+            "Wiring",
+            "01a18701-0500-776a-9867-080f706799db",
+        ),
+    );
+    let learned = sandbox.json(&root, &["questions", "answer", "c3", "yes", "--learn"]);
+    assert_eq!(learned["rule"]["added"], true, "{learned}");
+    let rules = std::fs::read_to_string(root.join("_System/rules/routing.yaml")).unwrap();
+    assert!(rules.contains("name: \"(?i)Wiring\""), "{rules}");
+    let log = sandbox.json(&root, &["log"]);
+    assert!(
+        log[0]["summary"]
+            .as_str()
+            .unwrap()
+            .contains("Add the routing rule “Wiring → Projects/Wiring”"),
+        "{log}"
+    );
+}
+
+#[test]
+fn an_item_question_is_answered_through_a_correction() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    init_sample(&sandbox, &root);
+    let card = root.join("Projects/Hardware/lamp-build.md");
+    let text = std::fs::read_to_string(&card).unwrap().replace(
+        "summary: \"Notes and a sketch for a 3D-printed desk lamp with a dimmable LED strip.\"\n",
+        "",
+    );
+    let text = text.replace("added: \"2026-10-26\"", "added: \"2019-05-01\"");
+    std::fs::write(&card, text).unwrap();
+
+    let asked = sandbox.json(
+        &root,
+        &["questions", "about", "Projects/Hardware/lamp-build.md"],
+    );
+    let questions = asked["questions"].as_array().unwrap();
+    let words: Vec<&str> = questions
+        .iter()
+        .map(|q| q["question"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        words,
+        ["What was this project for?", "Does this still matter?"],
+        "{asked}"
+    );
+    let project = questions[0]["id"].as_str().unwrap().to_owned();
+    let matters = questions[1]["id"].as_str().unwrap().to_owned();
+
+    let summary = "summary: A dimmable desk lamp, designed and printed for the study.";
+    let corrected = sandbox.json(&root, &["questions", "answer", &project, summary, "--yes"]);
+    assert_eq!(corrected["saved"], true, "{corrected}");
+    let card_text = std::fs::read_to_string(&card).unwrap();
+    assert!(
+        card_text.contains("A dimmable desk lamp, designed and printed for the study."),
+        "{card_text}"
+    );
+
+    let kept = sandbox.json(&root, &["questions", "answer", &matters, "1"]);
+    assert_eq!(kept["declined"], true);
+    let again = sandbox.json(
+        &root,
+        &["questions", "about", "Projects/Hardware/lamp-build.md"],
+    );
+    assert_eq!(
+        again["questions"].as_array().unwrap().len(),
+        0,
+        "answered, and a kept item isn't asked about again: {again}"
+    );
+    assert_eq!(
+        sandbox.json(&root, &["questions"])["questions"]
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
+}
+
+impl Sandbox {
+    /// `carrel` with a temporary home folder too, for the agent's service files, and the
+    /// service manager never run.
+    fn agent_command(&self, cwd: &Path, args: &[&str]) -> std::process::Command {
+        let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_carrel"));
+        command
+            .args(args)
+            .current_dir(cwd)
+            .env("CARREL_CONFIG_DIR", self.path("config"))
+            .env("CARREL_TRASH_DIR", self.path("Trash"))
+            .env("CARREL_WORKER", "off")
+            .env("CARREL_SERVICE_MANAGER", "off")
+            .env("HOME", self.path("home"))
+            .env("USERPROFILE", self.path("home"))
+            .env("XDG_CONFIG_HOME", self.path("home/.config"))
+            .env("APPDATA", self.path("home/AppData"));
+        command
+    }
+
+    fn agent_json(&self, cwd: &Path, args: &[&str]) -> Value {
+        let mut args = args.to_vec();
+        args.push("--json");
+        let out = self.agent_command(cwd, &args).output().unwrap();
+        assert!(
+            out.status.success(),
+            "carrel {args:?} failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        serde_json::from_slice(&out.stdout).unwrap()
+    }
+}
+
+#[test]
+fn agent_install_writes_only_its_own_file_in_the_home_folder_and_uninstall_removes_it() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    let home = sandbox.path("home");
+    std::fs::create_dir_all(&home).unwrap();
+
+    let status = sandbox.agent_json(&root, &["agent", "status"]);
+    assert_eq!(status["installed"], false);
+    assert_eq!(status["archives"][0]["running"], false);
+
+    let installed = sandbox.agent_json(&root, &["agent", "install", "--poll"]);
+    assert_eq!(installed["installed"], true);
+    assert_eq!(installed["ran"], json!([]), "the service manager isn't run");
+    let file = PathBuf::from(installed["file"].as_str().unwrap());
+    assert!(
+        file.starts_with(&home) || file.starts_with(sandbox.path("config")),
+        "{} is in the temporary folders",
+        file.display()
+    );
+    let text = std::fs::read(&file).unwrap();
+    assert_ne!(text, Vec::<u8>::new());
+
+    let status = sandbox.agent_json(&root, &["agent", "status"]);
+    assert_eq!(status["installed"], true);
+    assert_eq!(status["file"], installed["file"]);
+    assert_eq!(status["archives"].as_array().unwrap().len(), 1);
+    assert_eq!(status["archives"][0]["installed"], true);
+    assert_eq!(status["archives"][0]["running"], false);
+
+    let out = sandbox
+        .agent_command(&root, &["agent", "install", "--poll"])
+        .output()
+        .unwrap();
+    let said = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        said.contains("Reinstalled") && said.contains("Wrote "),
+        "{said}"
+    );
+
+    let removed = sandbox.agent_json(&root, &["agent", "uninstall"]);
+    assert_eq!(removed["removed"], installed["file"]);
+    assert!(!file.exists());
+    let again = sandbox.agent_json(&root, &["agent", "uninstall"]);
+    assert_eq!(again["removed"], Value::Null, "nothing to remove");
+}
+
+#[test]
+fn the_agent_steps_aside_while_the_mac_apps_agent_runs() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    let id = sandbox.json(&root, &["status"])["archive"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let workers = sandbox.path("config/workers");
+    std::fs::create_dir_all(&workers).unwrap();
+    let mac_agent = std::fs::File::create(workers.join(format!("{id}.agent"))).unwrap();
+    mac_agent.try_lock().unwrap();
+
+    let out = sandbox
+        .agent_command(&root, &["agent", "--stop-after", "1"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let said = String::from_utf8_lossy(&out.stdout);
+    assert!(said.contains("Stepping aside"), "{said}");
+    assert!(!said.contains("Looking after"), "{said}");
+    let status = sandbox.agent_json(&root, &["agent", "status"]);
+    assert_eq!(status["archives"][0]["running"], true);
+}
+
+#[test]
+fn the_agent_drafts_what_is_queued_and_the_clis_worker_steps_aside_for_it() {
+    use std::io::BufRead as _;
+
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    let note = sandbox.path("note.txt");
+    std::fs::write(&note, "a note\n").unwrap();
+    let mut agent = sandbox
+        .agent_command(&root, &["agent", "--json", "--stop-after", "60"])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut lines = std::io::BufReader::new(agent.stdout.take().unwrap()).lines();
+    let mut next = || -> Value { serde_json::from_str(&lines.next().unwrap().unwrap()).unwrap() };
+    assert_eq!(next()["event"], "claimed");
+
+    // Ingest starts no worker of its own: the agent hears the queue change.
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_carrel"))
+        .args(["ingest", note.to_str().unwrap(), "--json"])
+        .current_dir(&root)
+        .env("CARREL_CONFIG_DIR", sandbox.path("config"))
+        .env("CARREL_TRASH_DIR", sandbox.path("Trash"))
+        .env_remove("CARREL_WORKER")
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let queued: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(queued["worker_started"], false);
+    assert_eq!(sandbox.json(&root, &["worker"])["agent"], true);
+
+    let drafted = loop {
+        let event = next();
+        if event["event"] == "finished"
+            && event["job"] == "work"
+            && event["summary"]
+                .as_str()
+                .is_some_and(|s| s.contains("drafted"))
+        {
+            break event;
+        }
+    };
+    assert_eq!(drafted["summary"], "drafted 1 item");
+    assert_eq!(
+        sandbox.json(&root, &["ingest", "--status"])["waiting"],
+        json!([])
+    );
+    agent.kill().unwrap();
+    agent.wait().unwrap();
+    assert_eq!(
+        sandbox.json(&root, &["ingest", "--status"])["agent"],
+        false,
+        "the lock goes with the process"
+    );
+}
+
+#[test]
+fn discover_shows_this_day_and_the_timeline() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+
+    let day = sandbox.json(&root, &["discover", "today", "--date", "2027-07-02"]);
+    assert_eq!(day["date"], "2027-07-02");
+    assert_eq!(day["years"][0]["year"], 2025);
+    assert_eq!(day["years"][0]["years_ago"], 2);
+    assert_eq!(
+        day["years"][0]["items"][0]["item"]["title"],
+        "Field notes, 2025"
+    );
+    assert_eq!(day["years"][0]["items"][0]["what"], json!(["created"]));
+    let text = sandbox.ok(&root, &["discover", "today", "--date", "2026-11-24"]);
+    assert!(text.contains("1859 (167 years ago)"), "{text}");
+    let none = sandbox.ok(&root, &["discover", "today", "--date", "2026-01-01"]);
+    assert!(none.contains("Nothing was made"), "{none}");
+    let default = sandbox.json(&root, &["discover"]);
+    assert!(default["years"].is_array(), "on this day is the default");
+
+    let timeline = sandbox.json(&root, &["discover", "timeline", "--per", "year"]);
+    let periods: Vec<&str> = timeline["periods"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["period"].as_str().unwrap())
+        .collect();
+    assert_eq!(periods, ["1859", "2024", "2025", "2026"]);
+    let reading = sandbox.json(
+        &root,
+        &[
+            "discover",
+            "timeline",
+            "collection:Reading",
+            "after:2024",
+            "--by",
+            "created",
+        ],
+    );
+    assert_eq!(reading["periods"][0]["period"], "2024-03");
+    assert_eq!(reading["periods"].as_array().unwrap().len(), 2);
+    let worded = sandbox.json(&root, &["discover", "timeline", "lamp", "--by", "filed"]);
+    let lamp: Vec<&str> = worded["periods"][0]["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["item"]["title"].as_str().unwrap())
+        .collect();
+    assert!(lamp.contains(&"Desk lamp build"), "{lamp:?}");
+    assert!(!lamp.contains(&"Field notes, 2025"), "{lamp:?}");
+    let bad = sandbox.run_in(&root, &["discover", "timeline", "--per", "week"]);
+    assert_eq!(bad.status.code(), Some(1));
+}
+
+#[test]
+fn discover_draws_the_map_and_activity() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    let map = sandbox.json(&root, &["discover", "map"]);
+    assert_eq!(map["total_items"], 11);
+    assert_eq!(map["regions"][0]["path"], "Reading", "largest first");
+    let projects = map["regions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["path"] == "Projects")
+        .unwrap();
+    assert_eq!(projects["total_items"], 7);
+    assert_eq!(projects["children"][0]["path"], "Projects/Hardware");
+    let tree = sandbox.ok(&root, &["discover", "map"]);
+    assert!(tree.contains("│  └─ Hardware"), "{tree}");
+    assert!(
+        !sandbox
+            .ok(&root, &["discover", "map", "--depth", "1"])
+            .contains("Hardware")
+    );
+
+    let activity = sandbox.json(
+        &root,
+        &[
+            "discover",
+            "activity",
+            "--from",
+            "2026-10-01",
+            "--to",
+            "2026-10-31",
+        ],
+    );
+    let busiest = activity["days"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|d| d["date"] == "2026-10-26")
+        .unwrap();
+    assert_eq!(busiest["filed"], 4);
+    assert_eq!(activity["busiest"], 4);
+    let heatmap = sandbox.ok(
+        &root,
+        &[
+            "discover",
+            "activity",
+            "--from",
+            "2026-10-01",
+            "--to",
+            "2026-10-31",
+        ],
+    );
+    assert!(
+        heatmap.contains("Mon") && heatmap.contains('█'),
+        "{heatmap}"
+    );
+}
+
+#[test]
+fn wander_takes_one_step_at_a_time_and_repeats_with_its_seed() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    let ids = |walk: &Value| -> Vec<String> {
+        walk["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| s["item"]["id"].as_str().unwrap().to_owned())
+            .collect()
+    };
+
+    // A walk on another device with the same archive, to compare with.
+    let elsewhere = Sandbox::new();
+    let whole = elsewhere.json(
+        &elsewhere.sample(),
+        &["discover", "wander", "--seed", "5", "-n", "50"],
+    );
+    let all = ids(&whole);
+    assert_eq!(all.len(), 11, "every item once");
+    assert_eq!(
+        all.iter().collect::<std::collections::HashSet<_>>().len(),
+        11,
+        "never twice"
+    );
+    assert_eq!(whole["done"], true);
+    assert_eq!(whole["steps"][0]["reason"]["why"], "start");
+
+    let first = sandbox.json(&root, &["discover", "wander", "--seed", "5", "-n", "2"]);
+    assert_eq!(ids(&first), all[..2], "the same seed, the same walk");
+    let next = sandbox.json(&root, &["discover", "wander", "--next"]);
+    assert_eq!(ids(&next), all[2..3], "it goes on where it stopped");
+    assert_eq!(next["steps"][0]["number"], 3);
+    let text = sandbox.ok(&root, &["discover", "wander", "--next"]);
+    assert!(text.starts_with("4. "), "{text}");
+    assert!(text.contains("--next"), "{text}");
+
+    let from = sandbox.json(
+        &root,
+        &[
+            "discover",
+            "wander",
+            "Projects/Hardware/parts-list.csv.md",
+            "--seed",
+            "1",
+        ],
+    );
+    let step = &from["steps"][0];
+    assert_ne!(step["item"]["card"], "Projects/Hardware/parts-list.csv.md");
+    assert!(
+        ["linked", "neighbour", "jump", "near"].contains(&step["reason"]["why"].as_str().unwrap()),
+        "{step}"
+    );
+
+    let id = sandbox.json(&root, &["status"])["archive"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let kept = sandbox.path(&format!("config/discover/{id}.json"));
+    assert!(kept.is_file(), "the walk is kept on the device");
+    assert!(
+        !root.join("_System/discover").exists(),
+        "and nothing is written into the archive"
+    );
+}
+
+#[test]
+fn status_resurfaces_a_collection_not_opened_in_a_long_time() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    for entry in std::fs::read_dir(root.join("Reading")).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().is_some_and(|e| e == "md") {
+            let text = std::fs::read_to_string(&path).unwrap();
+            std::fs::write(
+                &path,
+                text.replace("  added: \"2026-10-", "  added: \"2019-10-"),
+            )
+            .unwrap();
+        }
+    }
+
+    let status = sandbox.json(&root, &["status"]);
+    let resurfaced = &status["resurfaced"];
+    assert_eq!(resurfaced["collection"], "Reading", "{resurfaced}");
+    assert_eq!(resurfaced["items"].as_array().unwrap().len(), 2);
+    let text = sandbox.ok(&root, &["status"]);
+    assert!(text.contains("Not opened in a while: Reading"), "{text}");
+
+    // Opening an item in it is opening the collection.
+    sandbox.ok(&root, &["show", "Reading/RFC 9562 UUIDs.md"]);
+    assert_eq!(sandbox.json(&root, &["status"])["resurfaced"], Value::Null);
 }

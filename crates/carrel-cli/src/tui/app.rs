@@ -6,7 +6,7 @@ use std::collections::BTreeSet;
 use carrel_core::archive::{Archive, Collection};
 use carrel_core::card::Id;
 use carrel_core::history::{Entry, History, HistoryError};
-use carrel_core::questions::{QuestionEntry, QuestionQueue};
+use carrel_core::questions::QuestionEntry;
 use carrel_core::review::{ReviewEntry, ReviewQueue};
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 
@@ -130,6 +130,18 @@ pub enum Confirm {
         /// Its title.
         title: String,
     },
+    /// Answering a sender question by gathering its items in a collection, and whether to
+    /// add a routing rule for future ones too.
+    Rule {
+        /// The question.
+        id: Id,
+        /// The answer: a suggestion's number, yes, or a collection's path.
+        answer: String,
+        /// The sender or project.
+        subject: String,
+        /// The collection.
+        path: String,
+    },
     /// Adding a fact a correction stated to the glossary.
     Learn {
         /// The word or name it's about.
@@ -195,6 +207,8 @@ pub enum Step {
         target: super::screens::Correcting,
         /// What the owner typed.
         words: String,
+        /// The item question it answers, which leaves the queue once it's saved.
+        answering: Option<Id>,
     },
     /// Save the correction shown in the pop-up.
     Save,
@@ -264,9 +278,13 @@ pub enum Effect {
     Answer {
         /// The question.
         id: Id,
-        /// A sentence for a term, or a collection's path.
+        /// A suggestion's number, a sentence for a term, a collection's path, or yes or no.
         answer: String,
+        /// For a sender, whether the owner said yes to a routing rule for future items.
+        learn: bool,
     },
+    /// Skip this question for now.
+    Skip(Id),
     /// Dismiss this question.
     Dismiss(Id),
     /// Add these paths to the intake queue, and start a worker.
@@ -362,6 +380,12 @@ pub enum Effect {
         /// Its password, handed to Kopia, which keeps it in the keychain.
         password: super::backups::Secret,
     },
+    /// Rebuild the embedding index, or switch the archive's model, as `carrel index` does.
+    Index(super::embedding::Embedding),
+    /// Show the archive at this path instead, as `carrel open` does.
+    OpenArchive(std::path::PathBuf),
+    /// Create an archive at this path, as `carrel init` does, and show it.
+    CreateArchive(std::path::PathBuf),
 }
 
 /// The interactive mode's state.
@@ -402,8 +426,12 @@ pub struct App {
     pub active_chosen: usize,
     /// Pending entries marked for a decision together.
     pub active_marked: super::active::Marks,
-    /// The questions, most items first.
+    /// The questions, the most worth answering first.
     pub asked: Vec<QuestionEntry>,
+    /// How many items an answer to each question would settle.
+    pub asked_settles: Vec<usize>,
+    /// How many questions are resting after a skip.
+    pub resting: usize,
     /// The chosen question.
     pub asked_chosen: usize,
     /// The collections, for Browse.
@@ -447,6 +475,12 @@ pub struct App {
     pub settings: Vec<super::settings::Shown>,
     /// The chosen setting.
     pub settings_chosen: usize,
+    /// What the providers on this device offer, found when Settings is first shown.
+    pub here: Option<super::embedding::Here>,
+    /// How far work in the background has got, when it says.
+    pub progress: super::embedding::Shared,
+    /// The archives opened or created on this device, for the archive switcher.
+    pub known_archives: Vec<std::path::PathBuf>,
     /// The chosen snapshot on the Backups screen.
     pub backup_chosen: usize,
     /// The built-in file browser, while it's open.
@@ -500,6 +534,8 @@ impl App {
             active_chosen: 0,
             active_marked: BTreeSet::new(),
             asked: Vec::new(),
+            asked_settles: Vec::new(),
+            resting: 0,
             asked_chosen: 0,
             collections: Vec::new(),
             browse_collection: 0,
@@ -523,6 +559,9 @@ impl App {
             worker: super::intake::Worker::default(),
             settings: Vec::new(),
             settings_chosen: 0,
+            here: None,
+            progress: super::embedding::Shared::default(),
+            known_archives: Vec::new(),
             backup_chosen: 0,
             browser: None,
             picker_preference: None,
@@ -538,6 +577,7 @@ impl App {
             quit: false,
         };
         let prefs = crate::config::Prefs::load().unwrap_or_default();
+        app.known_archives = prefs.known_archives();
         app.picker_preference = prefs.picker;
         app.start_folder = prefs
             .last_folder
@@ -558,20 +598,21 @@ impl App {
         let root_path = self.archive.root().to_owned();
         let root = Some(root_path.as_path());
         self.status = lines(&crate::commands::status(root)?.text);
+        self.status.extend(self.index_status());
         self.history = match History::open(&self.archive) {
             Ok(history) => history.log()?,
             Err(HistoryError::NotInitialized) => Vec::new(),
             Err(e) => return Err(e.into()),
         };
         self.selected = self.selected.min(self.history.len().saturating_sub(1));
+        let ranked = carrel_core::questions::answer::tidy(&self.archive)?;
         let (entries, _) = ReviewQueue::of(&self.archive).list()?;
-        let (questions, _) = QuestionQueue::of(&self.archive).list()?;
         self.waiting = (
             entries.iter().filter(|e| e.state.is_open()).count(),
-            questions.len(),
+            ranked.open.len(),
         );
         self.load_queue(entries);
-        self.load_questions(questions);
+        self.load_questions(ranked);
         self.load_browse()?;
         self.load_intake();
         self.load_settings();
@@ -698,7 +739,9 @@ impl App {
             ];
         }
         match self.tab {
-            Tab::Settings => keys.extend([("↑↓", "choose"), ("Enter", "change")]),
+            Tab::Settings => {
+                keys.extend([("↑↓", "choose"), ("Enter", "change"), ("^O", "archives")]);
+            }
             Tab::Ingest => keys.extend([
                 ("i", "add"),
                 ("↑↓", "choose"),
@@ -755,6 +798,12 @@ impl App {
 
     /// Handles a key, returning work for the run loop when there is some.
     pub fn key(&mut self, key: KeyEvent) -> Option<Effect> {
+        let effect = self.key_here(key);
+        self.settings_shown();
+        effect
+    }
+
+    fn key_here(&mut self, key: KeyEvent) -> Option<Effect> {
         if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
             self.quit = true;
             return None;
@@ -789,6 +838,10 @@ impl App {
             return self.picker_key(key);
         }
         self.message = None;
+        if key.code == KeyCode::Char('o') && key.modifiers.contains(KeyModifiers::CONTROL) {
+            self.archive_picker();
+            return None;
+        }
         let handled = match self.tab {
             Tab::Review => self.review_key(key),
             Tab::Active => self.active_key(key),
@@ -806,6 +859,10 @@ impl App {
             KeyCode::Char('q') | KeyCode::Esc => self.quit = true,
             KeyCode::Char('?') => self.help = true,
             KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Providers may have come or gone too.
+                if self.here.is_some() {
+                    self.here = Some(super::embedding::Here::find());
+                }
                 self.message = Some(match self.reload() {
                     Ok(()) => "Refreshed".into(),
                     Err(Failure(e)) => e,
@@ -888,6 +945,7 @@ impl App {
             }
             _ => {}
         }
+        self.settings_shown();
     }
 }
 
@@ -900,10 +958,22 @@ fn confirmed(confirm: Confirm, key: KeyCode) -> Option<Effect> {
             delete_card: true,
         });
     }
+    if let (Confirm::Rule { id, answer, .. }, KeyCode::Char('n' | 'N')) = (&confirm, key) {
+        return Some(Effect::Answer {
+            id: *id,
+            answer: answer.clone(),
+            learn: false,
+        });
+    }
     if !matches!(key, KeyCode::Char('y' | 'Y')) {
         return None;
     }
     Some(match confirm {
+        Confirm::Rule { id, answer, .. } => Effect::Answer {
+            id,
+            answer,
+            learn: true,
+        },
         Confirm::Undo { id, .. } => Effect::Undo(id),
         Confirm::Reject(ids) => Effect::Reject(ids),
         Confirm::Download { name, .. } => Effect::Download(name),

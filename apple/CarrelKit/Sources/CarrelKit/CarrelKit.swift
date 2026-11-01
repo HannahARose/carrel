@@ -82,3 +82,16 @@ extension SearchHit: Identifiable {
     /// An item's identifier, a collection's folder, or a glossary term.
     public var id: String { itemId ?? "\(found):\(path):\(title)" }
 }
+
+extension EmbeddingChoice: Identifiable {
+    public var id: String { model }
+}
+
+extension ReadType: Identifiable {
+    public var id: String { mediaType }
+}
+
+extension UnreadType: Identifiable {
+    /// Its media type, extension and reason, which the log keeps one entry for.
+    public var id: String { "\(mediaType) .\(`extension`) \(why)" }
+}

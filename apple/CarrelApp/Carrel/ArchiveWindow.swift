@@ -29,6 +29,8 @@ struct ArchiveWindow: View {
             Inspector(model: model)
         }
         .activeAndHistorySheets(model)
+        .modifier(ArchiveWindowActions(model: model))
+        .browseSheets(model.browse)
         .navigationTitle(model.name)
         .navigationSubtitle(
             model.isReadOnly ? "\(model.screenTitle) · Read only" : model.screenTitle
@@ -109,20 +111,42 @@ private struct ScreenContent: View {
     @Bindable var model: ArchiveWindowModel
 
     var body: some View {
+        if let search = model.search, search.isActive {
+            SearchResultsView(model: model, search: search)
+        } else {
+            screen
+        }
+    }
+
+    @ViewBuilder private var screen: some View {
         switch model.screen {
         case .status, nil:
             StatusView(model: model)
         case .collection:
-            List(model.listedItems, selection: $model.selectedItemID) { item in
-                Label(item.title, systemImage: item.kind.symbol)
-            }
-            .contextMenu(forSelectionType: ItemSummary.ID.self) { ids in
-                BrowseActions(model: model, ids: ids)
+            Group {
+                if model.browseLayout == .grid {
+                    BrowseGrid(model: model)
+                } else {
+                    List(model.listedItems, selection: $model.selectedItemID) { item in
+                        Label(item.title, systemImage: item.kind.symbol)
+                    }
+                    .contextMenu(forSelectionType: ItemSummary.ID.self) { ids in
+                        BrowseActions(model: model, ids: ids)
+                    }
+                }
             }
             .overlay {
                 if model.listedItems.isEmpty, !model.isLoading {
                     ContentUnavailableView("No Items", systemImage: "folder")
                 }
+            }
+            .toolbar {
+                Picker("View", selection: $model.browseLayout) {
+                    Label("List", systemImage: "list.bullet").tag(BrowseLayout.list)
+                    Label("Grid", systemImage: "square.grid.2x2").tag(BrowseLayout.grid)
+                }
+                .pickerStyle(.segmented)
+                .help("Show the items as a list or a grid")
             }
         case .review:
             if let review = model.review {
@@ -138,7 +162,7 @@ private struct ScreenContent: View {
     }
 }
 
-/// The inspector column: the chosen item's card.
+/// The inspector column: the chosen item's preview and card.
 private struct Inspector: View {
     let model: ArchiveWindowModel
 
@@ -159,13 +183,20 @@ private struct Inspector: View {
             if let edit = model.editing, edit.target == .item(item.id) {
                 ItemEditor(item: item, edit: edit) { model.editing = nil }
             } else {
-                ItemCardView(item: item, card: model.card(for: item), root: model.root)
-                    .id(item.id)
+                VStack(spacing: 0) {
+                    if let previews = model.previews {
+                        ItemPreviewView(item: item, store: previews)
+                    }
+                    ItemCardView(item: item, card: model.card(for: item), root: model.root) {
+                        ItemActions(model: model, item: item)
+                    }
+                }
+                .id(item.id)
             }
         } else if case .collection = model.screen {
             ContentUnavailableView(
                 "Nothing Selected", systemImage: "sidebar.right",
-                description: Text("Choose an item to see its card."))
+                description: Text("Choose an item to see its preview and card."))
         } else {
             ContentUnavailableView("Nothing Selected", systemImage: "sidebar.right")
         }
