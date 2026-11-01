@@ -16,6 +16,8 @@ enum Screen: Hashable {
     /// Restructure proposals.
     case restructure
     case active
+    /// What's flagged as needing work.
+    case flagged
     /// Browse, showing the collection at this path.
     case collection(String)
     case history
@@ -263,6 +265,7 @@ final class ArchiveWindowModel {
         case .questions: "Questions"
         case .restructure: "Restructure"
         case .active: "Active"
+        case .flagged: "Flagged"
         case .collection(let path): collections.first { $0.path == path }?.title ?? path
         case .history: "History"
         case .backups: "Backups"

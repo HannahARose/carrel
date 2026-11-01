@@ -32,6 +32,7 @@ struct CollectionInspector: View {
                 LabeledContent(
                     "Items", value: window.items(in: collection.path).count, format: .number)
             }
+            CollectionFlagSection(model: window, collection: collection)
             Section {
                 if let eagerness {
                     Picker("Eagerness", selection: chosen(eagerness)) {

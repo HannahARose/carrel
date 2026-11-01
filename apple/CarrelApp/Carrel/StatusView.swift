@@ -53,6 +53,7 @@ struct StatusView: View {
                 IntakeSection(intake: intake, isReadOnly: model.isReadOnly)
             }
             StatusArchiveSections(model: model)
+            StatusFlaggedSection(model: model)
             StatusDiscoverySections(model: model)
             StatusQuestionsSection(window: model)
             StatusCrawlerSection(window: model)

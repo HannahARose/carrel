@@ -41,6 +41,7 @@ struct ItemActions: View {
         AskAboutButton(model: model, item: item)
         Button("Wander from Here", systemImage: "figure.walk") { model.wander(from: item.id) }
             .disabled(model.discover == nil)
+        ItemFlagButtons(model: model, item: item)
         if let browse = model.browse {
             Button("Rename…", systemImage: "pencil") {
                 Task { await browse.startRename(of: item) }
