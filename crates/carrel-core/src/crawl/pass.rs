@@ -164,6 +164,22 @@ impl Crawler<'_> {
         format!("{}/{}", self.model.provider, self.model.offer)
     }
 
+    /// What the model concludes about `item` where it is now, without recording anything:
+    /// whether it fits, where it would go instead, and how its card could be better. `None`
+    /// when its card can't be read or the model's answer wasn't usable. The crawler benchmark
+    /// uses it to measure each model.
+    ///
+    /// # Errors
+    ///
+    /// [`CrawlError::Model`] when the model fails, or the archive can't be read.
+    pub fn judge_item(&self, item: &ItemRef) -> Result<Option<Judgment>, CrawlError> {
+        let Some(card) = read_card(self.archive, item) else {
+            return Ok(None);
+        };
+        let places = places(self.archive)?;
+        self.judge(&card, folder(&item.card), &places)
+    }
+
     /// The model's judgment of `item`, or `None` when its answer wasn't usable.
     fn judge(
         &self,

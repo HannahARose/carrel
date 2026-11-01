@@ -149,7 +149,7 @@ pub fn drafts(results: &serde_json::Value) -> BTreeMap<String, Drafted> {
 }
 
 /// Copies `from` into `to`, folders and all.
-fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
+pub(crate) fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(to)?;
     for entry in std::fs::read_dir(from)? {
         let entry = entry?;

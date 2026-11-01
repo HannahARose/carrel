@@ -215,6 +215,39 @@ So 35 items were added for this benchmark (#357), each with its known answer in 
 
 The senders, the group and the uncertain placements raise a group question when the model splits them or isn't sure of them. The filing, findability and librarian benchmarks see the added items too, so their totals from runs after this aren't comparable with the 2026-11-01 runs item for item.
 
+## Crawler
+
+How well each model finds misplaced items, as the crawler would (`docs/design/restructure.md`, "Measuring it"). [`fixtures/bench/muddle.yaml`](../../fixtures/bench/muddle.yaml) muddles a copy of the test set's archive. Every item is filed where `answers.yaml` expects it, except:
+
+- **a collection that's missing:** Recipes isn't there, and its 4 items wait in Home;
+- **a collection that's overfilled:** Manuals' 6 items are dumped in Home, and Manuals is left there empty;
+- **items scattered:** 8 single items filed in collections they have nothing to do with, such as the desk chair receipt in Reading.
+
+That makes 18 misplaced items among 113 that count; Holding's own items don't, since nothing fits there. What `answers.yaml` expects is the intended shape, which the restructure benchmark will score against too.
+
+`carrel bench --crawl` files the muddled archive into `crawl/archive` in the output folder, then has each text model judge every item there as the crawler does: whether it fits its collection's design document, and where it would go instead. Each model is scored by:
+
+- **recall:** the share of misplaced items it says don't fit, overall and for each kind of muddle;
+- **precision:** the share of the items it says don't fit that are misplaced. A false alarm is a finding the owner has to reject;
+- **placement:** of the misplaced items whose collection is there (14 of the 18), the share it would move to an acceptable collection. An item it missed counts as not placed;
+- **unusable answers and seconds per item.**
+
+```bash
+carrel bench --crawl --out bench-results
+```
+
+It writes `bench-results/crawl/results.json` and `report.md`, with what each model missed, put wrong and raised false alarms on. Each judgment is saved to `crawl/runs/` as it's given, so a stopped run carries on; `--fresh` starts over, `--model NAME` measures one model and `--limit N` judges the first N items.
+
+### The bar and the crawler's default model
+
+A model is recommended for the crawler when it finds at least 70% of the misplaced items, at least 60% of what it flags is misplaced, it would put at least 70% of what it finds in the right place, and it takes under 30 seconds an item on the reference machine. This is a starting point, as the other bars were.
+
+The catalog's `crawler` flag records the recommendation. Once a model has it, the crawler judges with the largest recommended model installed that fits the device's memory, and otherwise, as now, with the librarian's choice: the strongest installed model that fits, then Apple's model. No model has the flag yet.
+
+### Crawler: not run yet
+
+No real model has been measured. The runs happen on the reference machine and set the `crawler` flags from what they show.
+
 ## Running it again
 
 ```bash
