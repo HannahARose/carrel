@@ -33,7 +33,19 @@ import Testing
         #expect(plan.due(at: start).isEmpty)
         #expect(plan.nextDue == nil)
         plan.start(at: start)
-        #expect(plan.due(at: start) == [.work, .sessions])
+        #expect(plan.due(at: start) == [.work, .sessions, .remind])
+    }
+
+    @Test func remindersAreLookedForOnStartingAfterSessionsAndEveryQuarterHour() {
+        var plan = AgentPlan(root: root)
+        plan.start(at: start)
+        plan.ran(.work, startedAt: start)
+        plan.ran(.remind, startedAt: start)
+        #expect(plan.remindDue == start + AgentPlan.remindEvery)
+        plan.ran(.sessions, startedAt: start + 10)
+        #expect(plan.due(at: start + 10) == [.remind], "a recorded session may need one")
+        plan.ran(.remind, startedAt: start + 10)
+        #expect(plan.remindDue == start + 10 + AgentPlan.remindEvery)
     }
 
     @Test func aBurstOfChangesRunsTheWorkerOnceItSettles() {
@@ -78,8 +90,9 @@ import Testing
         var plan = AgentPlan(root: root)
         plan.start(at: start)
         plan.postpone(.sessions, until: start + 30)
+        plan.postpone(.remind, until: start + 30)
         #expect(plan.due(at: start + 1) == [.work])
-        #expect(plan.due(at: start + 30) == [.work, .sessions])
+        #expect(plan.due(at: start + 30) == [.work, .sessions, .remind])
     }
 
     @Test func snapshotsAreDailyOnceSetUpAndRetriedHourlyAfterAFailure() {
@@ -98,9 +111,10 @@ import Testing
         var plan = AgentPlan(root: root)
         plan.start(at: start)
         let every = AgentPlan.crawlEvery
-        #expect(plan.due(at: start) == [.work, .sessions], "not straight away")
+        #expect(plan.due(at: start) == [.work, .sessions, .remind], "not straight away")
         plan.ran(.work, startedAt: start)
         plan.ran(.sessions, startedAt: start)
+        plan.ran(.remind, startedAt: start)
         #expect(plan.due(at: start + every) == [.crawl])
         plan.noticed(["/Archive/_System/queue/intake/a.json"], at: start + every)
         #expect(
@@ -112,7 +126,20 @@ import Testing
         plan.ran(.crawl, startedAt: start + 2 * every)
         #expect(plan.nextDue == start + 3 * every)
         plan.postpone(.crawl, until: start + 4 * every)
-        #expect(plan.due(at: start + 3 * every).isEmpty)
+        #expect(plan.due(at: start + 3 * every) == [.remind], "only the quarter-hour look")
+    }
+}
+
+/// Remembers the reminders it's asked to post.
+final class FakeReminderPoster: ReminderPoster, @unchecked Sendable {
+    private let lock = NSLock()
+    private var posted: [String] = []
+
+    var texts: [String] { lock.withLock { posted } }
+
+    func post(_ reminder: Reminder, archive: URL, name: String) async -> Bool {
+        lock.withLock { posted.append(reminder.text) }
+        return true
     }
 }
 
@@ -241,14 +268,42 @@ func realPath(_ path: String) -> String {
         test.agent.noticed([working + "/sketch.txt"], in: test.root)
         let idle = TimeInterval(test.handle.idleMinutes()) * 60
         test.clock.advance(idle)
-        // The crawler may be due by now too; it only takes time nothing else needs.
-        let others = { test.agent.due(at: test.clock.now).map(\.1).filter { $0 != .crawl } }
+        // The crawler and the reminders' look may be due by now too.
+        let others = {
+            test.agent.due(at: test.clock.now).map(\.1).filter { $0 != .crawl && $0 != .remind }
+        }
         #expect(others().isEmpty, "the session may still be going")
         test.clock.advance(AgentPlan.margin)
         #expect(others() == [.sessions])
         await test.agent.runDue()
         #expect(test.agent.archives.first?.problem == nil)
         #expect(others().isEmpty)
+    }
+
+    @Test func remindersArePostedOnceAndTheMenuBarFollowsTheSetting() async throws {
+        let sample = try Sample()
+        let poster = FakeReminderPoster()
+        let clock = Clock()
+        let agent = Agent(
+            options: .isolated(config: sample.folder.appending(path: "config")),
+            state: try #require(UserDefaults(suiteName: "carrelkit-agent-\(UUID().uuidString)")),
+            watching: false, reminders: poster, now: { clock.now })
+        await agent.follow([sample.root])
+        await agent.runDue()
+        #expect(
+            poster.texts.contains(
+                "You worked on “oscillator-sim” for 2h 10m. Its entry is waiting for you."),
+            "\(poster.texts)")
+        let posted = poster.texts.count
+        clock.advance(AgentPlan.remindEvery)
+        await agent.runDue()
+        #expect(poster.texts.count == posted, "each is posted once")
+        #expect(try sample.model.handle.reminders().count == posted, "Status still lists them")
+
+        #expect(agent.showsMenuBar)
+        _ = try sample.model.handle.setSetting(key: "reminders", value: "idle")
+        await agent.refresh()
+        #expect(!agent.showsMenuBar)
     }
 
     #if os(macOS)
@@ -292,6 +347,9 @@ func realPath(_ path: String) -> String {
         #expect(AgentLink(url) == link)
         #expect(AgentLink(AgentLink(archive: link.archive).url)?.item == nil)
         #expect(AgentLink(URL(string: "carrel://open")!) == nil)
+        let action = AgentLink(archive: link.archive, item: "0193abcd", action: .returnItem)
+        #expect(AgentLink(action.url) == action)
+        #expect(action.url.absoluteString.contains("action=return"))
         #expect(AgentLink(URL(string: "https://open?archive=/a")!) == nil)
     }
 }

@@ -33,6 +33,7 @@ mod progress;
 mod providers;
 mod questions;
 mod related;
+mod reminders;
 mod restructure;
 mod restructure_sections;
 mod review;
@@ -310,6 +311,10 @@ enum Command {
         #[command(subcommand)]
         action: RestructureAction,
     },
+    /// The reminders due now: work sessions whose entries wait, checkouts due back, and the
+    /// weekly sum of what's waiting, as the `reminders` setting turns them on. `carrel agent`
+    /// shows them as notifications; `carrel status` lists them too.
+    Reminders,
     /// The crawler, which rechecks where items are filed when the device is idle: how far it
     /// has got (`status`, the default), a pass now (`run`), or undoing its changes (`undo`).
     /// Its findings wait in `carrel review`.
@@ -1160,12 +1165,9 @@ fn main() -> ExitCode {
         Command::Discover { action } => discover_command(cli.archive.as_deref(), action, cli.json),
         Command::Restructure { action } => restructure_command(cli.archive.as_deref(), action),
         Command::Crawl { action } => crawl::command(cli.archive.as_deref(), action),
+        Command::Reminders => reminders::list(cli.archive.as_deref()),
         Command::Bench(args) => bench::bench(&args, cli.json),
-        Command::Models { action } => models_command(
-            action.unwrap_or(ModelsAction::List),
-            cli.archive.as_deref(),
-            cli.json,
-        ),
+        Command::Models { action } => models_command(action, cli.archive.as_deref(), cli.json),
     };
     finish(after(result, changes, cli.archive.as_deref()), cli.json)
 }
@@ -1343,11 +1345,11 @@ fn restructure_command(
 
 /// `carrel models` and its subcommands.
 fn models_command(
-    action: ModelsAction,
+    action: Option<ModelsAction>,
     archive: Option<&std::path::Path>,
     json: bool,
 ) -> Result<Report, Failure> {
-    match action {
+    match action.unwrap_or(ModelsAction::List) {
         ModelsAction::List => models::list(),
         ModelsAction::Download { name, format, yes } => models::download(&name, format, yes, json),
         ModelsAction::Embed { texts, query } => models::embed(archive, &texts, query),

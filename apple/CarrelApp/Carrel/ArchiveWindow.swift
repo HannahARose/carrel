@@ -71,11 +71,15 @@ struct ArchiveWindow: View {
 }
 
 extension ArchiveWindow {
-    /// Chooses the item a link from the agent's menu asked for, on Active.
+    /// Chooses the item a link from the agent's menu asked for, on Active, and starts what
+    /// a link from Finder asked to do with it.
     fileprivate func choosePendingItem() {
-        guard model.handle != nil, let item = app.takePendingItem(for: model.root) else { return }
+        guard model.handle != nil, let link = app.takePendingLink(for: model.root),
+            let item = link.item
+        else { return }
         model.screen = .active
         model.selectedItemID = item
+        if let action = link.action { Task { await model.start(action, on: item) } }
     }
 }
 

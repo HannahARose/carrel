@@ -69,6 +69,7 @@ pub mod previews;
 pub mod questions;
 pub mod quick_look;
 pub mod records;
+pub mod reminders;
 pub mod restructure;
 pub mod review;
 pub mod search;

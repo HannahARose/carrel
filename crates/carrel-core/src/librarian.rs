@@ -398,9 +398,9 @@ impl<'a> Librarian<'a> {
     /// Asks the model for one step, with what's been done fitted to its context.
     ///
     /// A final answer gets more room than a step naming a tool. When the model runs out of
-    /// room anyway, as when its JSON is cut off, the step is asked again once with room for
-    /// a whole answer; when its context overflows, it's asked again once with what's been
-    /// done shortened further.
+    /// room anyway, as when its JSON is cut off, the step is asked again with room for a whole
+    /// answer, then briefly ([`Self::ask_again_after_cut_off`]); when its context overflows,
+    /// it's asked again once with what's been done shortened further.
     fn ask_model(
         &self,
         asking: &Asking<'_>,
@@ -454,20 +454,18 @@ impl<'a> Librarian<'a> {
             }),
         };
         let completion = match self.complete(&request) {
-            // An answer cut off before its JSON ended gets the whole room once; cut off with
-            // the whole room, the question ends as out of room, keeping what was found. A model
-            // that failed for any other reason fails the question, to ask again.
+            // A reply cut off before its JSON ended is asked for again; a model that failed for
+            // any other reason fails the question, to ask again.
             Err(LibrarianError::Model(ProviderError::Failed(why))) if cut_off(&why) => {
-                if request.max_tokens >= Some(answer_room) {
-                    return Ok(Asked::OutOfTokens);
-                }
                 work.tokens += needed;
-                request.max_tokens = Some(answer_room);
-                match self.complete(&request) {
-                    Err(LibrarianError::Model(ProviderError::Failed(why))) if cut_off(&why) => {
-                        return Ok(Asked::OutOfTokens);
-                    }
-                    other => other?,
+                let again = Again {
+                    answer_room,
+                    must_answer,
+                    needed,
+                };
+                match self.ask_again_after_cut_off(&mut request, &again, &mut work.tokens)? {
+                    Some(completion) => completion,
+                    None => return Ok(Asked::OutOfTokens),
                 }
             }
             Err(LibrarianError::Model(ProviderError::Unsupported(_))) => {
@@ -488,6 +486,37 @@ impl<'a> Librarian<'a> {
                 .json
                 .and_then(|j| serde_json::from_value::<Reply>(j).ok()),
         ))
+    }
+
+    /// Asks again for a step whose reply was cut off, adding the tokens each failed try took
+    /// to `tokens`. A reply that had less than the whole room gets it. One that's cut
+    /// off with the whole room is asked for once more, briefly ([`prompts::CUT_OFF`]): the
+    /// items and a few sentences, without passages or suggestions. Cut off even then, it's
+    /// `None`, and the question ends as out of room, keeping what was found (#401).
+    fn ask_again_after_cut_off(
+        &self,
+        request: &mut CompletionRequest,
+        again: &Again,
+        tokens: &mut u64,
+    ) -> Result<Option<crate::providers::Completion>, LibrarianError> {
+        if request.max_tokens < Some(again.answer_room) {
+            request.max_tokens = Some(again.answer_room);
+            match self.complete(request) {
+                Err(LibrarianError::Model(ProviderError::Failed(why))) if cut_off(&why) => {
+                    *tokens += again.needed;
+                }
+                other => return other.map(Some),
+            }
+        }
+        request.schema = Some(prompts::brief_schema(again.must_answer));
+        request.prompt.push_str(prompts::CUT_OFF);
+        match self.complete(request) {
+            Err(LibrarianError::Model(ProviderError::Failed(why))) if cut_off(&why) => {
+                *tokens += again.needed;
+                Ok(None)
+            }
+            other => other.map(Some),
+        }
     }
 
     /// The model's context, in tokens, as its offer says.
@@ -603,6 +632,16 @@ enum Asked {
     OutOfTokens,
     /// Its reply, if it was usable.
     Replied(Option<Reply>),
+}
+
+/// How a step that failed is asked for again.
+struct Again {
+    /// Room for a whole answer, in tokens.
+    answer_room: u32,
+    /// Whether the step must answer.
+    must_answer: bool,
+    /// The tokens the step's prompt takes.
+    needed: u64,
 }
 
 /// What each step's prompt is made from, besides what's been done.

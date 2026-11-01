@@ -93,7 +93,7 @@ final class AppModel {
     func open(link url: URL, then show: (URL) -> Void) {
         guard let link = AgentLink(url) else { return }
         open(link.archive) { root in
-            pendingLink = link.item.map { AgentLink(archive: root, item: $0) }
+            pendingLink = link.item.map { AgentLink(archive: root, item: $0, action: link.action) }
             show(root)
         }
     }
@@ -112,11 +112,11 @@ final class AppModel {
     }
 
     /// The item a link asked the window for the archive at `root` to choose, once.
-    func takePendingItem(for root: URL) -> String? {
+    func takePendingLink(for root: URL) -> AgentLink? {
         guard let link = pendingLink, link.archive.standardizedFileURL == root.standardizedFileURL
         else { return nil }
         pendingLink = nil
-        return link.item
+        return link
     }
 
     func chooseArchive(then show: (URL) -> Void) {

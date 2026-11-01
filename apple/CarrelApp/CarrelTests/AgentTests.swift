@@ -69,11 +69,28 @@ final class AgentLinkTests: XCTestCase {
         var shown: [URL] = []
         app.open(link: link.url) { shown.append($0) }
         XCTAssertEqual(shown.map(\.standardizedFileURL.path), [sampleArchive.path])
-        XCTAssertNil(app.takePendingItem(for: URL(filePath: "/elsewhere")))
-        XCTAssertEqual(app.takePendingItem(for: shown[0]), "0193")
-        XCTAssertNil(app.takePendingItem(for: shown[0]), "chosen once")
+        XCTAssertNil(app.takePendingLink(for: URL(filePath: "/elsewhere")))
+        XCTAssertEqual(app.takePendingLink(for: shown[0])?.item, "0193")
+        XCTAssertNil(app.takePendingLink(for: shown[0]), "chosen once")
+
+        let finder = AgentLink(archive: sampleArchive, item: "0193", action: .returnItem)
+        app.open(link: finder.url) { shown.append($0) }
+        XCTAssertEqual(app.takePendingLink(for: shown[1])?.action, .returnItem)
 
         app.open(link: URL(string: "https://example.com")!) { shown.append($0) }
-        XCTAssertEqual(shown.count, 1, "not a link from the agent")
+        XCTAssertEqual(shown.count, 2, "not a link from the agent")
+    }
+
+    func testALinkFromFinderOpensTheSheetItsActionNeeds() async throws {
+        let sample = try await SampleWindow()
+        let model = sample.model
+        let checkedOut = try XCTUnwrap(sample.archive.active.first { $0.kind == .checkedOut })
+        await model.start(.cancelCheckout, on: checkedOut.id)
+        XCTAssertEqual(model.screen, .active)
+        XCTAssertEqual(model.activeScreen?.cancelling?.id, checkedOut.id)
+
+        let item = try XCTUnwrap(model.items.first { $0.id != checkedOut.id })
+        await model.start(.checkOut, on: item.id)
+        XCTAssertEqual(model.activeScreen?.checkingOut?.item, item.id)
     }
 }
