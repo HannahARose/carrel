@@ -1,5 +1,6 @@
 //! `carrel edit ITEM`: a filed card in the owner's editor, checked as proposals are, with
-//! the body kept exactly, as one undoable change (`docs/design/checkout.md`).
+//! the body kept exactly, as one undoable change (`docs/design/checkout.md`). With `--body`,
+//! the body instead: its notes and anything below the fields, Carrel's sections kept.
 
 use std::fmt::Write as _;
 use std::path::Path;
@@ -70,4 +71,87 @@ pub fn edit(archive: Option<&Path>, query: &str) -> Result<Report, Failure> {
         format!("{summary}; undo it from History or with `carrel undo`.\n"),
         json!({"item": item.id, "changed": changed, "commit": commit}),
     ))
+}
+
+/// The line `carrel edit --body` puts above the body for each problem to fix, as an HTML
+/// comment so Markdown editors leave it alone.
+const BODY_PROBLEM: &str = "<!-- To fix: ";
+
+/// `carrel edit ITEM --body`: the card's body in the owner's editor, saved as one change
+/// undo can reverse ([`carrel_core::edit::save_body`]). Carrel's own sections, such as the
+/// history, have to stay as they are; when they don't, the editor opens again saying so.
+///
+/// # Errors
+///
+/// [`Failure`] if the item isn't found or is checked out, the editor can't run, or the card
+/// can't be written.
+pub fn edit_body(archive: Option<&Path>, query: &str) -> Result<Report, Failure> {
+    let archive = locate(archive)?;
+    let items = archive.items()?;
+    let item = find_item(&archive, &items, query)?.clone();
+    let (registry, _) = crate::providers::registry();
+    let identity = Identity::load_or_create()?;
+    let temp = std::env::temp_dir().join(format!("carrel-body-{}.md", item.id));
+    let mut text = carrel_core::edit::open(&archive, &registry, &item)?
+        .file
+        .body()
+        .to_owned();
+    let saved = loop {
+        std::fs::write(&temp, &text).map_err(|e| Failure::io(&temp, &e))?;
+        crate::review::run_editor(&temp)?;
+        let edited = std::fs::read_to_string(&temp).map_err(|e| Failure::io(&temp, &e))?;
+        if edited == text {
+            // Saved as it was opened, problems and all: the owner gave up, so nothing changes.
+            break carrel_core::edit::Saved::Unchanged;
+        }
+        let body = without_body_problems(&edited);
+        let editing = carrel_core::edit::open(&archive, &registry, &item)?;
+        match carrel_core::edit::save_body(&archive, editing, &body, holder(&identity))? {
+            carrel_core::edit::Saved::Problems(problems) => {
+                // The owner's edits stay; the problems go on top, replacing earlier ones.
+                text = String::new();
+                for problem in &problems {
+                    writeln!(text, "{BODY_PROBLEM}{problem} -->").unwrap();
+                }
+                text.push_str(&body);
+            }
+            outcome => break outcome,
+        }
+    };
+    let _ = std::fs::remove_file(&temp);
+    match saved {
+        carrel_core::edit::Saved::Changed {
+            summary, commit, ..
+        } => Ok(Report::new(
+            format!("{summary}; undo it from History or with `carrel undo`.\n"),
+            json!({"item": item.id, "changed": ["notes"], "commit": commit}),
+        )),
+        _ => Ok(Report::new(
+            "Nothing changed\n",
+            json!({"item": item.id, "changed": [], "commit": null}),
+        )),
+    }
+}
+
+/// `edited` without the problem lines `carrel edit --body` put above it.
+fn without_body_problems(edited: &str) -> String {
+    let mut rest = edited;
+    while rest.starts_with(BODY_PROBLEM) {
+        rest = rest.split_once('\n').map_or("", |(_, after)| after);
+    }
+    rest.to_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_problems_above_a_body_are_taken_off_again() {
+        let body = "Notes.\n\n<!-- carrel:history -->\n## History\n<!-- /carrel:history -->\n";
+        let marked =
+            format!("{BODY_PROBLEM}keep the history -->\n{BODY_PROBLEM}and this -->\n{body}");
+        assert_eq!(without_body_problems(&marked), body);
+        assert_eq!(without_body_problems(body), body);
+    }
 }

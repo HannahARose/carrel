@@ -192,6 +192,10 @@ enum Command {
     Edit {
         /// The item: its identifier, or its card's or contents' path.
         item: String,
+        /// Edit the card's body instead, its notes and anything below the fields; Carrel's
+        /// own sections, such as the history, have to stay as they are.
+        #[arg(long)]
+        body: bool,
     },
     /// Expand a filed compressed file (zip, tar, gzip and the like) so what it holds can be
     /// browsed: it takes the compressed file's place, which goes to the Trash. One change undo
@@ -1113,7 +1117,8 @@ fn main() -> ExitCode {
         Command::Agent(args) => agent_command(cli.archive.as_deref(), args, cli.json),
         Command::Settings { action } => settings_command(cli.archive.as_deref(), action),
         Command::Review { all, action } => review_command(cli.archive.as_deref(), all, action),
-        Command::Edit { item } => edit::edit(cli.archive.as_deref(), &item),
+        Command::Edit { item, body: false } => edit::edit(cli.archive.as_deref(), &item),
+        Command::Edit { item, body: true } => edit::edit_body(cli.archive.as_deref(), &item),
         Command::Expand { item, anyway } => expand::expand(cli.archive.as_deref(), &item, anyway),
         Command::Correct {
             item,

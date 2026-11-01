@@ -491,6 +491,11 @@ impl App {
                     return Handled::Yes(Some(Effect::EditItem(card.clone())));
                 }
             }
+            KeyCode::Char('E') if on_item => {
+                if let Some((card, _)) = self.browse_items.get(self.browse_item) {
+                    return Handled::Yes(Some(Effect::EditItemBody(card.clone())));
+                }
+            }
             KeyCode::Char('c') if on_item => {
                 if let Some((card, _)) = self.browse_items.get(self.browse_item) {
                     self.input = Some(Input {
