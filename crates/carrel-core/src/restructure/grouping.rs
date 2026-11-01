@@ -201,9 +201,11 @@ fn average_linkage(
             let better = match best {
                 None => true,
                 // Ties go to the chain's previous group, so the chain always ends.
-                Some((b, bs)) => {
-                    s > bs
-                        || (s.total_cmp(&bs).is_eq() && Some(d) == previous && Some(b) != previous)
+                Some((b, best_score)) => {
+                    s > best_score
+                        || (s.total_cmp(&best_score).is_eq()
+                            && Some(d) == previous
+                            && Some(b) != previous)
                 }
             };
             if better {
@@ -215,9 +217,10 @@ fn average_linkage(
                 if Some(d) == previous {
                     chain.truncate(chain.len() - 2);
                     // Join d into c: c's similarities become the size-weighted average.
-                    let (nc, nd) = (members[c].len() as f32, members[d].len() as f32);
+                    let (size_c, size_d) = (members[c].len() as f32, members[d].len() as f32);
                     for k in (0..n).filter(|&k| active[k] && k != c && k != d) {
-                        let joined = (nc * matrix[c * n + k] + nd * matrix[d * n + k]) / (nc + nd);
+                        let joined = (size_c * matrix[c * n + k] + size_d * matrix[d * n + k])
+                            / (size_c + size_d);
                         matrix[c * n + k] = joined;
                         matrix[k * n + c] = joined;
                     }
