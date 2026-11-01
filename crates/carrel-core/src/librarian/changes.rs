@@ -374,10 +374,10 @@ pub fn apply(
             .find(|i| i.id == item.id)
             .ok_or_else(|| format!("“{}” is no longer in the archive", item.title))
     };
-    let by = if lease.agent() == Some(AGENT) {
-        "Librarian"
-    } else {
-        "Owner"
+    let by = match lease.agent() {
+        Some(AGENT) => "Librarian",
+        Some(crate::crawl::AGENT) => "Crawler",
+        _ => "Owner",
     };
     let correct = |item: &ItemLink, lines: String| -> Result<Option<String>, String> {
         let prepared =
@@ -414,10 +414,17 @@ pub fn apply(
 /// after `since` (seconds since the Unix epoch), that haven't been undone, newest first.
 #[must_use]
 pub fn recent(log: &[Entry], since: i64) -> Vec<Entry> {
+    recent_by(log, AGENT, since)
+}
+
+/// The changes `agent` (`librarian`, or [`crate::crawl::AGENT`]) made on its own in `log`, as
+/// [`recent`] gives the librarian's.
+#[must_use]
+pub fn recent_by(log: &[Entry], agent: &str, since: i64) -> Vec<Entry> {
     let undone: std::collections::HashSet<&str> =
         log.iter().filter_map(|e| e.reverts.as_deref()).collect();
     log.iter()
-        .filter(|e| e.agent.as_deref() == Some(AGENT) && e.time >= since)
+        .filter(|e| e.agent.as_deref() == Some(agent) && e.time >= since)
         .filter(|e| !undone.contains(e.id.as_str()))
         .cloned()
         .collect()
@@ -444,9 +451,24 @@ pub fn undo_since(
     since: i64,
     lease: &WriterLease,
 ) -> Result<Undone, HistoryError> {
+    undo_since_by(archive, AGENT, since, lease)
+}
+
+/// Undoes every change `agent` made on its own at or after `since`, as [`undo_since`] does the
+/// librarian's.
+///
+/// # Errors
+///
+/// [`HistoryError`] if the history can't be read.
+pub fn undo_since_by(
+    archive: &Archive,
+    agent: &str,
+    since: i64,
+    lease: &WriterLease,
+) -> Result<Undone, HistoryError> {
     let history = History::open(archive)?;
     let mut done = Undone::default();
-    for entry in recent(&history.log()?, since) {
+    for entry in recent_by(&history.log()?, agent, since) {
         match history.undo(archive, &entry.id, lease) {
             Ok(commit) => done.undone.push((entry, commit)),
             Err(e) => done.failed.push((entry, e.to_string())),

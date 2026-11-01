@@ -1306,6 +1306,17 @@ public protocol ArchiveHandleProtocol: AnyObject, Sendable {
     func editableProposal(id: String) throws  -> EditableCard
     
     /**
+     * The tag and link graph, as `carrel discover graph` lists it: every collection, and at
+     * most `limit` of the strongest connections between collections and of the strongest
+     * ties between items in different collections.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the archive can't be read.
+     */
+    func discoveryGraph(limit: UInt32) throws  -> DiscoveryGraph
+    
+    /**
      * The history, newest first, at most `limit` changes (all of them when it's `None`).
      *
      * # Errors
@@ -1601,6 +1612,57 @@ public protocol ArchiveHandleProtocol: AnyObject, Sendable {
      * [`CarrelError::Failed`] if the archive or a card can't be read.
      */
     func previews() throws  -> [ItemPreview]
+    
+    /**
+     * Approves the proposal `id`: the changes `only` names, or all of them when it's
+     * `None`, as one change in history that undoes as one. A change that needs one left out
+     * is dropped too.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] for an unknown change, [`CarrelError::Busy`] if another
+     * writer holds the archive, or [`CarrelError::Failed`].
+     */
+    func approveRestructure(id: String, only: [String]?) throws  -> RestructureApproved
+    
+    /**
+     * Proposes tag restructures for the whole archive, as `carrel restructure tags propose`
+     * does, putting the proposal in the queue in place of any tag proposal waiting. `None`
+     * when there's nothing worth proposing.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the archive can't be read or the queue written.
+     */
+    func proposeTagRestructure() throws  -> RestructureProposal?
+    
+    /**
+     * Rejects the proposal `id`: it leaves the queue and nothing else changes.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if there's no such proposal or the queue can't be written.
+     */
+    func rejectRestructure(id: String) throws 
+    
+    /**
+     * What the proposal `id`'s changes named in `only` would leave, beside the archive as it
+     * is now. Nothing is written.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if there's no such proposal or the archive can't be read.
+     */
+    func restructurePreview(id: String, only: [String]) throws  -> RestructurePreview
+    
+    /**
+     * The restructure proposals waiting, oldest first.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the queue can't be read.
+     */
+    func restructureProposals() throws  -> [RestructureProposal]
     
     /**
      * Answers the question `id`: a term's answer is added to the glossary and the
@@ -2887,6 +2949,25 @@ open func editableProposal(id: String)throws  -> EditableCard  {
 }
     
     /**
+     * The tag and link graph, as `carrel discover graph` lists it: every collection, and at
+     * most `limit` of the strongest connections between collections and of the strongest
+     * ties between items in different collections.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the archive can't be read.
+     */
+open func discoveryGraph(limit: UInt32)throws  -> DiscoveryGraph  {
+    return try  FfiConverterTypeDiscoveryGraph_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_discovery_graph(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt32.lower(limit),uniffiCallStatus
+    )
+})
+}
+    
+    /**
      * The history, newest first, at most `limit` changes (all of them when it's `None`).
      *
      * # Errors
@@ -3413,6 +3494,96 @@ open func previews()throws  -> [ItemPreview]  {
     return try  FfiConverterSequenceTypeItemPreview.lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
         uniffiCallStatus in
     uniffi_carrel_ffi_fn_method_archivehandle_previews(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Approves the proposal `id`: the changes `only` names, or all of them when it's
+     * `None`, as one change in history that undoes as one. A change that needs one left out
+     * is dropped too.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] for an unknown change, [`CarrelError::Busy`] if another
+     * writer holds the archive, or [`CarrelError::Failed`].
+     */
+open func approveRestructure(id: String, only: [String]?)throws  -> RestructureApproved  {
+    return try  FfiConverterTypeRestructureApproved_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_approve_restructure(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(id),
+        FfiConverterOptionSequenceString.lower(only),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Proposes tag restructures for the whole archive, as `carrel restructure tags propose`
+     * does, putting the proposal in the queue in place of any tag proposal waiting. `None`
+     * when there's nothing worth proposing.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the archive can't be read or the queue written.
+     */
+open func proposeTagRestructure()throws  -> RestructureProposal?  {
+    return try  FfiConverterOptionTypeRestructureProposal.lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_propose_tag_restructure(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Rejects the proposal `id`: it leaves the queue and nothing else changes.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if there's no such proposal or the queue can't be written.
+     */
+open func rejectRestructure(id: String)throws   {try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_reject_restructure(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(id),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * What the proposal `id`'s changes named in `only` would leave, beside the archive as it
+     * is now. Nothing is written.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if there's no such proposal or the archive can't be read.
+     */
+open func restructurePreview(id: String, only: [String])throws  -> RestructurePreview  {
+    return try  FfiConverterTypeRestructurePreview_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_restructure_preview(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(id),
+        FfiConverterSequenceString.lower(only),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * The restructure proposals waiting, oldest first.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the queue can't be read.
+     */
+open func restructureProposals()throws  -> [RestructureProposal]  {
+    return try  FfiConverterSequenceTypeRestructureProposal.lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_restructure_proposals(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
@@ -7795,6 +7966,85 @@ public func FfiConverterTypeDiscoveredItem_lower(_ value: DiscoveredItem) -> Rus
 
 
 /**
+ * The graph as Discover shows it.
+ */
+public struct DiscoveryGraph: Equatable, Hashable {
+    /**
+     * Every collection, by path.
+     */
+    public var collections: [GraphCollection]
+    /**
+     * The strongest connections between collections, strongest first.
+     */
+    public var connections: [GraphConnection]
+    /**
+     * The strongest ties between items in different collections, strongest first.
+     */
+    public var ties: [GraphItemTie]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Every collection, by path.
+         */collections: [GraphCollection], 
+        /**
+         * The strongest connections between collections, strongest first.
+         */connections: [GraphConnection], 
+        /**
+         * The strongest ties between items in different collections, strongest first.
+         */ties: [GraphItemTie]) {
+        self.collections = collections
+        self.connections = connections
+        self.ties = ties
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension DiscoveryGraph: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeDiscoveryGraph: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> DiscoveryGraph {
+        return
+            try DiscoveryGraph(
+                collections: FfiConverterSequenceTypeGraphCollection.read(from: &buf), 
+                connections: FfiConverterSequenceTypeGraphConnection.read(from: &buf), 
+                ties: FfiConverterSequenceTypeGraphItemTie.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: DiscoveryGraph, into buf: inout [UInt8]) {
+        FfiConverterSequenceTypeGraphCollection.write(value.collections, into: &buf)
+        FfiConverterSequenceTypeGraphConnection.write(value.connections, into: &buf)
+        FfiConverterSequenceTypeGraphItemTie.write(value.ties, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDiscoveryGraph_lift(_ buf: RustBuffer) throws -> DiscoveryGraph {
+    return try FfiConverterTypeDiscoveryGraph.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDiscoveryGraph_lower(_ value: DiscoveryGraph) -> RustBuffer {
+    return FfiConverterTypeDiscoveryGraph.lower(value)
+}
+
+
+/**
  * Items by date.
  */
 public struct DiscoveryTimeline: Equatable, Hashable {
@@ -8914,6 +9164,501 @@ public func FfiConverterTypeGlossaryFact_lift(_ buf: RustBuffer) throws -> Gloss
 #endif
 public func FfiConverterTypeGlossaryFact_lower(_ value: GlossaryFact) -> RustBuffer {
     return FfiConverterTypeGlossaryFact.lower(value)
+}
+
+
+/**
+ * A collection in the graph.
+ */
+public struct GraphCollection: Equatable, Hashable {
+    /**
+     * Its folder, relative to the archive root.
+     */
+    public var path: String
+    /**
+     * Its title.
+     */
+    public var title: String
+    /**
+     * What it holds, as its design document says.
+     */
+    public var description: String?
+    /**
+     * How many items are directly in it.
+     */
+    public var items: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Its folder, relative to the archive root.
+         */path: String, 
+        /**
+         * Its title.
+         */title: String, 
+        /**
+         * What it holds, as its design document says.
+         */description: String?, 
+        /**
+         * How many items are directly in it.
+         */items: UInt64) {
+        self.path = path
+        self.title = title
+        self.description = description
+        self.items = items
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension GraphCollection: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGraphCollection: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GraphCollection {
+        return
+            try GraphCollection(
+                path: FfiConverterString.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                description: FfiConverterOptionString.read(from: &buf), 
+                items: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GraphCollection, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.path, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterOptionString.write(value.description, into: &buf)
+        FfiConverterUInt64.write(value.items, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGraphCollection_lift(_ buf: RustBuffer) throws -> GraphCollection {
+    return try FfiConverterTypeGraphCollection.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGraphCollection_lower(_ value: GraphCollection) -> RustBuffer {
+    return FfiConverterTypeGraphCollection.lower(value)
+}
+
+
+/**
+ * What ties two collections together.
+ */
+public struct GraphConnection: Equatable, Hashable {
+    /**
+     * One collection: the lesser path of the two.
+     */
+    public var a: String
+    /**
+     * The other.
+     */
+    public var b: String
+    /**
+     * How strongly they're tied: the sum of their items' ties.
+     */
+    public var weight: Double
+    /**
+     * How many pairs of items are tied.
+     */
+    public var pairs: UInt64
+    /**
+     * The tags shared across them, most pairs first.
+     */
+    public var tags: [GraphTag]
+    /**
+     * How many links run between them.
+     */
+    public var links: UInt64
+    /**
+     * How many times an item in each was worked on the same day.
+     */
+    public var days: UInt64
+    /**
+     * Whether they're in different branches: neither is inside the other.
+     */
+    public var separateBranches: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * One collection: the lesser path of the two.
+         */a: String, 
+        /**
+         * The other.
+         */b: String, 
+        /**
+         * How strongly they're tied: the sum of their items' ties.
+         */weight: Double, 
+        /**
+         * How many pairs of items are tied.
+         */pairs: UInt64, 
+        /**
+         * The tags shared across them, most pairs first.
+         */tags: [GraphTag], 
+        /**
+         * How many links run between them.
+         */links: UInt64, 
+        /**
+         * How many times an item in each was worked on the same day.
+         */days: UInt64, 
+        /**
+         * Whether they're in different branches: neither is inside the other.
+         */separateBranches: Bool) {
+        self.a = a
+        self.b = b
+        self.weight = weight
+        self.pairs = pairs
+        self.tags = tags
+        self.links = links
+        self.days = days
+        self.separateBranches = separateBranches
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension GraphConnection: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGraphConnection: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GraphConnection {
+        return
+            try GraphConnection(
+                a: FfiConverterString.read(from: &buf), 
+                b: FfiConverterString.read(from: &buf), 
+                weight: FfiConverterDouble.read(from: &buf), 
+                pairs: FfiConverterUInt64.read(from: &buf), 
+                tags: FfiConverterSequenceTypeGraphTag.read(from: &buf), 
+                links: FfiConverterUInt64.read(from: &buf), 
+                days: FfiConverterUInt64.read(from: &buf), 
+                separateBranches: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GraphConnection, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.a, into: &buf)
+        FfiConverterString.write(value.b, into: &buf)
+        FfiConverterDouble.write(value.weight, into: &buf)
+        FfiConverterUInt64.write(value.pairs, into: &buf)
+        FfiConverterSequenceTypeGraphTag.write(value.tags, into: &buf)
+        FfiConverterUInt64.write(value.links, into: &buf)
+        FfiConverterUInt64.write(value.days, into: &buf)
+        FfiConverterBool.write(value.separateBranches, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGraphConnection_lift(_ buf: RustBuffer) throws -> GraphConnection {
+    return try FfiConverterTypeGraphConnection.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGraphConnection_lower(_ value: GraphConnection) -> RustBuffer {
+    return FfiConverterTypeGraphConnection.lower(value)
+}
+
+
+/**
+ * An item at one end of a tie.
+ */
+public struct GraphItem: Equatable, Hashable {
+    /**
+     * Its identifier.
+     */
+    public var id: String
+    /**
+     * Its card's title.
+     */
+    public var title: String
+    /**
+     * Its card, relative to the archive root.
+     */
+    public var card: String
+    /**
+     * The collection it's in.
+     */
+    public var collection: String
+    /**
+     * How sensitive it is, so a restricted or sensitive one can be marked.
+     */
+    public var sensitivity: Sensitivity
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Its identifier.
+         */id: String, 
+        /**
+         * Its card's title.
+         */title: String, 
+        /**
+         * Its card, relative to the archive root.
+         */card: String, 
+        /**
+         * The collection it's in.
+         */collection: String, 
+        /**
+         * How sensitive it is, so a restricted or sensitive one can be marked.
+         */sensitivity: Sensitivity) {
+        self.id = id
+        self.title = title
+        self.card = card
+        self.collection = collection
+        self.sensitivity = sensitivity
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension GraphItem: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGraphItem: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GraphItem {
+        return
+            try GraphItem(
+                id: FfiConverterString.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                card: FfiConverterString.read(from: &buf), 
+                collection: FfiConverterString.read(from: &buf), 
+                sensitivity: FfiConverterTypeSensitivity.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GraphItem, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterString.write(value.card, into: &buf)
+        FfiConverterString.write(value.collection, into: &buf)
+        FfiConverterTypeSensitivity.write(value.sensitivity, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGraphItem_lift(_ buf: RustBuffer) throws -> GraphItem {
+    return try FfiConverterTypeGraphItem.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGraphItem_lower(_ value: GraphItem) -> RustBuffer {
+    return FfiConverterTypeGraphItem.lower(value)
+}
+
+
+/**
+ * What ties two items in different collections together.
+ */
+public struct GraphItemTie: Equatable, Hashable {
+    /**
+     * One item.
+     */
+    public var a: GraphItem
+    /**
+     * The other.
+     */
+    public var b: GraphItem
+    /**
+     * How strongly they're tied.
+     */
+    public var weight: Double
+    /**
+     * The tags both have.
+     */
+    public var tags: [String]
+    /**
+     * The types of the links between them, either way.
+     */
+    public var links: [String]
+    /**
+     * The days both were worked on.
+     */
+    public var days: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * One item.
+         */a: GraphItem, 
+        /**
+         * The other.
+         */b: GraphItem, 
+        /**
+         * How strongly they're tied.
+         */weight: Double, 
+        /**
+         * The tags both have.
+         */tags: [String], 
+        /**
+         * The types of the links between them, either way.
+         */links: [String], 
+        /**
+         * The days both were worked on.
+         */days: UInt64) {
+        self.a = a
+        self.b = b
+        self.weight = weight
+        self.tags = tags
+        self.links = links
+        self.days = days
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension GraphItemTie: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGraphItemTie: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GraphItemTie {
+        return
+            try GraphItemTie(
+                a: FfiConverterTypeGraphItem.read(from: &buf), 
+                b: FfiConverterTypeGraphItem.read(from: &buf), 
+                weight: FfiConverterDouble.read(from: &buf), 
+                tags: FfiConverterSequenceString.read(from: &buf), 
+                links: FfiConverterSequenceString.read(from: &buf), 
+                days: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GraphItemTie, into buf: inout [UInt8]) {
+        FfiConverterTypeGraphItem.write(value.a, into: &buf)
+        FfiConverterTypeGraphItem.write(value.b, into: &buf)
+        FfiConverterDouble.write(value.weight, into: &buf)
+        FfiConverterSequenceString.write(value.tags, into: &buf)
+        FfiConverterSequenceString.write(value.links, into: &buf)
+        FfiConverterUInt64.write(value.days, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGraphItemTie_lift(_ buf: RustBuffer) throws -> GraphItemTie {
+    return try FfiConverterTypeGraphItemTie.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGraphItemTie_lower(_ value: GraphItemTie) -> RustBuffer {
+    return FfiConverterTypeGraphItemTie.lower(value)
+}
+
+
+/**
+ * A tag two collections' items share.
+ */
+public struct GraphTag: Equatable, Hashable {
+    /**
+     * The tag.
+     */
+    public var tag: String
+    /**
+     * How many pairs of items, one in each collection, both have it.
+     */
+    public var pairs: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The tag.
+         */tag: String, 
+        /**
+         * How many pairs of items, one in each collection, both have it.
+         */pairs: UInt64) {
+        self.tag = tag
+        self.pairs = pairs
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension GraphTag: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGraphTag: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GraphTag {
+        return
+            try GraphTag(
+                tag: FfiConverterString.read(from: &buf), 
+                pairs: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GraphTag, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.tag, into: &buf)
+        FfiConverterUInt64.write(value.pairs, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGraphTag_lift(_ buf: RustBuffer) throws -> GraphTag {
+    return try FfiConverterTypeGraphTag.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGraphTag_lower(_ value: GraphTag) -> RustBuffer {
+    return FfiConverterTypeGraphTag.lower(value)
 }
 
 
@@ -11608,6 +12353,154 @@ public func FfiConverterTypePassagePart_lower(_ value: PassagePart) -> RustBuffe
 
 
 /**
+ * A collection on one side of a proposal's preview.
+ */
+public struct PreviewedCollection: Equatable, Hashable {
+    /**
+     * Its folder, relative to the archive root.
+     */
+    public var path: String
+    /**
+     * How many items are directly in it.
+     */
+    public var items: UInt64
+    /**
+     * Whether the chosen changes create it (after) or remove it (before).
+     */
+    public var changed: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Its folder, relative to the archive root.
+         */path: String, 
+        /**
+         * How many items are directly in it.
+         */items: UInt64, 
+        /**
+         * Whether the chosen changes create it (after) or remove it (before).
+         */changed: Bool) {
+        self.path = path
+        self.items = items
+        self.changed = changed
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension PreviewedCollection: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePreviewedCollection: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PreviewedCollection {
+        return
+            try PreviewedCollection(
+                path: FfiConverterString.read(from: &buf), 
+                items: FfiConverterUInt64.read(from: &buf), 
+                changed: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: PreviewedCollection, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.path, into: &buf)
+        FfiConverterUInt64.write(value.items, into: &buf)
+        FfiConverterBool.write(value.changed, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePreviewedCollection_lift(_ buf: RustBuffer) throws -> PreviewedCollection {
+    return try FfiConverterTypePreviewedCollection.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePreviewedCollection_lower(_ value: PreviewedCollection) -> RustBuffer {
+    return FfiConverterTypePreviewedCollection.lower(value)
+}
+
+
+/**
+ * A tag a proposal touches, on one side of its preview.
+ */
+public struct PreviewedTag: Equatable, Hashable {
+    /**
+     * The tag.
+     */
+    public var tag: String
+    /**
+     * How many items have it.
+     */
+    public var items: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The tag.
+         */tag: String, 
+        /**
+         * How many items have it.
+         */items: UInt64) {
+        self.tag = tag
+        self.items = items
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension PreviewedTag: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePreviewedTag: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PreviewedTag {
+        return
+            try PreviewedTag(
+                tag: FfiConverterString.read(from: &buf), 
+                items: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: PreviewedTag, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.tag, into: &buf)
+        FfiConverterUInt64.write(value.items, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePreviewedTag_lift(_ buf: RustBuffer) throws -> PreviewedTag {
+    return try FfiConverterTypePreviewedTag.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePreviewedTag_lower(_ value: PreviewedTag) -> RustBuffer {
+    return FfiConverterTypePreviewedTag.lower(value)
+}
+
+
+/**
  * A proposal to file an item.
  */
 public struct Proposal: Equatable, Hashable {
@@ -11823,6 +12716,95 @@ public func FfiConverterTypeProposal_lift(_ buf: RustBuffer) throws -> Proposal 
 #endif
 public func FfiConverterTypeProposal_lower(_ value: Proposal) -> RustBuffer {
     return FfiConverterTypeProposal.lower(value)
+}
+
+
+/**
+ * An item a change touches, or leaves alone.
+ */
+public struct ProposalItem: Equatable, Hashable {
+    /**
+     * Its identifier.
+     */
+    public var id: String
+    /**
+     * Its title.
+     */
+    public var title: String
+    /**
+     * Its card when the proposal was made.
+     */
+    public var card: String
+    /**
+     * Why it's left alone, for an item the change holds back.
+     */
+    public var why: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Its identifier.
+         */id: String, 
+        /**
+         * Its title.
+         */title: String, 
+        /**
+         * Its card when the proposal was made.
+         */card: String, 
+        /**
+         * Why it's left alone, for an item the change holds back.
+         */why: String?) {
+        self.id = id
+        self.title = title
+        self.card = card
+        self.why = why
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension ProposalItem: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeProposalItem: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ProposalItem {
+        return
+            try ProposalItem(
+                id: FfiConverterString.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                card: FfiConverterString.read(from: &buf), 
+                why: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ProposalItem, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterString.write(value.card, into: &buf)
+        FfiConverterOptionString.write(value.why, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeProposalItem_lift(_ buf: RustBuffer) throws -> ProposalItem {
+    return try FfiConverterTypeProposalItem.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeProposalItem_lower(_ value: ProposalItem) -> RustBuffer {
+    return FfiConverterTypeProposalItem.lower(value)
 }
 
 
@@ -12773,6 +13755,462 @@ public func FfiConverterTypeRestored_lift(_ buf: RustBuffer) throws -> Restored 
 #endif
 public func FfiConverterTypeRestored_lower(_ value: Restored) -> RustBuffer {
     return FfiConverterTypeRestored.lower(value)
+}
+
+
+/**
+ * What approving a proposal did.
+ */
+public struct RestructureApproved: Equatable, Hashable {
+    /**
+     * The change in history, as History shows it.
+     */
+    public var summary: String
+    /**
+     * The history commit, or `None` when nothing needed changing after all.
+     */
+    public var commit: String?
+    /**
+     * The changes that ran.
+     */
+    public var approved: [String]
+    /**
+     * The changes left out.
+     */
+    public var rejected: [String]
+    /**
+     * Changes chosen but dropped because one they need was left out, each with why.
+     */
+    public var dropped: [String]
+    /**
+     * Items left alone this time, each with why: changed since, checked out, or gone.
+     */
+    public var skipped: [String]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The change in history, as History shows it.
+         */summary: String, 
+        /**
+         * The history commit, or `None` when nothing needed changing after all.
+         */commit: String?, 
+        /**
+         * The changes that ran.
+         */approved: [String], 
+        /**
+         * The changes left out.
+         */rejected: [String], 
+        /**
+         * Changes chosen but dropped because one they need was left out, each with why.
+         */dropped: [String], 
+        /**
+         * Items left alone this time, each with why: changed since, checked out, or gone.
+         */skipped: [String]) {
+        self.summary = summary
+        self.commit = commit
+        self.approved = approved
+        self.rejected = rejected
+        self.dropped = dropped
+        self.skipped = skipped
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension RestructureApproved: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRestructureApproved: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RestructureApproved {
+        return
+            try RestructureApproved(
+                summary: FfiConverterString.read(from: &buf), 
+                commit: FfiConverterOptionString.read(from: &buf), 
+                approved: FfiConverterSequenceString.read(from: &buf), 
+                rejected: FfiConverterSequenceString.read(from: &buf), 
+                dropped: FfiConverterSequenceString.read(from: &buf), 
+                skipped: FfiConverterSequenceString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: RestructureApproved, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.summary, into: &buf)
+        FfiConverterOptionString.write(value.commit, into: &buf)
+        FfiConverterSequenceString.write(value.approved, into: &buf)
+        FfiConverterSequenceString.write(value.rejected, into: &buf)
+        FfiConverterSequenceString.write(value.dropped, into: &buf)
+        FfiConverterSequenceString.write(value.skipped, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRestructureApproved_lift(_ buf: RustBuffer) throws -> RestructureApproved {
+    return try FfiConverterTypeRestructureApproved.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRestructureApproved_lower(_ value: RestructureApproved) -> RustBuffer {
+    return FfiConverterTypeRestructureApproved.lower(value)
+}
+
+
+/**
+ * One change in a proposal.
+ */
+public struct RestructureChange: Equatable, Hashable {
+    /**
+     * Its number in the proposal, which partial approval names.
+     */
+    public var id: String
+    /**
+     * What it does, in a line.
+     */
+    public var description: String
+    /**
+     * Why it's worth making.
+     */
+    public var reason: String
+    /**
+     * How invasive it is.
+     */
+    public var invasiveness: Invasiveness
+    /**
+     * That, in words.
+     */
+    public var invasivenessWords: String
+    /**
+     * The items it changes.
+     */
+    public var items: [ProposalItem]
+    /**
+     * The items it leaves alone, each with why.
+     */
+    public var held: [ProposalItem]
+    /**
+     * The design documents it rewrites.
+     */
+    public var documents: [String]
+    /**
+     * The changes it needs; leaving one of them out drops this one too.
+     */
+    public var dependsOn: [String]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Its number in the proposal, which partial approval names.
+         */id: String, 
+        /**
+         * What it does, in a line.
+         */description: String, 
+        /**
+         * Why it's worth making.
+         */reason: String, 
+        /**
+         * How invasive it is.
+         */invasiveness: Invasiveness, 
+        /**
+         * That, in words.
+         */invasivenessWords: String, 
+        /**
+         * The items it changes.
+         */items: [ProposalItem], 
+        /**
+         * The items it leaves alone, each with why.
+         */held: [ProposalItem], 
+        /**
+         * The design documents it rewrites.
+         */documents: [String], 
+        /**
+         * The changes it needs; leaving one of them out drops this one too.
+         */dependsOn: [String]) {
+        self.id = id
+        self.description = description
+        self.reason = reason
+        self.invasiveness = invasiveness
+        self.invasivenessWords = invasivenessWords
+        self.items = items
+        self.held = held
+        self.documents = documents
+        self.dependsOn = dependsOn
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension RestructureChange: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRestructureChange: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RestructureChange {
+        return
+            try RestructureChange(
+                id: FfiConverterString.read(from: &buf), 
+                description: FfiConverterString.read(from: &buf), 
+                reason: FfiConverterString.read(from: &buf), 
+                invasiveness: FfiConverterTypeInvasiveness.read(from: &buf), 
+                invasivenessWords: FfiConverterString.read(from: &buf), 
+                items: FfiConverterSequenceTypeProposalItem.read(from: &buf), 
+                held: FfiConverterSequenceTypeProposalItem.read(from: &buf), 
+                documents: FfiConverterSequenceString.read(from: &buf), 
+                dependsOn: FfiConverterSequenceString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: RestructureChange, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.description, into: &buf)
+        FfiConverterString.write(value.reason, into: &buf)
+        FfiConverterTypeInvasiveness.write(value.invasiveness, into: &buf)
+        FfiConverterString.write(value.invasivenessWords, into: &buf)
+        FfiConverterSequenceTypeProposalItem.write(value.items, into: &buf)
+        FfiConverterSequenceTypeProposalItem.write(value.held, into: &buf)
+        FfiConverterSequenceString.write(value.documents, into: &buf)
+        FfiConverterSequenceString.write(value.dependsOn, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRestructureChange_lift(_ buf: RustBuffer) throws -> RestructureChange {
+    return try FfiConverterTypeRestructureChange.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRestructureChange_lower(_ value: RestructureChange) -> RustBuffer {
+    return FfiConverterTypeRestructureChange.lower(value)
+}
+
+
+/**
+ * The archive as it is and as a proposal's chosen changes would leave it.
+ */
+public struct RestructurePreview: Equatable, Hashable {
+    /**
+     * The collections as they are.
+     */
+    public var before: [PreviewedCollection]
+    /**
+     * The collections after.
+     */
+    public var after: [PreviewedCollection]
+    /**
+     * The tags the proposal touches, as they are.
+     */
+    public var tagsBefore: [PreviewedTag]
+    /**
+     * Those tags after.
+     */
+    public var tagsAfter: [PreviewedTag]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The collections as they are.
+         */before: [PreviewedCollection], 
+        /**
+         * The collections after.
+         */after: [PreviewedCollection], 
+        /**
+         * The tags the proposal touches, as they are.
+         */tagsBefore: [PreviewedTag], 
+        /**
+         * Those tags after.
+         */tagsAfter: [PreviewedTag]) {
+        self.before = before
+        self.after = after
+        self.tagsBefore = tagsBefore
+        self.tagsAfter = tagsAfter
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension RestructurePreview: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRestructurePreview: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RestructurePreview {
+        return
+            try RestructurePreview(
+                before: FfiConverterSequenceTypePreviewedCollection.read(from: &buf), 
+                after: FfiConverterSequenceTypePreviewedCollection.read(from: &buf), 
+                tagsBefore: FfiConverterSequenceTypePreviewedTag.read(from: &buf), 
+                tagsAfter: FfiConverterSequenceTypePreviewedTag.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: RestructurePreview, into buf: inout [UInt8]) {
+        FfiConverterSequenceTypePreviewedCollection.write(value.before, into: &buf)
+        FfiConverterSequenceTypePreviewedCollection.write(value.after, into: &buf)
+        FfiConverterSequenceTypePreviewedTag.write(value.tagsBefore, into: &buf)
+        FfiConverterSequenceTypePreviewedTag.write(value.tagsAfter, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRestructurePreview_lift(_ buf: RustBuffer) throws -> RestructurePreview {
+    return try FfiConverterTypeRestructurePreview.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRestructurePreview_lower(_ value: RestructurePreview) -> RustBuffer {
+    return FfiConverterTypeRestructurePreview.lower(value)
+}
+
+
+/**
+ * A restructure proposal waiting for the owner.
+ */
+public struct RestructureProposal: Equatable, Hashable {
+    /**
+     * Its identifier.
+     */
+    public var id: String
+    /**
+     * What it reorganizes: `tags`, or `section`.
+     */
+    public var kind: String
+    /**
+     * The section it covers: a collection's path, or empty for the whole archive.
+     */
+    public var section: String
+    /**
+     * When it was proposed.
+     */
+    public var created: String
+    /**
+     * The most invasive of its changes.
+     */
+    public var invasiveness: Invasiveness
+    /**
+     * Why it's worth making.
+     */
+    public var rationale: String
+    /**
+     * The changes, in the order they'd be applied.
+     */
+    public var changes: [RestructureChange]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Its identifier.
+         */id: String, 
+        /**
+         * What it reorganizes: `tags`, or `section`.
+         */kind: String, 
+        /**
+         * The section it covers: a collection's path, or empty for the whole archive.
+         */section: String, 
+        /**
+         * When it was proposed.
+         */created: String, 
+        /**
+         * The most invasive of its changes.
+         */invasiveness: Invasiveness, 
+        /**
+         * Why it's worth making.
+         */rationale: String, 
+        /**
+         * The changes, in the order they'd be applied.
+         */changes: [RestructureChange]) {
+        self.id = id
+        self.kind = kind
+        self.section = section
+        self.created = created
+        self.invasiveness = invasiveness
+        self.rationale = rationale
+        self.changes = changes
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension RestructureProposal: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRestructureProposal: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RestructureProposal {
+        return
+            try RestructureProposal(
+                id: FfiConverterString.read(from: &buf), 
+                kind: FfiConverterString.read(from: &buf), 
+                section: FfiConverterString.read(from: &buf), 
+                created: FfiConverterString.read(from: &buf), 
+                invasiveness: FfiConverterTypeInvasiveness.read(from: &buf), 
+                rationale: FfiConverterString.read(from: &buf), 
+                changes: FfiConverterSequenceTypeRestructureChange.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: RestructureProposal, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.kind, into: &buf)
+        FfiConverterString.write(value.section, into: &buf)
+        FfiConverterString.write(value.created, into: &buf)
+        FfiConverterTypeInvasiveness.write(value.invasiveness, into: &buf)
+        FfiConverterString.write(value.rationale, into: &buf)
+        FfiConverterSequenceTypeRestructureChange.write(value.changes, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRestructureProposal_lift(_ buf: RustBuffer) throws -> RestructureProposal {
+    return try FfiConverterTypeRestructureProposal.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRestructureProposal_lower(_ value: RestructureProposal) -> RustBuffer {
+    return FfiConverterTypeRestructureProposal.lower(value)
 }
 
 
@@ -15821,6 +17259,111 @@ public func FfiConverterTypeIndexSwitched_lower(_ value: IndexSwitched) -> RustB
 
 
 /**
+ * How much a change disturbs what the owner knows of the archive, least first.
+ */
+
+public enum Invasiveness: Equatable, Hashable {
+    
+    /**
+     * Rewriting design documents and tags: nothing moves.
+     */
+    case rewriting
+    /**
+     * Grouping a collection's items into new subcollections inside it.
+     */
+    case subdividing
+    /**
+     * Renaming a collection.
+     */
+    case renaming
+    /**
+     * Moving items between branches, and merging or splitting collections across them.
+     */
+    case betweenBranches
+    /**
+     * Moving or merging top-level collections.
+     */
+    case topLevel
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension Invasiveness: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeInvasiveness: FfiConverterRustBuffer {
+    typealias SwiftType = Invasiveness
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Invasiveness {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .rewriting
+        
+        case 2: return .subdividing
+        
+        case 3: return .renaming
+        
+        case 4: return .betweenBranches
+        
+        case 5: return .topLevel
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: Invasiveness, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .rewriting:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .subdividing:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .renaming:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .betweenBranches:
+            writeInt(&buf, Int32(4))
+        
+        
+        case .topLevel:
+            writeInt(&buf, Int32(5))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeInvasiveness_lift(_ buf: RustBuffer) throws -> Invasiveness {
+    return try FfiConverterTypeInvasiveness.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeInvasiveness_lower(_ value: Invasiveness) -> RustBuffer {
+    return FfiConverterTypeInvasiveness.lower(value)
+}
+
+
+
+/**
  * An item's kind (FORMAT.md §4.1).
  */
 
@@ -17054,6 +18597,30 @@ fileprivate struct FfiConverterOptionTypeIndexSwitch: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeRestructureProposal: FfiConverterRustBuffer {
+    typealias SwiftType = RestructureProposal?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeRestructureProposal.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeRestructureProposal.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeResurfaced: FfiConverterRustBuffer {
     typealias SwiftType = Resurfaced?
 
@@ -17190,6 +18757,30 @@ fileprivate struct FfiConverterOptionTypeSensitivity: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeSensitivity.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionSequenceString: FfiConverterRustBuffer {
+    typealias SwiftType = [String]?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterSequenceString.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterSequenceString.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -17648,6 +19239,106 @@ fileprivate struct FfiConverterSequenceTypeFiledItem: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeGraphCollection: FfiConverterRustBuffer {
+    typealias SwiftType = [GraphCollection]
+
+    public static func write(_ value: [GraphCollection], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeGraphCollection.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [GraphCollection] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [GraphCollection]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeGraphCollection.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeGraphConnection: FfiConverterRustBuffer {
+    typealias SwiftType = [GraphConnection]
+
+    public static func write(_ value: [GraphConnection], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeGraphConnection.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [GraphConnection] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [GraphConnection]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeGraphConnection.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeGraphItemTie: FfiConverterRustBuffer {
+    typealias SwiftType = [GraphItemTie]
+
+    public static func write(_ value: [GraphItemTie], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeGraphItemTie.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [GraphItemTie] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [GraphItemTie]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeGraphItemTie.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeGraphTag: FfiConverterRustBuffer {
+    typealias SwiftType = [GraphTag]
+
+    public static func write(_ value: [GraphTag], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeGraphTag.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [GraphTag] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [GraphTag]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeGraphTag.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeHappened: FfiConverterRustBuffer {
     typealias SwiftType = [Happened]
 
@@ -18048,6 +19739,56 @@ fileprivate struct FfiConverterSequenceTypePassagePart: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypePreviewedCollection: FfiConverterRustBuffer {
+    typealias SwiftType = [PreviewedCollection]
+
+    public static func write(_ value: [PreviewedCollection], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypePreviewedCollection.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [PreviewedCollection] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [PreviewedCollection]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypePreviewedCollection.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypePreviewedTag: FfiConverterRustBuffer {
+    typealias SwiftType = [PreviewedTag]
+
+    public static func write(_ value: [PreviewedTag], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypePreviewedTag.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [PreviewedTag] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [PreviewedTag]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypePreviewedTag.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeProposal: FfiConverterRustBuffer {
     typealias SwiftType = [Proposal]
 
@@ -18065,6 +19806,31 @@ fileprivate struct FfiConverterSequenceTypeProposal: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeProposal.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeProposalItem: FfiConverterRustBuffer {
+    typealias SwiftType = [ProposalItem]
+
+    public static func write(_ value: [ProposalItem], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeProposalItem.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ProposalItem] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [ProposalItem]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeProposalItem.read(from: &buf))
         }
         return seq
     }
@@ -18240,6 +20006,56 @@ fileprivate struct FfiConverterSequenceTypeRelatedItem: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeRelatedItem.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeRestructureChange: FfiConverterRustBuffer {
+    typealias SwiftType = [RestructureChange]
+
+    public static func write(_ value: [RestructureChange], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeRestructureChange.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [RestructureChange] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [RestructureChange]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeRestructureChange.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeRestructureProposal: FfiConverterRustBuffer {
+    typealias SwiftType = [RestructureProposal]
+
+    public static func write(_ value: [RestructureProposal], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeRestructureProposal.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [RestructureProposal] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [RestructureProposal]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeRestructureProposal.read(from: &buf))
         }
         return seq
     }
@@ -18712,6 +20528,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_carrel_ffi_checksum_method_archivehandle_editable_proposal() != 23041) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_discovery_graph() != 3876) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_history() != 40353) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -18800,6 +20619,21 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_previews() != 57952) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_approve_restructure() != 42869) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_propose_tag_restructure() != 48551) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_reject_restructure() != 43460) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_restructure_preview() != 31031) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_restructure_proposals() != 26448) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_answer_question() != 10632) {

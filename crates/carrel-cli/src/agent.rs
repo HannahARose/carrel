@@ -63,6 +63,12 @@ impl CliJobs {
         Ok((!done.is_empty()).then(|| done.join(", ")))
     }
 
+    /// A crawler pass, when its pace says one is due and the device is idle and on power.
+    fn crawl(archive: &Archive) -> Result<Option<String>, JobError> {
+        let crawled = crate::crawl::when_idle(archive).map_err(|Failure(e)| JobError::Failed(e))?;
+        Ok(crawled.and_then(|c| c.summary()))
+    }
+
     fn sessions(&self, archive: &Archive) -> Result<Option<String>, JobError> {
         let lease = DiskLock::for_archive(archive)
             .acquire(holder(&self.identity), "sessions", DEFAULT_LEASE)
@@ -100,6 +106,7 @@ impl Jobs for CliJobs {
             Job::Work => Self::work(archive),
             Job::Sessions => self.sessions(archive),
             Job::Backup => self.backup(archive),
+            Job::Crawl => Self::crawl(archive),
         }
     }
 
@@ -186,6 +193,7 @@ fn job_name(job: Job) -> &'static str {
         Job::Work => "work",
         Job::Sessions => "sessions",
         Job::Backup => "backup",
+        Job::Crawl => "crawl",
     }
 }
 
