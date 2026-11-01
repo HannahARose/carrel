@@ -277,9 +277,19 @@ A model is recommended for the crawler when it finds at least 70% of the misplac
 
 The catalog's `crawler` flag records the recommendation. Once a model has it, the crawler judges with the largest recommended model installed that fits the device's memory, and otherwise, as now, with the librarian's choice: the strongest installed model that fits, then Apple's model. No model has the flag yet.
 
-### Crawler: not run yet
+### Crawler: 2026-11-01
 
-No real model has been measured. The runs happen on the reference machine and set the `crawler` flags from what they show.
+On DeskBook, an M2 Max with 32 GB, with `dev` after #431, one model at a time, on the muddled copy of the test set. [Report](2026-11-01-v0.7/crawl/report.md) · [results.json](2026-11-01-v0.7/crawl/results.json)
+
+| Model | Found | Recall | Precision | Placed right | Unusable | s/item | Meets the bar |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| **Qwen3.5 4B** (llama.cpp) | 17 of 18 | 94% | 68% | 86% | 0 | 5.9 | **yes** |
+| Apple Foundation Model | 18 of 18 | 100% | 41% | 79% | 1 | 3.0 | no: precision |
+| Granite 4.2 3B (llama.cpp) | 7 of 18 | 39% | 100% | 36% | 0 | 4.2 | no: recall, placement |
+
+- **Qwen3.5 4B has the catalog's `crawler` flag,** so the crawler uses it by default wherever it fits.
+- **The earlier runs** asked whether an item fits, and the models answered whether it fits *some* collection. They now say where it belongs instead, and say it briefly, so nothing is cut off (#405, #428).
+- **Apple's model** finds every misplaced item but flags many that are fine. Granite rarely flags anything.
 
 ## Restructure
 
@@ -296,9 +306,16 @@ carrel bench --restructure --out bench-results
 
 It writes `bench-results/restructure/results.json` and `report.md`. Each proposal's score is saved to `restructure/runs/` as it's made, so a stopped run carries on; `--fresh` starts over, and `--model NAME` measures one text model beside numbers alone. Proposals are never applied: where each item would end up is worked out from the changes. The report lists each group a proposal held back, and why.
 
-### Restructure: not run yet
+### Restructure: 2026-11-01
 
-No real model has been measured. The first run on the reference machine proposed nothing at all, since every card vector shares a direction, as an embedding model's do, so every item was grouped with every other (#404). Grouping now measures likeness from the archive's average cosine. On stub card vectors built that way, numbers alone at Eager gather the missing Recipes' items and the items dumped from Manuals into new collections of their own. On the stub card vectors in the tests that know the intended shape exactly, numbers alone at Balanced subdivide collections without breaking anything and bring the archive closer to the intended shape, but hold back the new top-level collections that would recover Recipes; each eagerness recovers at least as much as the one below it.
+On DeskBook, as above, after #431. [Report](2026-11-01-v0.7/restructure/report.md) · [results.json](2026-11-01-v0.7/restructure/results.json)
+
+**Nothing is proposed, for every wording at every eagerness, so the muddled archive's shape stays at 77%.** The grouping, on the cards' embeddinggemma-300m vectors and the tag and link graph, finds two candidates:
+
+- a new collection of 4 items in Projects (gain -0.02);
+- a new top-level collection of 4 items (gain -0.40).
+
+Neither clears the margin, so both are held back. That's safe: an earlier run, before #431's findability check, proposed changes that lowered the shape to 68%. But it isn't useful yet. The real vectors don't show the groups the stub vectors in the tests do, which is #435.
 
 ## Running it again
 

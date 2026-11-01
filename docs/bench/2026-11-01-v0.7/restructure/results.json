@@ -1,0 +1,467 @@
+{
+  "date": "2026-11-01",
+  "carrel": "0.6.0",
+  "os": "macos",
+  "arch": "aarch64",
+  "notes": [
+    "Items were grouped by their cards' embeddinggemma-300m vectors and the tag and link graph."
+  ],
+  "proposals": [
+    {
+      "provider": null,
+      "offer": null,
+      "label": "numbers alone",
+      "version": null,
+      "eagerness": "settled",
+      "score": {
+        "changes": 0,
+        "before": {
+          "precision": 0.6774193548387096,
+          "recall": 0.9048473967684022,
+          "f1": 0.7747886241352805
+        },
+        "after": {
+          "precision": 0.6774193548387096,
+          "recall": 0.9048473967684022,
+          "f1": 0.7747886241352805
+        },
+        "recovered": false,
+        "misplaced": 18,
+        "fixed": 0,
+        "broken": 0,
+        "moves": {
+          "moved": 0,
+          "weighted": 0,
+          "by_invasiveness": {}
+        },
+        "weighted_moves_per_fix": null,
+        "findability": null,
+        "findability_gain": null,
+        "untested": null,
+        "held_back": [
+          "a new collection of 4 items in Projects: its gain (-0.02) isn't the 0.15 subdividing a collection needs at this eagerness",
+          "a new top-level collection of 4 items: its gain (-0.40) isn't the 0.45 moving or merging top-level collections needs at this eagerness"
+        ],
+        "seconds": 0.029399792
+      }
+    },
+    {
+      "provider": null,
+      "offer": null,
+      "label": "numbers alone",
+      "version": null,
+      "eagerness": "balanced",
+      "score": {
+        "changes": 0,
+        "before": {
+          "precision": 0.6774193548387096,
+          "recall": 0.9048473967684022,
+          "f1": 0.7747886241352805
+        },
+        "after": {
+          "precision": 0.6774193548387096,
+          "recall": 0.9048473967684022,
+          "f1": 0.7747886241352805
+        },
+        "recovered": false,
+        "misplaced": 18,
+        "fixed": 0,
+        "broken": 0,
+        "moves": {
+          "moved": 0,
+          "weighted": 0,
+          "by_invasiveness": {}
+        },
+        "weighted_moves_per_fix": null,
+        "findability": null,
+        "findability_gain": null,
+        "untested": null,
+        "held_back": [
+          "a new collection of 4 items in Projects: its gain (-0.02) isn't the 0.07 subdividing a collection needs at this eagerness",
+          "a new top-level collection of 4 items: its gain (-0.40) isn't the 0.22 moving or merging top-level collections needs at this eagerness"
+        ],
+        "seconds": 0.028972792
+      }
+    },
+    {
+      "provider": null,
+      "offer": null,
+      "label": "numbers alone",
+      "version": null,
+      "eagerness": "eager",
+      "score": {
+        "changes": 0,
+        "before": {
+          "precision": 0.6774193548387096,
+          "recall": 0.9048473967684022,
+          "f1": 0.7747886241352805
+        },
+        "after": {
+          "precision": 0.6774193548387096,
+          "recall": 0.9048473967684022,
+          "f1": 0.7747886241352805
+        },
+        "recovered": false,
+        "misplaced": 18,
+        "fixed": 0,
+        "broken": 0,
+        "moves": {
+          "moved": 0,
+          "weighted": 0,
+          "by_invasiveness": {}
+        },
+        "weighted_moves_per_fix": null,
+        "findability": null,
+        "findability_gain": null,
+        "untested": null,
+        "held_back": [
+          "a new collection of 4 items in Projects: it costs as much as it gains",
+          "a new top-level collection of 4 items: it costs as much as it gains"
+        ],
+        "seconds": 0.02876825
+      }
+    },
+    {
+      "provider": "apple",
+      "offer": "afm",
+      "label": "apple/Apple Foundation Model",
+      "version": "0.5.1",
+      "eagerness": "settled",
+      "score": {
+        "changes": 0,
+        "before": {
+          "precision": 0.6774193548387096,
+          "recall": 0.9048473967684022,
+          "f1": 0.7747886241352805
+        },
+        "after": {
+          "precision": 0.6774193548387096,
+          "recall": 0.9048473967684022,
+          "f1": 0.7747886241352805
+        },
+        "recovered": false,
+        "misplaced": 18,
+        "fixed": 0,
+        "broken": 0,
+        "moves": {
+          "moved": 0,
+          "weighted": 0,
+          "by_invasiveness": {}
+        },
+        "weighted_moves_per_fix": null,
+        "findability": null,
+        "findability_gain": null,
+        "untested": null,
+        "held_back": [
+          "a new collection of 4 items in Projects: its gain (-0.02) isn't the 0.15 subdividing a collection needs at this eagerness",
+          "a new top-level collection of 4 items: its gain (-0.40) isn't the 0.45 moving or merging top-level collections needs at this eagerness"
+        ],
+        "seconds": 0.028781459
+      }
+    },
+    {
+      "provider": "apple",
+      "offer": "afm",
+      "label": "apple/Apple Foundation Model",
+      "version": "0.5.1",
+      "eagerness": "balanced",
+      "score": {
+        "changes": 0,
+        "before": {
+          "precision": 0.6774193548387096,
+          "recall": 0.9048473967684022,
+          "f1": 0.7747886241352805
+        },
+        "after": {
+          "precision": 0.6774193548387096,
+          "recall": 0.9048473967684022,
+          "f1": 0.7747886241352805
+        },
+        "recovered": false,
+        "misplaced": 18,
+        "fixed": 0,
+        "broken": 0,
+        "moves": {
+          "moved": 0,
+          "weighted": 0,
+          "by_invasiveness": {}
+        },
+        "weighted_moves_per_fix": null,
+        "findability": null,
+        "findability_gain": null,
+        "untested": null,
+        "held_back": [
+          "a new collection of 4 items in Projects: its gain (-0.02) isn't the 0.07 subdividing a collection needs at this eagerness",
+          "a new top-level collection of 4 items: its gain (-0.40) isn't the 0.22 moving or merging top-level collections needs at this eagerness"
+        ],
+        "seconds": 0.0295595
+      }
+    },
+    {
+      "provider": "apple",
+      "offer": "afm",
+      "label": "apple/Apple Foundation Model",
+      "version": "0.5.1",
+      "eagerness": "eager",
+      "score": {
+        "changes": 0,
+        "before": {
+          "precision": 0.6774193548387096,
+          "recall": 0.9048473967684022,
+          "f1": 0.7747886241352805
+        },
+        "after": {
+          "precision": 0.6774193548387096,
+          "recall": 0.9048473967684022,
+          "f1": 0.7747886241352805
+        },
+        "recovered": false,
+        "misplaced": 18,
+        "fixed": 0,
+        "broken": 0,
+        "moves": {
+          "moved": 0,
+          "weighted": 0,
+          "by_invasiveness": {}
+        },
+        "weighted_moves_per_fix": null,
+        "findability": null,
+        "findability_gain": null,
+        "untested": null,
+        "held_back": [
+          "a new collection of 4 items in Projects: it costs as much as it gains",
+          "a new top-level collection of 4 items: it costs as much as it gains"
+        ],
+        "seconds": 0.028761
+      }
+    },
+    {
+      "provider": "llama",
+      "offer": "granite-4.2-3b",
+      "label": "llama/granite-4.2-3b.gguf",
+      "version": "0.6.0",
+      "eagerness": "settled",
+      "score": {
+        "changes": 0,
+        "before": {
+          "precision": 0.6774193548387096,
+          "recall": 0.9048473967684022,
+          "f1": 0.7747886241352805
+        },
+        "after": {
+          "precision": 0.6774193548387096,
+          "recall": 0.9048473967684022,
+          "f1": 0.7747886241352805
+        },
+        "recovered": false,
+        "misplaced": 18,
+        "fixed": 0,
+        "broken": 0,
+        "moves": {
+          "moved": 0,
+          "weighted": 0,
+          "by_invasiveness": {}
+        },
+        "weighted_moves_per_fix": null,
+        "findability": null,
+        "findability_gain": null,
+        "untested": null,
+        "held_back": [
+          "a new collection of 4 items in Projects: its gain (-0.02) isn't the 0.15 subdividing a collection needs at this eagerness",
+          "a new top-level collection of 4 items: its gain (-0.40) isn't the 0.45 moving or merging top-level collections needs at this eagerness"
+        ],
+        "seconds": 0.028706583
+      }
+    },
+    {
+      "provider": "llama",
+      "offer": "granite-4.2-3b",
+      "label": "llama/granite-4.2-3b.gguf",
+      "version": "0.6.0",
+      "eagerness": "balanced",
+      "score": {
+        "changes": 0,
+        "before": {
+          "precision": 0.6774193548387096,
+          "recall": 0.9048473967684022,
+          "f1": 0.7747886241352805
+        },
+        "after": {
+          "precision": 0.6774193548387096,
+          "recall": 0.9048473967684022,
+          "f1": 0.7747886241352805
+        },
+        "recovered": false,
+        "misplaced": 18,
+        "fixed": 0,
+        "broken": 0,
+        "moves": {
+          "moved": 0,
+          "weighted": 0,
+          "by_invasiveness": {}
+        },
+        "weighted_moves_per_fix": null,
+        "findability": null,
+        "findability_gain": null,
+        "untested": null,
+        "held_back": [
+          "a new collection of 4 items in Projects: its gain (-0.02) isn't the 0.07 subdividing a collection needs at this eagerness",
+          "a new top-level collection of 4 items: its gain (-0.40) isn't the 0.22 moving or merging top-level collections needs at this eagerness"
+        ],
+        "seconds": 0.028886458
+      }
+    },
+    {
+      "provider": "llama",
+      "offer": "granite-4.2-3b",
+      "label": "llama/granite-4.2-3b.gguf",
+      "version": "0.6.0",
+      "eagerness": "eager",
+      "score": {
+        "changes": 0,
+        "before": {
+          "precision": 0.6774193548387096,
+          "recall": 0.9048473967684022,
+          "f1": 0.7747886241352805
+        },
+        "after": {
+          "precision": 0.6774193548387096,
+          "recall": 0.9048473967684022,
+          "f1": 0.7747886241352805
+        },
+        "recovered": false,
+        "misplaced": 18,
+        "fixed": 0,
+        "broken": 0,
+        "moves": {
+          "moved": 0,
+          "weighted": 0,
+          "by_invasiveness": {}
+        },
+        "weighted_moves_per_fix": null,
+        "findability": null,
+        "findability_gain": null,
+        "untested": null,
+        "held_back": [
+          "a new collection of 4 items in Projects: it costs as much as it gains",
+          "a new top-level collection of 4 items: it costs as much as it gains"
+        ],
+        "seconds": 0.028586042
+      }
+    },
+    {
+      "provider": "llama",
+      "offer": "qwen3.5-4b",
+      "label": "llama/qwen3.5-4b.gguf",
+      "version": "0.6.0",
+      "eagerness": "settled",
+      "score": {
+        "changes": 0,
+        "before": {
+          "precision": 0.6774193548387096,
+          "recall": 0.9048473967684022,
+          "f1": 0.7747886241352805
+        },
+        "after": {
+          "precision": 0.6774193548387096,
+          "recall": 0.9048473967684022,
+          "f1": 0.7747886241352805
+        },
+        "recovered": false,
+        "misplaced": 18,
+        "fixed": 0,
+        "broken": 0,
+        "moves": {
+          "moved": 0,
+          "weighted": 0,
+          "by_invasiveness": {}
+        },
+        "weighted_moves_per_fix": null,
+        "findability": null,
+        "findability_gain": null,
+        "untested": null,
+        "held_back": [
+          "a new collection of 4 items in Projects: its gain (-0.02) isn't the 0.15 subdividing a collection needs at this eagerness",
+          "a new top-level collection of 4 items: its gain (-0.40) isn't the 0.45 moving or merging top-level collections needs at this eagerness"
+        ],
+        "seconds": 0.028669709
+      }
+    },
+    {
+      "provider": "llama",
+      "offer": "qwen3.5-4b",
+      "label": "llama/qwen3.5-4b.gguf",
+      "version": "0.6.0",
+      "eagerness": "balanced",
+      "score": {
+        "changes": 0,
+        "before": {
+          "precision": 0.6774193548387096,
+          "recall": 0.9048473967684022,
+          "f1": 0.7747886241352805
+        },
+        "after": {
+          "precision": 0.6774193548387096,
+          "recall": 0.9048473967684022,
+          "f1": 0.7747886241352805
+        },
+        "recovered": false,
+        "misplaced": 18,
+        "fixed": 0,
+        "broken": 0,
+        "moves": {
+          "moved": 0,
+          "weighted": 0,
+          "by_invasiveness": {}
+        },
+        "weighted_moves_per_fix": null,
+        "findability": null,
+        "findability_gain": null,
+        "untested": null,
+        "held_back": [
+          "a new collection of 4 items in Projects: its gain (-0.02) isn't the 0.07 subdividing a collection needs at this eagerness",
+          "a new top-level collection of 4 items: its gain (-0.40) isn't the 0.22 moving or merging top-level collections needs at this eagerness"
+        ],
+        "seconds": 0.028573666
+      }
+    },
+    {
+      "provider": "llama",
+      "offer": "qwen3.5-4b",
+      "label": "llama/qwen3.5-4b.gguf",
+      "version": "0.6.0",
+      "eagerness": "eager",
+      "score": {
+        "changes": 0,
+        "before": {
+          "precision": 0.6774193548387096,
+          "recall": 0.9048473967684022,
+          "f1": 0.7747886241352805
+        },
+        "after": {
+          "precision": 0.6774193548387096,
+          "recall": 0.9048473967684022,
+          "f1": 0.7747886241352805
+        },
+        "recovered": false,
+        "misplaced": 18,
+        "fixed": 0,
+        "broken": 0,
+        "moves": {
+          "moved": 0,
+          "weighted": 0,
+          "by_invasiveness": {}
+        },
+        "weighted_moves_per_fix": null,
+        "findability": null,
+        "findability_gain": null,
+        "untested": null,
+        "held_back": [
+          "a new collection of 4 items in Projects: it costs as much as it gains",
+          "a new top-level collection of 4 items: it costs as much as it gains"
+        ],
+        "seconds": 0.028542916
+      }
+    }
+  ]
+}
