@@ -947,8 +947,11 @@ public protocol ArchiveHandleProtocol: AnyObject, Sendable {
      * Returns the checked-out item `item`, from where it was checked out to or from `from`,
      * replacing the archive copy with the working copy, with a snapshot first when backups
      * are set up. Afterwards the returned version is snapshotted, and the checkout's session
-     * snapshots are forgotten when `trim_snapshots` says so, as the owner chose. Ask the
-     * owner first, with [`ArchiveHandle::return_preview`].
+     * snapshots are forgotten when `trim_snapshots` says so, as the owner chose. Then the
+     * working copy goes to the Trash or is kept, by `checkout.after_return`; when that says
+     * to ask, [`Returned::working_copy`] says so, and
+     * [`ArchiveHandle::trash_working_copy`] trashes it if the owner wants. Ask the owner
+     * first, with [`ArchiveHandle::return_preview`].
      *
      * # Errors
      *
@@ -2212,6 +2215,18 @@ public protocol ArchiveHandleProtocol: AnyObject, Sendable {
      */
     func usageReport(since: String, names: Bool) throws  -> UsageReportText
     
+    /**
+     * Puts the returned working copy at `path` in the system Trash, where it can be
+     * recovered, when the owner says to after a return ([`WorkingCopyAfter::Ask`]). Never
+     * anything inside the archive.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if it's inside the archive or isn't there, or
+     * [`CarrelError::Failed`] if the Trash refuses it.
+     */
+    func trashWorkingCopy(path: String) throws 
+    
 }
 /**
  * An open archive.
@@ -2607,8 +2622,11 @@ open func removeFromDesk(path: String, deleteCard: Bool)throws  -> DeskItem  {
      * Returns the checked-out item `item`, from where it was checked out to or from `from`,
      * replacing the archive copy with the working copy, with a snapshot first when backups
      * are set up. Afterwards the returned version is snapshotted, and the checkout's session
-     * snapshots are forgotten when `trim_snapshots` says so, as the owner chose. Ask the
-     * owner first, with [`ArchiveHandle::return_preview`].
+     * snapshots are forgotten when `trim_snapshots` says so, as the owner chose. Then the
+     * working copy goes to the Trash or is kept, by `checkout.after_return`; when that says
+     * to ask, [`Returned::working_copy`] says so, and
+     * [`ArchiveHandle::trash_working_copy`] trashes it if the owner wants. Ask the owner
+     * first, with [`ArchiveHandle::return_preview`].
      *
      * # Errors
      *
@@ -4861,6 +4879,25 @@ open func usageReport(since: String, names: Bool)throws  -> UsageReportText  {
         FfiConverterBool.lower(names),uniffiCallStatus
     )
 })
+}
+    
+    /**
+     * Puts the returned working copy at `path` in the system Trash, where it can be
+     * recovered, when the owner says to after a return ([`WorkingCopyAfter::Ask`]). Never
+     * anything inside the archive.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if it's inside the archive or isn't there, or
+     * [`CarrelError::Failed`] if the Trash refuses it.
+     */
+open func trashWorkingCopy(path: String)throws   {try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_trash_working_copy(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(path),uniffiCallStatus
+    )
+}
 }
     
 
@@ -16680,6 +16717,14 @@ public struct Returned: Equatable, Hashable {
      * Why some session snapshots couldn't be forgotten, or all were kept, if they were.
      */
     public var snapshotProblems: [String]
+    /**
+     * Where the working copy was returned from.
+     */
+    public var working: String
+    /**
+     * What happened to it afterwards, by `checkout.after_return`.
+     */
+    public var workingCopy: WorkingCopyAfter
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -16701,13 +16746,21 @@ public struct Returned: Equatable, Hashable {
          */snapshotsKept: UInt32, 
         /**
          * Why some session snapshots couldn't be forgotten, or all were kept, if they were.
-         */snapshotProblems: [String]) {
+         */snapshotProblems: [String], 
+        /**
+         * Where the working copy was returned from.
+         */working: String, 
+        /**
+         * What happened to it afterwards, by `checkout.after_return`.
+         */workingCopy: WorkingCopyAfter) {
         self.commit = commit
         self.snapshot = snapshot
         self.returnedSnapshot = returnedSnapshot
         self.snapshotsForgotten = snapshotsForgotten
         self.snapshotsKept = snapshotsKept
         self.snapshotProblems = snapshotProblems
+        self.working = working
+        self.workingCopy = workingCopy
     }
 
     
@@ -16731,7 +16784,9 @@ public struct FfiConverterTypeReturned: FfiConverterRustBuffer {
                 returnedSnapshot: FfiConverterOptionString.read(from: &buf), 
                 snapshotsForgotten: FfiConverterUInt32.read(from: &buf), 
                 snapshotsKept: FfiConverterUInt32.read(from: &buf), 
-                snapshotProblems: FfiConverterSequenceString.read(from: &buf)
+                snapshotProblems: FfiConverterSequenceString.read(from: &buf), 
+                working: FfiConverterString.read(from: &buf), 
+                workingCopy: FfiConverterTypeWorkingCopyAfter.read(from: &buf)
         )
     }
 
@@ -16742,6 +16797,8 @@ public struct FfiConverterTypeReturned: FfiConverterRustBuffer {
         FfiConverterUInt32.write(value.snapshotsForgotten, into: &buf)
         FfiConverterUInt32.write(value.snapshotsKept, into: &buf)
         FfiConverterSequenceString.write(value.snapshotProblems, into: &buf)
+        FfiConverterString.write(value.working, into: &buf)
+        FfiConverterTypeWorkingCopyAfter.write(value.workingCopy, into: &buf)
     }
 }
 
@@ -20789,6 +20846,108 @@ public func FfiConverterTypeWanderReason_lower(_ value: WanderReason) -> RustBuf
 }
 
 
+
+/**
+ * What happened to a returned working copy.
+ */
+
+public enum WorkingCopyAfter: Equatable, Hashable {
+    
+    /**
+     * It's in the Trash.
+     */
+    case trashed
+    /**
+     * It's where it was.
+     */
+    case kept
+    /**
+     * It's where it was, and `checkout.after_return` says to ask the owner whether to put it
+     * in the Trash ([`ArchiveHandle::trash_working_copy`]).
+     */
+    case ask
+    /**
+     * The setting said to put it in the Trash, but it couldn't be; it's where it was.
+     */
+    case notTrashed(
+        /**
+         * Why, in words.
+         */why: String
+    )
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension WorkingCopyAfter: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeWorkingCopyAfter: FfiConverterRustBuffer {
+    typealias SwiftType = WorkingCopyAfter
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> WorkingCopyAfter {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .trashed
+        
+        case 2: return .kept
+        
+        case 3: return .ask
+        
+        case 4: return .notTrashed(why: try FfiConverterString.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: WorkingCopyAfter, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .trashed:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .kept:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .ask:
+            writeInt(&buf, Int32(3))
+        
+        
+        case let .notTrashed(why):
+            writeInt(&buf, Int32(4))
+            FfiConverterString.write(why, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWorkingCopyAfter_lift(_ buf: RustBuffer) throws -> WorkingCopyAfter {
+    return try FfiConverterTypeWorkingCopyAfter.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWorkingCopyAfter_lower(_ value: WorkingCopyAfter) -> RustBuffer {
+    return FfiConverterTypeWorkingCopyAfter.lower(value)
+}
+
+
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
@@ -23229,7 +23388,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_carrel_ffi_checksum_method_archivehandle_remove_from_desk() != 28348) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_carrel_ffi_checksum_method_archivehandle_return_item() != 36885) {
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_return_item() != 56446) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_return_preview() != 54010) {
@@ -23590,6 +23749,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_usage_report() != 37808) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_trash_working_copy() != 35886) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_progresslistener_update() != 58359) {

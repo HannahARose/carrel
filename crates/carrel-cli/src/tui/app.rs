@@ -164,6 +164,8 @@ pub enum Confirm {
         /// Whether backups are set up, so `t` can forget the checkout's session snapshots.
         snapshots: bool,
     },
+    /// Putting this returned working copy in the Trash, as `checkout.after_return` asks.
+    TrashWorkingCopy(std::path::PathBuf),
     /// Cancelling this checkout, leaving the working copy's changes out.
     CancelCheckout {
         /// The item.
@@ -366,6 +368,8 @@ pub enum Effect {
     Restructure(super::review_restructure::RestructureAction),
     /// Return this checkout, as `carrel return --yes [--from] [--trim-snapshots]` does.
     Return(super::active::Returning),
+    /// Put this returned working copy in the Trash.
+    TrashWorkingCopy(std::path::PathBuf),
     /// Cancel this checkout, as `carrel return --discard --yes` does.
     CancelCheckout(Id),
     /// Open this working copy or desk item in the system's own app for it.
@@ -495,6 +499,9 @@ pub struct App {
     pub busy: Option<String>,
     /// What's checked out, then what's on this device's desk.
     pub active: Vec<super::active::ActiveItem>,
+    /// The working copy of the checkout being returned, to ask about once it's back, when
+    /// `checkout.after_return` says to ask.
+    pub returning_working_copy: Option<std::path::PathBuf>,
     /// The chosen row of the Active list: an item or one of its pending entries.
     pub active_chosen: usize,
     /// Pending entries marked for a decision together.
@@ -604,6 +611,26 @@ fn lines(text: &str) -> Vec<String> {
     text.lines().map(str::to_owned).collect()
 }
 
+/// Where the interactive mode records what it asks about: in memory under test, so tests
+/// never write the owner's records.
+fn records_for(archive: &Archive) -> crate::asking::Records {
+    if cfg!(test) {
+        crate::asking::Records::in_memory(archive)
+    } else {
+        crate::asking::Records::here(archive)
+    }
+}
+
+/// The home folder Status looks in for active work: none under test, so tests never look in
+/// the owner's.
+fn active_work_home() -> Option<std::path::PathBuf> {
+    if cfg!(test) {
+        None
+    } else {
+        carrel_core::local::home_dir()
+    }
+}
+
 impl App {
     /// The app for `archive`, with everything loaded.
     ///
@@ -633,6 +660,7 @@ impl App {
             correction: None,
             busy: None,
             active: Vec::new(),
+            returning_working_copy: None,
             active_chosen: 0,
             active_marked: BTreeSet::new(),
             asked: Vec::new(),
@@ -683,16 +711,8 @@ impl App {
             },
             agent_done: Vec::new(),
             previews: super::preview::Previews::default(),
-            records: if cfg!(test) {
-                crate::asking::Records::in_memory(&archive_for_records)
-            } else {
-                crate::asking::Records::here(&archive_for_records)
-            },
-            active_work_home: if cfg!(test) {
-                None
-            } else {
-                carrel_core::local::home_dir()
-            },
+            records: records_for(&archive_for_records),
+            active_work_home: active_work_home(),
             item_questions: Vec::new(),
             talk: super::librarian::Talk::default(),
             asking: super::librarian::Asking::default(),
@@ -969,6 +989,9 @@ impl App {
         }
         if let Some(confirm) = self.confirm.take() {
             let effect = confirmed(confirm, key.code);
+            if let Some(Effect::Return(returning)) = &effect {
+                self.note_returning(returning);
+            }
             if effect.is_none() {
                 self.message = Some("Nothing changed".into());
             }
@@ -1181,6 +1204,7 @@ fn confirmed(confirm: Confirm, key: KeyCode) -> Option<Effect> {
             trim: false,
         }),
         Confirm::CancelCheckout { id, .. } => Effect::CancelCheckout(id),
+        Confirm::TrashWorkingCopy(path) => Effect::TrashWorkingCopy(path),
         Confirm::Learn { about, fact } => Effect::Correction(Step::Learn { about, fact }),
         Confirm::Checkout { card, to, due, .. } => Effect::Checkout {
             item: card,

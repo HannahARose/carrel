@@ -73,6 +73,9 @@ final class ActiveScreenModel {
     var returning: ReturnPreview?
     /// Where the working copy being returned has moved to, when the owner said.
     private(set) var returningFrom: URL?
+    /// The returned working copy to ask about putting in the Trash, when
+    /// `checkout.after_return` says to ask.
+    var askingAboutWorkingCopy: String?
     /// The desk item being added.
     var addingToDesk: DeskDraft?
     /// The desk item being taken off, while the owner says how.
@@ -176,11 +179,23 @@ final class ActiveScreenModel {
         }
         if let returned {
             selection = []
-            if !returned.snapshotProblems.isEmpty {
-                problem = returned.snapshotProblems.joined(separator: "\n")
+            var problems = returned.snapshotProblems
+            switch returned.workingCopy {
+            case .ask: askingAboutWorkingCopy = returned.working
+            case .notTrashed(let why): problems.append(why)
+            case .trashed, .kept: break
+            }
+            if !problems.isEmpty {
+                problem = problems.joined(separator: "\n")
             }
             await didChange()
         }
+    }
+
+    /// Puts the returned working copy at `path` in the Trash, once the owner has said to.
+    func trashWorkingCopy(_ path: String) async {
+        askingAboutWorkingCopy = nil
+        _ = await perform { try await $0.trashWorkingCopy(path) }
     }
 
     /// Asks before cancelling the chosen checkout.

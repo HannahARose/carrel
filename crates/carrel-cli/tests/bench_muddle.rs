@@ -11,6 +11,10 @@ use serde_json::Value;
 
 fn echo_provider() -> PathBuf {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    // Built beside this test, in the target folder it runs from, which `cargo llvm-cov`
+    // moves.
+    let exe = std::env::current_exe().unwrap();
+    let profile = exe.parent().unwrap().parent().unwrap();
     let status = std::process::Command::new(env!("CARGO"))
         .args([
             "build",
@@ -20,15 +24,13 @@ fn echo_provider() -> PathBuf {
             "--example",
             "echo_provider",
         ])
+        .arg("--target-dir")
+        .arg(profile.parent().unwrap())
         .current_dir(&root)
         .status()
         .unwrap();
     assert!(status.success());
-    let exe = std::env::current_exe().unwrap();
-    exe.parent()
-        .unwrap()
-        .parent()
-        .unwrap()
+    profile
         .join("examples")
         .join(format!("echo_provider{}", std::env::consts::EXE_SUFFIX))
 }

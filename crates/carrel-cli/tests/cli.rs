@@ -320,6 +320,10 @@ fn init_starts_history_for_an_archive_made_without_it() {
 /// The core's example provider, built if needed.
 fn echo_provider() -> PathBuf {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    // Built beside this test, in the target folder it runs from, which `cargo llvm-cov`
+    // moves.
+    let exe = std::env::current_exe().unwrap();
+    let profile = exe.parent().unwrap().parent().unwrap();
     let status = std::process::Command::new(env!("CARGO"))
         .args([
             "build",
@@ -329,15 +333,13 @@ fn echo_provider() -> PathBuf {
             "--example",
             "echo_provider",
         ])
+        .arg("--target-dir")
+        .arg(profile.parent().unwrap())
         .current_dir(&root)
         .status()
         .unwrap();
     assert!(status.success());
-    let exe = std::env::current_exe().unwrap();
-    exe.parent()
-        .unwrap()
-        .parent()
-        .unwrap()
+    profile
         .join("examples")
         .join(format!("echo_provider{}", std::env::consts::EXE_SUFFIX))
 }
@@ -3909,6 +3911,42 @@ fn discover_graph_lists_the_strongest_connections() {
     let items = sandbox.ok(&root, &["discover", "graph", "--items", "-n", "1"]);
     assert!(items.contains("oscillator-sim (Projects)"), "{items}");
     assert!(items.contains("1 link (derived-from)"), "{items}");
+}
+
+#[test]
+fn a_returned_working_copy_is_kept_or_put_in_the_trash() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    let item = "Projects/Hardware/parts-list.csv";
+    let desk = sandbox.path("desk");
+    let check_out = || {
+        let out = sandbox.json(&root, &["checkout", item, "--to", desk.to_str().unwrap()]);
+        PathBuf::from(out["working"].as_str().unwrap())
+    };
+
+    // checkout.after_return asks by default; with --yes nobody is asked, so it's kept.
+    let working = check_out();
+    let kept = sandbox.json(&root, &["return", item, "--yes"]);
+    assert_eq!(kept["working_copy"], "kept", "{kept}");
+    assert!(working.exists());
+    std::fs::remove_file(&working).unwrap();
+
+    let working = check_out();
+    std::fs::write(&working, "changed,on,the,desk\n").unwrap();
+    let trashed = sandbox.json(&root, &["return", item, "--yes", "--working-copy", "trash"]);
+    assert_eq!(trashed["working_copy"], "trashed", "{trashed}");
+    assert!(!working.exists());
+    let name = working.file_name().unwrap();
+    assert!(
+        sandbox.path("Trash").join(name).is_file(),
+        "in the Trash, not deleted"
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.join(item)).unwrap(),
+        "changed,on,the,desk\n",
+        "the archive has the changes"
+    );
 }
 
 #[cfg(unix)]

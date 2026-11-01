@@ -148,6 +148,35 @@ final class ActiveScreenModelTests: XCTestCase {
         XCTAssertEqual(sample.archive.history.first?.operation, "return")
     }
 
+    func testAfterAReturnTheOwnerIsAskedAboutTheWorkingCopy() async throws {
+        // The Trash is a folder in the sample's, so the test never touches the owner's.
+        let trash = sample.folder.appending(path: "Trash")
+        setenv("CARREL_TRASH_DIR", trash.path(percentEncoded: false), 1)
+        defer { unsetenv("CARREL_TRASH_DIR") }
+        let id = try sample.item(titled: "Desk lamp parts list")
+        await model.checkOut(
+            CheckoutDraft(item: id, title: "", folder: try sample.makeFolder("Work"), due: nil))
+        let item = try XCTUnwrap(model.selectedItem)
+
+        await model.askToReturn()
+        await model.confirmReturn(try XCTUnwrap(model.returning))
+        XCTAssertNil(model.problem)
+        let working = try XCTUnwrap(
+            model.askingAboutWorkingCopy, "checkout.after_return asks by default")
+        XCTAssertEqual(working, item.working)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: working), "kept until the owner says")
+
+        await model.trashWorkingCopy(working)
+        XCTAssertNil(model.problem)
+        XCTAssertNil(model.askingAboutWorkingCopy)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: working))
+        let name = URL(filePath: working).lastPathComponent
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: trash.appending(path: name).path(percentEncoded: false)),
+            "in the Trash, not deleted")
+    }
+
     func testCancellingAsksAndLeavesTheArchiveCopy() async throws {
         let id = try sample.item(titled: "Desk lamp parts list")
         await model.checkOut(

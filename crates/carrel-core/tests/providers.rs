@@ -18,6 +18,8 @@ fn echo_program() -> PathBuf {
         .join("examples")
         .join(format!("echo_provider{}", std::env::consts::EXE_SUFFIX));
     if !path.exists() {
+        // Built beside this test, in the target folder it runs from, which
+        // `cargo llvm-cov` moves.
         let status = std::process::Command::new(env!("CARGO"))
             .args([
                 "build",
@@ -27,6 +29,8 @@ fn echo_program() -> PathBuf {
                 "--example",
                 "echo_provider",
             ])
+            .arg("--target-dir")
+            .arg(profile_dir.parent().unwrap())
             .status()
             .unwrap();
         assert!(status.success(), "couldn't build the example provider");

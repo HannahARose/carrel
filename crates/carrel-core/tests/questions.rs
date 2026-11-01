@@ -366,3 +366,109 @@ fn a_text_model_suggests_answers_and_none_means_no_suggestions() {
         0
     );
 }
+
+#[test]
+fn a_skipped_question_rests_its_days_and_a_suggestion_is_picked_by_number_or_words() {
+    use carrel_core::card::DateOrTime;
+    use carrel_core::questions::{Suggestion, timestamp_of};
+    let at = |text: &str| text.parse::<jiff::Timestamp>().unwrap();
+    let mut question = QuestionEntry::new(
+        QuestionKind::Collection,
+        "receipts",
+        "Where do receipts go?",
+    );
+    assert_eq!(
+        question.rests_until(14),
+        None,
+        "not skipped, so not resting"
+    );
+    assert!(!question.is_resting(at("2026-11-01T00:00:00Z"), 14));
+
+    // Skipped at a time: it rests exactly that many days, to the second.
+    question.skipped = Some(DateOrTime("2026-11-01T09:00:00+00:00".into()));
+    assert_eq!(question.rests_until(14), Some(at("2026-11-15T09:00:00Z")));
+    assert!(question.is_resting(at("2026-11-15T08:59:59Z"), 14));
+    assert!(
+        !question.is_resting(at("2026-11-15T09:00:00Z"), 14),
+        "asked again on time"
+    );
+    // Skipped on a date: from the start of that day, in UTC.
+    question.skipped = Some(DateOrTime("2026-11-01".into()));
+    assert_eq!(question.rests_until(1), Some(at("2026-11-02T00:00:00Z")));
+    // A date that can't be read doesn't keep it resting forever.
+    question.skipped = Some(DateOrTime("soon".into()));
+    assert_eq!(question.rests_until(14), None);
+    assert_eq!(timestamp_of(&DateOrTime("2026-13-01".into())), None);
+
+    question.suggestions = vec![
+        Suggestion::new("Finances/Receipts", None),
+        Suggestion::new("Holding", None),
+    ];
+    assert_eq!(
+        question.picked("2").map(|s| s.answer.as_str()),
+        Some("Holding")
+    );
+    assert_eq!(
+        question
+            .picked(" finances/receipts ")
+            .map(|s| s.answer.as_str()),
+        Some("Finances/Receipts"),
+        "by its words, ignoring case"
+    );
+    assert_eq!(question.picked("0"), None, "numbers count from 1");
+    assert_eq!(question.picked("3"), None);
+    assert_eq!(question.picked("Elsewhere"), None);
+    assert!(QuestionKind::Sender.answers_with_collection());
+    assert!(!QuestionKind::Term.answers_with_collection());
+}
+
+#[test]
+fn a_rule_learned_from_an_answer_survives_odd_names_and_undo_takes_it_back() {
+    use carrel_core::coordinator::{Coordinator as _, DEFAULT_LEASE, DiskLock, Holder};
+    use carrel_core::history::History;
+    use carrel_core::ingest::route::RoutingRules;
+    let (_dir, archive) = sample();
+    let holder = Holder {
+        person: Id::new_v7(),
+        device: Id::new_v7(),
+    };
+    let lease = DiskLock::for_archive(&archive)
+        .acquire(holder, "test", DEFAULT_LEASE)
+        .unwrap();
+    History::init(&archive, &lease).unwrap();
+    lease.release().unwrap();
+    let rules = archive.root().join("_System/rules/routing.yaml");
+    let before = std::fs::read_to_string(&rules).unwrap();
+    let collections = archive.collections().unwrap();
+    let target = collections.iter().find(|c| c.path == "Projects").unwrap();
+    let had = RoutingRules::of(&archive, &collections).rules.len();
+
+    // Quotes, a plus and brackets have to survive the YAML and the pattern alike.
+    let subject = "C++ \"lab\" (2)";
+    let commit = answer::add_rule(&archive, subject, target, holder)
+        .unwrap()
+        .expect("a change");
+    let now = RoutingRules::of(&archive, &collections);
+    assert!(now.problems.is_empty(), "{:?}", now.problems);
+    assert_eq!(now.rules.len(), had + 1);
+    let rule = now.rules.last().unwrap();
+    assert_eq!(rule.name, format!("{subject} → Projects"));
+    assert_eq!(rule.collection, target.doc.id);
+    let pattern = regex::Regex::new(rule.matches.name.as_deref().unwrap()).unwrap();
+    assert!(pattern.is_match("notes-c++_\"LAB\".(2).txt"), "{pattern}");
+    assert!(
+        !pattern.is_match("c-lab-2.txt"),
+        "the plus is a plus: {pattern}"
+    );
+
+    // Undo puts the rules file back as it was.
+    let lease = DiskLock::for_archive(&archive)
+        .acquire(holder, "test", DEFAULT_LEASE)
+        .unwrap();
+    History::open(&archive)
+        .unwrap()
+        .undo(&archive, &commit, &lease)
+        .unwrap();
+    lease.release().unwrap();
+    assert_eq!(std::fs::read_to_string(&rules).unwrap(), before);
+}
