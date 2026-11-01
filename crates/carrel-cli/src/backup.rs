@@ -260,18 +260,23 @@ pub fn verify(archive: Option<&Path>, percent: u8) -> Result<Report, Failure> {
     ))
 }
 
-/// `carrel backup restore ITEM [--at COMMIT] [--to FOLDER]`: an item's contents as they were,
-/// restored beside the archive. Nothing in the archive is changed.
+/// `carrel backup restore ITEM [--at COMMIT] [--to FOLDER] [--held [ID]]`: an item's contents
+/// as they were, restored beside the archive, from a backup, or from the holding folder with
+/// `--held` or without backups ([`crate::held::restore`]). Nothing in the archive is changed.
 pub fn restore(
     archive: Option<&Path>,
     query: &str,
     at: Option<&str>,
     to: Option<&Path>,
+    held: Option<&str>,
 ) -> Result<Report, Failure> {
     let archive = locate(archive)?;
-    let kopia = Kopia::for_archive(&archive)?;
     let items = archive.items()?;
     let item = find_item(&archive, &items, query)?;
+    if held.is_some() || archive.settings().backups.is_none() {
+        return crate::held::restore(&archive, item, held.filter(|h| !h.is_empty()), to);
+    }
+    let kopia = Kopia::for_archive(&archive)?;
     let path = item
         .item
         .clone()

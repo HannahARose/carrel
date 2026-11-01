@@ -51,6 +51,21 @@ pub fn checkout(
                 .map_err(|_| Failure::new(format!("{d} isn't a date; give it as YYYY-MM-DD")))
         })
         .transpose()?;
+    if let Some(through) = crate::through_inbox::check(&archive)? {
+        let (working, sent) =
+            carrel_core::inbox::send_checkout(&archive, through.holder, item, &destination, due)?;
+        let mut report = through.report(&sent, "check out an item");
+        report.text.insert_str(
+            0,
+            &format!(
+                "Copied it to {}; it's checked out once the writer records it.\n",
+                working.display()
+            ),
+        );
+        report.json["item"] = json!(item.id);
+        report.json["working"] = json!(working);
+        return Ok(report);
+    }
     let identity = Identity::load_or_create()?;
     let lease =
         DiskLock::for_archive(&archive).acquire(holder(&identity), "checkout", DEFAULT_LEASE)?;
@@ -201,6 +216,9 @@ pub fn return_item(
     }
     let after = working_copy.map_or_else(|| AfterReturn::of(archive.settings()), Into::into);
     let mut report = finish(&archive, &plan, after)?;
+    if crate::through_inbox::was_sent(&report) {
+        return Ok(report);
+    }
     if after == AfterReturn::Ask && plan.working.exists() {
         let question = format!(
             "Put the working copy at {} in the Trash?",
@@ -210,7 +228,9 @@ pub fn return_item(
         let trash =
             !yes && std::io::stdin().is_terminal() && crate::models::confirm(&question, false)?;
         let (text, state) = working_copy_after(&archive, &plan, trash);
-        report.text = text;
+        // The line `finish` wrote about the working copy is replaced; what follows it stays.
+        let rest = report.text.split_once('\n').map_or("", |(_, rest)| rest);
+        report.text = format!("{text}{rest}");
         report.json["working_copy"] = state.into();
     }
     if let Some(kopia) = backups.as_ref().filter(|_| !sessions.is_empty()) {
@@ -284,6 +304,9 @@ pub fn return_now(
         .unwrap_or_default();
     let after = after.unwrap_or_else(|| AfterReturn::of(archive.settings()));
     let mut report = finish(&archive, &plan, after)?;
+    if crate::through_inbox::was_sent(&report) {
+        return Ok(report);
+    }
     if let Some(kopia) = backups.as_ref().filter(|_| !sessions.is_empty()) {
         let (trimmed, trimming) = trim_sessions(kopia, &plan, &sessions, true, true)?;
         report.text.push_str(&trimmed);
@@ -306,6 +329,13 @@ pub fn cancel_now(archive: Option<&Path>, query: &str) -> Result<Report, Failure
 }
 
 fn cancel(archive: &Archive, item: &ItemRef) -> Result<Report, Failure> {
+    if let Some(through) = crate::through_inbox::check(archive)? {
+        let request = carrel_core::inbox::Request::CancelCheckout { item: item.id };
+        let mut report = through.send(archive, request)?;
+        report.json["item"] = json!(item.id);
+        report.json["cancelled"] = json!(false);
+        return Ok(report);
+    }
     let identity = Identity::load_or_create()?;
     let lease =
         DiskLock::for_archive(archive).acquire(holder(&identity), "return", DEFAULT_LEASE)?;
@@ -321,6 +351,21 @@ fn cancel(archive: &Archive, item: &ItemRef) -> Result<Report, Failure> {
 /// Brings the working copy back by `plan`, holding the writer lease, then trashes the working
 /// copy if `after` says to.
 fn finish(archive: &Archive, plan: &ReturnPlan, after: AfterReturn) -> Result<Report, Failure> {
+    if let Some(through) = crate::through_inbox::check(archive)? {
+        let sent =
+            carrel_core::inbox::send_return(archive, through.holder, plan.item, &plan.working)?;
+        let mut report = through.report(&sent, "return an item");
+        writeln!(
+            report.text,
+            "A copy of the working copy went with it; the working copy is still at {}.",
+            plan.working.display()
+        )
+        .unwrap();
+        report.json["item"] = json!(plan.item);
+        report.json["working"] = json!(plan.working);
+        report.json["working_copy"] = json!("kept");
+        return Ok(report);
+    }
     let identity = Identity::load_or_create()?;
     let (backups, _) = crate::backup::for_batch(archive);
     let lease =
@@ -336,7 +381,10 @@ fn finish(archive: &Archive, plan: &ReturnPlan, after: AfterReturn) -> Result<Re
     lease.release()?;
     let returned = result?;
     let d = &plan.diff;
-    let (text, state) = working_copy_after(archive, plan, after == AfterReturn::Trash);
+    let (mut text, state) = working_copy_after(archive, plan, after == AfterReturn::Trash);
+    if let Some(held) = &returned.held {
+        text.push_str(&crate::held::kept_line(held));
+    }
     Ok(Report::new(
         text,
         json!({
@@ -344,6 +392,7 @@ fn finish(archive: &Archive, plan: &ReturnPlan, after: AfterReturn) -> Result<Re
             "item": plan.item,
             "commit": returned.commit,
             "snapshot": returned.snapshot,
+            "held": returned.held.as_ref().map(|h| h.id),
             "working": plan.working,
             "changed": d.changed, "added": d.added, "removed": d.removed,
             "renamed": d.renamed,

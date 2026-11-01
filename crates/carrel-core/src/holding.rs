@@ -237,7 +237,7 @@ pub fn list(archive: &Archive) -> Vec<Held> {
     found
 }
 
-/// The kept version whose identifier starts with `id`.
+/// The kept version whose identifier starts or ends with `id`, as a short identifier does.
 ///
 /// # Errors
 ///
@@ -246,7 +246,10 @@ pub fn find(archive: &Archive, id: &str) -> Result<Held, String> {
     let all = list(archive);
     let matching: Vec<&Held> = all
         .iter()
-        .filter(|h| h.id.to_string().starts_with(id.trim()))
+        .filter(|h| {
+            let full = h.id.to_string();
+            full.starts_with(id.trim()) || full.ends_with(id.trim())
+        })
         .collect();
     match matching.as_slice() {
         [held] => Ok((*held).clone()),

@@ -22,6 +22,15 @@ pub fn expand(archive: Option<&Path>, query: &str, anyway: bool) -> Result<Repor
     let archive = locate(archive)?;
     let items = archive.items()?;
     let item = find_item(&archive, &items, query)?.clone();
+    if let Some(through) = crate::through_inbox::check(&archive)? {
+        let request = carrel_core::inbox::Request::Expand {
+            item: item.id,
+            anyway,
+        };
+        let mut report = through.send(&archive, request)?;
+        report.json["item"] = json!(item.id);
+        return Ok(report);
+    }
     let identity = Identity::load_or_create()?;
     let lease =
         DiskLock::for_archive(&archive).acquire(holder(&identity), "expand", DEFAULT_LEASE)?;
@@ -37,6 +46,7 @@ pub fn expand(archive: Option<&Path>, query: &str, anyway: bool) -> Result<Repor
         carrel_core::human_size(expanded.size)
     );
     match &expanded.trash_problem {
+        None if expanded.held.is_some() => {}
         None => text.push_str(
             "The compressed file is in the Trash; undo it from History or with `carrel undo`, then put it back from the Trash.\n",
         ),
@@ -46,6 +56,9 @@ pub fn expand(archive: Option<&Path>, query: &str, anyway: bool) -> Result<Repor
             expanded.from
         )
         .unwrap(),
+    }
+    if let Some(held) = &expanded.held {
+        text.push_str(&crate::held::kept_line(held));
     }
     Ok(Report::new(
         text,
@@ -58,6 +71,7 @@ pub fn expand(archive: Option<&Path>, query: &str, anyway: bool) -> Result<Repor
             "files": expanded.files,
             "size": expanded.size,
             "trash_problem": expanded.trash_problem,
+            "held": expanded.held.as_ref().map(|h| h.id),
             "commit": expanded.commit,
         }),
     ))

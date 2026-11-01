@@ -5,7 +5,10 @@ use std::fmt::Write as _;
 use std::path::Path;
 
 use carrel_core::coordinator::{Coordinator as _, DEFAULT_LEASE, DiskLock};
-use carrel_core::desk::{Desk, add, archive as archive_item, draft, remove};
+use carrel_core::desk::{
+    Desk, Recording, add, add_recording, archive as archive_item, archive_through_inbox, draft,
+    remove, remove_recording,
+};
 use serde_json::json;
 
 use crate::commands::{holder, locate};
@@ -22,11 +25,16 @@ use crate::{Failure, Report};
 pub fn list(archive: Option<&Path>) -> Result<Report, Failure> {
     let archive = locate(archive)?;
     let identity = Identity::load_or_create()?;
-    let lease =
-        DiskLock::for_archive(&archive).acquire(holder(&identity), "desk", DEFAULT_LEASE)?;
-    let regenerated = carrel_core::active::regenerate(&archive);
-    lease.release()?;
-    let regenerated = regenerated?;
+    // `Active/` is the writer's to rebuild; through the inbox, the desk is only listed.
+    let regenerated = if crate::through_inbox::check(&archive)?.is_some() {
+        carrel_core::active::Regenerated::default()
+    } else {
+        let lease =
+            DiskLock::for_archive(&archive).acquire(holder(&identity), "desk", DEFAULT_LEASE)?;
+        let regenerated = carrel_core::active::regenerate(&archive);
+        lease.release()?;
+        regenerated?
+    };
     let desk = Desk::load(&archive, identity.device)?;
     let mut text = String::new();
     for card in &regenerated.copied {
@@ -80,11 +88,23 @@ pub fn add_item(
         let (registry, _) = crate::providers::registry();
         Some(draft(&archive, &registry, &path, identity.device)?)
     };
-    let lease =
-        DiskLock::for_archive(&archive).acquire(holder(&identity), "desk", DEFAULT_LEASE)?;
-    let result = add(&archive, &path, title, summary, drafted.as_ref(), &lease);
-    lease.release()?;
-    let entry = result?;
+    let through = crate::through_inbox::check(&archive)?;
+    let entry = if let Some(through) = &through {
+        let recording = Recording::Inbox(through.holder);
+        add_recording(
+            &archive,
+            &path,
+            (title, summary),
+            drafted.as_ref(),
+            recording,
+        )?
+    } else {
+        let lease =
+            DiskLock::for_archive(&archive).acquire(holder(&identity), "desk", DEFAULT_LEASE)?;
+        let result = add(&archive, &path, title, summary, drafted.as_ref(), &lease);
+        lease.release()?;
+        result?
+    };
     let mut text = format!(
         "Put {} on the desk, with its card at {}\n",
         entry.path.display(),
@@ -102,7 +122,7 @@ pub fn add_item(
         }
         _ => {}
     }
-    Ok(Report::new(text, json!(entry)))
+    Ok(recorded(Report::new(text, json!(entry)), through.as_ref()))
 }
 
 /// `carrel desk remove PATH [--delete-card]`.
@@ -118,12 +138,22 @@ pub fn remove_item(
     let archive = locate(archive)?;
     let path = crate::paths::expand(&path.to_string_lossy());
     let identity = Identity::load_or_create()?;
-    let lease =
-        DiskLock::for_archive(&archive).acquire(holder(&identity), "desk", DEFAULT_LEASE)?;
-    let result = remove(&archive, &path, delete_card, &lease);
-    lease.release()?;
-    let entry = result?;
-    Ok(Report::new(
+    let through = crate::through_inbox::check(&archive)?;
+    let entry = if let Some(through) = &through {
+        remove_recording(
+            &archive,
+            &path,
+            delete_card,
+            Recording::Inbox(through.holder),
+        )?
+    } else {
+        let lease =
+            DiskLock::for_archive(&archive).acquire(holder(&identity), "desk", DEFAULT_LEASE)?;
+        let result = remove(&archive, &path, delete_card, &lease);
+        lease.release()?;
+        result?
+    };
+    let report = Report::new(
         format!(
             "Took {} off the desk{}\n",
             entry.path.display(),
@@ -134,7 +164,23 @@ pub fn remove_item(
             }
         ),
         json!(entry),
-    ))
+    );
+    Ok(recorded(report, through.as_ref()))
+}
+
+/// `report`, saying the change is recorded through this device's inbox when it is: the desk
+/// is this device's own, so it changed, and the writer records it in history.
+fn recorded(mut report: Report, through: Option<&crate::through_inbox::ThroughInbox>) -> Report {
+    if let Some(through) = through {
+        report.text.push_str(&through.sending.describe());
+        report.text.push('\n');
+        if let serde_json::Value::Object(sent) = through.json(None) {
+            for (k, v) in sent {
+                report.json[k] = v;
+            }
+        }
+    }
+    report
 }
 
 /// `carrel desk archive PATH`: queues the desk item for ingest, keeping its card and history,
@@ -148,6 +194,13 @@ pub fn archive_desk_item(archive: Option<&Path>, path: &Path) -> Result<Report, 
     let archive = locate(archive)?;
     let path = crate::paths::expand(&path.to_string_lossy());
     let identity = Identity::load_or_create()?;
+    if let Some(through) = crate::through_inbox::check(&archive)? {
+        let (entry, sent) = archive_through_inbox(&archive, &path, through.holder)?;
+        let mut report = through.report(&sent, &format!("archive {}", entry.path.display()));
+        report.text.insert_str(0, "Took it off the desk.\n");
+        report.json["item"] = json!(entry);
+        return Ok(report);
+    }
     let lease =
         DiskLock::for_archive(&archive).acquire(holder(&identity), "desk", DEFAULT_LEASE)?;
     let result = archive_item(&archive, &path, &lease);

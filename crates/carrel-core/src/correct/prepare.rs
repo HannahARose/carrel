@@ -473,8 +473,9 @@ fn filed(
     })
 }
 
-/// Who a correction's words are from, unless [`Prepared::said_by`] says otherwise.
-const OWNER: &str = "Owner";
+/// Who a correction's words are from, unless [`Prepared::said_by`] says otherwise, as
+/// [`Prepared::by`] names them.
+pub const OWNER: &str = "Owner";
 
 /// Saves a prepared correction: a proposal back to the queue, or a filed item's card as one
 /// change, refiled when its collection changed, made as the writer `holder` gives. `holder` is

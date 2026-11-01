@@ -10,6 +10,7 @@ use carrel_core::backup::Backups;
 use carrel_core::compressed::plan::Choice;
 use carrel_core::coordinator::{Coordinator as _, DEFAULT_LEASE, DiskLock};
 use carrel_core::crawl::findings::CrawlEntry;
+use carrel_core::inbox::{KeepAs, KeepLink, Request};
 use carrel_core::ingest::filing::{Filed, Placement};
 use carrel_core::review::{ReviewEntry, ReviewQueue, State, short_id};
 use serde_json::{Value, json};
@@ -125,6 +126,21 @@ fn crawler_findings(archive: &Archive, ids: &[String]) -> (Vec<CrawlEntry>, Vec<
         }
     }
     (found, rest)
+}
+
+/// Says the crawler's findings `found` weren't approved: they change the archive's structure,
+/// so only the writer approves them, and they don't go through the inbox.
+fn findings_on_the_writer(found: &[CrawlEntry]) -> String {
+    let mut text = String::new();
+    for entry in found {
+        writeln!(
+            text,
+            "Not approved {}: the crawler's findings are approved on the writer, not through this device's inbox",
+            short_id(entry.id)
+        )
+        .unwrap();
+    }
+    text
 }
 
 /// Approves the crawler's findings `found`, making each change as the owner's.
@@ -384,6 +400,12 @@ pub fn reject(archive: Option<&Path>, ids: &[String]) -> Result<Report, Failure>
             entry.state.as_str()
         )));
     }
+    if let Some(through) = crate::through_inbox::check(&archive)? {
+        let proposals = entries.iter().map(|e| e.id).collect();
+        let mut report = through.send(&archive, Request::Reject { proposals })?;
+        report.text.insert_str(0, &text);
+        return Ok(report);
+    }
     for entry in actions::reject(&archive, entries)? {
         writeln!(
             text,
@@ -408,9 +430,18 @@ pub fn approve(
 ) -> Result<Report, Failure> {
     let archive = locate(archive)?;
     let (found, ids) = crawler_findings(&archive, ids);
-    let approved = approve_findings(&archive, &found)?;
+    let through = crate::through_inbox::check(&archive)?;
+    let approved = if through.is_some() {
+        findings_on_the_writer(&found)
+    } else {
+        approve_findings(&archive, &found)?
+    };
     if !all_high && ids.is_empty() && !found.is_empty() {
-        let ids: Vec<String> = found.iter().map(|e| e.id.to_string()).collect();
+        let ids: Vec<String> = if through.is_some() {
+            Vec::new()
+        } else {
+            found.iter().map(|e| e.id.to_string()).collect()
+        };
         return Ok(Report::new(approved, json!({ "approved": ids })));
     }
     let mut entries = if all_high {
@@ -418,6 +449,23 @@ pub fn approve(
     } else {
         actions::proposals(&archive, &ids)?
     };
+    if let Some(through) = through.filter(|_| !entries.is_empty()) {
+        let keep = as_version_of
+            .map(|t| (KeepLink::Version, t))
+            .or(related_to.map(|t| (KeepLink::Both, t)))
+            .map(|(link, target)| KeepAs {
+                link,
+                target: Some(target.to_owned()).filter(|t| !t.is_empty()),
+            });
+        let request = Request::Approve {
+            proposals: entries.iter().map(|e| e.id).collect(),
+            holding: false,
+            keep,
+        };
+        let mut report = through.send(&archive, request)?;
+        report.text.insert_str(0, &approved);
+        return Ok(report);
+    }
     let kept = as_version_of
         .map(|t| (actions::Kept::AsVersion, t))
         .or(related_to.map(|t| (actions::Kept::Both, t)));
@@ -436,6 +484,14 @@ pub fn approve(
 pub fn hold(archive: Option<&Path>, ids: &[String]) -> Result<Report, Failure> {
     let archive = locate(archive)?;
     let entries = actions::proposals(&archive, ids)?;
+    if let Some(through) = crate::through_inbox::check(&archive)?.filter(|_| !entries.is_empty()) {
+        let request = Request::Approve {
+            proposals: entries.iter().map(|e| e.id).collect(),
+            holding: true,
+            keep: None,
+        };
+        return through.send(&archive, request);
+    }
     decide(&archive, entries, Placement::Holding)
 }
 
@@ -443,6 +499,14 @@ pub fn hold(archive: Option<&Path>, ids: &[String]) -> Result<Report, Failure> {
 /// until the proposal is approved.
 pub fn move_to(archive: Option<&Path>, id: &str, collection: &str) -> Result<Report, Failure> {
     let archive = locate(archive)?;
+    if let Some(through) = crate::through_inbox::check(&archive)? {
+        let proposal = ReviewQueue::of(&archive).find(id)?.id;
+        let request = Request::MoveProposal {
+            proposal,
+            collection: collection.trim().to_owned(),
+        };
+        return through.send(&archive, request);
+    }
     let moved = actions::move_to(&archive, id, collection)?;
     let mut text = format!(
         "{} will go to {} when approved\n",
@@ -473,6 +537,10 @@ pub fn choose_compressed(
 ) -> Result<Report, Failure> {
     let archive = locate(archive)?;
     let entries = actions::proposals(&archive, ids)?;
+    if let Some(through) = crate::through_inbox::check(&archive)? {
+        let proposals = entries.iter().map(|e| e.id).collect();
+        return through.send(&archive, Request::ChooseCompressed { proposals, choice });
+    }
     let mut text = String::new();
     let mut saved = Vec::new();
     for entry in entries {

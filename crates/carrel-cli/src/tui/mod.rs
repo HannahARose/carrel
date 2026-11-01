@@ -660,16 +660,13 @@ fn queue(
 ) -> Result<String, Failure> {
     let archive = carrel_core::archive::Archive::open(root)?;
     let identity = crate::config::Identity::load_or_create()?;
-    if carrel_core::inbox::writer_elsewhere(&archive, identity.device).is_some() {
-        let holder = crate::commands::holder(&identity);
+    if let Some(through) = crate::through_inbox::check(&archive)? {
+        let holder = through.holder;
         match url {
             Some(url) => carrel_core::inbox::send_url(&archive, holder, url, None, note)?,
             None => carrel_core::inbox::send_paths(&archive, holder, paths, options.each, note)?,
         };
-        return Ok(
-            "Another device is the writer, so this went into this device's inbox for it to add"
-                .into(),
-        );
+        return Ok(through.sending.describe());
     }
     let n = match url {
         Some(url) => usize::from(
@@ -708,7 +705,9 @@ fn backup_work(root: PathBuf, effect: Effect) -> (String, Work) {
         ),
         Effect::BackupRestore { item, at, to } => (
             format!("Restoring {item}…"),
-            Box::new(move || crate::backup::restore(Some(&root), &item, Some(&at), to.as_deref())),
+            Box::new(move || {
+                crate::backup::restore(Some(&root), &item, Some(&at), to.as_deref(), None)
+            }),
         ),
         Effect::BackupSetup {
             repository,

@@ -9,6 +9,7 @@ use std::path::Path;
 
 use carrel_core::actions;
 use carrel_core::archive::Archive;
+use carrel_core::inbox::{Answer, Request};
 use carrel_core::questions::answer::{self as core_answer, SenderAnswer, Target};
 use carrel_core::questions::rank::Weighed;
 use carrel_core::questions::subjects::{QuestionSubject, subjects};
@@ -274,6 +275,9 @@ pub fn answer(
     }
     let picked = question.picked(&given).cloned();
     if picked.as_ref().is_some_and(|s| s.no_change) {
+        if let Some(sent) = answer_through_inbox(&archive, &question, Answer::Decline)? {
+            return Ok(sent);
+        }
         core_answer::decline(&archive, &question)?;
         return Ok(Report::new(
             format!(
@@ -309,6 +313,9 @@ fn sender(
     let (path, create) = match core_answer::sender_answer(question, answer, picked, options.create)?
     {
         SenderAnswer::Decline => {
+            if let Some(sent) = answer_through_inbox(archive, question, Answer::Decline)? {
+                return Ok(sent);
+            }
             core_answer::decline(archive, question)?;
             return Ok(Report::new(
                 format!(
@@ -332,6 +339,19 @@ fn place(
     create: bool,
     rule: Option<Options>,
 ) -> Result<Report, Failure> {
+    let answer = Answer::Place {
+        collection: path.trim().to_owned(),
+        create,
+    };
+    if let Some(mut sent) = answer_through_inbox(archive, question, answer)? {
+        if let Some(options) = rule {
+            let (said, added) = offer_rule(archive, &question.subject, path.trim(), options)?;
+            sent.text.push_str(&said);
+            sent.json["rule"] =
+                json!({"subject": question.subject, "collection": path.trim(), "added": added});
+        }
+        return Ok(sent);
+    }
     let identity = Identity::load_or_create()?;
     let placed = core_answer::place(archive, question, path, create, holder(&identity))?;
     let mut text = String::new();
@@ -397,6 +417,14 @@ fn offer_rule(
     if !agreed {
         return Ok((String::new(), false));
     }
+    if let Some(through) = crate::through_inbox::check(archive)? {
+        let request = Request::AddRule {
+            subject: subject.to_owned(),
+            collection: path.to_owned(),
+        };
+        let sent = through.send(archive, request)?;
+        return Ok((sent.text, true));
+    }
     add_rule(archive, subject, path)?;
     Ok((
         format!("Added a routing rule: items named for “{subject}” go to {path}.\n"),
@@ -453,8 +481,14 @@ fn item(
     )?;
     // An answer that changes nothing still answers the question.
     if report.json["saved"] == json!(false) && report.text.contains("It changes nothing") {
-        core_answer::settled(archive, question)?;
-        report.text.push_str("The question is answered.\n");
+        if let Some(sent) = answer_through_inbox(archive, question, Answer::Settle)? {
+            report.text.push_str(&sent.text);
+            report.json["inbox"] = sent.json["inbox"].clone();
+            report.json["applied"] = json!(false);
+        } else {
+            core_answer::settled(archive, question)?;
+            report.text.push_str("The question is answered.\n");
+        }
     }
     Ok(report)
 }
@@ -471,6 +505,9 @@ pub fn skip(archive: Option<&Path>, id: &str) -> Result<Report, Failure> {
 }
 
 fn skip_question(archive: &Archive, question: &QuestionEntry) -> Result<Report, Failure> {
+    if let Some(sent) = answer_through_inbox(archive, question, Answer::Skip)? {
+        return Ok(sent);
+    }
     let skipped = core_answer::skip(archive, question)?;
     let days = archive.settings().questions.skip_days;
     Ok(Report::new(
@@ -491,6 +528,9 @@ fn skip_question(archive: &Archive, question: &QuestionEntry) -> Result<Report, 
 pub fn dismiss(archive: Option<&Path>, id: &str) -> Result<Report, Failure> {
     let archive = locate(archive)?;
     let question = QuestionQueue::of(&archive).find(id)?;
+    if let Some(sent) = answer_through_inbox(&archive, &question, Answer::Dismiss)? {
+        return Ok(sent);
+    }
     actions::dismiss(&archive, &question)?;
     Ok(Report::new(
         format!(
@@ -568,6 +608,12 @@ pub fn about(archive: Option<&Path>, query: &str) -> Result<Report, Failure> {
 
 /// Adds the answer to the glossary, then drafts the items waiting on it again.
 fn teach(archive: &Archive, question: &QuestionEntry, fact: &str) -> Result<Report, Failure> {
+    let answer = Answer::Teach {
+        fact: fact.trim().to_owned(),
+    };
+    if let Some(sent) = answer_through_inbox(archive, question, answer)? {
+        return Ok(sent);
+    }
     let identity = Identity::load_or_create()?;
     let commit = actions::teach(archive, question, fact, holder(&identity))?;
     let mut text = format!("Added “{}” to the glossary\n", question.subject);
@@ -595,4 +641,22 @@ fn teach(archive: &Archive, question: &QuestionEntry, fact: &str) -> Result<Repo
             "requeued": queued.iter().map(|e| e.id).collect::<Vec<_>>(),
         }),
     ))
+}
+
+/// Sends `answer` to `question` to this device's inbox, when this device acts through it.
+fn answer_through_inbox(
+    archive: &Archive,
+    question: &QuestionEntry,
+    answer: Answer,
+) -> Result<Option<Report>, Failure> {
+    let Some(through) = crate::through_inbox::check(archive)? else {
+        return Ok(None);
+    };
+    let request = Request::Answer {
+        question: question.id,
+        answer,
+    };
+    let mut sent = through.send(archive, request)?;
+    sent.json["question"] = json!(question.id);
+    Ok(Some(sent))
 }
