@@ -74,6 +74,10 @@ extension CatalogModel: Identifiable {
     public var id: String { name }
 }
 
+extension GraphConnection: Identifiable {
+    public var id: String { a + "\u{0}" + b }
+}
+
 extension ProviderInfo: Identifiable {
     public var id: String { name }
 }

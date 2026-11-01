@@ -54,6 +54,7 @@ pub mod browse;
 pub mod correct;
 pub mod discover;
 pub mod edit;
+pub mod graph;
 pub mod history;
 pub mod index;
 pub mod intake;

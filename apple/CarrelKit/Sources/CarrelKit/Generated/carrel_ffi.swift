@@ -1306,6 +1306,17 @@ public protocol ArchiveHandleProtocol: AnyObject, Sendable {
     func editableProposal(id: String) throws  -> EditableCard
     
     /**
+     * The tag and link graph, as `carrel discover graph` lists it: every collection, and at
+     * most `limit` of the strongest connections between collections and of the strongest
+     * ties between items in different collections.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the archive can't be read.
+     */
+    func discoveryGraph(limit: UInt32) throws  -> DiscoveryGraph
+    
+    /**
      * The history, newest first, at most `limit` changes (all of them when it's `None`).
      *
      * # Errors
@@ -2882,6 +2893,25 @@ open func editableProposal(id: String)throws  -> EditableCard  {
     uniffi_carrel_ffi_fn_method_archivehandle_editable_proposal(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(id),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * The tag and link graph, as `carrel discover graph` lists it: every collection, and at
+     * most `limit` of the strongest connections between collections and of the strongest
+     * ties between items in different collections.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the archive can't be read.
+     */
+open func discoveryGraph(limit: UInt32)throws  -> DiscoveryGraph  {
+    return try  FfiConverterTypeDiscoveryGraph_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_discovery_graph(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt32.lower(limit),uniffiCallStatus
     )
 })
 }
@@ -7795,6 +7825,85 @@ public func FfiConverterTypeDiscoveredItem_lower(_ value: DiscoveredItem) -> Rus
 
 
 /**
+ * The graph as Discover shows it.
+ */
+public struct DiscoveryGraph: Equatable, Hashable {
+    /**
+     * Every collection, by path.
+     */
+    public var collections: [GraphCollection]
+    /**
+     * The strongest connections between collections, strongest first.
+     */
+    public var connections: [GraphConnection]
+    /**
+     * The strongest ties between items in different collections, strongest first.
+     */
+    public var ties: [GraphItemTie]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Every collection, by path.
+         */collections: [GraphCollection], 
+        /**
+         * The strongest connections between collections, strongest first.
+         */connections: [GraphConnection], 
+        /**
+         * The strongest ties between items in different collections, strongest first.
+         */ties: [GraphItemTie]) {
+        self.collections = collections
+        self.connections = connections
+        self.ties = ties
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension DiscoveryGraph: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeDiscoveryGraph: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> DiscoveryGraph {
+        return
+            try DiscoveryGraph(
+                collections: FfiConverterSequenceTypeGraphCollection.read(from: &buf), 
+                connections: FfiConverterSequenceTypeGraphConnection.read(from: &buf), 
+                ties: FfiConverterSequenceTypeGraphItemTie.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: DiscoveryGraph, into buf: inout [UInt8]) {
+        FfiConverterSequenceTypeGraphCollection.write(value.collections, into: &buf)
+        FfiConverterSequenceTypeGraphConnection.write(value.connections, into: &buf)
+        FfiConverterSequenceTypeGraphItemTie.write(value.ties, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDiscoveryGraph_lift(_ buf: RustBuffer) throws -> DiscoveryGraph {
+    return try FfiConverterTypeDiscoveryGraph.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDiscoveryGraph_lower(_ value: DiscoveryGraph) -> RustBuffer {
+    return FfiConverterTypeDiscoveryGraph.lower(value)
+}
+
+
+/**
  * Items by date.
  */
 public struct DiscoveryTimeline: Equatable, Hashable {
@@ -8914,6 +9023,501 @@ public func FfiConverterTypeGlossaryFact_lift(_ buf: RustBuffer) throws -> Gloss
 #endif
 public func FfiConverterTypeGlossaryFact_lower(_ value: GlossaryFact) -> RustBuffer {
     return FfiConverterTypeGlossaryFact.lower(value)
+}
+
+
+/**
+ * A collection in the graph.
+ */
+public struct GraphCollection: Equatable, Hashable {
+    /**
+     * Its folder, relative to the archive root.
+     */
+    public var path: String
+    /**
+     * Its title.
+     */
+    public var title: String
+    /**
+     * What it holds, as its design document says.
+     */
+    public var description: String?
+    /**
+     * How many items are directly in it.
+     */
+    public var items: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Its folder, relative to the archive root.
+         */path: String, 
+        /**
+         * Its title.
+         */title: String, 
+        /**
+         * What it holds, as its design document says.
+         */description: String?, 
+        /**
+         * How many items are directly in it.
+         */items: UInt64) {
+        self.path = path
+        self.title = title
+        self.description = description
+        self.items = items
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension GraphCollection: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGraphCollection: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GraphCollection {
+        return
+            try GraphCollection(
+                path: FfiConverterString.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                description: FfiConverterOptionString.read(from: &buf), 
+                items: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GraphCollection, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.path, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterOptionString.write(value.description, into: &buf)
+        FfiConverterUInt64.write(value.items, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGraphCollection_lift(_ buf: RustBuffer) throws -> GraphCollection {
+    return try FfiConverterTypeGraphCollection.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGraphCollection_lower(_ value: GraphCollection) -> RustBuffer {
+    return FfiConverterTypeGraphCollection.lower(value)
+}
+
+
+/**
+ * What ties two collections together.
+ */
+public struct GraphConnection: Equatable, Hashable {
+    /**
+     * One collection: the lesser path of the two.
+     */
+    public var a: String
+    /**
+     * The other.
+     */
+    public var b: String
+    /**
+     * How strongly they're tied: the sum of their items' ties.
+     */
+    public var weight: Double
+    /**
+     * How many pairs of items are tied.
+     */
+    public var pairs: UInt64
+    /**
+     * The tags shared across them, most pairs first.
+     */
+    public var tags: [GraphTag]
+    /**
+     * How many links run between them.
+     */
+    public var links: UInt64
+    /**
+     * How many times an item in each was worked on the same day.
+     */
+    public var days: UInt64
+    /**
+     * Whether they're in different branches: neither is inside the other.
+     */
+    public var separateBranches: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * One collection: the lesser path of the two.
+         */a: String, 
+        /**
+         * The other.
+         */b: String, 
+        /**
+         * How strongly they're tied: the sum of their items' ties.
+         */weight: Double, 
+        /**
+         * How many pairs of items are tied.
+         */pairs: UInt64, 
+        /**
+         * The tags shared across them, most pairs first.
+         */tags: [GraphTag], 
+        /**
+         * How many links run between them.
+         */links: UInt64, 
+        /**
+         * How many times an item in each was worked on the same day.
+         */days: UInt64, 
+        /**
+         * Whether they're in different branches: neither is inside the other.
+         */separateBranches: Bool) {
+        self.a = a
+        self.b = b
+        self.weight = weight
+        self.pairs = pairs
+        self.tags = tags
+        self.links = links
+        self.days = days
+        self.separateBranches = separateBranches
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension GraphConnection: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGraphConnection: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GraphConnection {
+        return
+            try GraphConnection(
+                a: FfiConverterString.read(from: &buf), 
+                b: FfiConverterString.read(from: &buf), 
+                weight: FfiConverterDouble.read(from: &buf), 
+                pairs: FfiConverterUInt64.read(from: &buf), 
+                tags: FfiConverterSequenceTypeGraphTag.read(from: &buf), 
+                links: FfiConverterUInt64.read(from: &buf), 
+                days: FfiConverterUInt64.read(from: &buf), 
+                separateBranches: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GraphConnection, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.a, into: &buf)
+        FfiConverterString.write(value.b, into: &buf)
+        FfiConverterDouble.write(value.weight, into: &buf)
+        FfiConverterUInt64.write(value.pairs, into: &buf)
+        FfiConverterSequenceTypeGraphTag.write(value.tags, into: &buf)
+        FfiConverterUInt64.write(value.links, into: &buf)
+        FfiConverterUInt64.write(value.days, into: &buf)
+        FfiConverterBool.write(value.separateBranches, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGraphConnection_lift(_ buf: RustBuffer) throws -> GraphConnection {
+    return try FfiConverterTypeGraphConnection.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGraphConnection_lower(_ value: GraphConnection) -> RustBuffer {
+    return FfiConverterTypeGraphConnection.lower(value)
+}
+
+
+/**
+ * An item at one end of a tie.
+ */
+public struct GraphItem: Equatable, Hashable {
+    /**
+     * Its identifier.
+     */
+    public var id: String
+    /**
+     * Its card's title.
+     */
+    public var title: String
+    /**
+     * Its card, relative to the archive root.
+     */
+    public var card: String
+    /**
+     * The collection it's in.
+     */
+    public var collection: String
+    /**
+     * How sensitive it is, so a restricted or sensitive one can be marked.
+     */
+    public var sensitivity: Sensitivity
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Its identifier.
+         */id: String, 
+        /**
+         * Its card's title.
+         */title: String, 
+        /**
+         * Its card, relative to the archive root.
+         */card: String, 
+        /**
+         * The collection it's in.
+         */collection: String, 
+        /**
+         * How sensitive it is, so a restricted or sensitive one can be marked.
+         */sensitivity: Sensitivity) {
+        self.id = id
+        self.title = title
+        self.card = card
+        self.collection = collection
+        self.sensitivity = sensitivity
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension GraphItem: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGraphItem: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GraphItem {
+        return
+            try GraphItem(
+                id: FfiConverterString.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                card: FfiConverterString.read(from: &buf), 
+                collection: FfiConverterString.read(from: &buf), 
+                sensitivity: FfiConverterTypeSensitivity.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GraphItem, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterString.write(value.card, into: &buf)
+        FfiConverterString.write(value.collection, into: &buf)
+        FfiConverterTypeSensitivity.write(value.sensitivity, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGraphItem_lift(_ buf: RustBuffer) throws -> GraphItem {
+    return try FfiConverterTypeGraphItem.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGraphItem_lower(_ value: GraphItem) -> RustBuffer {
+    return FfiConverterTypeGraphItem.lower(value)
+}
+
+
+/**
+ * What ties two items in different collections together.
+ */
+public struct GraphItemTie: Equatable, Hashable {
+    /**
+     * One item.
+     */
+    public var a: GraphItem
+    /**
+     * The other.
+     */
+    public var b: GraphItem
+    /**
+     * How strongly they're tied.
+     */
+    public var weight: Double
+    /**
+     * The tags both have.
+     */
+    public var tags: [String]
+    /**
+     * The types of the links between them, either way.
+     */
+    public var links: [String]
+    /**
+     * The days both were worked on.
+     */
+    public var days: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * One item.
+         */a: GraphItem, 
+        /**
+         * The other.
+         */b: GraphItem, 
+        /**
+         * How strongly they're tied.
+         */weight: Double, 
+        /**
+         * The tags both have.
+         */tags: [String], 
+        /**
+         * The types of the links between them, either way.
+         */links: [String], 
+        /**
+         * The days both were worked on.
+         */days: UInt64) {
+        self.a = a
+        self.b = b
+        self.weight = weight
+        self.tags = tags
+        self.links = links
+        self.days = days
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension GraphItemTie: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGraphItemTie: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GraphItemTie {
+        return
+            try GraphItemTie(
+                a: FfiConverterTypeGraphItem.read(from: &buf), 
+                b: FfiConverterTypeGraphItem.read(from: &buf), 
+                weight: FfiConverterDouble.read(from: &buf), 
+                tags: FfiConverterSequenceString.read(from: &buf), 
+                links: FfiConverterSequenceString.read(from: &buf), 
+                days: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GraphItemTie, into buf: inout [UInt8]) {
+        FfiConverterTypeGraphItem.write(value.a, into: &buf)
+        FfiConverterTypeGraphItem.write(value.b, into: &buf)
+        FfiConverterDouble.write(value.weight, into: &buf)
+        FfiConverterSequenceString.write(value.tags, into: &buf)
+        FfiConverterSequenceString.write(value.links, into: &buf)
+        FfiConverterUInt64.write(value.days, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGraphItemTie_lift(_ buf: RustBuffer) throws -> GraphItemTie {
+    return try FfiConverterTypeGraphItemTie.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGraphItemTie_lower(_ value: GraphItemTie) -> RustBuffer {
+    return FfiConverterTypeGraphItemTie.lower(value)
+}
+
+
+/**
+ * A tag two collections' items share.
+ */
+public struct GraphTag: Equatable, Hashable {
+    /**
+     * The tag.
+     */
+    public var tag: String
+    /**
+     * How many pairs of items, one in each collection, both have it.
+     */
+    public var pairs: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The tag.
+         */tag: String, 
+        /**
+         * How many pairs of items, one in each collection, both have it.
+         */pairs: UInt64) {
+        self.tag = tag
+        self.pairs = pairs
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension GraphTag: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGraphTag: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GraphTag {
+        return
+            try GraphTag(
+                tag: FfiConverterString.read(from: &buf), 
+                pairs: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GraphTag, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.tag, into: &buf)
+        FfiConverterUInt64.write(value.pairs, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGraphTag_lift(_ buf: RustBuffer) throws -> GraphTag {
+    return try FfiConverterTypeGraphTag.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGraphTag_lower(_ value: GraphTag) -> RustBuffer {
+    return FfiConverterTypeGraphTag.lower(value)
 }
 
 
@@ -17648,6 +18252,106 @@ fileprivate struct FfiConverterSequenceTypeFiledItem: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeGraphCollection: FfiConverterRustBuffer {
+    typealias SwiftType = [GraphCollection]
+
+    public static func write(_ value: [GraphCollection], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeGraphCollection.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [GraphCollection] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [GraphCollection]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeGraphCollection.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeGraphConnection: FfiConverterRustBuffer {
+    typealias SwiftType = [GraphConnection]
+
+    public static func write(_ value: [GraphConnection], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeGraphConnection.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [GraphConnection] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [GraphConnection]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeGraphConnection.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeGraphItemTie: FfiConverterRustBuffer {
+    typealias SwiftType = [GraphItemTie]
+
+    public static func write(_ value: [GraphItemTie], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeGraphItemTie.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [GraphItemTie] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [GraphItemTie]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeGraphItemTie.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeGraphTag: FfiConverterRustBuffer {
+    typealias SwiftType = [GraphTag]
+
+    public static func write(_ value: [GraphTag], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeGraphTag.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [GraphTag] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [GraphTag]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeGraphTag.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeHappened: FfiConverterRustBuffer {
     typealias SwiftType = [Happened]
 
@@ -18710,6 +19414,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_editable_proposal() != 23041) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_discovery_graph() != 3876) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_history() != 40353) {
