@@ -382,6 +382,8 @@ pub fn status_on(
     text.push_str(&recent_section(&summary.recent));
     let (librarian_text, librarian) = crate::ask::status_section(history);
     text.push_str(&librarian_text);
+    let (crawler_text, crawler) = crate::crawl::status_section(history);
+    text.push_str(&crawler_text);
     if !summary.problems.is_empty() {
         writeln!(
             text,
@@ -426,6 +428,7 @@ pub fn status_on(
         "recent": summary.recent.iter().map(|r| recent_line(r).1).collect::<Vec<_>>(),
         "signals": summary.signals,
         "librarian": librarian,
+        "crawler": crawler,
         "desk": desk,
         "resurfaced": resurfaced,
         "questions_today": daily,

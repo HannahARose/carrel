@@ -286,7 +286,18 @@ pub fn run(archive: Option<&Path>) -> Result<Report, Failure> {
     let worker = worker(&archive, &registry, backups)?;
     let ran = worker.run(&lock_for(&archive)?, lock, &mut Log::default())?;
     let (done, embedded) = (ran.drafted, ran.embedded);
+    // With the queue drafted, the crawler may use the idle time, as its pace allows.
+    let crawled = crate::crawl::when_idle(&archive).unwrap_or_else(|Failure(e)| {
+        eprintln!("The crawler didn't run: {e}");
+        None
+    });
     let mut text = format!("Drafted {done} queued items.\n");
+    if let Some(summary) = crawled
+        .as_ref()
+        .and_then(carrel_core::crawl::Crawled::summary)
+    {
+        writeln!(text, "The crawler {summary}.").unwrap();
+    }
     if embedded > 0 {
         writeln!(
             text,

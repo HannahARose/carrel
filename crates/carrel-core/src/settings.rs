@@ -26,6 +26,10 @@ pub enum Key {
     LibrarianChanges,
     /// How sure the librarian must be to make a change on its own.
     LibrarianConfidence,
+    /// Whether the crawler may make the refiles and corrections it's sure of without asking.
+    CrawlerChanges,
+    /// How much of the device's idle time the crawler uses.
+    CrawlerPace,
 }
 
 /// The embedding models an archive can choose: the catalog's, the default first.
@@ -37,7 +41,7 @@ const EMBEDDING_MODELS: [&str; 3] = [
 
 impl Key {
     /// Every setting, in the order they're shown.
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 10] = [
         Self::Originals,
         Self::CompressedFiles,
         Self::CrowdedItems,
@@ -46,6 +50,8 @@ impl Key {
         Self::EmbeddingModel,
         Self::LibrarianChanges,
         Self::LibrarianConfidence,
+        Self::CrawlerChanges,
+        Self::CrawlerPace,
     ];
 
     /// Its key in `settings.json`, as FORMAT.md §7.2 writes it.
@@ -60,6 +66,8 @@ impl Key {
             Self::EmbeddingModel => "embedding.model",
             Self::LibrarianChanges => "librarian.changes",
             Self::LibrarianConfidence => "librarian.confidence",
+            Self::CrawlerChanges => "crawler.changes",
+            Self::CrawlerPace => "crawler.pace",
         }
     }
 
@@ -95,6 +103,12 @@ impl Key {
             Self::LibrarianConfidence => {
                 "How sure the librarian must be, from 0.5 to 1, to make a change on its own"
             }
+            Self::CrawlerChanges => {
+                "Whether the crawler may refile items and correct cards on its own when it's sure, each change undoable; off, its findings wait in Review"
+            }
+            Self::CrawlerPace => {
+                "How much of the device's idle time the crawler uses to recheck where items are filed: off, gentle, steady or brisk"
+            }
         }
     }
 
@@ -106,7 +120,8 @@ impl Key {
             Self::OutsideEdits => Some(&["flag", "reconcile", "drift"]),
             Self::CompressedFiles => Some(&["expand", "keep", "ask"]),
             Self::EmbeddingModel => Some(&EMBEDDING_MODELS),
-            Self::LibrarianChanges => Some(&["off", "on"]),
+            Self::LibrarianChanges | Self::CrawlerChanges => Some(&["off", "on"]),
+            Self::CrawlerPace => Some(&["off", "gentle", "steady", "brisk"]),
             Self::CrowdedItems | Self::SkipDays | Self::LibrarianConfidence => None,
         }
     }
@@ -135,6 +150,13 @@ impl Key {
             }
             .into(),
             Self::LibrarianConfidence => settings.librarian.confidence.to_string(),
+            Self::CrawlerChanges => if settings.crawler.changes {
+                "on"
+            } else {
+                "off"
+            }
+            .into(),
+            Self::CrawlerPace => settings.crawler.pace.as_str().into(),
         }
     }
 
@@ -199,6 +221,16 @@ impl Key {
                     "off" => false,
                     _ => return Err(wrong()),
                 };
+            }
+            Self::CrawlerChanges => {
+                settings.crawler.changes = match value {
+                    "on" => true,
+                    "off" => false,
+                    _ => return Err(wrong()),
+                };
+            }
+            Self::CrawlerPace => {
+                settings.crawler.pace = crate::crawl::Pace::parse(value).ok_or_else(wrong)?;
             }
             Self::LibrarianConfidence => {
                 settings.librarian.confidence = value

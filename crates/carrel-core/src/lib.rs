@@ -67,6 +67,7 @@ pub mod collections;
 pub mod compressed;
 pub mod coordinator;
 pub mod correct;
+pub mod crawl;
 pub mod decisions;
 pub mod desk;
 pub mod detect;
