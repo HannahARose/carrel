@@ -325,7 +325,7 @@ mod tests {
                 .collect::<Vec<_>>()
         };
         let standard = items(SpotlightIndex::Standard);
-        assert!(!standard.is_empty());
+        assert_ne!(standard.len(), 0);
         for entry in &standard {
             assert!(entry.title_only);
             assert_eq!(
@@ -340,7 +340,7 @@ mod tests {
         let all = items(SpotlightIndex::AllButRestricted);
         assert_eq!(all.len(), standard.len());
         assert!(all.iter().all(|e| !e.title_only));
-        assert!(entries(&archive, SpotlightIndex::Off).unwrap().is_empty());
+        assert_eq!(entries(&archive, SpotlightIndex::Off).unwrap(), Vec::new());
     }
 
     #[test]
