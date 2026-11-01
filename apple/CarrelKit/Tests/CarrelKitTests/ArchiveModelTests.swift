@@ -319,3 +319,27 @@ final class Reports: ProgressListener, @unchecked Sendable {
         #expect(model.history.first?.id == outcome.commit)
     }
 }
+
+@MainActor
+@Suite struct AddingFromTheWindow {
+    @Test func webAddressesAndWrittenNotesJoinTheQueueAsTheShareSheetsDo() async throws {
+        let sample = try Sample()
+        let model = sample.model
+        let page = try await model.shareWebAddress(
+            "https://example.org/prc", title: "Phase response curves", note: "For chapter two")
+        #expect(page.writer == nil)
+        #expect(page.added.added.map(\.path) == ["https://example.org/prc"])
+
+        let note = try await model.shareNote("Ring the framer about the print.", title: "Framer")
+        let path = try #require(note.added.added.first?.path)
+        #expect(
+            path.hasSuffix(
+                "/config/notes/"
+                    + URL(filePath: path).deletingLastPathComponent()
+                    .lastPathComponent + "/Framer.md"))
+        #expect(model.intake.waiting.count == 2, "the queue is read again")
+
+        await #expect(throws: CarrelError.self) { try await model.shareNote("  ") }
+        await #expect(throws: CarrelError.self) { try await model.shareWebAddress("example.org") }
+    }
+}

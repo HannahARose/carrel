@@ -58,6 +58,7 @@ With `--json`, `carrel search` prints `{"root", "query", "total", "meaning", "re
 | `carrel ingest --dry-run PATH...` | Shows the plan at once (items, kinds, duplicates, what's left out) without queueing anything or running a model. |
 | `carrel ingest --wait PATH...` | Queues the items and stays until they're drafted, with a progress bar, then reports each one: its text, card, destination and sensitivity. |
 | `carrel ingest --url URL [--title TEXT]` | Adds a web address, to be filed as a `url` item: a card with no file, drafted from the address and title alone. Nothing is fetched. |
+| `carrel ingest --text TEXT [--title TEXT]` | Adds a note you write as an item of its own: a Markdown file, named by its title or first words, kept in the configuration folder's `notes` until it's filed. `--text -` reads the note from standard input. |
 | `carrel ingest --note TEXT ...` | Adds a note to what's added, files or a web address: the model drafting each card is given it, and the filed card keeps it at the start of its notes. |
 | `carrel ingest --status` | Shows the worker and this device's queue, including items that failed. |
 | `carrel ingest --remove ID`, `--first ID`, `--retry ID` | Takes a waiting item off the queue, moves it to the front, or tries a failed one again. |
@@ -200,7 +201,7 @@ Backups need [Kopia](https://kopia.io), beside `carrel` or on `PATH`.
 | `4` | **Questions**: `Enter` to answer, `1`–`9` to pick a suggestion, `s` to skip, `d` to dismiss |
 | `5` | **Browse**: collections and items; `/` to search, as `carrel search` does; `Enter` on an item for its changes and links, then `u` to undo the chosen change, `Enter` to go to a linked item; on an item, `a` answer Carrel's question about it, `o` check it out, `r` rename it, `z` expand a compressed file; `f` on an item or a collection flags it as needing work, with a note, or clears its flag, and `F` lists the flagged items (flagged things carry a ⚑); `n` new collection; on a collection, `E` how eager to rearrange it and `R` propose a new shape for it |
 | `6` | **History**: `u` to undo the chosen change |
-| `7` | **Ingest**: the queue; `x` remove, `t` to the front, `r` retry |
+| `7` | **Ingest**: the queue; `x` remove, `t` to the front, `r` retry; `a` writes a note to add as an item of its own |
 | `8` | **Settings**: `Enter` to change the chosen setting. **Search index** rebuilds it with a progress bar (`carrel index rebuild`), switches the archive's model or carries on or stops a switch (`carrel index model NAME`), and downloads an embedding model after asking. **Providers** and **File types** show `carrel providers` and `carrel formats`; **Archive** switches archives |
 | `9` | **Backups**: the snapshots, each with its change; `n` snapshot now, `v` verify, `r` restore an item as of the chosen snapshot, `s` set up or connect a repository, choosing its folder with the file picker |
 | `L` | **Librarian**: the conversation, and the item it's discussing; `Enter` ask, `↑↓` choose an item, suggestion or change, `y` make the chosen suggestion, `u` undo the librarian's chosen change, `U` all of this week's, `a` answer its question, `o` open the item in Browse, `s` save to the Journal, `n` a new conversation |

@@ -18,6 +18,7 @@ use carrel_core::ingest::{Candidate, IntakeOptions};
 use carrel_core::intake::{self, Queued};
 use carrel_core::questions::QuestionEntry;
 use carrel_core::review::short_id;
+use carrel_core::written_note::{self, WrittenNoteAdded};
 use serde_json::{Value, json};
 
 use crate::commands::locate;
@@ -43,6 +44,9 @@ pub struct Request {
     pub paths: Vec<PathBuf>,
     /// A web address to add instead, with its title.
     pub url: Option<(String, Option<String>)>,
+    /// A note to add instead, as an item of its own, with its title; `-` reads it from
+    /// standard input.
+    pub text: Option<(String, Option<String>)>,
     /// How to add them.
     pub options: Options,
     /// Show the queue instead.
@@ -63,6 +67,8 @@ pub fn command(archive: Option<&Path>, request: &Request, json: bool) -> Result<
         change_queued(archive, id, *change)
     } else if let Some((url, title)) = &request.url {
         ingest_url(archive, url, title.as_deref(), &request.options, json)
+    } else if let Some((text, title)) = &request.text {
+        ingest_text(archive, text, title.as_deref(), &request.options, json)
     } else {
         ingest(archive, &request.paths, &request.options, json)
     }
@@ -103,7 +109,7 @@ pub fn ingest(
             options.intake.each,
             options.note.as_deref(),
         )?;
-        return Ok(inbox_report(&sent, &writer, paths.len()));
+        return Ok(inbox_report(&sent, writer.device, paths.len()));
     }
     let queued = intake::add_with_note(
         &archive,
@@ -169,7 +175,7 @@ pub fn ingest_url(
             title,
             note,
         )?;
-        return Ok(inbox_report(&sent, &writer, 1));
+        return Ok(inbox_report(&sent, writer.device, 1));
     }
     let Some(entry) = intake::add_url(&archive, url, title, note, identity.device)? else {
         return Ok(Report::new(
@@ -199,15 +205,67 @@ pub fn ingest_url(
     ))
 }
 
+/// `carrel ingest --text TEXT`: adds a note as an item of its own, kept as a Markdown file in
+/// this device's notes folder and queued as any file is, or puts it in this device's inbox
+/// while another device is the writer. `-` reads the note from standard input.
+///
+/// # Errors
+///
+/// [`Failure`] if the note is empty or can't be kept, or the queue can't be written.
+pub fn ingest_text(
+    archive: Option<&Path>,
+    text: &str,
+    title: Option<&str>,
+    options: &Options,
+    json: bool,
+) -> Result<Report, Failure> {
+    let read;
+    let text = if text == "-" {
+        read = std::io::read_to_string(std::io::stdin())
+            .map_err(|e| Failure(format!("couldn't read the note from standard input: {e}")))?;
+        read.as_str()
+    } else {
+        text
+    };
+    let archive = locate(archive)?;
+    let identity = crate::config::Identity::load_or_create()?;
+    let folder = written_note::written_notes_dir()
+        .ok_or_else(|| Failure::new("there's no configuration folder to keep the note in"))?;
+    let added = written_note::add_written_note(
+        &archive,
+        &folder,
+        text,
+        title,
+        options.note.as_deref(),
+        crate::commands::holder(&identity),
+    )?;
+    let queued = match added {
+        WrittenNoteAdded::Sent { inbox, writer } => return Ok(inbox_report(&inbox, writer, 1)),
+        WrittenNoteAdded::Queued { queued, .. } => queued,
+    };
+    if options.wait && !queued.added.is_empty() {
+        return wait(&archive, &queued, json);
+    }
+    let started = !queued.added.is_empty() && crate::worker::start(&archive)?;
+    let note = if queued.added.is_empty() {
+        "Nothing new to queue.".to_owned()
+    } else {
+        queued_note(&archive, 1, started)?
+    };
+    let mut report = plan_report(&queued, &note);
+    report.json["worker_started"] = json!(started);
+    Ok(report)
+}
+
 /// Says that `count` items went into this device's inbox at `sent`, for `writer` to add.
-fn inbox_report(sent: &Path, writer: &carrel_core::coordinator::LockInfo, count: usize) -> Report {
+fn inbox_report(sent: &Path, writer: Id, count: usize) -> Report {
     Report::new(
         format!(
             "Another device ({}) is the writer now, so {} went into this device's inbox, for it to add to its queue and draft.\n",
-            writer.device,
+            writer,
             if count == 1 { "it" } else { "they" },
         ),
-        json!({"saved": false, "queued": [], "inbox": sent, "writer": writer.device}),
+        json!({"saved": false, "queued": [], "inbox": sent, "writer": writer}),
     )
 }
 

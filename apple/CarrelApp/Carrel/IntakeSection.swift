@@ -60,8 +60,10 @@ struct IntakeSection: View {
                 }
             }
             if intake.queue.waiting.isEmpty, intake.worker == nil, !isReadOnly {
-                Text("Drop files or folders on the window, or choose File → Add to Archive…")
-                    .foregroundStyle(.secondary)
+                Text(
+                    "Drop or paste files, folders, web addresses or text on the window, or choose File → Add to Archive…, Add Web Address… or Add Note…"
+                )
+                .foregroundStyle(.secondary)
             }
         }
     }

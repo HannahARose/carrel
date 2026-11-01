@@ -80,9 +80,12 @@ public final class AgentRequestHandler {
         case .addFiles(_, let paths, let each, let whole, let note):
             return try await addFiles(paths, each: each, whole: whole, note: note, on: handle)
         case .addText(_, let text, let title, let note):
-            let name = Self.fileName(title ?? Self.firstWords(of: text), extension: "md")
-            let file = try keep(Data(text.utf8), as: name)
-            return try await addFiles([file], each: false, whole: true, note: note, on: handle)
+            // The core keeps it as a note of its own, in a folder of its own in `sent`.
+            let folder = sent.path(percentEncoded: false)
+            let shared = try await Task.detached {
+                try handle.shareNote(text: text, title: title, note: note, folder: folder)
+            }.value
+            return Self.reply(to: shared, named: { URL(filePath: $0).lastPathComponent })
         case .addData(_, let name, let data, let note):
             let file = try keep(data, as: Self.fileName(name, extension: nil))
             return try await addFiles([file], each: false, whole: true, note: note, on: handle)
@@ -199,12 +202,6 @@ public final class AgentRequestHandler {
         let file = folder.appending(path: name)
         try data.write(to: file, options: .atomic)
         return file.path(percentEncoded: false)
-    }
-
-    /// The first few words of `text`, to name a note by.
-    static func firstWords(of text: String) -> String {
-        let words = text.split(whereSeparator: \.isWhitespace).prefix(8).joined(separator: " ")
-        return words.isEmpty ? "Note" : words
     }
 
     /// `name` made safe as a file name, with `extension` added unless it has one.

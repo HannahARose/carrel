@@ -637,6 +637,46 @@ public final class ArchiveModel {
         return added
     }
 
+    /// Adds the files and folders at `urls` to the intake queue with the owner's `note` for
+    /// their drafts and cards, or to this device's inbox while another device is the writer.
+    @discardableResult
+    public func share(
+        _ urls: [URL], each: Bool = false, whole: Bool = false, note: String? = nil
+    ) async throws -> Shared {
+        let paths = urls.map { $0.path(percentEncoded: false) }
+        let shared = try await call {
+            try $0.sharePaths(paths: paths, each: each, whole: whole, note: note)
+        }
+        try await refreshIntake()
+        return shared
+    }
+
+    /// Adds the web address `address` as a `url` item, drafted from it, its `title` and the
+    /// owner's `note`, with nothing fetched; or to this device's inbox while another device is
+    /// the writer.
+    @discardableResult
+    public func shareWebAddress(
+        _ address: String, title: String? = nil, note: String? = nil
+    ) async throws -> Shared {
+        let shared = try await call { try $0.shareUrl(url: address, title: title, note: note) }
+        try await refreshIntake()
+        return shared
+    }
+
+    /// Adds `text` as a note item of its own, titled `title` or named by its first words, with
+    /// the owner's `note`; or to this device's inbox while another device is the writer. The
+    /// core keeps it as a Markdown file in this device's configuration folder.
+    @discardableResult
+    public func shareNote(
+        _ text: String, title: String? = nil, note: String? = nil
+    ) async throws -> Shared {
+        let shared = try await call {
+            try $0.shareNote(text: text, title: title, note: note, folder: nil)
+        }
+        try await refreshIntake()
+        return shared
+    }
+
     /// Takes the entry `id` out of the intake queue.
     public func unqueue(_ id: String) async throws {
         try await call { try $0.unqueue(id: id) }

@@ -564,6 +564,7 @@ enum ModelsAction {
 }
 
 #[derive(Debug, clap::Args)]
+#[command(group(clap::ArgGroup::new("url_or_text").args(["url", "text"])))]
 #[allow(clippy::struct_excessive_bools)] // each is a command-line flag
 struct IngestArgs {
     /// The files and folders. Each is one item.
@@ -572,8 +573,12 @@ struct IngestArgs {
     /// nothing is fetched.
     #[arg(long, value_name = "URL", conflicts_with_all = ["paths", "each", "whole", "dry_run"])]
     url: Option<String>,
-    /// The web address's title, such as the page's.
-    #[arg(long, value_name = "TEXT", requires = "url")]
+    /// A note to file as an item of its own, kept as a Markdown file; `-` reads it from
+    /// standard input.
+    #[arg(long, value_name = "TEXT", conflicts_with_all = ["paths", "url", "each", "whole", "dry_run"])]
+    text: Option<String>,
+    /// The web address's or the note's title, such as the page's.
+    #[arg(long, value_name = "TEXT", requires = "url_or_text")]
     title: Option<String>,
     /// A note about what's added, given to the model drafting each card and kept in the card.
     #[arg(long, value_name = "TEXT")]
@@ -613,7 +618,8 @@ impl IngestArgs {
             .or(self.retry.map(|id| (ingest::Change::Retry, id)));
         ingest::Request {
             paths: self.paths,
-            url: self.url.map(|url| (url, self.title)),
+            url: self.url.map(|url| (url, self.title.clone())),
+            text: self.text.map(|text| (text, self.title)),
             options: ingest::Options {
                 note: self.note,
                 intake: carrel_core::ingest::IntakeOptions {

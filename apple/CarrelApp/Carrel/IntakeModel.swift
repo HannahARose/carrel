@@ -1,7 +1,11 @@
 // Adding items: files and folders dropped on the window or chosen with File → Add to
-// Archive… join the intake queue, as `carrel ingest` adds them, and a worker drafts them. The
-// agent runs the worker; Status shows its progress, read from the worker's status file.
+// Archive…, with the owner's note, a web address (File → Add Web Address…) and a note written
+// in the window (File → Add Note…), or any of these pasted onto it, join the intake queue as
+// `carrel ingest` adds them, and a worker drafts them. While another device is the writer they
+// go into this Mac's inbox instead. The agent runs the worker; Status shows its progress, read
+// from the worker's status file.
 
+import AppKit
 import CarrelKit
 import Foundation
 import Observation
@@ -36,32 +40,102 @@ final class IntakeModel {
         return "Drafting \(worker.item ?? "…")\(stage), \(worker.waiting) waiting"
     }
 
-    /// Folders being added, while the owner chooses how: entry by entry or whole.
-    var choosingHow: [URL]?
+    /// What's being added, while the owner writes a note for it and, for folders, chooses how
+    /// they go in.
+    var adding: PendingAdd?
 
-    /// Adds the files and folders at `urls` to the intake queue, asking first how a folder
-    /// among them goes in.
+    /// Starts adding the files and folders at `urls`: the add sheet asks for a note, and how a
+    /// folder among them goes in.
     func add(_ urls: [URL]) async {
         guard !urls.isEmpty else { return }
-        if urls.contains(where: Self.isFolder) {
-            choosingHow = urls
-            return
-        }
-        await add(urls, as: .decide)
+        adding = PendingAdd(urls: urls, hasFolders: urls.contains(where: Self.isFolder))
     }
 
     /// Adds the files and folders at `urls` to the intake queue, folders as `how` says, as
-    /// `carrel ingest --each` and `--whole` do.
-    func add(_ urls: [URL], as how: FolderIntake) async {
-        choosingHow = nil
+    /// `carrel ingest --each` and `--whole` do, with the owner's `note` for their cards. While
+    /// another device is the writer, they go into this Mac's inbox.
+    func add(_ urls: [URL], as how: FolderIntake, note: String? = nil) async {
+        adding = nil
         guard !urls.isEmpty else { return }
+        await report {
+            try await $0.share(urls, each: how == .each, whole: how == .whole, note: note)
+        } named: {
+            URL(filePath: $0).lastPathComponent
+        }
+    }
+
+    /// Adds the web address `address` as a `url` item, with its `title` and the owner's
+    /// `note`, as `carrel ingest --url` does.
+    func addWebAddress(_ address: String, title: String, note: String) async {
+        writing = nil
+        let title = title.cleanedForIntake
+        await report {
+            try await $0.shareWebAddress(
+                address.trimmingCharacters(in: .whitespacesAndNewlines), title: title,
+                note: note.cleanedForIntake)
+        } named: {
+            title ?? $0
+        }
+    }
+
+    /// Adds `text` as a note item of its own, with its `title` and the owner's `note`, as
+    /// `carrel ingest --text` does.
+    func addNote(_ text: String, title: String, note: String) async {
+        writing = nil
+        await report {
+            try await $0.shareNote(text, title: title.cleanedForIntake, note: note.cleanedForIntake)
+        } named: {
+            URL(filePath: $0).lastPathComponent
+        }
+    }
+
+    /// Runs `share` and keeps what it did as `report`, naming each entry by its path with
+    /// `named`.
+    private func report(
+        _ share: (ArchiveModel) async throws -> Shared, named: (String) -> String
+    ) async {
         do {
-            report = AddReport(
-                try await archive.add(urls, each: how == .each, whole: how == .whole))
+            report = AddReport(try await share(archive), named: named)
         } catch {
             report = AddReport(problem: message(for: error))
         }
         await refresh()
+    }
+
+    // MARK: - Writing a web address or a note
+
+    /// The web address or note sheet, while it's open.
+    var writing: Writing?
+
+    /// Adds what's on `pasteboard`, as pasting onto the window does: files and folders go to
+    /// the add sheet, a web address to Add Web Address and text to Add Note, filled in for the
+    /// owner to add. Returns whether there was anything to add.
+    @discardableResult
+    func paste(from pasteboard: NSPasteboard) async -> Bool {
+        let files =
+            pasteboard.readObjects(
+                forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]
+            ?? []
+        if !files.isEmpty {
+            await add(files)
+            return true
+        }
+        let text =
+            pasteboard.string(forType: .URL) ?? pasteboard.string(forType: .string) ?? ""
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        writing =
+            Self.isWebAddress(trimmed)
+            ? Writing(kind: .webAddress, text: trimmed) : Writing(kind: .note, text: text)
+        return true
+    }
+
+    /// Whether `text` is one `http` or `https` address, as the interactive mode's Ingest line
+    /// tells them from paths.
+    static func isWebAddress(_ text: String) -> Bool {
+        let lower = text.lowercased()
+        return !text.contains(where: \.isWhitespace)
+            && (lower.hasPrefix("https://") || lower.hasPrefix("http://")) && lower.count > 8
     }
 
     private static func isFolder(_ url: URL) -> Bool {
@@ -144,10 +218,20 @@ struct AddReport: Equatable {
     var leftOut: [(name: String, reason: String)] = []
     /// Why nothing could be added.
     var problem: String?
+    /// The writing device, when it went into this Mac's inbox instead.
+    var writer: String?
 
     init(_ added: Added) {
-        self.added = added.added.map { URL(filePath: $0.path).lastPathComponent }
-        leftOut = added.leftOut.map { (URL(filePath: $0.path).lastPathComponent, $0.reason) }
+        self.init(Shared(added: added, inbox: nil, writer: nil)) {
+            URL(filePath: $0).lastPathComponent
+        }
+    }
+
+    /// What `shared` did, naming each entry by its path with `named`.
+    init(_ shared: Shared, named: (String) -> String) {
+        added = shared.added.added.map { named($0.path) }
+        leftOut = shared.added.leftOut.map { (URL(filePath: $0.path).lastPathComponent, $0.reason) }
+        writer = shared.writer
     }
 
     init(problem: String) {
@@ -156,6 +240,7 @@ struct AddReport: Equatable {
 
     var title: String {
         if problem != nil { return "Couldn’t Add to the Archive" }
+        if writer != nil { return "Sent to This Mac’s Inbox" }
         return switch added.count {
         case 0: "Nothing to Add"
         case 1: "Added “\(added[0])” to the Intake Queue"
@@ -166,13 +251,51 @@ struct AddReport: Equatable {
     /// What was left out and why, one to a line, or what went wrong.
     var details: String? {
         if let problem { return problem }
+        if let writer {
+            return "Another device (\(writer.prefix(8))) is the writer now, so this went into "
+                + "this Mac’s inbox; that device adds it to its queue and drafts it."
+        }
         guard !leftOut.isEmpty else { return nil }
         return leftOut.map { "\($0.name): \($0.reason)" }.joined(separator: "\n")
     }
 
     static func == (a: Self, b: Self) -> Bool {
-        a.added == b.added && a.problem == b.problem
+        a.added == b.added && a.problem == b.problem && a.writer == b.writer
             && a.leftOut.map(\.name) == b.leftOut.map(\.name)
             && a.leftOut.map(\.reason) == b.leftOut.map(\.reason)
+    }
+}
+
+/// Files and folders being added, while the owner writes a note for them and, for folders,
+/// chooses how they go in.
+struct PendingAdd: Identifiable, Equatable {
+    let id = UUID()
+    /// What's being added.
+    var urls: [URL]
+    /// Whether a folder is among them, so the sheet asks how folders go in.
+    var hasFolders: Bool
+}
+
+/// A web address or a note being written in the window, before it's added.
+struct Writing: Identifiable, Equatable {
+    enum Kind {
+        /// File → Add Web Address…
+        case webAddress
+        /// File → Add Note…
+        case note
+    }
+
+    let id = UUID()
+    var kind: Kind
+    /// What's filled in: the address, or the note's text.
+    var text = ""
+}
+
+extension String {
+    /// Trimmed, or `nil` when there's nothing in it, as the core takes an optional title or
+    /// note.
+    fileprivate var cleanedForIntake: String? {
+        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 }

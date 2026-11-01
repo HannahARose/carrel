@@ -228,9 +228,13 @@ What `carrel backup` does (see [Backups](user-guide.md#backups)), using the Kopi
 
 ## Adding items
 
-Drag files or folders onto an archive's window, or choose **File → Add to Archive…** (⌘O). They join the intake queue, just as `carrel ingest` adds them. Nothing moves yet.
+Drag files or folders onto an archive's window, or choose **File → Add to Archive…** (⌘O). A sheet lists them, with a **note** for their cards (given to the model drafting each one, and kept in the card) and, for folders, how they go in. **Add** (Return) puts them in the intake queue, just as `carrel ingest` adds them. Nothing moves yet.
 
-- A **folder** goes in as one item. For a pile such as Downloads, where each file should be its own item, choose the files inside it, or use `carrel ingest --each`.
+- A **folder** goes in as one item unless its name suggests a pile, such as Downloads, whose entries go in one by one. The sheet's **Folders** menu chooses either way, as `carrel ingest --each` and `--whole` do.
+- **File → Add Web Address…** (⇧⌘U) adds a web address, with an optional title and note, filed as a `url` item: a card with no file, drafted from the address and title alone. Nothing is fetched.
+- **File → Add Note…** (⌃⌘N) adds a note you write, with an optional title, as an item of its own: a Markdown file named by its title or first words.
+- **Paste** onto the window (⌘V), or choose **File → Add from Clipboard** (⇧⌘V): files and folders open the add sheet, a web address Add Web Address and text Add Note, filled in for you to add.
+- While **another device is the writer**, what you add goes into this Mac's inbox, and the alert says so; that device adds it to its queue.
 - An alert says what was added, and what was left out and why: duplicates of items already in the archive, items already waiting, files your rules ignore.
 - **Drafts arrive by themselves.** The agent, or the command line's worker, drafts each item in the background; Status → Intake shows the progress. Each proposal appears in Review as soon as it's ready, with the count beside Review going up. If nothing is drafting, Status offers **Draft Now**.
 

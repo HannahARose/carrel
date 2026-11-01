@@ -530,8 +530,12 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
             options,
             url,
             note,
+            written,
         } => {
-            let result = queue(&root, &paths, options, url.as_deref(), note.as_deref());
+            let result = match written {
+                Some(text) => intake::queue_written_note(&root, &text, note.as_deref()),
+                None => queue(&root, &paths, options, url.as_deref(), note.as_deref()),
+            };
             finished(app, result.map_err(|Failure(e)| e));
             return None;
         }
@@ -666,10 +670,7 @@ fn queue(
             Some(url) => carrel_core::inbox::send_url(&archive, holder, url, None, note)?,
             None => carrel_core::inbox::send_paths(&archive, holder, paths, options.each, note)?,
         };
-        return Ok(
-            "Another device is the writer, so this went into this device's inbox for it to add"
-                .into(),
-        );
+        return Ok(INBOX_LINE.into());
     }
     let n = match url {
         Some(url) => usize::from(
@@ -681,8 +682,17 @@ fn queue(
                 .len()
         }
     };
-    let started = crate::worker::start(&archive)?;
-    Ok(match (n, started || crate::worker::running(&archive)?) {
+    queued_line(&archive, n)
+}
+
+/// What the Ingest screen says while another device is the writer.
+const INBOX_LINE: &str =
+    "Another device is the writer, so this went into this device's inbox for it to add";
+
+/// Starts a worker for the `n` items just queued, and says so in a line.
+fn queued_line(archive: &carrel_core::archive::Archive, n: usize) -> Result<String, Failure> {
+    let started = crate::worker::start(archive)?;
+    Ok(match (n, started || crate::worker::running(archive)?) {
         (0, _) => "Nothing new to queue".into(),
         (n, true) => format!(
             "Queued {n} item{}; the worker drafts them in the background",
@@ -2041,6 +2051,7 @@ mod tests {
                 options: carrel_core::ingest::IntakeOptions::default(),
                 url: None,
                 note: None,
+                written: None,
             })
         );
         assert_eq!(app.planned, None);

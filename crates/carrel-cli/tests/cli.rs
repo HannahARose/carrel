@@ -4438,3 +4438,78 @@ fn gui_points_to_the_interactive_mode_off_macos() {
     assert!(stderr.contains("only on macOS"), "{stderr}");
     assert!(stderr.contains("carrel tui"), "{stderr}");
 }
+
+#[test]
+fn ingest_text_files_a_written_note_as_an_item_from_the_flag_or_standard_input() {
+    use std::io::Write as _;
+    let sandbox = Sandbox::new();
+    let root = sandbox.path("noted");
+    sandbox.ok(
+        sandbox.dir.path(),
+        &["init", root.to_str().unwrap(), "--name", "Noted"],
+    );
+    let ingested = sandbox.json(
+        &root,
+        &[
+            "ingest",
+            "--text",
+            "Ring the framer about the lamp print.",
+            "--title",
+            "Framer",
+            "--note",
+            "For the hallway",
+            "--wait",
+        ],
+    );
+    assert_eq!(
+        ingested["proposals"].as_array().unwrap().len(),
+        1,
+        "{ingested}"
+    );
+    let kept = sandbox.path("config/notes");
+    let notes: Vec<_> = std::fs::read_dir(&kept)
+        .unwrap()
+        .map(|e| e.unwrap().path().join("Framer.md"))
+        .collect();
+    assert_eq!(notes.len(), 1);
+    assert_eq!(
+        std::fs::read_to_string(&notes[0]).unwrap(),
+        "Ring the framer about the lamp print.\n"
+    );
+
+    let empty = sandbox.run_in(&root, &["ingest", "--text", "  "]);
+    assert!(!empty.status.success());
+    assert!(String::from_utf8_lossy(&empty.stderr).contains("empty"));
+    let both = sandbox.run_in(&root, &["ingest", "--text", "a", "--url", "https://a.org"]);
+    assert!(!both.status.success(), "a note or a web address, not both");
+
+    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_carrel"))
+        .args(["ingest", "--text", "-", "--json"])
+        .current_dir(&root)
+        .env("CARREL_CONFIG_DIR", sandbox.path("config"))
+        .env("CARREL_TRASH_DIR", sandbox.path("Trash"))
+        .env("CARREL_WORKER", "off")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"Piped in from another program\n")
+        .unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let queued = json_of(&out);
+    let path = queued["queued"][0]["path"].as_str().unwrap();
+    assert!(
+        path.ends_with("/Piped in from another program.md"),
+        "{path}"
+    );
+}
