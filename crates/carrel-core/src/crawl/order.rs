@@ -105,7 +105,7 @@ pub fn crowded(archive: &Archive) -> Result<HashSet<String>, ArchiveError> {
 }
 
 /// The stage `entry` is in, given the `crowded` collections.
-fn stage_of(entry: &Entry, crowded: &HashSet<String>) -> Stage {
+fn stage_of<S: std::hash::BuildHasher>(entry: &Entry, crowded: &HashSet<String, S>) -> Stage {
     if entry.collection == "Holding" {
         Stage::Holding
     } else if entry.placement == Some(PlacementConfidence::Low) {
@@ -120,11 +120,11 @@ fn stage_of(entry: &Entry, crowded: &HashSet<String>) -> Stage {
 /// The items due to be judged at `now`, in the order the crawler takes them, each with its
 /// stage. `judged` are the verdicts so far, `open` the items with a finding waiting.
 #[must_use]
-pub fn order_of(
+pub fn order_of<S: std::hash::BuildHasher, T: std::hash::BuildHasher>(
     entries: &[Entry],
-    crowded: &HashSet<String>,
+    crowded: &HashSet<String, S>,
     judged: &BTreeMap<Id, Verdict>,
-    open: &HashSet<Id>,
+    open: &HashSet<Id, T>,
     now: jiff::Timestamp,
 ) -> Vec<(Id, Stage)> {
     let mut due: Vec<(Stage, Option<jiff::Timestamp>, &str, Id)> = entries

@@ -127,8 +127,8 @@ fn holding_comes_first_and_a_pass_takes_only_its_share() {
         model,
         holder,
     };
-    let crawled = crawler.pass(2, &never).unwrap();
-    assert_eq!(crawled.judged, 2);
+    let did = crawler.pass(2, &never).unwrap();
+    assert_eq!(did.judged, 2);
     let mine = Verdicts::load(&archive, holder.device);
     assert_eq!(mine.items.len(), 2);
     let scan = Id(SCAN.parse().unwrap());
@@ -157,9 +157,9 @@ fn it_stops_for_the_owner_and_keeps_its_pace() {
         model,
         holder,
     };
-    let crawled = crawler.pass(4, &|| true).unwrap();
-    assert!(crawled.stopped);
-    assert_eq!(crawled.judged, 0);
+    let did = crawler.pass(4, &|| true).unwrap();
+    assert!(did.stopped);
+    assert_eq!(did.judged, 0);
 
     let now = std::time::SystemTime::now();
     assert!(Pace::Steady.due(None, now));
@@ -204,9 +204,13 @@ fn with_changes_off_its_findings_wait_in_review_and_leave_the_owners_fields_alon
         model: model.clone(),
         holder,
     };
-    let crawled = crawler.pass(1, &never).unwrap();
-    assert_eq!(crawled.proposed, 2, "{crawled:?}");
-    assert!(crawled.made.is_empty(), "with changes off it only proposes");
+    let did = crawler.pass(1, &never).unwrap();
+    assert_eq!(did.proposed, 2, "{did:?}");
+    assert_eq!(
+        did.made,
+        Vec::<String>::new(),
+        "with changes off it only proposes"
+    );
     assert_eq!(collection_of(&archive, SCAN), "Holding");
 
     let found = findings::list(&archive).unwrap();
@@ -244,7 +248,7 @@ fn with_changes_off_its_findings_wait_in_review_and_leave_the_owners_fields_alon
     // Rejecting the summary removes it, and it isn't proposed again.
     let summary = findings::list(&archive).unwrap().remove(0);
     findings::reject(&archive, &summary, holder.device).unwrap();
-    assert!(findings::list(&archive).unwrap().is_empty());
+    assert_eq!(findings::list(&archive).unwrap().len(), 0);
     let scan = Id(SCAN.parse().unwrap());
     let mut mine = Verdicts::load(&archive, holder.device);
     let judged = mine.items.get_mut(&scan).unwrap();
@@ -281,9 +285,9 @@ fn with_changes_on_it_makes_what_its_sure_of_and_undo_takes_it_back() {
         model,
         holder,
     };
-    let crawled = crawler.pass(1, &never).unwrap();
-    assert_eq!(crawled.made.len(), 2, "{crawled:?}");
-    assert_eq!(crawled.proposed, 0);
+    let did = crawler.pass(1, &never).unwrap();
+    assert_eq!(did.made.len(), 2, "{did:?}");
+    assert_eq!(did.proposed, 0);
     assert_eq!(collection_of(&archive, SCAN), "Reading");
     let log = History::open(&archive).unwrap().log().unwrap();
     let mine: Vec<_> = log
@@ -309,7 +313,7 @@ fn with_changes_on_it_makes_what_its_sure_of_and_undo_takes_it_back() {
 fn with_changes_on_what_it_isnt_sure_of_still_waits_in_review() {
     let (_dir, archive, holder) = sample(true);
     let (registry, model) = scripted(vec![verdict(false, "Reading", 0.6)]);
-    let crawled = Crawler {
+    let did = Crawler {
         archive: &archive,
         registry: &registry,
         model,
@@ -317,8 +321,8 @@ fn with_changes_on_what_it_isnt_sure_of_still_waits_in_review() {
     }
     .pass(1, &never)
     .unwrap();
-    assert!(crawled.made.is_empty());
-    assert_eq!(crawled.proposed, 2);
+    assert_eq!(did.made, Vec::<String>::new());
+    assert_eq!(did.proposed, 2);
     assert_eq!(collection_of(&archive, SCAN), "Holding");
 }
 
