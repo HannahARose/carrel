@@ -1,12 +1,14 @@
 //! Switching archives in the interactive mode: the recent ones, one by its path, as
-//! `carrel open` does, or a new one, as `carrel init` does. `Ctrl-O` opens the switcher on
-//! any screen, and so does the Archive row in Settings.
+//! `carrel open` does, or a new one with its embedding model, as `carrel init` does, or an
+//! existing one whose history hasn't started, as `carrel init` does there. `Ctrl-O` opens the
+//! switcher on any screen, and so does the Archive row in Settings.
 
 use std::path::{Path, PathBuf};
 
 use carrel_core::archive::Archive;
 
 use super::app::{App, Effect, Preferences};
+use super::option_lines::OptionLine;
 use super::review::{Picker, Purpose};
 use super::screens::{Input, InputPurpose};
 use super::settings::{Row, Shown};
@@ -21,6 +23,17 @@ pub enum Choice {
     Path,
     /// Type the path of a new archive to create.
     Create,
+    /// Type the path of an existing archive to start history for.
+    StartHistory,
+}
+
+/// A new archive: its folder and the model every device searches it by meaning with.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewArchive {
+    /// The folder, which it's named after.
+    pub path: PathBuf,
+    /// The embedding model, from `carrel models`.
+    pub embedding_model: String,
 }
 
 impl App {
@@ -46,6 +59,10 @@ impl App {
             .collect();
         choices.push(("Open an archive by its path…".into(), Choice::Path));
         choices.push(("Create a new archive…".into(), Choice::Create));
+        choices.push((
+            "Start history for an archive that has none…".into(),
+            Choice::StartHistory,
+        ));
         choices
     }
 
@@ -80,6 +97,7 @@ impl App {
                     text: String::new(),
                 });
             }
+            Choice::StartHistory => self.ask_option(OptionLine::StartHistory),
         }
         None
     }
@@ -148,18 +166,37 @@ impl App {
         Ok(message)
     }
 
-    /// Creates an archive at `path`, as `carrel init PATH` does, and shows it.
+    /// Creates an archive, as `carrel init PATH --embedding-model NAME` does, and shows it.
     ///
     /// # Errors
     ///
     /// [`Failure`] if it can't be created; this one stays shown.
-    pub fn create_archive(&mut self, path: &Path) -> Result<String, Failure> {
-        let report = crate::commands::init(
-            Some(path),
-            None,
-            false,
-            carrel_core::models::DEFAULT_EMBEDDING_MODEL,
-        )?;
+    pub fn create_archive(&mut self, new: &NewArchive) -> Result<String, Failure> {
+        if new.path.join("_System/archive.json").exists() {
+            return Err(Failure::new(format!(
+                "{} is already an archive; open it, or start its history if it has none",
+                new.path.display()
+            )));
+        }
+        self.init_and_show(&new.path, &new.embedding_model)
+    }
+
+    /// Starts history for the existing archive at `path`, as `carrel init PATH` does in an
+    /// archive that has none, and shows it.
+    ///
+    /// # Errors
+    ///
+    /// [`Failure`] if it isn't an archive, its history has started, or it can't be written;
+    /// this one stays shown.
+    pub fn start_history(&mut self, path: &Path) -> Result<String, Failure> {
+        let root = Archive::find(path)?.root().to_owned();
+        // An existing archive keeps its model; this one is only checked.
+        self.init_and_show(&root, carrel_core::models::DEFAULT_EMBEDDING_MODEL)
+    }
+
+    /// Runs `carrel init` at `path`, then shows the archive, saying what both did.
+    fn init_and_show(&mut self, path: &Path, embedding_model: &str) -> Result<String, Failure> {
+        let report = crate::commands::init(Some(path), None, false, embedding_model)?;
         let switched = self.switch_archive(path)?;
         let created = report.text.lines().next().unwrap_or_default().to_owned();
         Ok(format!("{created}; {switched}"))
@@ -182,6 +219,7 @@ mod tests {
     use super::super::review::Purpose;
     use super::super::screens::InputPurpose;
     use super::super::tests::{key, sample, screen};
+    use super::NewArchive;
 
     fn ctrl_o() -> KeyEvent {
         KeyEvent::new(KeyCode::Char('o'), KeyModifiers::CONTROL)
@@ -220,6 +258,7 @@ mod tests {
                 format!("Other  {}", other.display()),
                 "Open an archive by its path…".to_owned(),
                 "Create a new archive…".to_owned(),
+                "Start history for an archive that has none…".to_owned(),
             ]
         );
         let text = screen(&app, 120, 30);
@@ -271,9 +310,29 @@ mod tests {
         let text = screen(&app, 120, 30);
         assert!(text.contains("The folder for the new archive"), "{text}");
         let folder = dir.path().join("New one");
+        assert_eq!(typed(&mut app, &format!("\"{}\"", folder.display())), None);
+        // Then its embedding model: the default when left empty, or one of the choices.
+        let text = screen(&app, 160, 30);
+        assert!(text.contains("The model every device uses"), "{text}");
         assert_eq!(
-            typed(&mut app, &format!("\"{}\"", folder.display())),
-            Some(Effect::CreateArchive(folder))
+            typed(&mut app, ""),
+            Some(Effect::CreateArchive(NewArchive {
+                path: folder.clone(),
+                embedding_model: carrel_core::models::DEFAULT_EMBEDDING_MODEL.into(),
+            }))
+        );
+        app.key(ctrl_o());
+        app.picker.as_mut().unwrap().filter = "create".into();
+        app.key(key(KeyCode::Enter));
+        typed(&mut app, &folder.display().to_string());
+        assert_eq!(typed(&mut app, "no-such-model"), None);
+        assert!(
+            app.message
+                .as_deref()
+                .unwrap()
+                .starts_with("No embedding model no-such-model"),
+            "{:?}",
+            app.message
         );
         // Nothing typed, nothing made.
         app.key(ctrl_o());

@@ -289,6 +289,7 @@ const HELP_ROWS: &[(&str, &str)] = &[
         "mark several; approve all high-confidence (Review)",
     ),
     ("r  o  x", "return, open, cancel checkout (Active)"),
+    ("m", "return a copy that moved (Active)"),
     (
         "n  x  f",
         "put a file or folder on the desk; take off, archive a desk item (Active)",
@@ -317,6 +318,7 @@ const HELP_ROWS: &[(&str, &str)] = &[
         "a",
         "answer Carrel's question about the item (Browse, Librarian, wander)",
     ),
+    ("A  w", "its questions; wander from it (Browse)"),
     ("u", "undo the chosen change (History)"),
     (
         "Enter  s  n  y",
@@ -334,6 +336,7 @@ const HELP_ROWS: &[(&str, &str)] = &[
         "Space  n  p",
         "next step, new walk (wander); periods (timeline)",
     ),
+    ("/  b  r", "timeline words, date; activity days"),
     (
         "n  v  r  s",
         "snapshot now, verify, restore an item, set up (Backups)",
@@ -371,6 +374,19 @@ fn draw_help(frame: &mut Frame, theme: Theme, area: Rect) {
         Paragraph::new(lines).block(Block::bordered().title(" Keys (any key closes) ")),
         popup,
     );
+}
+
+/// The answers a confirmation takes besides yes and no: deleting a desk item's card too,
+/// or trimming a returned checkout's session snapshots.
+fn extra_answers(confirm: &Confirm, theme: Theme) -> Vec<Span<'static>> {
+    let (key, what) = match confirm {
+        Confirm::DeskRemove { .. } => ("d", " delete its card too   "),
+        Confirm::Return {
+            snapshots: true, ..
+        } => ("t", " return it and forget its session snapshots   "),
+        _ => return Vec::new(),
+    };
+    vec![Span::styled(key, theme.key()), Span::raw(what)]
 }
 
 /// A correction worked out: each change before and after, waiting for `y` or `n`.
@@ -477,12 +493,7 @@ fn draw_confirm(frame: &mut Frame, confirm: &Confirm, theme: Theme, area: Rect) 
     let mut lines = vec![Line::from(question), Line::from("")];
     lines.extend(explanation.lines().map(|l| Line::from(l.to_owned())));
     let mut answers = vec![Span::styled("y", theme.key()), Span::raw(yes)];
-    if matches!(confirm, Confirm::DeskRemove { .. }) {
-        answers.extend([
-            Span::styled("d", theme.key()),
-            Span::raw(" delete its card too   "),
-        ]);
-    }
+    answers.extend(extra_answers(confirm, theme));
     if matches!(confirm, Confirm::Rule { .. }) {
         answers.extend([
             Span::styled("n", theme.key()),
@@ -1066,8 +1077,7 @@ fn draw_input(frame: &mut Frame, input: &Input, theme: Theme, area: Rect) {
         InputPurpose::RestoreItem { .. } => (
             " Restore ",
             "The item to restore as of this snapshot (its identifier, or its card's or \
-             contents' path). It goes in a new folder beside the archive; nothing in the \
-             archive changes:"
+             contents' path). Next, the folder it goes in; nothing in the archive changes:"
                 .to_owned(),
         ),
         InputPurpose::OpenArchive => (
@@ -1081,6 +1091,7 @@ fn draw_input(frame: &mut Frame, input: &Input, theme: Theme, area: Rect) {
              it. An empty or new folder is best:"
                 .to_owned(),
         ),
+        InputPurpose::Option(line) => line.text(),
         purpose => super::actions::input_text(purpose).unwrap_or((" ", String::new())),
     };
     let shown = if input.masked() {

@@ -14,6 +14,7 @@ mod embedding;
 mod intake;
 mod item;
 mod librarian;
+mod option_lines;
 mod preview;
 mod review;
 mod screens;
@@ -400,9 +401,6 @@ fn prepared(app: &mut App, result: Result<crate::correct::Prepared, String>) {
 /// Changes proposals without filing anything: their destination, or whether a compressed file
 /// is expanded.
 fn change_proposals(root: &Path, effect: Effect) -> Result<String, String> {
-    let ids = |ids: &[carrel_core::card::Id]| -> Vec<String> {
-        ids.iter().map(ToString::to_string).collect()
-    };
     match effect {
         Effect::Compressed {
             ids: chosen,
@@ -424,11 +422,13 @@ fn change_proposals(root: &Path, effect: Effect) -> Result<String, String> {
     }
 }
 
+/// The identifiers `ids`, as the commands take them.
+fn ids(ids: &[carrel_core::card::Id]) -> Vec<String> {
+    ids.iter().map(ToString::to_string).collect()
+}
+
 fn background(app: &mut App, effect: Effect) -> Option<Done> {
     let root: PathBuf = app.archive.root().to_owned();
-    let ids = |ids: &[carrel_core::card::Id]| -> Vec<String> {
-        ids.iter().map(ToString::to_string).collect()
-    };
     let (busy, work): (String, Work) = match effect {
         Effect::Undo(id) => {
             let result = crate::commands::undo(Some(&root), &id);
@@ -476,7 +476,9 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
         effect @ (Effect::Download(_)
         | Effect::Index(_)
         | Effect::OpenArchive(_)
-        | Effect::CreateArchive(_)) => switch_or_index_work(app, root, effect)?,
+        | Effect::CreateArchive(_)
+        | Effect::StartHistory(_)) => switch_or_index_work(app, root, effect)?,
+        Effect::QuestionsAbout(card) => option_lines::questions_about_work(root, card),
         Effect::Queue { paths, options } => {
             let result = queue(&root, &paths, options);
             finished(app, result.map_err(|Failure(e)| e));
@@ -498,7 +500,7 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
             holding,
         } => decide(root, ids(&chosen), holding),
         effect @ (Effect::BackupNow
-        | Effect::BackupVerify
+        | Effect::BackupVerify(_)
         | Effect::BackupRestore { .. }
         | Effect::BackupSetup { .. }) => backup_work(root, effect),
         Effect::ApproveAllHigh => (
@@ -555,8 +557,13 @@ fn switch_or_index_work(app: &mut App, root: PathBuf, effect: Effect) -> Option<
             app.message = Some(result.unwrap_or_else(|Failure(e)| e));
             None
         }
-        Effect::CreateArchive(path) => {
-            let result = app.create_archive(&path);
+        Effect::CreateArchive(new) => {
+            let result = app.create_archive(&new);
+            app.message = Some(result.unwrap_or_else(|Failure(e)| e));
+            None
+        }
+        Effect::StartHistory(path) => {
+            let result = app.start_history(&path);
             app.message = Some(result.unwrap_or_else(|Failure(e)| e));
             None
         }
@@ -617,21 +624,27 @@ fn backup_work(root: PathBuf, effect: Effect) -> (String, Work) {
             "Taking a snapshot…".into(),
             Box::new(move || crate::backup::now(Some(&root))),
         ),
-        Effect::BackupVerify => (
+        Effect::BackupVerify(percent) => (
             "Checking the backups…".into(),
-            Box::new(move || crate::backup::verify(Some(&root), backups::VERIFY_PERCENT)),
+            Box::new(move || crate::backup::verify(Some(&root), percent)),
         ),
-        Effect::BackupRestore { item, at } => (
+        Effect::BackupRestore { item, at, to } => (
             format!("Restoring {item}…"),
-            Box::new(move || crate::backup::restore(Some(&root), &item, Some(&at), None)),
+            Box::new(move || crate::backup::restore(Some(&root), &item, Some(&at), to.as_deref())),
         ),
         Effect::BackupSetup {
             repository,
             password,
+            description,
         } => (
             "Setting up backups…".into(),
             Box::new(move || {
-                crate::backup::setup(Some(&root), &repository, None, Some(&password.0))
+                crate::backup::setup(
+                    Some(&root),
+                    &repository,
+                    description.as_deref(),
+                    Some(&password.0),
+                )
             }),
         ),
         _ => unreachable!("only backup effects come here"),
@@ -641,9 +654,16 @@ fn backup_work(root: PathBuf, effect: Effect) -> (String, Work) {
 /// The work for the Active screen's effects, which `carrel return` and `carrel sessions` do.
 fn active_work(root: PathBuf, effect: Effect) -> (String, Work) {
     match effect {
-        Effect::Return(id) => (
+        Effect::Return(returning) => (
             "Returning it…".into(),
-            Box::new(move || crate::checkout::return_now(Some(&root), &id.to_string())),
+            Box::new(move || {
+                crate::checkout::return_now(
+                    Some(&root),
+                    &returning.id.to_string(),
+                    returning.from.as_deref(),
+                    returning.trim,
+                )
+            }),
         ),
         Effect::CancelCheckout(id) => (
             "Cancelling the checkout…".into(),
@@ -680,9 +700,20 @@ fn archive_work(root: PathBuf, effect: Effect) -> (String, Work) {
                 crate::checkout::checkout(Some(root), &item, Some(&to), due.as_deref())
             }),
         ),
-        Effect::DeskAdd(path) => (
-            "Putting it on the desk and drafting its card…",
-            Box::new(move |root| crate::desk::add_item(Some(root), &path, None, None)),
+        Effect::DeskAdd(card) => (
+            if card.title.is_some() && card.summary.is_some() {
+                "Putting it on the desk…"
+            } else {
+                "Putting it on the desk and drafting its card…"
+            },
+            Box::new(move |root| {
+                crate::desk::add_item(
+                    Some(root),
+                    &card.path,
+                    card.title.as_deref(),
+                    card.summary.as_deref(),
+                )
+            }),
         ),
         Effect::DeskRemove { path, delete_card } => (
             "Taking it off the desk…",
@@ -1099,14 +1130,21 @@ mod tests {
         for c in "pw".chars() {
             app.key(key(KeyCode::Char(c)));
         }
+        assert_eq!(app.key(key(KeyCode::Enter)), None, "then its name");
+        assert!(screen(&app, 220, 30).contains("A name for the backups"));
+        for c in "Drive".chars() {
+            app.key(key(KeyCode::Char(c)));
+        }
         match app.key(key(KeyCode::Enter)) {
             Some(Effect::BackupSetup {
                 repository: given,
                 password,
+                description,
             }) => {
                 assert_eq!(given, repository);
                 assert_eq!(password.0, "pw");
                 assert_eq!(format!("{password:?}"), "Secret(…)", "never printed");
+                assert_eq!(description.as_deref(), Some("Drive"));
             }
             other => panic!("{other:?}"),
         }
@@ -2206,7 +2244,11 @@ mod tests {
         app.key(key(KeyCode::Char('r')));
         assert_eq!(
             app.key(key(KeyCode::Char('y'))),
-            Some(Effect::Return(item.id))
+            Some(Effect::Return(super::active::Returning {
+                id: item.id,
+                from: None,
+                trim: false,
+            }))
         );
 
         app.key(key(KeyCode::Char('x')));
@@ -2231,7 +2273,15 @@ mod tests {
         );
         assert_eq!(busy, "Approving…");
         assert_eq!(
-            super::active_work(app.archive.root().to_owned(), Effect::Return(item.id)).0,
+            super::active_work(
+                app.archive.root().to_owned(),
+                Effect::Return(super::active::Returning {
+                    id: item.id,
+                    from: None,
+                    trim: false,
+                })
+            )
+            .0,
             "Returning it…"
         );
         let desk = app.active.last().unwrap();
