@@ -8,6 +8,14 @@ use std::path::PathBuf;
 use super::{Capability, ProviderError, Registry};
 use crate::local::Prefs;
 
+#[cfg(not(any(
+    target_os = "ios",
+    target_os = "tvos",
+    target_os = "watchos",
+    target_os = "visionos"
+)))]
+mod discovered;
+
 /// A provider program found on this device.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Found {
@@ -39,6 +47,7 @@ pub fn registry(folders: &[PathBuf]) -> (Registry, Vec<Failed>) {
 /// The registry for this device, as [`registry`], with the models chosen in `prefs`.
 #[must_use]
 pub fn registry_with(folders: &[PathBuf], prefs: &Prefs) -> (Registry, Vec<Failed>) {
+    BUILT_HERE.set(BUILT_HERE.get() + 1);
     let mut registry = Registry::with_built_ins();
     let failed = start_programs(&mut registry, folders);
     if let Some(Ok(model)) = prefs
@@ -58,8 +67,35 @@ pub fn registry_with(folders: &[PathBuf], prefs: &Prefs) -> (Registry, Vec<Faile
     (registry, failed)
 }
 
-/// Starts the provider programs in `folders` then the default folders, adding them to
-/// `registry`; returns those that couldn't start.
+thread_local! {
+    static BUILT_HERE: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// How many registries this thread has built, so a test can check that a thread that must
+/// stay quick, such as the interactive mode's, builds none.
+#[must_use]
+pub fn registries_built_here() -> usize {
+    BUILT_HERE.get()
+}
+
+/// Forgets what the provider programs offered, so the next registry starts them all again
+/// to ask. What they offer is kept for as long as the programs and the models folder are
+/// unchanged, which covers downloads; this is for anything else, such as the owner asking
+/// to look again.
+pub fn forget_providers() {
+    #[cfg(not(any(
+        target_os = "ios",
+        target_os = "tvos",
+        target_os = "watchos",
+        target_os = "visionos"
+    )))]
+    discovered::forget();
+}
+
+/// Adds the provider programs in `folders` then the default folders to `registry`; returns
+/// those that couldn't start. The first time, they're started together, and what each
+/// offers is kept; later, while nothing has changed, they're added from what was kept and
+/// started only when used (#333).
 #[cfg(not(any(
     target_os = "ios",
     target_os = "tvos",
@@ -67,14 +103,14 @@ pub fn registry_with(folders: &[PathBuf], prefs: &Prefs) -> (Registry, Vec<Faile
     target_os = "visionos"
 )))]
 fn start_programs(registry: &mut Registry, folders: &[PathBuf]) -> Vec<Failed> {
-    use super::process::{ProcessProvider, default_folders, discover};
-    let mut failed = Vec::new();
+    use super::process::{default_folders, discover};
     let mut all = folders.to_vec();
     all.extend(default_folders());
-    for found in discover(&all) {
-        match ProcessProvider::start(&found) {
+    let mut failed = Vec::new();
+    for provider in discovered::providers(discover(&all)) {
+        match provider {
             Ok(provider) => registry.add(Box::new(provider)),
-            Err(error) => failed.push(Failed { found, error }),
+            Err(failure) => failed.push(failure),
         }
     }
     failed

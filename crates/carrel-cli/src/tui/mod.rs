@@ -181,6 +181,7 @@ fn event_loop(
         librarian::Asking::poll(app);
         sessions.tick(app);
         app.previews.poll();
+        app.poll_here();
         // The worker runs in another process; see what it has done about once a second.
         if checked.elapsed() >= Duration::from_secs(1) {
             checked = std::time::Instant::now();

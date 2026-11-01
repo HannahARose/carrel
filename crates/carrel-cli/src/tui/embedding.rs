@@ -16,8 +16,9 @@ use super::review::{Picker, Purpose};
 use super::settings::{Row, Shown};
 use crate::Failure;
 
-/// What the providers on this device offer, read once and kept until the owner refreshes
-/// (`Ctrl-R`) or something is downloaded, since finding the providers starts each one.
+/// What the providers on this device offer, found in the background (never on the thread that
+/// reads keys, since it can take a moment) and kept until the owner refreshes (`Ctrl-R`) or
+/// something is downloaded.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Here {
     /// The embedding models providers here offer, best first: the model, the provider that
@@ -25,6 +26,8 @@ pub struct Here {
     pub embedders: Vec<(String, String, Option<u64>)>,
     /// What `carrel providers` shows.
     pub providers: Vec<String>,
+    /// The text models available, best first, as `provider/offer`.
+    pub text_models: Vec<String>,
     /// How many providers there are, and how many failed to start.
     pub provider_count: (usize, usize),
     /// What `carrel formats` shows.
@@ -37,9 +40,9 @@ impl Here {
     /// Finds the providers on this device, as `carrel providers` does.
     #[must_use]
     pub fn find() -> Self {
-        let (registry, _) = crate::providers::registry();
-        let providers = crate::providers::list();
-        let formats = crate::formats::list();
+        let (registry, failed) = crate::providers::registry();
+        let providers = crate::providers::list_of(&registry, &failed);
+        let formats = crate::formats::list_with(&registry);
         let entries = providers.json["providers"]
             .as_array()
             .map_or(&[][..], Vec::as_slice);
@@ -47,6 +50,10 @@ impl Here {
         Self {
             embedders: crate::index::offered_models(&registry),
             providers: super::lines_of(&providers.text),
+            text_models: crate::providers::text_models(&registry)
+                .iter()
+                .map(crate::providers::TextModel::name)
+                .collect(),
             provider_count: (entries.len() - failed, failed),
             formats: super::lines_of(&formats.text),
             unread: formats.json["unreadable"].as_array().map_or(0, Vec::len),
@@ -95,6 +102,35 @@ pub enum Choice {
 }
 
 impl App {
+    /// Starts finding what the providers here offer in the background, unless that's under
+    /// way; what was found before stays shown meanwhile (#333).
+    pub(super) fn find_here(&mut self) {
+        if self.finding_here.is_some() {
+            return;
+        }
+        let (send, receive) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = send.send(Here::find());
+        });
+        self.finding_here = Some(receive);
+    }
+
+    /// Shows what the providers here offer, once it's been found.
+    pub(super) fn poll_here(&mut self) {
+        let Some(finding) = &self.finding_here else {
+            return;
+        };
+        match finding.try_recv() {
+            Ok(here) => {
+                self.finding_here = None;
+                self.here = Some(here);
+                self.load_settings();
+            }
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => self.finding_here = None,
+            Err(std::sync::mpsc::TryRecvError::Empty) => {}
+        }
+    }
+
     /// The Settings row for the index: its model and how far it's embedded, a switch in
     /// progress, and the models this device can embed with.
     pub(super) fn index_row(&self) -> Shown {
@@ -375,7 +411,7 @@ mod tests {
     use carrel_core::providers::{
         Capability, EmbeddingRequest, Embeddings, Offer, Provider, ProviderError, Registry,
     };
-    use ratatui::crossterm::event::KeyCode;
+    use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     use super::super::app::{App, Confirm, Effect, Tab};
     use super::super::review::Purpose;
@@ -696,6 +732,57 @@ mod tests {
         assert_eq!(
             app.key(key(KeyCode::Char('y'))),
             Some(Effect::Download(name))
+        );
+    }
+
+    /// Switching screens, refreshing and opening Settings' pickers never builds a registry on
+    /// the thread that reads keys, which starting the providers once froze for seconds (#333):
+    /// the providers are found in the background, and what was found before stays shown.
+    #[test]
+    fn keys_never_build_a_registry_on_their_thread() {
+        let (_dir, mut app) = sample(false);
+        // Stands in for finding them in the background, so the test starts no providers.
+        let (_send, finding) = std::sync::mpsc::channel();
+        app.finding_here = Some(finding);
+        let before = carrel_core::providers::device::registries_built_here();
+
+        let mut keys: Vec<KeyEvent> = "123456789LD"
+            .chars()
+            .map(|c| key(KeyCode::Char(c)))
+            .collect();
+        keys.extend(
+            [
+                KeyCode::Tab,
+                KeyCode::BackTab,
+                KeyCode::Right,
+                KeyCode::Left,
+            ]
+            .map(key),
+        );
+        keys.push(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL));
+        keys.push(key(KeyCode::Char('8')));
+        for _ in 0..12 {
+            keys.extend([KeyCode::Enter, KeyCode::Esc, KeyCode::Down].map(key));
+        }
+        for event in keys {
+            app.key(event);
+            app.confirm = None;
+            app.input = None;
+        }
+        assert_eq!(app.tab, Tab::Settings);
+        assert!(app.here.is_none(), "still being found");
+
+        app.here = Some(Here::default());
+        app.key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL));
+        app.load_settings();
+        assert!(
+            app.here.is_some(),
+            "what was found stays shown while it's found again"
+        );
+        assert_eq!(
+            carrel_core::providers::device::registries_built_here(),
+            before,
+            "no registry was built on the thread that reads keys"
         );
     }
 }

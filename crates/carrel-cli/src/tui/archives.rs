@@ -140,6 +140,7 @@ impl App {
             app.known_archives = known;
         }
         app.here = self.here.take();
+        app.finding_here = self.finding_here.take();
         app.service = self.service.clone();
         app.previews = super::preview::Previews::with(self.previews.protocol);
         app.tab = self.tab;

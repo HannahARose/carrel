@@ -190,11 +190,10 @@ impl App {
         }
     }
 
-    /// Finds the providers the first time Settings is shown, since it can take a moment.
+    /// Starts finding the providers the first time Settings is shown.
     pub(super) fn settings_shown(&mut self) {
         if self.tab == super::app::Tab::Settings && self.here.is_none() {
-            self.here = Some(super::embedding::Here::find());
-            self.load_settings();
+            self.find_here();
         }
     }
 
@@ -306,13 +305,13 @@ impl App {
 
     /// Opens a picker for the setting `key`: `fixed` choices, then every available model.
     fn model_picker(&mut self, key: &str, fixed: &[&str]) {
-        let (registry, _) = crate::providers::registry();
+        let Some(here) = &self.here else {
+            self.find_here();
+            self.message = Some("Still finding the models on this device…".into());
+            return;
+        };
         let mut choices: Vec<String> = fixed.iter().map(|c| (*c).to_owned()).collect();
-        choices.extend(
-            crate::providers::text_models(&registry)
-                .iter()
-                .map(crate::providers::TextModel::name),
-        );
+        choices.extend(here.text_models.iter().cloned());
         self.picker = Some(Picker {
             collections: choices,
             filter: String::new(),
