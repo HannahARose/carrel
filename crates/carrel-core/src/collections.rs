@@ -128,6 +128,34 @@ pub fn create(
     lease: &WriterLease,
 ) -> Result<Created, CollectionError> {
     let path = path.trim().trim_matches('/');
+    let id = write_collection(archive, path, new)?;
+    let change = Change::new(
+        Operation::Restructure,
+        format!("Create the collection “{path}”"),
+        lease.info().person,
+        lease.info().device,
+    );
+    let commit = History::open(archive)?.commit(archive, &change, lease)?;
+    Ok(Created {
+        path: path.to_owned(),
+        id,
+        design_document: format!("{path}/_collection.md"),
+        commit,
+    })
+}
+
+/// Creates the collection at `path` as [`create`] does, without recording it in history: for
+/// a change that records it along with others, as a restructure does. Returns its identifier.
+///
+/// # Errors
+///
+/// As [`create`].
+pub(crate) fn write_collection(
+    archive: &Archive,
+    path: &str,
+    new: &NewCollection,
+) -> Result<Id, CollectionError> {
+    let path = path.trim().trim_matches('/');
     let parts: Vec<&str> = path.split('/').collect();
     if path.is_empty()
         || parts
@@ -182,20 +210,7 @@ pub fn create(
     let changelog = folder.join("CHANGELOG.md");
     std::fs::write(&changelog, "# Changelog\n").map_err(io(&changelog))?;
     crate::listing::refresh(archive)?;
-
-    let change = Change::new(
-        Operation::Restructure,
-        format!("Create the collection “{path}”"),
-        lease.info().person,
-        lease.info().device,
-    );
-    let commit = History::open(archive)?.commit(archive, &change, lease)?;
-    Ok(Created {
-        path: path.to_owned(),
-        id,
-        design_document: format!("{path}/_collection.md"),
-        commit,
-    })
+    Ok(id)
 }
 
 /// A new design document: frontmatter, then the sections models read, with guidance for the

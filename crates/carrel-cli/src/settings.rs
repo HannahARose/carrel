@@ -137,8 +137,9 @@ pub fn list(archive: Option<&Path>) -> Result<Report, Failure> {
     )
     .unwrap();
     let settings = archive.settings();
+    let width = Key::ALL.iter().map(|k| k.as_str().len()).max().unwrap_or(0);
     for key in Key::ALL {
-        writeln!(text, "  {:22} {}", key.as_str(), key.get(settings)).unwrap();
+        writeln!(text, "  {:width$} {}", key.as_str(), key.get(settings)).unwrap();
     }
     text.push_str("\nChange one with `carrel settings set KEY VALUE`.\n");
     Ok(Report::new(

@@ -940,6 +940,7 @@ fn rewrite_vocabularies(
     let old: Vec<Tag> = match &change.change {
         Edit::MergeTags { from, .. } => from.clone(),
         Edit::SplitTag { tag, .. } | Edit::RetireTag { tag } => vec![tag.clone()],
+        _ => Vec::new(),
     };
     let mut in_use = BTreeSet::new();
     for tag in &old {
@@ -1015,6 +1016,7 @@ fn vocabulary(
             }
         }
         Edit::RetireTag { tag } => retire(defs, tag),
+        _ => {}
     }
     *defs != before
 }
