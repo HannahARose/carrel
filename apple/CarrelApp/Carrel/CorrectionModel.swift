@@ -54,6 +54,8 @@ final class CorrectionModel {
     private(set) var problem: String?
     /// Whether to add the fact it offers to the glossary when it's saved.
     var learnFact = true
+    /// The corrected item's flag, once the correction is saved, to offer clearing it.
+    private(set) var flag: Flag?
     /// Called after it's saved, so the lists show the change.
     @ObservationIgnored var saved: () async -> Void = {}
 
@@ -143,6 +145,20 @@ final class CorrectionModel {
                 problem = "Saved, but the fact wasn’t added to the glossary: \(message(for: error))"
             }
         }
+        if case .item(let id, _) = target { flag = try? await archive.flag(of: id) }
         await saved()
+    }
+
+    /// Clears the corrected item's flag, as the owner says the correction settles it.
+    func clearFlag() async {
+        guard case .item(let id, _) = target, flag != nil else { return }
+        do {
+            try await archive.unflag(item: id)
+            flag = nil
+            await saved()
+        } catch {
+            archive.lastError = nil
+            problem = message(for: error)
+        }
     }
 }

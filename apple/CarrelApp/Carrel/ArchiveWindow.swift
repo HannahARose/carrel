@@ -118,13 +118,26 @@ struct ArchiveSidebar: View {
                 Label("Active", systemImage: "arrow.up.forward.square")
                     .badge(model.activeScreen?.pendingCount ?? 0)
                     .tag(Screen.active)
+                Label("Flagged", systemImage: "flag")
+                    .badge(model.flaggedCollections.count + model.flaggedItems.count)
+                    .tag(Screen.flagged)
             }
             Section("Collections") {
                 OutlineGroup(model.tree, children: \.children) { node in
-                    Label(node.collection.title, systemImage: "folder")
-                        .badge(model.items(in: node.collection.path).count)
-                        .help(node.collection.description ?? node.collection.path)
-                        .tag(Screen.collection(node.collection.path))
+                    Label {
+                        HStack {
+                            Text(node.collection.title)
+                            FlagMark(flag: node.collection.flag)
+                        }
+                    } icon: {
+                        Image(systemName: "folder")
+                    }
+                    .badge(model.items(in: node.collection.path).count)
+                    .help(node.collection.description ?? node.collection.path)
+                    .contextMenu {
+                        CollectionFlagButtons(model: model, collection: node.collection)
+                    }
+                    .tag(Screen.collection(node.collection.path))
                 }
             }
             Section("Discover") {
@@ -163,7 +176,11 @@ struct ArchiveScreenContent: View {
                     BrowseGrid(model: model)
                 } else {
                     List(model.listedItems, selection: $model.selectedItemID) { item in
-                        Label(item.title, systemImage: item.kind.symbol)
+                        HStack {
+                            Label(item.title, systemImage: item.kind.symbol)
+                            Spacer()
+                            FlagMark(flag: item.flag)
+                        }
                     }
                     .contextMenu(forSelectionType: ItemSummary.ID.self) { ids in
                         BrowseActions(model: model, ids: ids)
@@ -206,6 +223,8 @@ struct ArchiveScreenContent: View {
             }
         case .active:
             if let active = model.activeScreen { ActiveView(model: active) }
+        case .flagged:
+            FlaggedView(model: model)
         case .history:
             if let history = model.historyScreen { HistoryView(model: history) }
         case .backups:

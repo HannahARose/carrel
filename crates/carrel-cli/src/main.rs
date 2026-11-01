@@ -23,6 +23,7 @@ mod discover;
 mod edit;
 mod expand;
 mod findability;
+mod flag;
 mod formats;
 mod gui;
 mod index;
@@ -102,8 +103,8 @@ enum Command {
     },
     /// Find items by what's in their cards and text: words, exact names and numbers, and
     /// filters such as collection:Finances, tag:receipts, kind:folder, after:2025-01,
-    /// before:2026, sensitivity:sensitive and checked-out. Collection documents and glossary
-    /// facts are found too. Restricted items are found by their card only.
+    /// before:2026, sensitivity:sensitive, checked-out and flagged. Collection documents and
+    /// glossary facts are found too. Restricted items are found by their card only.
     Search {
         /// The words and filters.
         #[arg(required = true, value_name = "QUERY")]
@@ -241,6 +242,23 @@ enum Command {
         /// The new name; without one, the portable name `carrel status` suggests.
         new_name: Option<String>,
     },
+    /// Flag an item or a collection as needing work, with a note saying what; see `carrel
+    /// flagged`. The crawler looks at it first, and undo can reverse it.
+    Flag {
+        /// The item (its identifier, or its card's or contents' path) or the collection (its
+        /// folder).
+        target: String,
+        /// What needs doing, in a few words, such as "wrong title" or "split this folder".
+        #[arg(long, value_name = "TEXT")]
+        note: Option<String>,
+    },
+    /// Clear an item's or a collection's flag.
+    Unflag {
+        /// The item or the collection, as for `carrel flag`.
+        target: String,
+    },
+    /// List what's flagged as needing work.
+    Flagged,
     /// Check an item out to work on: a copy goes to a working folder, and the archive copy is
     /// read-only until it's returned.
     Checkout {
@@ -1160,8 +1178,7 @@ fn main() -> ExitCode {
         Command::Agent(args) => agent_command(cli.archive.as_deref(), args, cli.json),
         Command::Settings { action } => settings_command(cli.archive.as_deref(), action),
         Command::Review { all, action } => review_command(cli.archive.as_deref(), all, action),
-        Command::Edit { item, body: false } => edit::edit(cli.archive.as_deref(), &item),
-        Command::Edit { item, body: true } => edit::edit_body(cli.archive.as_deref(), &item),
+        Command::Edit { item, body } => edit::edit_command(cli.archive.as_deref(), &item, body),
         Command::Expand { item, anyway } => expand::expand(cli.archive.as_deref(), &item, anyway),
         Command::Correct {
             item,
@@ -1169,9 +1186,10 @@ fn main() -> ExitCode {
             yes,
             learn,
         } => correct::filed(cli.archive.as_deref(), &item, &words, yes, learn),
-        Command::Rename { item, new_name } => {
-            commands::rename(cli.archive.as_deref(), &item, new_name.as_deref())
-        }
+        command @ (Command::Rename { .. }
+        | Command::Flag { .. }
+        | Command::Unflag { .. }
+        | Command::Flagged) => rename_or_flag_command(cli.archive.as_deref(), command),
         Command::Checkout { item, to, due } => {
             checkout::checkout(cli.archive.as_deref(), &item, to.as_deref(), due.as_deref())
         }
@@ -1391,6 +1409,16 @@ fn models_command(
     }
 }
 
+/// `carrel rename`, and the flag commands: `flag`, `unflag` and `flagged`.
+fn rename_or_flag_command(archive: Option<&Path>, command: Command) -> Result<Report, Failure> {
+    match command {
+        Command::Rename { item, new_name } => commands::rename(archive, &item, new_name.as_deref()),
+        Command::Flag { target, note } => flag::flag(archive, &target, note.as_deref()),
+        Command::Unflag { target } => flag::unflag(archive, &target),
+        _ => flag::list(archive),
+    }
+}
+
 /// Whether `command` takes the writer lease to change the archive, so finished work sessions
 /// are recorded first (`carrel sessions` records them itself).
 fn changes_archive(command: &Command) -> bool {
@@ -1401,6 +1429,8 @@ fn changes_archive(command: &Command) -> bool {
         | Command::Edit { .. }
         | Command::Expand { .. }
         | Command::Rename { .. }
+        | Command::Flag { .. }
+        | Command::Unflag { .. }
         | Command::Checkout { .. }
         | Command::Return { .. }
         | Command::Collection { .. } => true,

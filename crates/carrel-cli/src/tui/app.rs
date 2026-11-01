@@ -241,6 +241,15 @@ pub enum Confirm {
     },
     /// Undoing all of the librarian's changes this week, this many.
     UndoLibrarian(usize),
+    /// Clearing an item's or a collection's flag.
+    Unflag {
+        /// The item's card or the collection's folder.
+        target: String,
+        /// Its title.
+        title: String,
+        /// The flag's note.
+        note: Option<String>,
+    },
 }
 
 /// A step of a correction, which the run loop does itself.
@@ -425,6 +434,9 @@ pub enum Effect {
         /// Whether to expand it even though there's a reason to keep it compressed.
         anyway: bool,
     },
+    /// Flag an item or a collection, or clear its flag, as `carrel flag` and `carrel unflag`
+    /// do.
+    Flag(super::flagging::Flagging),
     /// Take a backup snapshot now.
     BackupNow,
     /// Check the backups, reading back this percentage of the files.
@@ -532,6 +544,8 @@ pub struct App {
     pub browse_collection: usize,
     /// The chosen collection's cards, or what a search found, as card paths and titles.
     pub browse_items: Vec<(String, String)>,
+    /// Which of them are flagged as needing work, by card path.
+    pub browse_flagged: BTreeSet<String>,
     /// Browse's chosen item.
     pub browse_item: usize,
     /// Where Browse's arrows move: collections, items, or the chosen item's view.
@@ -685,6 +699,7 @@ impl App {
             collections: Vec::new(),
             browse_collection: 0,
             browse_items: Vec::new(),
+            browse_flagged: BTreeSet::new(),
             browse_item: 0,
             browse_pane: super::item::Pane::Collections,
             search: None,
@@ -1263,6 +1278,7 @@ fn confirmed(confirm: Confirm, key: KeyCode) -> Option<Effect> {
             anyway: anyway.is_some(),
         },
         Confirm::UndoLibrarian(_) => Effect::UndoLibrarian,
+        Confirm::Unflag { target, .. } => Effect::Flag(super::flagging::Flagging::Clear { target }),
     })
 }
 

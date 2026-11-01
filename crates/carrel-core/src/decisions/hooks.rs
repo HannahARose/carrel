@@ -263,7 +263,7 @@ pub fn snapshot(archive: &Archive, items: &[ItemRef], signals: &[Signal]) {
             Signal::SpreadTag { .. } => event.4 += 1,
             Signal::Entangled { .. } => event.5 += 1,
             Signal::UnevenDetail { .. } => event.6 += 1,
-            Signal::Holding { .. } | Signal::Misfits { .. } => {}
+            Signal::Holding { .. } | Signal::Misfits { .. } | Signal::Flagged { .. } => {}
         }
     }
     let holding = items

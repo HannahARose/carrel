@@ -55,7 +55,7 @@ final class SidebarTests: XCTestCase {
             await settle()
         }
         let expected: [Screen] =
-            [.status, .review, .questions, .restructure, .active]
+            [.status, .review, .questions, .restructure, .active, .flagged]
             + model.tree.map { .collection($0.collection.path) }
             + DiscoverPage.allCases.map { .discover($0) } + [.history, .backups]
         XCTAssertEqual(chosen, expected)
@@ -65,7 +65,7 @@ final class SidebarTests: XCTestCase {
     /// model, or for Status and Browse the open archive. Without it the column is empty.
     private func hasContent(_ screen: Screen, _ model: ArchiveWindowModel) -> Bool {
         switch screen {
-        case .status, .collection: model.handle != nil
+        case .status, .collection, .flagged: model.handle != nil
         case .review: model.review != nil
         case .questions: model.questions != nil
         case .restructure: model.restructure != nil

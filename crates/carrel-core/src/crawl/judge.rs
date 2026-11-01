@@ -123,6 +123,12 @@ pub fn prompt(item: &Item<'_>, places: &[Place]) -> String {
         created.as_deref().unwrap_or("(unknown)")
     )
     .unwrap();
+    if let Some(flag) = &card.needs_work {
+        match flag.note.as_deref() {
+            Some(note) => writeln!(text, "The owner flagged it as needing work: {note}").unwrap(),
+            None => text.push_str("The owner flagged it as needing work.\n"),
+        }
+    }
     match item.text.map(str::trim).filter(|t| !t.is_empty()) {
         Some(body) => writeln!(text, "\nIts text:\n{}", shorten(body, TEXT_CHARS)).unwrap(),
         None => text.push_str("\nNo text could be read from it.\n"),

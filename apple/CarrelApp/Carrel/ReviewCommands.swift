@@ -81,7 +81,10 @@ extension ArchiveWindowModel {
     func editSelectedItem() {
         guard let archive, let item = selectedItem else { return }
         let edit = CardEditModel(archive: archive, target: .item(item.id))
-        edit.saved = { [weak self] in await self?.refreshItems() }
+        edit.saved = { [weak self] in
+            await self?.refreshItems()
+            await self?.browse?.offerToUnflag(item: item.id, title: item.title)
+        }
         editing = edit
     }
 }

@@ -57,6 +57,7 @@ private struct GridCell: View {
                 }
             }
             .frame(width: 112, height: 112)
+            .overlay(alignment: .topTrailing) { FlagMark(flag: item.flag) }
             .padding(6)
             .background(
                 isSelected ? AnyShapeStyle(.selection) : AnyShapeStyle(.clear),

@@ -50,6 +50,7 @@ The command line and the interactive mode run on macOS, Linux and Windows. The M
 | Create collections | `collection` | ✓ `n` in Browse | ✓ ⌥⌘N (#268) |
 | Rename an item | `rename` | ✓ `r` in Browse | ✓ ⇧⌘R (#268) |
 | Expand a filed compressed file | `expand` | ✓ `z` in Browse | ✓ ⇧⌘E (#268) |
+| Flag an item or a collection that needs work, and list what's flagged | `flag`, `unflag`, `flagged` | ✓ `f` and `F` in Browse, ⚑ in the lists, Status | ✓ Flag… and Unflag in context menus and the inspector, a flag in the list and grid, Flagged in the sidebar, Status (#451) |
 | Check out an item | `checkout` | ✓ `o` in Browse | ✓ (#235) |
 | Return or cancel a checkout | `return` | ✓ Active | ✓ (#235) |
 | Return a working copy that moved, and trim its session snapshots | `return --from`, `--trim-snapshots` | ✓ `m`, and `t` when asked, in Active | ✓ Return From…, and the return sheet's snapshots toggle |

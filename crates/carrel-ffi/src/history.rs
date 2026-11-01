@@ -196,6 +196,8 @@ pub struct StatusSummary {
     pub review: u64,
     /// How many questions wait.
     pub questions: u64,
+    /// What the owner flagged as needing work: collections, then items.
+    pub flagged: Vec<crate::flags::FlaggedThing>,
 }
 
 fn writer(lock: LockInfo, device: Option<carrel_core::card::Id>) -> Writer {
@@ -285,6 +287,7 @@ impl ArchiveHandle {
                 .collect(),
             review: review.iter().filter(|e| e.state.is_open()).count() as u64,
             questions: questions.len() as u64,
+            flagged: summary.flagged.into_iter().map(Into::into).collect(),
         })
     }
 

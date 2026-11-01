@@ -1,5 +1,6 @@
-//! The order the crawler takes items in (`docs/design/restructure.md`, "Crawlers"): Holding
-//! first, then items filed with low confidence, then the items of crowded collections, then a
+//! The order the crawler takes items in (`docs/design/restructure.md`, "Crawlers"): what the
+//! owner flagged as needing work first (FORMAT.md §5.9), items and the items of collections,
+//! then Holding, then items filed with low confidence, then the items of crowded collections, then a
 //! slow sweep of everything. Within each, items never judged come first, then those judged
 //! longest ago. An item judged recently waits until it's due again, sooner the earlier its
 //! stage; one with a finding waiting in Review waits for the owner.
@@ -17,6 +18,8 @@ use crate::discover::Catalog;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Stage {
+    /// The owner flagged it, or its collection, as needing work.
+    Flagged,
     /// It waits in Holding.
     Holding,
     /// It was filed with low confidence.
@@ -32,6 +35,7 @@ impl Stage {
     #[must_use]
     pub fn describe(self) -> &'static str {
         match self {
+            Self::Flagged => "flagged as needing work",
             Self::Holding => "in Holding",
             Self::Uncertain => "filed with low confidence",
             Self::Crowded => "in crowded collections",
@@ -43,7 +47,7 @@ impl Stage {
     #[must_use]
     pub fn again(self) -> jiff::SignedDuration {
         let days = match self {
-            Self::Holding => 7,
+            Self::Flagged | Self::Holding => 7,
             Self::Uncertain | Self::Crowded => 30,
             Self::Sweep => 180,
         };
@@ -62,6 +66,8 @@ pub struct Entry {
     pub collection: String,
     /// How sure filing was, if it wasn't.
     pub placement: Option<PlacementConfidence>,
+    /// Whether the owner flagged it, or its collection, as needing work.
+    pub flagged: bool,
 }
 
 /// The items the crawler may judge in `archive`: every item but restricted ones, whose text it
@@ -72,6 +78,12 @@ pub struct Entry {
 /// [`ArchiveError`] if the cards can't be read.
 pub fn entries(archive: &Archive) -> Result<Vec<Entry>, ArchiveError> {
     let catalog = Catalog::read(archive)?;
+    let flagged: HashSet<&str> = catalog
+        .collections
+        .iter()
+        .filter(|c| c.flag.is_some())
+        .map(|c| c.path.as_str())
+        .collect();
     Ok(catalog
         .entries
         .iter()
@@ -85,6 +97,7 @@ pub fn entries(archive: &Archive) -> Result<Vec<Entry>, ArchiveError> {
             card: e.item.card.clone(),
             collection: e.item.collection.clone(),
             placement: e.placement,
+            flagged: e.flagged || flagged.contains(e.item.collection.as_str()),
         })
         .collect())
 }
@@ -106,7 +119,9 @@ pub fn crowded(archive: &Archive) -> Result<HashSet<String>, ArchiveError> {
 
 /// The stage `entry` is in, given the `crowded` collections.
 fn stage_of<S: std::hash::BuildHasher>(entry: &Entry, crowded: &HashSet<String, S>) -> Stage {
-    if entry.collection == "Holding" {
+    if entry.flagged {
+        Stage::Flagged
+    } else if entry.collection == "Holding" {
         Stage::Holding
     } else if entry.placement == Some(PlacementConfidence::Low) {
         Stage::Uncertain
@@ -163,6 +178,7 @@ mod tests {
             card: format!("{collection}/item-{n}.md"),
             collection: collection.into(),
             placement,
+            flagged: false,
         }
     }
 
@@ -229,5 +245,25 @@ mod tests {
         let order = order_of(&entries, &HashSet::new(), &verdicts, &open, now);
         let ids: Vec<u128> = order.iter().map(|(i, _)| i.0.as_u128()).collect();
         assert_eq!(ids, [4]);
+    }
+
+    #[test]
+    fn flagged_items_come_before_holding() {
+        let mut flagged = entry(3, "Work", None);
+        flagged.flagged = true;
+        let entries = [entry(1, "Holding", None), entry(2, "Home", None), flagged];
+        let now: jiff::Timestamp = "2026-11-01T12:00:00Z".parse().unwrap();
+        let order = order_of(
+            &entries,
+            &HashSet::new(),
+            &BTreeMap::new(),
+            &HashSet::new(),
+            now,
+        );
+        let ids: Vec<(u128, Stage)> = order.iter().map(|(i, s)| (i.0.as_u128(), *s)).collect();
+        assert_eq!(
+            ids,
+            [(3, Stage::Flagged), (1, Stage::Holding), (2, Stage::Sweep)]
+        );
     }
 }

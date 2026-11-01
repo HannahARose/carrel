@@ -158,6 +158,7 @@ With no item chosen, the inspector shows the **collection**: what it holds, and 
 | New Collection… | ⌥⌘N | Asks for its path, what belongs there and its tags; it's made inside the collection you're in |
 | Rename… | ⇧⌘R | Renames the item, starting from a name that works on every system |
 | Expand… | ⇧⌘E | For a filed zip or other compressed file, asks first, then expands it in place |
+| Flag… / Unflag | | Flags the item as needing work, with a few words saying what, or clears its flag ([Flagging what needs work](user-guide.md#flagging-what-needs-work)). A flagged item carries a flag in the list and the grid, and **Flagged** in the sidebar lists everything flagged. A collection's are in its context menu in the sidebar and in the inspector. After you edit or correct a flagged card, Carrel offers to clear its flag |
 
 Edit Card and Correct… are in the Edit menu; New Collection, Rename and Expand in the File menu; Check Out in the Active menu. They're also in each item's context menu, with **Ask About This** (⇧⌘L), which asks [the librarian](#the-librarian). ⌘K works on a proposal in Review too.
 

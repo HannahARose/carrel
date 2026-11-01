@@ -203,6 +203,8 @@ pub struct ItemDetail {
     pub links: Vec<LinkedItem>,
     /// Its card's history section: work sessions, returns and the owner's own entries.
     pub entries: Vec<CardHistoryEntry>,
+    /// The owner's flag, if they marked it as needing work.
+    pub flag: Option<crate::flags::Flag>,
 }
 
 /// An item near another by meaning.
@@ -368,6 +370,7 @@ impl ArchiveHandle {
             problems: card.problems().iter().map(ToString::to_string).collect(),
             links,
             entries,
+            flag: card.needs_work.as_ref().map(Into::into),
         })
     }
 

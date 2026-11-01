@@ -1424,6 +1424,67 @@ public protocol ArchiveHandleProtocol: AnyObject, Sendable {
     func editableProposal(id: String) throws  -> EditableCard
     
     /**
+     * Flags the collection at `path` as needing work, with `note` saying what.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] for an unknown collection or a note that's too long;
+     * [`CarrelError::Busy`] if another writer holds the archive; or
+     * [`CarrelError::Failed`] if it can't be written.
+     */
+    func flagCollection(path: String, note: String?) throws  -> FlagChange
+    
+    /**
+     * Flags the item `item` (its identifier) as needing work, with `note` saying what, as
+     * `carrel flag` does. Flagging it again replaces the note.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] for an unknown item, a note that's too long, or an item
+     * that's checked out; [`CarrelError::Busy`] if another writer holds the archive; or
+     * [`CarrelError::Failed`] if it can't be written.
+     */
+    func flagItem(item: String, note: String?) throws  -> FlagChange
+    
+    /**
+     * Everything flagged: collections by path, then items, as `carrel flagged` lists them.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the archive can't be read.
+     */
+    func flagged() throws  -> [FlaggedThing]
+    
+    /**
+     * The item `item`'s flag, if it has one: to offer clearing it once an edit or a
+     * correction is saved.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] for an unknown item, or [`CarrelError::Failed`] if the
+     * archive can't be read.
+     */
+    func itemFlag(item: String) throws  -> Flag?
+    
+    /**
+     * Clears the collection at `path`'s flag.
+     *
+     * # Errors
+     *
+     * As [`ArchiveHandle::flag_collection`].
+     */
+    func unflagCollection(path: String) throws  -> FlagChange
+    
+    /**
+     * Clears the item `item`'s flag, as `carrel unflag` does.
+     *
+     * # Errors
+     *
+     * As [`ArchiveHandle::flag_item`].
+     */
+    func unflagItem(item: String) throws  -> FlagChange
+    
+    /**
      * The issue draft for gap `number`, with the owner's `added` words if any. Nothing is
      * sent: the app opens its address for the owner to submit.
      *
@@ -3622,6 +3683,116 @@ open func editableProposal(id: String)throws  -> EditableCard  {
     uniffi_carrel_ffi_fn_method_archivehandle_editable_proposal(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(id),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Flags the collection at `path` as needing work, with `note` saying what.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] for an unknown collection or a note that's too long;
+     * [`CarrelError::Busy`] if another writer holds the archive; or
+     * [`CarrelError::Failed`] if it can't be written.
+     */
+open func flagCollection(path: String, note: String?)throws  -> FlagChange  {
+    return try  FfiConverterTypeFlagChange_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_flag_collection(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(path),
+        FfiConverterOptionString.lower(note),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Flags the item `item` (its identifier) as needing work, with `note` saying what, as
+     * `carrel flag` does. Flagging it again replaces the note.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] for an unknown item, a note that's too long, or an item
+     * that's checked out; [`CarrelError::Busy`] if another writer holds the archive; or
+     * [`CarrelError::Failed`] if it can't be written.
+     */
+open func flagItem(item: String, note: String?)throws  -> FlagChange  {
+    return try  FfiConverterTypeFlagChange_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_flag_item(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(item),
+        FfiConverterOptionString.lower(note),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Everything flagged: collections by path, then items, as `carrel flagged` lists them.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the archive can't be read.
+     */
+open func flagged()throws  -> [FlaggedThing]  {
+    return try  FfiConverterSequenceTypeFlaggedThing.lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_flagged(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * The item `item`'s flag, if it has one: to offer clearing it once an edit or a
+     * correction is saved.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] for an unknown item, or [`CarrelError::Failed`] if the
+     * archive can't be read.
+     */
+open func itemFlag(item: String)throws  -> Flag?  {
+    return try  FfiConverterOptionTypeFlag.lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_item_flag(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(item),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Clears the collection at `path`'s flag.
+     *
+     * # Errors
+     *
+     * As [`ArchiveHandle::flag_collection`].
+     */
+open func unflagCollection(path: String)throws  -> FlagChange  {
+    return try  FfiConverterTypeFlagChange_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_unflag_collection(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(path),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Clears the item `item`'s flag, as `carrel unflag` does.
+     *
+     * # Errors
+     *
+     * As [`ArchiveHandle::flag_item`].
+     */
+open func unflagItem(item: String)throws  -> FlagChange  {
+    return try  FfiConverterTypeFlagChange_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_unflag_item(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(item),uniffiCallStatus
     )
 })
 }
@@ -8554,6 +8725,10 @@ public struct CollectionSummary: Equatable, Hashable {
      * Its one-line description, if it has one.
      */
     public var description: String?
+    /**
+     * The owner's flag, if they marked it as needing work.
+     */
+    public var flag: Flag?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -8566,10 +8741,14 @@ public struct CollectionSummary: Equatable, Hashable {
          */title: String, 
         /**
          * Its one-line description, if it has one.
-         */description: String?) {
+         */description: String?, 
+        /**
+         * The owner's flag, if they marked it as needing work.
+         */flag: Flag?) {
         self.path = path
         self.title = title
         self.description = description
+        self.flag = flag
     }
 
     
@@ -8590,7 +8769,8 @@ public struct FfiConverterTypeCollectionSummary: FfiConverterRustBuffer {
             try CollectionSummary(
                 path: FfiConverterString.read(from: &buf), 
                 title: FfiConverterString.read(from: &buf), 
-                description: FfiConverterOptionString.read(from: &buf)
+                description: FfiConverterOptionString.read(from: &buf), 
+                flag: FfiConverterOptionTypeFlag.read(from: &buf)
         )
     }
 
@@ -8598,6 +8778,7 @@ public struct FfiConverterTypeCollectionSummary: FfiConverterRustBuffer {
         FfiConverterString.write(value.path, into: &buf)
         FfiConverterString.write(value.title, into: &buf)
         FfiConverterOptionString.write(value.description, into: &buf)
+        FfiConverterOptionTypeFlag.write(value.flag, into: &buf)
     }
 }
 
@@ -11398,6 +11579,255 @@ public func FfiConverterTypeFilingOutcome_lower(_ value: FilingOutcome) -> RustB
 
 
 /**
+ * The owner's flag on an item or a collection.
+ */
+public struct Flag: Equatable, Hashable {
+    /**
+     * What needs doing, if the owner said.
+     */
+    public var note: String?
+    /**
+     * When it was flagged, as written (FORMAT.md §2.4), if the flag says.
+     */
+    public var at: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * What needs doing, if the owner said.
+         */note: String?, 
+        /**
+         * When it was flagged, as written (FORMAT.md §2.4), if the flag says.
+         */at: String?) {
+        self.note = note
+        self.at = at
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension Flag: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFlag: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Flag {
+        return
+            try Flag(
+                note: FfiConverterOptionString.read(from: &buf), 
+                at: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: Flag, into buf: inout [UInt8]) {
+        FfiConverterOptionString.write(value.note, into: &buf)
+        FfiConverterOptionString.write(value.at, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFlag_lift(_ buf: RustBuffer) throws -> Flag {
+    return try FfiConverterTypeFlag.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFlag_lower(_ value: Flag) -> RustBuffer {
+    return FfiConverterTypeFlag.lower(value)
+}
+
+
+/**
+ * What flagging or unflagging did.
+ */
+public struct FlagChange: Equatable, Hashable {
+    /**
+     * Whether anything changed: flagging with the same note again, or unflagging what isn't
+     * flagged, changes nothing.
+     */
+    public var changed: Bool
+    /**
+     * The change, as History shows it.
+     */
+    public var summary: String
+    /**
+     * The history commit, when one was made.
+     */
+    public var commit: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Whether anything changed: flagging with the same note again, or unflagging what isn't
+         * flagged, changes nothing.
+         */changed: Bool, 
+        /**
+         * The change, as History shows it.
+         */summary: String, 
+        /**
+         * The history commit, when one was made.
+         */commit: String?) {
+        self.changed = changed
+        self.summary = summary
+        self.commit = commit
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension FlagChange: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFlagChange: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FlagChange {
+        return
+            try FlagChange(
+                changed: FfiConverterBool.read(from: &buf), 
+                summary: FfiConverterString.read(from: &buf), 
+                commit: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: FlagChange, into buf: inout [UInt8]) {
+        FfiConverterBool.write(value.changed, into: &buf)
+        FfiConverterString.write(value.summary, into: &buf)
+        FfiConverterOptionString.write(value.commit, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFlagChange_lift(_ buf: RustBuffer) throws -> FlagChange {
+    return try FfiConverterTypeFlagChange.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFlagChange_lower(_ value: FlagChange) -> RustBuffer {
+    return FfiConverterTypeFlagChange.lower(value)
+}
+
+
+/**
+ * Something flagged, as the Flagged list shows it.
+ */
+public struct FlaggedThing: Equatable, Hashable {
+    /**
+     * Whether it's a collection; otherwise an item.
+     */
+    public var isCollection: Bool
+    /**
+     * The item's identifier; none for a collection.
+     */
+    public var id: String?
+    /**
+     * The item's card, or the collection's folder, relative to the archive root.
+     */
+    public var path: String
+    /**
+     * Its title.
+     */
+    public var title: String
+    /**
+     * The flag.
+     */
+    public var flag: Flag
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Whether it's a collection; otherwise an item.
+         */isCollection: Bool, 
+        /**
+         * The item's identifier; none for a collection.
+         */id: String?, 
+        /**
+         * The item's card, or the collection's folder, relative to the archive root.
+         */path: String, 
+        /**
+         * Its title.
+         */title: String, 
+        /**
+         * The flag.
+         */flag: Flag) {
+        self.isCollection = isCollection
+        self.id = id
+        self.path = path
+        self.title = title
+        self.flag = flag
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension FlaggedThing: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFlaggedThing: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FlaggedThing {
+        return
+            try FlaggedThing(
+                isCollection: FfiConverterBool.read(from: &buf), 
+                id: FfiConverterOptionString.read(from: &buf), 
+                path: FfiConverterString.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                flag: FfiConverterTypeFlag.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: FlaggedThing, into buf: inout [UInt8]) {
+        FfiConverterBool.write(value.isCollection, into: &buf)
+        FfiConverterOptionString.write(value.id, into: &buf)
+        FfiConverterString.write(value.path, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterTypeFlag.write(value.flag, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFlaggedThing_lift(_ buf: RustBuffer) throws -> FlaggedThing {
+    return try FfiConverterTypeFlaggedThing.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFlaggedThing_lower(_ value: FlaggedThing) -> RustBuffer {
+    return FfiConverterTypeFlaggedThing.lower(value)
+}
+
+
+/**
  * The file types this device reads, and those it couldn't, as `carrel formats` shows them.
  */
 public struct Formats: Equatable, Hashable {
@@ -12821,6 +13251,10 @@ public struct ItemDetail: Equatable, Hashable {
      * Its card's history section: work sessions, returns and the owner's own entries.
      */
     public var entries: [CardHistoryEntry]
+    /**
+     * The owner's flag, if they marked it as needing work.
+     */
+    public var flag: Flag?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -12863,7 +13297,10 @@ public struct ItemDetail: Equatable, Hashable {
          */links: [LinkedItem], 
         /**
          * Its card's history section: work sessions, returns and the owner's own entries.
-         */entries: [CardHistoryEntry]) {
+         */entries: [CardHistoryEntry], 
+        /**
+         * The owner's flag, if they marked it as needing work.
+         */flag: Flag?) {
         self.id = id
         self.kind = kind
         self.card = card
@@ -12877,6 +13314,7 @@ public struct ItemDetail: Equatable, Hashable {
         self.problems = problems
         self.links = links
         self.entries = entries
+        self.flag = flag
     }
 
     
@@ -12907,7 +13345,8 @@ public struct FfiConverterTypeItemDetail: FfiConverterRustBuffer {
                 checkedOutTo: FfiConverterOptionString.read(from: &buf), 
                 problems: FfiConverterSequenceString.read(from: &buf), 
                 links: FfiConverterSequenceTypeLinkedItem.read(from: &buf), 
-                entries: FfiConverterSequenceTypeCardHistoryEntry.read(from: &buf)
+                entries: FfiConverterSequenceTypeCardHistoryEntry.read(from: &buf), 
+                flag: FfiConverterOptionTypeFlag.read(from: &buf)
         )
     }
 
@@ -12925,6 +13364,7 @@ public struct FfiConverterTypeItemDetail: FfiConverterRustBuffer {
         FfiConverterSequenceString.write(value.problems, into: &buf)
         FfiConverterSequenceTypeLinkedItem.write(value.links, into: &buf)
         FfiConverterSequenceTypeCardHistoryEntry.write(value.entries, into: &buf)
+        FfiConverterOptionTypeFlag.write(value.flag, into: &buf)
     }
 }
 
@@ -13073,6 +13513,10 @@ public struct ItemSummary: Equatable, Hashable {
      * The item's path relative to the archive root, if it has one.
      */
     public var item: String?
+    /**
+     * The owner's flag, if they marked it as needing work.
+     */
+    public var flag: Flag?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -13091,12 +13535,16 @@ public struct ItemSummary: Equatable, Hashable {
          */card: String, 
         /**
          * The item's path relative to the archive root, if it has one.
-         */item: String?) {
+         */item: String?, 
+        /**
+         * The owner's flag, if they marked it as needing work.
+         */flag: Flag?) {
         self.id = id
         self.title = title
         self.kind = kind
         self.card = card
         self.item = item
+        self.flag = flag
     }
 
     
@@ -13119,7 +13567,8 @@ public struct FfiConverterTypeItemSummary: FfiConverterRustBuffer {
                 title: FfiConverterString.read(from: &buf), 
                 kind: FfiConverterTypeItemKind.read(from: &buf), 
                 card: FfiConverterString.read(from: &buf), 
-                item: FfiConverterOptionString.read(from: &buf)
+                item: FfiConverterOptionString.read(from: &buf), 
+                flag: FfiConverterOptionTypeFlag.read(from: &buf)
         )
     }
 
@@ -13129,6 +13578,7 @@ public struct FfiConverterTypeItemSummary: FfiConverterRustBuffer {
         FfiConverterTypeItemKind.write(value.kind, into: &buf)
         FfiConverterString.write(value.card, into: &buf)
         FfiConverterOptionString.write(value.item, into: &buf)
+        FfiConverterOptionTypeFlag.write(value.flag, into: &buf)
     }
 }
 
@@ -19671,6 +20121,10 @@ public struct StatusSummary: Equatable, Hashable {
      * How many questions wait.
      */
     public var questions: UInt64
+    /**
+     * What the owner flagged as needing work: collections, then items.
+     */
+    public var flagged: [FlaggedThing]
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -19719,7 +20173,10 @@ public struct StatusSummary: Equatable, Hashable {
          */review: UInt64, 
         /**
          * How many questions wait.
-         */questions: UInt64) {
+         */questions: UInt64, 
+        /**
+         * What the owner flagged as needing work: collections, then items.
+         */flagged: [FlaggedThing]) {
         self.collections = collections
         self.items = items
         self.byKind = byKind
@@ -19735,6 +20192,7 @@ public struct StatusSummary: Equatable, Hashable {
         self.toArchive = toArchive
         self.review = review
         self.questions = questions
+        self.flagged = flagged
     }
 
     
@@ -19767,7 +20225,8 @@ public struct FfiConverterTypeStatusSummary: FfiConverterRustBuffer {
                 toTrack: FfiConverterSequenceTypeToTrack.read(from: &buf), 
                 toArchive: FfiConverterSequenceTypeToArchive.read(from: &buf), 
                 review: FfiConverterUInt64.read(from: &buf), 
-                questions: FfiConverterUInt64.read(from: &buf)
+                questions: FfiConverterUInt64.read(from: &buf), 
+                flagged: FfiConverterSequenceTypeFlaggedThing.read(from: &buf)
         )
     }
 
@@ -19787,6 +20246,7 @@ public struct FfiConverterTypeStatusSummary: FfiConverterRustBuffer {
         FfiConverterSequenceTypeToArchive.write(value.toArchive, into: &buf)
         FfiConverterUInt64.write(value.review, into: &buf)
         FfiConverterUInt64.write(value.questions, into: &buf)
+        FfiConverterSequenceTypeFlaggedThing.write(value.flagged, into: &buf)
     }
 }
 
@@ -23186,6 +23646,30 @@ fileprivate struct FfiConverterOptionTypeEntriesDecided: FfiConverterRustBuffer 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeFlag: FfiConverterRustBuffer {
+    typealias SwiftType = Flag?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeFlag.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeFlag.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeGlossaryFact: FfiConverterRustBuffer {
     typealias SwiftType = GlossaryFact?
 
@@ -24016,6 +24500,31 @@ fileprivate struct FfiConverterSequenceTypeFiledItem: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeFiledItem.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeFlaggedThing: FfiConverterRustBuffer {
+    typealias SwiftType = [FlaggedThing]
+
+    public static func write(_ value: [FlaggedThing], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeFlaggedThing.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [FlaggedThing] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [FlaggedThing]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeFlaggedThing.read(from: &buf))
         }
         return seq
     }
@@ -25669,6 +26178,24 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_editable_proposal() != 23041) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_flag_collection() != 21397) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_flag_item() != 4659) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_flagged() != 58089) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_item_flag() != 64736) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_unflag_collection() != 27324) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_unflag_item() != 64035) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_gap_issue_draft() != 25478) {

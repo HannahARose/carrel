@@ -83,6 +83,9 @@ pub struct Summary {
     pub signals: Vec<Signal>,
     /// Suggestions about the desk.
     pub desk: Suggestions,
+    /// What the owner flagged as needing work: collections by path, then items in the order
+    /// they're listed.
+    pub flagged: Vec<crate::flags::Flagged>,
 }
 
 /// Why the summary couldn't be made.
@@ -211,9 +214,11 @@ pub fn summary(archive: &Archive, looking: &Looking) -> Result<Summary, StatusEr
     let mut by_kind: BTreeMap<String, usize> = BTreeMap::new();
     let mut problems = Vec::new();
     let mut work = Vec::new();
+    let mut flagged = crate::flags::flagged_collections(archive)?;
     for item in &items {
         *by_kind.entry(kind_name(item)).or_default() += 1;
         let file = load_file(archive, item)?;
+        flagged.extend(crate::flags::flagged_item(item, file.card()));
         let found = file.card().problems();
         if !found.is_empty() {
             problems.push(CardProblems {
@@ -265,6 +270,7 @@ pub fn summary(archive: &Archive, looking: &Looking) -> Result<Summary, StatusEr
         names,
         signals,
         desk,
+        flagged,
     })
 }
 

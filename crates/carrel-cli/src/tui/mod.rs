@@ -11,6 +11,7 @@ mod backups;
 mod browser;
 mod discover;
 mod embedding;
+mod flagging;
 mod gaps;
 mod intake;
 mod item;
@@ -269,7 +270,9 @@ fn event_loop(
                 let result = edit_browsed(app.archive.root(), &effect);
                 reenter(terminal, &mut painter);
                 changed(app.archive.root(), &result);
+                let card = flagging::edited_card(&effect, &result);
                 finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
+                app.offer_to_unflag(card.as_deref());
             }
             Some(Effect::EditEntry { item, number }) => {
                 // The editor needs the terminal to itself.
@@ -295,6 +298,20 @@ fn event_loop(
         }
     }
     Ok(())
+}
+
+/// Takes an entry off the intake queue, moves it to the front or retries it, as `effect`
+/// says.
+fn change_queued(root: &Path, effect: &Effect) -> Result<String, String> {
+    let (id, change) = match effect {
+        Effect::Unqueue(id) => (id, crate::ingest::Change::Remove),
+        Effect::Front(id) => (id, crate::ingest::Change::First),
+        Effect::Retry(id) => (id, crate::ingest::Change::Retry),
+        _ => return Ok(String::new()),
+    };
+    crate::ingest::change_queued(Some(root), &id.to_string(), change)
+        .map(|r| r.text)
+        .map_err(|Failure(e)| e)
 }
 
 /// Skips or dismisses a question, as `effect` says.
@@ -392,6 +409,7 @@ fn correction(app: &mut App, step: Step, preparing: &mut Option<Preparing>) {
                 let fact = prepared.fact.clone();
                 let result = crate::correct::save(&app.archive, prepared);
                 let saved = result.is_ok();
+                let card = result.as_ref().ok().and_then(|s| s.card.clone());
                 if saved {
                     crate::worker::after_change(Some(app.archive.root()));
                 }
@@ -401,6 +419,8 @@ fn correction(app: &mut App, step: Step, preparing: &mut Option<Preparing>) {
                         about: fact.about,
                         fact: fact.fact,
                     });
+                } else {
+                    app.offer_to_unflag(card.as_deref());
                 }
             }
         }
@@ -515,14 +535,8 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
             finished(app, result.map_err(|Failure(e)| e));
             return None;
         }
-        Effect::Unqueue(id) | Effect::Front(id) | Effect::Retry(id) => {
-            let change = match effect {
-                Effect::Unqueue(_) => crate::ingest::Change::Remove,
-                Effect::Front(_) => crate::ingest::Change::First,
-                _ => crate::ingest::Change::Retry,
-            };
-            let result = crate::ingest::change_queued(Some(&root), &id.to_string(), change);
-            finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
+        effect @ (Effect::Unqueue(_) | Effect::Front(_) | Effect::Retry(_)) => {
+            finished(app, change_queued(&root, &effect));
             return None;
         }
         Effect::Answer { id, answer, learn } => answer_work(root, id, answer, learn),
@@ -550,7 +564,8 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
         | Effect::DeskArchive(_)
         | Effect::NewCollection(_)
         | Effect::Rename { .. }
-        | Effect::Expand { .. }) => archive_work(root, effect),
+        | Effect::Expand { .. }
+        | Effect::Flag(_)) => archive_work(root, effect),
     };
     app.busy = Some(busy);
     let (send, receive) = std::sync::mpsc::channel();
@@ -802,6 +817,7 @@ fn archive_work(root: PathBuf, effect: Effect) -> (String, Work) {
             "Expanding it…",
             Box::new(move |root| crate::expand::expand(Some(root), &item, anyway)),
         ),
+        Effect::Flag(flagging) => flagging::flag_work(flagging),
         _ => unreachable!("only the archive's actions come here"),
     };
     (

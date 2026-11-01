@@ -41,6 +41,14 @@ struct CorrectionSheet: View {
                 Label(
                     saved.filed ? "Saved; undo it from History." : "Saved to the proposal.",
                     systemImage: "checkmark.circle")
+                if let flag = correction.flag {
+                    HStack {
+                        Label("It’s flagged: \(flag.described)", systemImage: "flag.fill")
+                            .foregroundStyle(.orange)
+                        Spacer()
+                        Button("Clear the Flag") { Task { await correction.clearFlag() } }
+                    }
+                }
             case .settled:
                 Label("Answered; the card stays as it is.", systemImage: "checkmark.circle")
             }

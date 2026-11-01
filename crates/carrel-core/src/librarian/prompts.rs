@@ -11,10 +11,10 @@ use std::fmt::Write as _;
 use serde_json::{Value, json};
 
 /// The tools the model may ask for, with what each takes, as the instructions list them.
-pub const TOOLS: [(&str, &str); 6] = [
+pub const TOOLS: [(&str, &str); 7] = [
     (
         "search",
-        "input: words to find, with filters if useful: collection:NAME, tag:NAME, kind:file|folder|bundle, after:YYYY[-MM[-DD]], before:YYYY[-MM[-DD]]. Finds items by their cards, their text and their meaning, with collections and glossary facts.",
+        "input: words to find, with filters if useful: collection:NAME, tag:NAME, kind:file|folder|bundle, after:YYYY[-MM[-DD]], before:YYYY[-MM[-DD]], flagged. Finds items by their cards, their text and their meaning, with collections and glossary facts.",
     ),
     (
         "show",
@@ -35,6 +35,10 @@ pub const TOOLS: [(&str, &str); 6] = [
     (
         "collection",
         "input: a collection's path. Its design document (what belongs in it) and its items.",
+    ),
+    (
+        "flagged",
+        "input: a collection's path to look only there, or \"all\". What the owner flagged as needing work, collections and items, each with the owner's note. For \"what needs work?\"",
     ),
 ];
 

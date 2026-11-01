@@ -78,6 +78,7 @@ pub mod edit;
 pub mod entries;
 pub mod file_pickers;
 pub mod finder;
+pub mod flags;
 pub mod formats;
 pub mod frontmatter;
 pub mod gaps;

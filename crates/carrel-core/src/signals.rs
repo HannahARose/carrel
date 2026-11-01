@@ -117,6 +117,13 @@ pub enum Signal {
         /// The coarsely divided one.
         coarser: Detail,
     },
+    /// The owner flagged a collection as needing work (FORMAT.md §5.9).
+    Flagged {
+        /// The collection.
+        collection: String,
+        /// What the owner said needs doing, if they said.
+        note: Option<String>,
+    },
 }
 
 impl Signal {
@@ -133,6 +140,8 @@ impl Signal {
             Self::SpreadTag { collections, .. } => collections.len() as f64,
             Self::Entangled { links, days, .. } => (*links + *days) as f64,
             Self::UnevenDetail { coarser, .. } => coarser.items as f64,
+            // The owner's own word outweighs what the counts suggest.
+            Self::Flagged { .. } => f64::INFINITY,
         }
     }
 
@@ -188,6 +197,10 @@ impl Signal {
                 coarser.items,
                 coarser.collections
             ),
+            Self::Flagged { collection, note } => match note {
+                Some(note) => format!("{collection}: flagged as needing work: {note}"),
+                None => format!("{collection}: flagged as needing work"),
+            },
         }
     }
 }
@@ -240,6 +253,12 @@ pub fn signals(archive: &Archive) -> Result<Vec<Signal>, ArchiveError> {
                 judged,
             }),
     );
+    found.extend(catalog.collections.iter().filter_map(|c| {
+        c.flag.as_ref().map(|flag| Signal::Flagged {
+            collection: c.path.clone(),
+            note: flag.note.clone(),
+        })
+    }));
     found.sort_by(|a, b| b.weight().total_cmp(&a.weight()));
     Ok(found)
 }

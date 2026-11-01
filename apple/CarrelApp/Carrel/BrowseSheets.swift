@@ -57,6 +57,7 @@ private struct BrowseDialogs: ViewModifier {
             } message: {
                 Text(model.problem ?? "")
             }
+            .flagDialogs(model)
     }
 }
 
