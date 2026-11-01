@@ -79,9 +79,10 @@ fn flagging_an_item_writes_its_card_and_undo_clears_it() {
     let flag = file.card().needs_work.clone().unwrap();
     assert_eq!(flag.note.as_deref(), Some("wrong title"));
     assert_eq!(flag.person, Some(holder.person));
+    assert!(flag.id.is_some_and(|id| id.is_v7()));
     assert!(flag.at.is_some());
     assert_eq!(file.body(), body, "the owner's text is kept");
-    assert_eq!(flags::of_item(&archive, &item), Some(flag));
+    assert_eq!(flags::of_item(&archive, &item), Some(flag.clone()));
 
     // The same note again changes nothing.
     let again = flags::flag(
@@ -92,6 +93,17 @@ fn flagging_an_item_writes_its_card_and_undo_clears_it() {
     )
     .unwrap();
     assert!(!again.changed);
+    // A new note keeps the flag's identifier.
+    flags::flag(
+        &archive,
+        &Flaggable::item(&item),
+        Some("wrong date"),
+        holder,
+    )
+    .unwrap();
+    let renoted = flags::of_item(&archive, &item).unwrap();
+    assert_eq!(renoted.id, flag.id);
+    assert_eq!(renoted.note.as_deref(), Some("wrong date"));
 
     let lease = DiskLock::for_archive(&archive)
         .acquire(holder, "test", DEFAULT_LEASE)
@@ -103,7 +115,9 @@ fn flagging_an_item_writes_its_card_and_undo_clears_it() {
         "{}",
         log[0].summary
     );
+    // Undoing the new note, then the flag, puts the card back as it was.
     history.undo(&archive, &log[0].id, &lease).unwrap();
+    history.undo(&archive, &log[1].id, &lease).unwrap();
     lease.release().unwrap();
     assert_eq!(card_text(&archive, &item), before);
 }

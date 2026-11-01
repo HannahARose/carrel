@@ -4234,7 +4234,9 @@ fn flag_unflag_and_flagged_mark_items_and_collections_that_need_work() {
     assert_eq!(sandbox.json(&root, &["flagged"])["flagged"], json!([]));
     let again = sandbox.ok(&root, &["unflag", card]);
     assert!(again.contains("isn't flagged"), "{again}");
+}
 
+#[test]
 fn tui_and_gui_take_the_same_screens() {
     let sandbox = Sandbox::new();
     let root = sandbox.sample();

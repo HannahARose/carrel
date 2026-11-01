@@ -107,6 +107,10 @@ pub struct Card {
 /// and when. Written by hand it may be only `true` or a note; programs write the whole record.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 pub struct NeedsWork {
+    /// The flag's permanent identifier, so what's done about it can name it; kept when its
+    /// note changes. Hand-written flags have none until a program rewrites them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<Id>,
     /// What needs doing, in a few words, such as "wrong title" or "split this folder".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
@@ -149,7 +153,12 @@ pub(crate) mod needs_work_field {
     ) -> Result<S::Ok, S::Error> {
         match value {
             None => serializer.serialize_none(),
-            Some(flag) if flag.person.is_none() && flag.at.is_none() && flag.extra.is_empty() => {
+            Some(flag)
+                if flag.id.is_none()
+                    && flag.person.is_none()
+                    && flag.at.is_none()
+                    && flag.extra.is_empty() =>
+            {
                 match &flag.note {
                     Some(note) => NeedsWorkForm::Note(note.clone()),
                     None => NeedsWorkForm::Flag(true),

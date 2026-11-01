@@ -254,6 +254,7 @@ Filters narrow the items found, and can be used with words or alone:
 | `before:2026` | Dated before that year, month or day |
 | `sensitivity:sensitive` | At that level |
 | `checked-out` | Checked out now |
+| `flagged` | Flagged as needing work ([Flagging what needs work](#flagging-what-needs-work)) |
 
 A value with spaces goes in quotes: `collection:"Tax returns"`. `carrel search tag:receipts after:2025` lists every receipt since 2025, newest first.
 
@@ -426,6 +427,14 @@ Only one program changes an archive at a time: it holds the **writer lock** (`_S
 ### Names that work everywhere
 
 `carrel status` lists names that won't work on every system: characters Windows forbids (`: ? * |`), reserved names like `CON`, trailing dots or spaces, or two names that differ only in case. `carrel rename ITEM` renames an item and its card to the suggested portable name, and updates links to it; give a name after it to choose your own. In Browse, `r` on an item does the same, starting from the suggested name, and asks first. Ingest files new items under portable names automatically.
+
+### Flagging what needs work
+
+While browsing, you'll notice a card with the wrong title or a collection that's become a jumble. Flag it, with a few words saying what: `carrel flag ITEM --note "wrong title"`, or `carrel flag Projects --note "split this folder"` for a collection; `f` in Browse in the interactive mode; or **Flag…** in the Mac app's context menus and inspector. The flag is the `needs_work` field on the card, or in the collection's `_collection.md`, with who flagged it and when, and it's one change undo can reverse.
+
+- **What it feeds:** Status lists what's flagged, and `carrel flagged` (`F` in Browse, **Flagged** in the app's sidebar) lists it whenever you like. The crawler looks at flagged items, and the items of flagged collections, first, reading your note with the card. A flagged collection counts as a sign a restructure may help. Ask the librarian "what needs work?" and it lists them.
+- **Clearing it:** `carrel unflag`, `f` again, or **Unflag**. When you save an edit or a correction on a flagged card, Carrel asks whether that settled it; it never clears a flag on its own.
+- **Searching:** the filter `flagged` finds flagged items, alone or with words and other filters.
 
 ## Reorganizing the archive
 

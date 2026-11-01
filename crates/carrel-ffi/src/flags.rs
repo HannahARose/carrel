@@ -239,7 +239,7 @@ mod tests {
                 .unwrap()
                 .changed
         );
-        assert!(sample.handle.flagged().unwrap().is_empty());
+        assert_eq!(sample.handle.flagged().unwrap(), []);
         assert!(
             sample
                 .handle

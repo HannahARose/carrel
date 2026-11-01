@@ -139,6 +139,7 @@ pub fn flag(
 ) -> Result<Flagging, ActionError> {
     let note = checked_note(note)?;
     let flag = NeedsWork {
+        id: Some(Id::new_v7()),
         note: note.clone(),
         person: Some(holder.person),
         at: Some(crate::questions::now()),
@@ -148,7 +149,9 @@ pub fn flag(
         if current.as_ref().is_some_and(|c| c.note == note) {
             return false;
         }
-        *current = Some(flag.clone());
+        // The same flag with a new note keeps its identifier.
+        let id = current.as_ref().and_then(|c| c.id).or(flag.id);
+        *current = Some(NeedsWork { id, ..flag.clone() });
         true
     };
     let summary = |title: &str| match &note {

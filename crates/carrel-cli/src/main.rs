@@ -1181,12 +1181,10 @@ fn main() -> ExitCode {
             yes,
             learn,
         } => correct::filed(cli.archive.as_deref(), &item, &words, yes, learn),
-        Command::Rename { item, new_name } => {
-            commands::rename(cli.archive.as_deref(), &item, new_name.as_deref())
-        }
-        command @ (Command::Flag { .. } | Command::Unflag { .. } | Command::Flagged) => {
-            flag_command(cli.archive.as_deref(), command)
-        }
+        command @ (Command::Rename { .. }
+        | Command::Flag { .. }
+        | Command::Unflag { .. }
+        | Command::Flagged) => rename_or_flag_command(cli.archive.as_deref(), command),
         Command::Checkout { item, to, due } => {
             checkout::checkout(cli.archive.as_deref(), &item, to.as_deref(), due.as_deref())
         }
@@ -1406,8 +1404,10 @@ fn models_command(
     }
 }
 
-fn flag_command(archive: Option<&Path>, command: Command) -> Result<Report, Failure> {
+/// `carrel rename`, and the flag commands: `flag`, `unflag` and `flagged`.
+fn rename_or_flag_command(archive: Option<&Path>, command: Command) -> Result<Report, Failure> {
     match command {
+        Command::Rename { item, new_name } => commands::rename(archive, &item, new_name.as_deref()),
         Command::Flag { target, note } => flag::flag(archive, &target, note.as_deref()),
         Command::Unflag { target } => flag::unflag(archive, &target),
         _ => flag::list(archive),

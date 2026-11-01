@@ -713,6 +713,17 @@
       "description": "The owner's mark that an item or a collection needs work (FORMAT.md §5.9), with what, who\nand when. Written by hand it may be only `true` or a note; programs write the whole record.",
       "type": "object",
       "properties": {
+        "id": {
+          "description": "The flag's permanent identifier, so what's done about it can name it; kept when its\nnote changes. Hand-written flags have none until a program rewrites them.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "note": {
           "description": "What needs doing, in a few words, such as \"wrong title\" or \"split this folder\".",
           "type": [

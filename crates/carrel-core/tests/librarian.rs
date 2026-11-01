@@ -257,7 +257,8 @@ fn it_stops_at_its_limit_of_steps_and_must_answer_on_the_last() {
             .as_array()
             .unwrap()
             .len(),
-        7
+        carrel_core::librarian::prompts::TOOLS.len() + 1,
+        "every tool, and answering"
     );
     assert_eq!(
         asked[2].schema.as_ref().unwrap()["properties"]["action"]["enum"],

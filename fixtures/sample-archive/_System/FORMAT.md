@@ -313,6 +313,7 @@ The owner may flag an item, or a collection (§6.3), as needing work, such as wh
 
 ```yaml
 needs_work:
+  id: 019a3f00-1c2d-7e3f-8a4b-5c6d7e8f9a0b   # the flag's identifier, kept when its note changes
   note: "wrong title"      # optional: what needs doing, one line
   person: 01928f39-eeee-7fff-8000-000000000005
   at: "2026-11-01T09:30:00-04:00"
