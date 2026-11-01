@@ -160,14 +160,16 @@ fn unfilter(
             1 => a,
             2 => b,
             3 => u8::try_from(u16::midpoint(u16::from(a), u16::from(b))).unwrap_or(0),
-            4 => paeth(a, b, c),
+            4 => predict(a, b, c),
             _ => return None,
         });
     }
     Some(())
 }
 
-fn paeth(a: u8, b: u8, c: u8) -> u8 {
+/// The predictor filter 4 uses: whichever of left, above and upper left is nearest to
+/// left + above - upper left.
+fn predict(a: u8, b: u8, c: u8) -> u8 {
     let p = i16::from(a) + i16::from(b) - i16::from(c);
     let (pa, pb, pc) = (
         (p - i16::from(a)).abs(),
