@@ -277,3 +277,4 @@ sequenceDiagram
 ## Testing and CI
 
 `cargo test --workspace` runs everything that doesn't need a model or Kopia. CI (`.github/workflows/ci.yml`) runs format, clippy (pedantic, as errors), tests on macOS, Linux and Windows, docs, the Swift package, the llama.cpp provider against a tiny model, the CAD provider with OpenCascade on macOS and Linux, Kopia against a throwaway repository, extraction with Tesseract, `cargo deny`, zizmor on the workflows, and spelling, Markdown and link checks, each only when a change affects it ([Development Setup](development-setup.md#which-ci-jobs-run-when)); "CI passed" gates merging. `fixtures/sample-archive` is a hand-built archive checked against the format on every run. `carrel bench` measures models on `fixtures/bench` ([docs/design/benchmark.md](../design/benchmark.md)). See [CONTRIBUTING.md](../../CONTRIBUTING.md) for branches, reviews and releases.
+
