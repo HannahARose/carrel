@@ -1029,7 +1029,7 @@ mod tests {
         let tracked: Vec<&str> = status.to_track.iter().map(|t| t.path.as_str()).collect();
         assert_eq!(tracked.len(), 1, "{tracked:?}");
         assert!(
-            tracked[0].ends_with("home/Code/lamp-firmware"),
+            Path::new(tracked[0]).ends_with(Path::new("home").join("Code").join("lamp-firmware")),
             "{tracked:?}"
         );
     }
