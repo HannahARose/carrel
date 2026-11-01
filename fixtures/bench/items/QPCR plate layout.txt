@@ -1,0 +1,6 @@
+Plate layout, run of 15 January 2026
+
+Rows A-C: samples 1-12 in triplicate
+Row D: no-template controls
+Row E: standard curve, five tenfold dilutions
+Primer pair GAPDH-2 throughout. QPCR machine booked 14:00-16:00.

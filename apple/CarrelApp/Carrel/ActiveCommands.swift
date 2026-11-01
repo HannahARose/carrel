@@ -42,6 +42,10 @@ private struct ActiveMenu: View {
         Button("Return…") { Task { await active?.askToReturn() } }
             .keyboardShortcut("r", modifiers: [.command, .option])
             .disabled(!(active?.canReturn ?? false))
+        Button("Return From…") { if let active { chooseMovedWorkingCopy(for: active) } }
+            .disabled(!(active?.canReturn ?? false))
+        Button("Take Off Desk…") { active?.askToTakeOff() }
+            .disabled(item?.kind != .desk)
         Button("Cancel Checkout…") { active?.askToCancel() }
             .keyboardShortcut(.delete, modifiers: [.command, .option])
             .disabled(!(active?.canReturn ?? false))

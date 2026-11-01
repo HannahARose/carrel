@@ -36,11 +36,15 @@ pub enum Tab {
     Settings,
     /// Backups: snapshots, and taking, checking and restoring from them.
     Backups,
+    /// A conversation with the librarian, and the item it's discussing.
+    Librarian,
+    /// Discovery: on this day, wander, the timeline, the map and activity.
+    Discover,
 }
 
 impl Tab {
     /// Every tab, in order.
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 11] = [
         Self::Status,
         Self::Review,
         Self::Active,
@@ -50,6 +54,8 @@ impl Tab {
         Self::Ingest,
         Self::Settings,
         Self::Backups,
+        Self::Librarian,
+        Self::Discover,
     ];
 
     /// The tab's name.
@@ -64,10 +70,21 @@ impl Tab {
             Self::Ingest => "Ingest",
             Self::Settings => "Settings",
             Self::Backups => "Backups",
+            Self::Librarian => "Librarian",
+            Self::Discover => "Discover",
         }
     }
 
-    fn index(self) -> usize {
+    /// The key that shows it: its number, or for the librarian and discovery, `L` and `D`.
+    pub fn key(self) -> char {
+        match self {
+            Self::Librarian => 'L',
+            Self::Discover => 'D',
+            tab => char::from(b'1' + u8::try_from(tab.index()).unwrap_or(0)),
+        }
+    }
+
+    pub(super) fn index(self) -> usize {
         Self::ALL.iter().position(|t| *t == self).unwrap_or(0)
     }
 }
@@ -109,11 +126,29 @@ pub enum Confirm {
     },
     /// Rejecting these proposals, which history can't undo.
     Reject(Vec<Id>),
+    /// Rejecting these crawler findings, so they aren't suggested again.
+    RejectFindings(Vec<Id>),
+    /// Undoing the crawler's changes this week, this many.
+    UndoCrawler(usize),
+    /// Rejecting this restructure proposal.
+    RejectRestructure {
+        /// The proposal.
+        id: Id,
+        /// What it reorganizes, for people.
+        what: String,
+    },
     /// Downloading this catalog model.
     Download {
         /// The model's name.
         name: String,
         /// What it is, its size and license, and where it goes.
+        about: String,
+    },
+    /// Downloading or deleting a model in a format, from Settings.
+    ModelChange {
+        /// The model, its format, and whether to delete it.
+        change: super::model_changes::ModelChange,
+        /// What it is and where it is or goes.
         about: String,
     },
     /// Returning this checkout, replacing the archive copy.
@@ -124,7 +159,13 @@ pub enum Confirm {
         title: String,
         /// What changed and the history entry it adds, as `carrel return` shows them.
         changes: String,
+        /// Where the working copy is now, when it moved, as `carrel return --from` says.
+        from: Option<std::path::PathBuf>,
+        /// Whether backups are set up, so `t` can forget the checkout's session snapshots.
+        snapshots: bool,
     },
+    /// Putting this returned working copy in the Trash, as `checkout.after_return` asks.
+    TrashWorkingCopy(std::path::PathBuf),
     /// Cancelling this checkout, leaving the working copy's changes out.
     CancelCheckout {
         /// The item.
@@ -163,7 +204,7 @@ pub enum Confirm {
         due: Option<String>,
     },
     /// Putting this file or folder on the desk, as `carrel desk add` does.
-    DeskAdd(std::path::PathBuf),
+    DeskAdd(super::option_lines::DeskCard),
     /// Taking this desk item off the desk: `y` keeps its card, `d` deletes it too.
     DeskRemove {
         /// The desk item.
@@ -198,6 +239,8 @@ pub enum Confirm {
         /// Why it's kept compressed, when it's expanded all the same.
         anyway: Option<String>,
     },
+    /// Undoing all of the librarian's changes this week, this many.
+    UndoLibrarian(usize),
 }
 
 /// A step of a correction, which the run loop does itself.
@@ -268,6 +311,9 @@ pub enum Effect {
     Edit(Id),
     /// Edit this filed item's card, by its card's path, in the owner's editor.
     EditItem(String),
+    /// Edit this filed item's card body, by its card's path, in the owner's editor, as
+    /// `carrel edit --body` does.
+    EditItemBody(String),
     /// Edit an active item's pending history entry in the owner's editor, as
     /// `carrel sessions edit` does.
     EditEntry {
@@ -315,8 +361,15 @@ pub enum Effect {
     },
     /// Download this catalog model.
     Download(String),
-    /// Return this checkout, as `carrel return --yes` does.
-    Return(Id),
+    /// Download or delete a model in a format, as `carrel models download` or `remove` do.
+    ModelChange(super::model_changes::ModelChange),
+    /// Propose, approve or reject a restructure, or set a collection's eagerness, as
+    /// `carrel restructure` does.
+    Restructure(super::review_restructure::RestructureAction),
+    /// Return this checkout, as `carrel return --yes [--from] [--trim-snapshots]` does.
+    Return(super::active::Returning),
+    /// Put this returned working copy in the Trash.
+    TrashWorkingCopy(std::path::PathBuf),
     /// Cancel this checkout, as `carrel return --discard --yes` does.
     CancelCheckout(Id),
     /// Open this working copy or desk item in the system's own app for it.
@@ -339,8 +392,8 @@ pub enum Effect {
         /// When it's due back, as YYYY-MM-DD.
         due: Option<String>,
     },
-    /// Put this file or folder on the desk, as `carrel desk add` does.
-    DeskAdd(std::path::PathBuf),
+    /// Put this file or folder on the desk, as `carrel desk add [--title] [--summary]` does.
+    DeskAdd(super::option_lines::DeskCard),
     /// Take this desk item off the desk, as `carrel desk remove [--delete-card]` does.
     DeskRemove {
         /// The desk item.
@@ -368,14 +421,16 @@ pub enum Effect {
     },
     /// Take a backup snapshot now.
     BackupNow,
-    /// Check the backups, reading back a share of the files.
-    BackupVerify,
-    /// Restore an item as of a change's snapshot, beside the archive.
+    /// Check the backups, reading back this percentage of the files.
+    BackupVerify(u8),
+    /// Restore an item as of a change's snapshot, beside the archive or in a chosen folder.
     BackupRestore {
         /// The item: its identifier, or its card's or contents' path.
         item: String,
         /// The history commit whose snapshot to restore from.
         at: String,
+        /// The folder to restore into, as `--to` says; beside the archive when none.
+        to: Option<std::path::PathBuf>,
     },
     /// Create or connect to a backup repository.
     BackupSetup {
@@ -383,13 +438,25 @@ pub enum Effect {
         repository: std::path::PathBuf,
         /// Its password, handed to Kopia, which keeps it in the keychain.
         password: super::backups::Secret,
+        /// The repository's name, as `--description` gives it; the default when none.
+        description: Option<String>,
     },
     /// Rebuild the embedding index, or switch the archive's model, as `carrel index` does.
     Index(super::embedding::Embedding),
     /// Show the archive at this path instead, as `carrel open` does.
     OpenArchive(std::path::PathBuf),
-    /// Create an archive at this path, as `carrel init` does, and show it.
-    CreateArchive(std::path::PathBuf),
+    /// Create an archive, as `carrel init --embedding-model` does, and show it.
+    CreateArchive(super::archives::NewArchive),
+    /// Start history for the existing archive at this path, as `carrel init` does there.
+    StartHistory(std::path::PathBuf),
+    /// Ask Carrel for its questions about the item at this card, as `carrel questions about`.
+    QuestionsAbout(String),
+    /// Ask the librarian this, in the conversation on the Librarian screen.
+    Ask(String),
+    /// Save the conversation to the Journal, as `carrel ask --save` does.
+    SaveConversation,
+    /// Undo the librarian's changes this week, as `carrel undo --librarian 7d` does.
+    UndoLibrarian,
 }
 
 /// The interactive mode's state.
@@ -410,6 +477,12 @@ pub struct App {
     pub waiting: (usize, usize),
     /// The review queue: everything not yet rejected or filed, by destination.
     pub queue: Vec<ReviewEntry>,
+    /// Which of Review's lists is shown.
+    pub review_list: super::review_crawler::ReviewList,
+    /// The crawler's findings waiting in Review.
+    pub crawler: super::review_crawler::CrawlerReview,
+    /// Restructure proposals waiting in Review.
+    pub restructure: super::review_restructure::RestructureReview,
     /// The chosen proposal.
     pub chosen: usize,
     /// Proposals marked for a decision together.
@@ -426,6 +499,11 @@ pub struct App {
     pub busy: Option<String>,
     /// What's checked out, then what's on this device's desk.
     pub active: Vec<super::active::ActiveItem>,
+    /// The reminders due, which Status lists.
+    pub reminders: Vec<carrel_core::reminders::Reminder>,
+    /// The working copy of the checkout being returned, to ask about once it's back, when
+    /// `checkout.after_return` says to ask.
+    pub returning_working_copy: Option<std::path::PathBuf>,
     /// The chosen row of the Active list: an item or one of its pending entries.
     pub active_chosen: usize,
     /// Pending entries marked for a decision together.
@@ -481,6 +559,8 @@ pub struct App {
     pub settings_chosen: usize,
     /// What the providers on this device offer, found when Settings is first shown.
     pub here: Option<super::embedding::Here>,
+    /// What the providers offer, while it's being found in the background.
+    pub finding_here: Option<std::sync::mpsc::Receiver<super::embedding::Here>>,
     /// How far work in the background has got, when it says.
     pub progress: super::embedding::Shared,
     /// The archives opened or created on this device, for the archive switcher.
@@ -507,6 +587,22 @@ pub struct App {
     pub agent_done: Vec<String>,
     /// Item previews in Browse, on terminals that draw images.
     pub previews: super::preview::Previews,
+    /// This device's records of discovery and of the day's questions: saved, or in tests
+    /// kept in memory, so they never write the real configuration.
+    pub records: crate::asking::Records,
+    /// Where Status looks for active work: the person's home, or in tests none, so they
+    /// never look in the person's own folders.
+    pub active_work_home: Option<std::path::PathBuf>,
+    /// The open questions about the item Browse shows.
+    pub item_questions: Vec<QuestionEntry>,
+    /// The conversation on the Librarian screen.
+    pub talk: super::librarian::Talk,
+    /// The librarian answering in the background.
+    pub asking: super::librarian::Asking,
+    /// The librarian's changes this week, newest first.
+    pub librarian_changes: Vec<Entry>,
+    /// The Discover screen.
+    pub stacks: super::discover::Stacks,
     /// Whether every key is shown.
     pub help: bool,
     /// Whether to leave.
@@ -517,6 +613,26 @@ fn lines(text: &str) -> Vec<String> {
     text.lines().map(str::to_owned).collect()
 }
 
+/// Where the interactive mode records what it asks about: in memory under test, so tests
+/// never write the owner's records.
+fn records_for(archive: &Archive) -> crate::asking::Records {
+    if cfg!(test) {
+        crate::asking::Records::in_memory(archive)
+    } else {
+        crate::asking::Records::here(archive)
+    }
+}
+
+/// The home folder Status looks in for active work: none under test, so tests never look in
+/// the owner's.
+fn active_work_home() -> Option<std::path::PathBuf> {
+    if cfg!(test) {
+        None
+    } else {
+        carrel_core::local::home_dir()
+    }
+}
+
 impl App {
     /// The app for `archive`, with everything loaded.
     ///
@@ -524,6 +640,7 @@ impl App {
     ///
     /// [`Failure`] if the archive can't be read.
     pub fn new(archive: Archive) -> Result<Self, Failure> {
+        let archive_for_records = archive.clone();
         let mut app = Self {
             archive,
             tab: Tab::Status,
@@ -533,6 +650,9 @@ impl App {
             selected: 0,
             waiting: (0, 0),
             queue: Vec::new(),
+            review_list: super::review_crawler::ReviewList::default(),
+            crawler: super::review_crawler::CrawlerReview::default(),
+            restructure: super::review_restructure::RestructureReview::default(),
             chosen: 0,
             marked: BTreeSet::new(),
             detail: Vec::new(),
@@ -542,7 +662,9 @@ impl App {
             correction: None,
             busy: None,
             active: Vec::new(),
+            returning_working_copy: None,
             active_chosen: 0,
+            reminders: Vec::new(),
             active_marked: BTreeSet::new(),
             asked: Vec::new(),
             asked_settles: Vec::new(),
@@ -571,6 +693,7 @@ impl App {
             settings: Vec::new(),
             settings_chosen: 0,
             here: None,
+            finding_here: None,
             progress: super::embedding::Shared::default(),
             known_archives: Vec::new(),
             backup_chosen: 0,
@@ -591,6 +714,13 @@ impl App {
             },
             agent_done: Vec::new(),
             previews: super::preview::Previews::default(),
+            records: records_for(&archive_for_records),
+            active_work_home: active_work_home(),
+            item_questions: Vec::new(),
+            talk: super::librarian::Talk::default(),
+            asking: super::librarian::Asking::default(),
+            librarian_changes: Vec::new(),
+            stacks: super::discover::Stacks::default(),
             help: false,
             quit: false,
         };
@@ -613,16 +743,24 @@ impl App {
     /// [`Failure`] if the archive can't be read.
     pub fn reload(&mut self) -> Result<(), Failure> {
         self.archive = Archive::open(self.archive.root())?;
-        let root_path = self.archive.root().to_owned();
-        let root = Some(root_path.as_path());
-        self.status = lines(&crate::commands::status(root)?.text);
+        self.status = lines(
+            &crate::commands::status_on(
+                &self.archive,
+                &mut self.records,
+                self.active_work_home.clone(),
+            )?
+            .text,
+        );
         self.status.extend(self.index_status());
+        self.status
+            .extend(crate::usage_report::status_lines(&self.archive));
         self.history = match History::open(&self.archive) {
             Ok(history) => history.log()?,
             Err(HistoryError::NotInitialized) => Vec::new(),
             Err(e) => return Err(e.into()),
         };
         self.selected = self.selected.min(self.history.len().saturating_sub(1));
+        self.librarian_changes = super::librarian::recent_changes(&self.history);
         let ranked = carrel_core::questions::answer::tidy(&self.archive)?;
         let (entries, _) = ReviewQueue::of(&self.archive).list()?;
         self.waiting = (
@@ -630,11 +768,17 @@ impl App {
             ranked.open.len(),
         );
         self.load_queue(entries);
+        self.load_crawler_findings();
+        self.load_restructures();
         self.load_questions(ranked);
         self.load_browse()?;
         self.load_intake();
         self.load_settings();
         self.load_active();
+        self.load_reminders();
+        if !self.stacks.lines.is_empty() {
+            self.load_discover();
+        }
         Ok(())
     }
 
@@ -648,6 +792,15 @@ impl App {
 
     /// Review's keys: a duplicate's choices when one is shown, otherwise the decisions.
     fn review_keys(&self) -> Vec<(&'static str, &'static str)> {
+        match self.review_list {
+            super::review_crawler::ReviewList::Crawler => {
+                return super::review_crawler::crawler_keys();
+            }
+            super::review_crawler::ReviewList::Restructure => {
+                return super::review_restructure::restructure_keys();
+            }
+            super::review_crawler::ReviewList::Proposals => {}
+        }
         if !self.comparisons.is_empty() {
             let mut keys = vec![("v", "file as version"), ("b", "keep both"), ("s", "skip")];
             if self.comparisons.len() > 1 {
@@ -696,14 +849,7 @@ impl App {
             return vec![("y", "save"), ("n", "discard")];
         }
         if let Some(confirm) = &self.confirm {
-            if matches!(confirm, Confirm::DeskRemove { .. }) {
-                return vec![
-                    ("y", "keep its card"),
-                    ("d", "delete its card"),
-                    ("n", "no"),
-                ];
-            }
-            return vec![("y", "yes"), ("n", "no")];
+            return confirm_keys(confirm);
         }
         // Typing comes before any screen's keys: they don't apply while a line is open.
         if let Some(input) = &self.input {
@@ -715,6 +861,12 @@ impl App {
         }
         if self.tab == Tab::Review {
             return self.review_keys();
+        }
+        if self.tab == Tab::Librarian && self.picker.is_none() && self.browser.is_none() {
+            return self.talk_keys();
+        }
+        if self.tab == Tab::Discover && self.picker.is_none() && self.browser.is_none() {
+            return self.discover_keys();
         }
         let mut keys = vec![("1-9", "screens")];
         if self.picker.is_some() {
@@ -779,6 +931,9 @@ impl App {
                 keys.extend([("↑↓", "choose"), ("Enter", "answer"), ("d", "dismiss")]);
             }
             Tab::Browse => return self.browse_keys(),
+            Tab::Status if self.reminder_has_item() => {
+                keys.extend([("↑↓", "scroll"), ("Enter", "reminder's item")]);
+            }
             _ => keys.push(("↑↓", "scroll")),
         }
         keys.extend([("^R", "refresh"), ("?", "help"), ("q", "quit")]);
@@ -800,6 +955,10 @@ impl App {
             self.settings_move(delta);
         } else if self.tab == Tab::Backups {
             self.backups_move(delta);
+        } else if self.tab == Tab::Librarian {
+            self.talk_move(delta);
+        } else if self.tab == Tab::Discover {
+            self.discover_move(delta);
         } else if self.tab == Tab::History {
             let last = self.history.len().saturating_sub(1);
             let next = i64::try_from(self.selected).unwrap_or(0) + i64::from(delta);
@@ -818,6 +977,7 @@ impl App {
     pub fn key(&mut self, key: KeyEvent) -> Option<Effect> {
         let effect = self.key_here(key);
         self.settings_shown();
+        self.screen_shown();
         effect
     }
 
@@ -836,6 +996,9 @@ impl App {
         }
         if let Some(confirm) = self.confirm.take() {
             let effect = confirmed(confirm, key.code);
+            if let Some(Effect::Return(returning)) = &effect {
+                self.note_returning(returning);
+            }
             if effect.is_none() {
                 self.message = Some("Nothing changed".into());
             }
@@ -868,7 +1031,10 @@ impl App {
             Tab::Ingest => self.intake_key(key),
             Tab::Settings => self.settings_key(key),
             Tab::Backups => self.backups_key(key),
-            _ => Handled::No,
+            Tab::Librarian => self.talk_key(key),
+            Tab::Discover => self.discover_key(key),
+            Tab::Status => self.status_key(key),
+            Tab::History => Handled::No,
         };
         if let Handled::Yes(effect) = handled {
             return effect;
@@ -879,7 +1045,8 @@ impl App {
             KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Providers may have come or gone too.
                 if self.here.is_some() {
-                    self.here = Some(super::embedding::Here::find());
+                    carrel_core::providers::device::forget_providers();
+                    self.find_here();
                 }
                 self.message = Some(match self.reload() {
                     Ok(()) => "Refreshed".into(),
@@ -887,8 +1054,10 @@ impl App {
                 });
             }
             KeyCode::Char('i') => return self.start_ingest(),
-            KeyCode::Char(c @ '1'..='9') => {
-                self.tab = Tab::ALL[usize::from(c as u8 - b'1')];
+            KeyCode::Char(c) if Tab::ALL.iter().any(|t| t.key() == c) => {
+                if let Some(tab) = Tab::ALL.iter().find(|t| t.key() == c) {
+                    self.tab = *tab;
+                }
             }
             KeyCode::Tab | KeyCode::Right => {
                 self.tab = Tab::ALL[(self.tab.index() + 1) % Tab::ALL.len()];
@@ -964,17 +1133,51 @@ impl App {
             _ => {}
         }
         self.settings_shown();
+        self.screen_shown();
+    }
+
+    /// Readies the screen shown, the first time it's shown and whenever it comes back: the
+    /// preview follows the item the screen shows, and Discover draws its first view.
+    pub(super) fn screen_shown(&mut self) {
+        match self.tab {
+            Tab::Browse => self.previews.want(&self.archive, &self.item),
+            Tab::Discover => {
+                if self.stacks.view == super::discover::View::Wander {
+                    self.previews.want(&self.archive, &self.stacks.item);
+                } else if self.stacks.lines.is_empty() {
+                    self.load_discover();
+                }
+            }
+            _ => {}
+        }
     }
 }
 
 /// The work a confirmation's answer starts: `y` says yes, and `d` takes a desk item off the
-/// desk with its card. Any other key changes nothing.
+/// desk with its card, and `t` returns a checkout and trims its session snapshots. Any other
+/// key changes nothing.
 fn confirmed(confirm: Confirm, key: KeyCode) -> Option<Effect> {
     if let (Confirm::DeskRemove { path, .. }, KeyCode::Char('d' | 'D')) = (&confirm, key) {
         return Some(Effect::DeskRemove {
             path: path.clone(),
             delete_card: true,
         });
+    }
+    if let (
+        Confirm::Return {
+            id,
+            from,
+            snapshots: true,
+            ..
+        },
+        KeyCode::Char('t' | 'T'),
+    ) = (&confirm, key)
+    {
+        return Some(Effect::Return(super::active::Returning {
+            id: *id,
+            from: from.clone(),
+            trim: true,
+        }));
     }
     if let (Confirm::Rule { id, answer, .. }, KeyCode::Char('n' | 'N')) = (&confirm, key) {
         return Some(Effect::Answer {
@@ -993,18 +1196,30 @@ fn confirmed(confirm: Confirm, key: KeyCode) -> Option<Effect> {
             learn: true,
         },
         Confirm::Undo { id, .. } => Effect::Undo(id),
-        Confirm::Reject(ids) => Effect::Reject(ids),
+        Confirm::Reject(ids) | Confirm::RejectFindings(ids) => Effect::Reject(ids),
+        Confirm::UndoCrawler(_) => {
+            Effect::Restructure(super::review_restructure::RestructureAction::UndoCrawler)
+        }
+        Confirm::RejectRestructure { id, .. } => {
+            Effect::Restructure(super::review_restructure::RestructureAction::Reject(id))
+        }
         Confirm::Download { name, .. } => Effect::Download(name),
+        Confirm::ModelChange { change, .. } => Effect::ModelChange(change),
         Confirm::Agent(change) => Effect::Agent(change),
-        Confirm::Return { id, .. } => Effect::Return(id),
+        Confirm::Return { id, from, .. } => Effect::Return(super::active::Returning {
+            id,
+            from,
+            trim: false,
+        }),
         Confirm::CancelCheckout { id, .. } => Effect::CancelCheckout(id),
+        Confirm::TrashWorkingCopy(path) => Effect::TrashWorkingCopy(path),
         Confirm::Learn { about, fact } => Effect::Correction(Step::Learn { about, fact }),
         Confirm::Checkout { card, to, due, .. } => Effect::Checkout {
             item: card,
             to,
             due,
         },
-        Confirm::DeskAdd(path) => Effect::DeskAdd(path),
+        Confirm::DeskAdd(card) => Effect::DeskAdd(card),
         Confirm::DeskRemove { path, .. } => Effect::DeskRemove {
             path,
             delete_card: false,
@@ -1019,7 +1234,23 @@ fn confirmed(confirm: Confirm, key: KeyCode) -> Option<Effect> {
             item: card,
             anyway: anyway.is_some(),
         },
+        Confirm::UndoLibrarian(_) => Effect::UndoLibrarian,
     })
+}
+
+/// The keys a confirmation answers to, for the help line.
+fn confirm_keys(confirm: &Confirm) -> Vec<(&'static str, &'static str)> {
+    match confirm {
+        Confirm::DeskRemove { .. } => vec![
+            ("y", "keep its card"),
+            ("d", "delete its card"),
+            ("n", "no"),
+        ],
+        Confirm::Return {
+            snapshots: true, ..
+        } => vec![("y", "yes"), ("t", "and trim snapshots"), ("n", "no")],
+        _ => vec![("y", "yes"), ("n", "no")],
+    }
 }
 
 /// `index` moved by `delta` within `len` items.

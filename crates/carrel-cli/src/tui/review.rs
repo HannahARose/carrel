@@ -29,10 +29,12 @@ pub enum Purpose {
     Answer(Id),
     /// Setting this setting to it.
     Setting(String),
-    /// Downloading this catalog model, after asking.
-    Download,
+    /// Downloading or deleting a model, after asking: these choices, by their words.
+    Models(Vec<(String, super::model_changes::ModelChange)>),
     /// Working on the embedding index: these choices, by their words.
     Index(Vec<(String, super::embedding::Choice)>),
+    /// Setting this collection's own eagerness to it.
+    Eagerness(String),
     /// Switching archives: these choices, by their words.
     Archive(Vec<(String, super::archives::Choice)>),
 }
@@ -161,6 +163,9 @@ impl App {
 
     /// Handles a key on the Review screen.
     pub(super) fn review_key(&mut self, key: KeyEvent) -> Handled {
+        if let Some(handled) = self.review_list_key(key) {
+            return handled;
+        }
         if matches!(key.code, KeyCode::Char('[' | ']')) && !self.comparisons.is_empty() {
             let count = self.comparisons.len();
             self.compared = if key.code == KeyCode::Char(']') {
@@ -288,11 +293,17 @@ impl App {
                         learn: false,
                     }),
                     Purpose::Setting(key) => Some(super::settings::set(&key, &to)),
-                    Purpose::Download => {
-                        self.confirm_download(&to);
+                    Purpose::Models(choices) => {
+                        self.confirm_model_change(&choices, &to);
                         None
                     }
                     Purpose::Index(choices) => self.index_chosen(&choices, &to),
+                    Purpose::Eagerness(collection) => Some(Effect::Restructure(
+                        super::review_restructure::RestructureAction::Eagerness {
+                            collection,
+                            level: to,
+                        },
+                    )),
                     Purpose::Archive(choices) => self.archive_chosen(&choices, &to),
                 };
             }

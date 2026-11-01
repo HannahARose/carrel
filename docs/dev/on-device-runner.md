@@ -25,13 +25,15 @@ This is done once, by the owner, on the Mac. It needs an administrator account f
 
    Download the rest of the catalog too if the weekly benchmark should cover it.
 5. **Register the runner:** on GitHub, open the repository's Settings → Actions → Runners → New self-hosted runner, choose macOS and ARM64, and follow its download and `config.sh` steps as `carrel-ci`. When it asks for labels, add `carrel-on-device`.
-6. **Run it as a service,** so it starts when the Mac does: `./svc.sh install`, then `./svc.sh start`, in the runner's folder.
+6. **Run it as a service, logged in as `carrel-ci`:** `./svc.sh install`, then `./svc.sh start`, in the runner's folder. That makes a LaunchAgent, which runs in `carrel-ci`'s session, as `xcodebuild test` needs for the MLX provider's tests. Keep `carrel-ci` logged in: log in as it, then switch back to your own account with Fast User Switching. With FileVault on, it can't be logged in automatically, so after a restart log it in again; until then, jobs wait in the queue.
+
+   If you'd rather the runner start with the Mac, logged in or not, run it as a LaunchDaemon instead: `sudo sh scripts/install-runner-daemon.sh`, after `./svc.sh uninstall`. Don't run both, since they'd share one work folder. Outside a session, the MLX provider's tests with real models are skipped, with a warning; `scripts/on-device-tests.sh` run by hand includes them.
 7. **Try it:** in Actions → On-device → Run workflow, run `tests`, then `benchmark`.
 
 ## Living with it
 
 - **One job at a time.** A push that arrives while the benchmark runs waits for it, so nothing compiles during a benchmark. Only the newest waiting run is kept.
-- **Your own work affects it.** The benchmark times models, so heavy work on the Mac while it runs, such as building Carrel, makes its timings slower. Sunday at 03:00 is chosen to avoid that. If you need the Mac, stop the runner (`./svc.sh stop`), and start it again later; a stopped runner's jobs wait in the queue.
+- **Your own work affects it.** The benchmark times models, so heavy work on the Mac while it runs, such as building Carrel, makes its timings slower. Sunday at 03:00 is chosen to avoid that. If you need the Mac, stop the runner (`./svc.sh stop`, or for the LaunchDaemon `sudo launchctl bootout system/com.horizon-labs.carrel-runner`), and start it again later; a stopped runner's jobs wait in the queue.
 - **Results** are kept as the run's `bench-results` artifact for 90 days, and the run's summary shows each model's scores with the change since the last run. A run fails only when a model that met the bar no longer does.
 - **`docs/bench/`** is updated by a pull request when a release changes the recommended models, not by CI.
-- **Removing it:** `./svc.sh uninstall`, then remove the runner in the repository's settings and delete the `carrel-ci` user.
+- **Removing it:** `./svc.sh uninstall` (or, for the LaunchDaemon, `sudo launchctl bootout system/com.horizon-labs.carrel-runner` and delete its plist in `/Library/LaunchDaemons`), then remove the runner in the repository's settings and delete the `carrel-ci` user.

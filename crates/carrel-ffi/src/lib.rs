@@ -25,6 +25,7 @@
 //! | [`agent`] | The Mac app's agent: its claim on an archive, work sessions and scheduled snapshots |
 //! | [`librarian`] | The librarian: a conversation, saving it to the Journal, and its own changes |
 //! | [`discover`] | Discovery: on this day, wander, the timeline, the archive map, activity, resurfacing |
+//! | [`creating`] | Creating an archive with a chosen embedding model |
 //!
 //! [`TextModel`] and [`ModelProvider`](correct::ModelProvider) are implemented in Swift and called from Rust, as is
 //! [`ProgressListener`], which long operations report to.
@@ -52,18 +53,27 @@ pub mod agent;
 pub mod backups;
 pub mod browse;
 pub mod correct;
+pub mod crawl;
+pub mod creating;
 pub mod discover;
 pub mod edit;
+pub mod graph;
 pub mod history;
 pub mod index;
 pub mod intake;
 pub mod librarian;
+pub mod model_formats;
 pub mod models;
 pub mod previews;
+pub mod questions;
 pub mod records;
+pub mod reminders;
+pub mod restructure;
 pub mod review;
 pub mod search;
 pub mod settings;
+pub mod usage_report;
+pub mod working_copy;
 
 uniffi::setup_scaffolding!();
 
@@ -459,6 +469,7 @@ impl ArchiveHandle {
         create_archive(
             Path::new(&path),
             &name,
+            None,
             &carrel_core::local::config_folder()?,
         )
     }
@@ -560,13 +571,18 @@ impl ArchiveHandle {
     }
 }
 
-fn create_archive(
+pub(crate) fn create_archive(
     root: &Path,
     name: &str,
+    embedding_model: Option<&str>,
     config: &Path,
 ) -> Result<Arc<ArchiveHandle>, CarrelError> {
     let holder = Identity::load_or_create_in(config)?.holder();
-    let archive = Archive::init(root, &InitOptions::new(name))?;
+    let mut init = InitOptions::new(name);
+    if let Some(model) = embedding_model {
+        init.embedding_model = Some(model.to_owned());
+    }
+    let archive = Archive::init(root, &init)?;
     let lease = DiskLock::for_archive(&archive).acquire(holder, "create", DEFAULT_LEASE)?;
     let started = History::init(&archive, &lease);
     lease.release()?;
@@ -693,7 +709,7 @@ mod tests {
             std::env::temp_dir().join(format!("carrel-ffi-{}", carrel_core::card::Id::new_v7()));
         let config = dir.join("config");
         let root = dir.join("New archive");
-        let archive = create_archive(&root, "Letters", &config).unwrap();
+        let archive = create_archive(&root, "Letters", None, &config).unwrap();
         assert_eq!(archive.name(), "Letters");
         assert!(
             archive
@@ -704,9 +720,9 @@ mod tests {
         );
         assert!(History::open(&archive.archive).is_ok());
         let first = std::fs::read_to_string(config.join("identity.json")).unwrap();
-        assert!(create_archive(&root, "Again", &config).is_err());
+        assert!(create_archive(&root, "Again", None, &config).is_err());
         let other = dir.join("Second");
-        create_archive(&other, "Second", &config).unwrap();
+        create_archive(&other, "Second", None, &config).unwrap();
         let second = std::fs::read_to_string(config.join("identity.json")).unwrap();
         assert_eq!(first, second, "the identity is kept, not replaced");
         std::fs::remove_dir_all(&dir).unwrap();
@@ -851,13 +867,20 @@ mod tests {
         let mut fields = editable.fields.clone();
         fields.title = "  ".into();
         assert!(matches!(
-            sample.handle.edit_card(item.clone(), fields).unwrap(),
+            sample
+                .handle
+                .edit_card(item.clone(), editable.fields.clone(), fields)
+                .unwrap(),
             EditOutcome::Problems { problems } if problems.iter().any(|p| p.contains("title"))
         ));
         assert_eq!(
             sample
                 .handle
-                .edit_card(item.clone(), editable.fields.clone())
+                .edit_card(
+                    item.clone(),
+                    editable.fields.clone(),
+                    editable.fields.clone()
+                )
                 .unwrap(),
             EditOutcome::Unchanged
         );
@@ -866,7 +889,10 @@ mod tests {
         let EditOutcome::Saved {
             fields: changed,
             commit,
-        } = sample.handle.edit_card(item.clone(), fields).unwrap()
+        } = sample
+            .handle
+            .edit_card(item.clone(), editable.fields.clone(), fields)
+            .unwrap()
         else {
             panic!("not saved");
         };
@@ -918,10 +944,11 @@ mod tests {
         let lease = DiskLock::for_archive(&archive)
             .acquire(other, "ingest", DEFAULT_LEASE)
             .unwrap();
-        let mut fields = sample.handle.editable_card(item.clone()).unwrap().fields;
+        let base = sample.handle.editable_card(item.clone()).unwrap().fields;
+        let mut fields = base.clone();
         fields.title = "Parts".into();
         assert!(matches!(
-            sample.handle.edit_card(item, fields),
+            sample.handle.edit_card(item, base, fields),
             Err(CarrelError::Busy { message }) if message.contains("ingest")
         ));
         lease.release().unwrap();
@@ -946,9 +973,12 @@ mod tests {
         assert_eq!(listed.due.as_deref(), Some("2026-12-01"));
         assert_eq!(listed.state, "unchanged");
         std::fs::write(&out.working, "part,source\nLED strip,shop\n").unwrap();
-        let preview = sample.handle.return_preview(item.clone()).unwrap();
+        let preview = sample.handle.return_preview(item.clone(), None).unwrap();
         assert_eq!(preview.title, "Desk lamp parts list");
-        let returned = sample.handle.return_item(item.clone()).unwrap();
+        let returned = sample
+            .handle
+            .return_item(item.clone(), None, false)
+            .unwrap();
         assert!(returned.commit.is_some());
         assert!(!sample.handle.active().unwrap().iter().any(|a| a.id == item));
         assert!(matches!(

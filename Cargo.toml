@@ -12,12 +12,12 @@ members = [
 resolver = "3"
 
 [workspace.package]
-version = "0.5.1"
+version = "0.6.0"
 edition = "2024"
 rust-version = "1.99"
 license = "MPL-2.0"
-repository = "https://github.com/HannahARose/carrel"
-homepage = "https://github.com/HannahARose/carrel/wiki"
+repository = "https://github.com/Horizon-Labs/carrel"
+homepage = "https://github.com/Horizon-Labs/carrel/wiki"
 authors = ["Hannah Rose"]
 publish = false
 

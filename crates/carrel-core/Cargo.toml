@@ -29,6 +29,7 @@ sha2 = "0.11.1"
 tar = { version = "0.4.46", default-features = false }
 uuid = { version = "1.29.0", features = ["serde", "v7"] }
 zip = { version = "9.1.3", default-features = false, features = ["bzip2", "deflate-flate2", "jiff-02"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "tiff"] }
 
 [lints]
 workspace = true

@@ -50,8 +50,31 @@ private struct ActiveDialogs: ViewModifier {
         content
             .sheet(isPresented: present($model.returning)) {
                 if let preview = model.returning {
-                    ReturnSheet(preview: preview) { Task { await model.confirmReturn(preview) } }
+                    ReturnSheet(preview: preview) { trim in
+                        Task { await model.confirmReturn(preview, trimmingSnapshots: trim) }
+                    }
                 }
+            }
+            .sheet(item: $model.addingToDesk) { draft in
+                DeskSheet(draft: draft) { draft in Task { await model.addToDesk(draft) } }
+            }
+            .confirmationDialog(
+                "Take “\(model.takingOff?.title ?? "")” off the desk?",
+                isPresented: present($model.takingOff),
+                presenting: model.takingOff
+            ) { item in
+                Button("Take Off, Keeping Its Card") {
+                    Task { await model.takeOff(item, .keepCard) }
+                }
+                Button("Archive It") { Task { await model.takeOff(item, .archive) } }
+                Button("Take Off and Delete Its Card", role: .destructive) {
+                    Task { await model.takeOff(item, .deleteCard) }
+                }
+                Button("Cancel", role: .cancel) { model.takingOff = nil }
+            } message: { _ in
+                Text(
+                    "The files stay where they are. Archiving queues it for the archive, its card and history with it."
+                )
             }
             .sheet(item: $model.checkingOut) { draft in
                 CheckoutSheet(draft: draft) { draft in Task { await model.checkOut(draft) } }
@@ -71,6 +94,18 @@ private struct ActiveDialogs: ViewModifier {
             } message: { _ in
                 Text(
                     "The archive copy is unlocked as it was. Changes in the working copy aren’t brought back, and the working copy stays where it is."
+                )
+            }
+            .confirmationDialog(
+                "Put the Working Copy in the Trash?",
+                isPresented: present($model.askingAboutWorkingCopy),
+                presenting: model.askingAboutWorkingCopy
+            ) { path in
+                Button("Move to Trash") { Task { await model.trashWorkingCopy(path) } }
+                Button("Keep It", role: .cancel) { model.askingAboutWorkingCopy = nil }
+            } message: { path in
+                Text(
+                    "It’s returned, so the archive has its changes. \(path) can be recovered from the Trash. The “After a return” setting can do this, or keep it, without asking."
                 )
             }
             .alert(
@@ -109,8 +144,10 @@ private struct HistoryDialogs: ViewModifier {
 /// return adds.
 private struct ReturnSheet: View {
     let preview: ReturnPreview
-    let confirm: () -> Void
+    /// Returns it, forgetting the session snapshots when told to.
+    let confirm: (Bool) -> Void
     @Environment(\.dismiss) private var dismiss
+    @State private var trimming = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -133,6 +170,17 @@ private struct ReturnSheet: View {
                 Section("The Entry It Adds") {
                     Text(preview.entry.joined(separator: "\n")).textSelection(.enabled)
                 }
+                if preview.sessionSnapshots > 0 {
+                    Section("Backups") {
+                        Toggle(
+                            "Forget the \(preview.sessionSnapshots) session snapshot\(preview.sessionSnapshots == 1 ? "" : "s") of the working copy",
+                            isOn: $trimming)
+                        Text(
+                            "The returned version is snapshotted first. Otherwise they’re kept."
+                        )
+                        .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
             }
             .formStyle(.grouped)
             HStack {
@@ -141,7 +189,7 @@ private struct ReturnSheet: View {
                     .keyboardShortcut(.cancelAction)
                 Button("Return") {
                     dismiss()
-                    confirm()
+                    confirm(trimming)
                 }
                 .keyboardShortcut(.defaultAction)
             }
@@ -205,6 +253,45 @@ private struct CheckoutSheet: View {
         panel.prompt = "Choose"
         panel.directoryURL = draft.folder
         if panel.runModal() == .OK, let url = panel.url { draft.folder = url }
+    }
+}
+
+/// A file or folder to put on the desk, with its card's title and summary if given.
+private struct DeskSheet: View {
+    @State var draft: DeskDraft
+    let confirm: (DeskDraft) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Add “\(draft.url.lastPathComponent)” to the Desk").font(.headline)
+                .padding([.horizontal, .top], 20)
+            Form {
+                TextField("Title", text: $draft.title, prompt: Text("Drafted for you"))
+                TextField(
+                    "Summary", text: $draft.summary, prompt: Text("Drafted for you"),
+                    axis: .vertical
+                )
+                .lineLimit(3...6)
+                Text(
+                    "It’s worked on where it is, and tracked without being archived. This Mac’s models draft whatever you leave empty."
+                )
+                .font(.caption).foregroundStyle(.secondary)
+            }
+            .formStyle(.grouped)
+            HStack {
+                Spacer()
+                Button("Cancel", role: .cancel) { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button("Add to Desk") {
+                    dismiss()
+                    confirm(draft)
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+            .padding(20)
+        }
+        .frame(width: 460)
     }
 }
 

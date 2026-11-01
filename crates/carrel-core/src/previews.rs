@@ -27,6 +27,7 @@ use crate::archive::Archive;
 use crate::ingest::text::media_type;
 use crate::providers::{Capability, ExtractionRequest, Registry};
 
+pub mod photos;
 pub mod png;
 
 /// The cache's folder, relative to the archive root.
@@ -86,16 +87,17 @@ impl PreviewCache {
         placed.ok().map(|()| kept)
     }
 
-    /// The thumbnail of the PNG at `path`, whose key is `key`: the kept one, or the picture
-    /// shrunk to at most [`THUMBNAIL`] pixels a side now and kept. `None` when it can't be
-    /// read or kept.
+    /// The thumbnail of the PNG, JPEG or TIFF at `path`, whose key is `key`: the kept one, or
+    /// the picture shrunk to at most [`THUMBNAIL`] pixels a side now and kept. `None` when it
+    /// can't be read or kept.
     #[must_use]
     pub fn shrink(&self, path: &Path, key: &str) -> Option<PathBuf> {
         let kept = self.thumbnail(key);
         if kept.is_file() {
             return Some(kept);
         }
-        let pixels = png::decode(&std::fs::read(path).ok()?)?;
+        let bytes = std::fs::read(path).ok()?;
+        let pixels = png::decode(&bytes).or_else(|| photos::decode_jpeg_or_tiff(&bytes))?;
         let small = pixels.fit(THUMBNAIL, THUMBNAIL);
         std::fs::create_dir_all(kept.parent()?).ok()?;
         // Written beside it and renamed, so a half-written thumbnail is never read.
@@ -133,14 +135,14 @@ pub enum Preview {
 pub struct Makers<'a> {
     /// Draws STEP, IGES and 3MF files; `None` leaves them undrawn.
     pub registry: Option<&'a Registry>,
-    /// Whether a PNG item's own thumbnail may be made and kept.
+    /// Whether a PNG, JPEG or TIFF item's own thumbnail may be made and kept.
     pub thumbnails: bool,
 }
 
 /// The preview of the item at `relative` in the archive at `root`, its picture made and kept
 /// in `cache` when it's an image or a drawing: a cached thumbnail, such as the Mac app makes
-/// with Quick Look; a drawing of a 3D model; a PNG's own thumbnail, shrunk here; another
-/// image file as it is; or a folder's listing. Nothing at all for a `restricted` item.
+/// with Quick Look; a drawing of a 3D model; a PNG, JPEG or TIFF's own thumbnail, shrunk
+/// here; another image file as it is; or a folder's listing. Nothing at all for a `restricted` item.
 ///
 /// Slow for a large image or a model: run it in the background.
 #[must_use]
@@ -188,6 +190,14 @@ pub fn preview(
                 png: true,
             }
         }
+        // Shown as they are when no thumbnail can be made, to a viewer that reads them.
+        "image/jpeg" | "image/tiff" => makers
+            .thumbnails
+            .then(|| cache.shrink(&path, &key))
+            .flatten()
+            .map_or(Preview::Picture { path, png: false }, |path| {
+                Preview::Picture { path, png: true }
+            }),
         image if image.starts_with("image/") => Preview::Picture { path, png: false },
         _ => Preview::Nothing,
     }
@@ -454,5 +464,60 @@ mod tests {
             cache.thumbnail("k"),
             dir.path().join("previews/thumbnails/k.png")
         );
+    }
+
+    /// A JPEG or TIFF item gets a thumbnail made here, as a PNG does, with no thumbnail made
+    /// elsewhere first (#414).
+    #[test]
+    fn jpeg_and_tiff_items_get_thumbnails_made_here() {
+        let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/pictures");
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let cache = PreviewCache::at(&root.join(PREVIEWS));
+        let makers = Makers {
+            registry: None,
+            thumbnails: true,
+        };
+        for name in ["photo.jpg", "scan.tiff"] {
+            let bytes = std::fs::read(fixtures.join(name)).unwrap();
+            let pixels = photos::decode_jpeg_or_tiff(&bytes).expect(name);
+            assert_eq!((pixels.width, pixels.height), (96, 64), "{name}");
+            // The gradient runs from no red on the left to full red on the right.
+            let red = |x: usize| pixels.rgba[x * 4];
+            assert!(
+                red(0) < 40 && red(95) > 215,
+                "{name}: {} to {}",
+                red(0),
+                red(95)
+            );
+
+            std::fs::copy(fixtures.join(name), root.join(name)).unwrap();
+            let Preview::Picture { path, png: true } = preview(root, name, false, &cache, makers)
+            else {
+                panic!("{name} has no thumbnail");
+            };
+            assert_eq!(path, cache.thumbnail(&key(root, name).unwrap()));
+            let thumbnail = png::decode(&std::fs::read(&path).unwrap()).unwrap();
+            assert_eq!((thumbnail.width, thumbnail.height), (96, 64), "{name}");
+            assert_eq!(
+                preview(root, name, true, &cache, makers),
+                Preview::Nothing,
+                "{name}, restricted"
+            );
+        }
+        // Without making thumbnails, they're shown as they are, to a viewer that reads them.
+        let none = Makers {
+            registry: None,
+            thumbnails: false,
+        };
+        let other = PreviewCache::at(&root.join("other"));
+        assert_eq!(
+            preview(root, "photo.jpg", false, &other, none),
+            Preview::Picture {
+                path: root.join("photo.jpg"),
+                png: false
+            }
+        );
+        assert_eq!(photos::decode_jpeg_or_tiff(b"\x89PNG\r\n\x1a\n"), None);
     }
 }

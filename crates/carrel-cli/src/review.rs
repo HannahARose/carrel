@@ -8,6 +8,8 @@ use carrel_core::actions::{self, Edited};
 use carrel_core::archive::Archive;
 use carrel_core::backup::Backups;
 use carrel_core::compressed::plan::Choice;
+use carrel_core::coordinator::{Coordinator as _, DEFAULT_LEASE, DiskLock};
+use carrel_core::crawl::findings::CrawlEntry;
 use carrel_core::ingest::filing::{Filed, Placement};
 use carrel_core::review::{ReviewEntry, ReviewQueue, State, short_id};
 use serde_json::{Value, json};
@@ -25,8 +27,9 @@ pub fn list(archive: Option<&Path>, all: bool) -> Result<Report, Failure> {
         .filter(|e| all || e.state.is_open())
         .collect();
 
+    let crawled = carrel_core::crawl::findings::list(&archive)?;
     let mut text = String::new();
-    if shown.is_empty() {
+    if shown.is_empty() && crawled.is_empty() {
         text.push_str(if all {
             "No proposals\n"
         } else {
@@ -72,14 +75,83 @@ pub fn list(archive: Option<&Path>, all: bool) -> Result<Report, Failure> {
             .unwrap();
         }
     }
+    text.push_str(&crawler_section(&crawled));
     for error in &bad {
         writeln!(text, "warning: {error}").unwrap();
     }
     let json = json!({
         "entries": shown,
+        "crawler": crawled,
         "unreadable": bad.iter().map(ToString::to_string).collect::<Vec<_>>(),
     });
     Ok(Report::new(text, json))
+}
+
+/// The crawler's findings, for `carrel review`.
+fn crawler_section(found: &[CrawlEntry]) -> String {
+    if found.is_empty() {
+        return String::new();
+    }
+    let mut text = String::from("From the crawler (approve or reject them like proposals):\n");
+    for entry in found {
+        writeln!(
+            text,
+            "  {}  {} ({:.0}% sure): {}",
+            short_id(entry.id),
+            entry.finding.describe(&entry.title),
+            entry.confidence * 100.0,
+            entry.reason
+        )
+        .unwrap();
+    }
+    text
+}
+
+/// The crawler's findings among `ids`, and the rest, which are ingest proposals. An identifier
+/// that names a proposal is a proposal, so the two never clash.
+fn crawler_findings(archive: &Archive, ids: &[String]) -> (Vec<CrawlEntry>, Vec<String>) {
+    let mut found = Vec::new();
+    let mut rest = Vec::new();
+    for id in ids {
+        if ReviewQueue::of(archive).find(id).is_err()
+            && let Ok(entry) = carrel_core::crawl::findings::find(archive, id)
+        {
+            found.push(entry);
+        } else {
+            rest.push(id.clone());
+        }
+    }
+    (found, rest)
+}
+
+/// Approves the crawler's findings `found`, making each change as the owner's.
+fn approve_findings(archive: &Archive, found: &[CrawlEntry]) -> Result<String, Failure> {
+    let mut text = String::new();
+    if found.is_empty() {
+        return Ok(text);
+    }
+    let (registry, _) = crate::providers::registry();
+    let identity = Identity::load_or_create()?;
+    let lease =
+        DiskLock::for_archive(archive).acquire(holder(&identity), "review", DEFAULT_LEASE)?;
+    for entry in found {
+        match carrel_core::crawl::findings::approve(archive, &registry, entry, &lease) {
+            Ok(_) => writeln!(
+                text,
+                "Approved {}: {}",
+                short_id(entry.id),
+                entry.finding.describe(&entry.title)
+            ),
+            Err(why) => writeln!(
+                text,
+                "Couldn't {}: {why}",
+                entry.finding.describe(&entry.title)
+            ),
+        }
+        .unwrap();
+    }
+    lease.release()?;
+    Ok(text)
 }
 
 fn sensitivity_name(entry: &ReviewEntry) -> String {
@@ -273,6 +345,25 @@ fn write_comparison(text: &mut String, comparison: &actions::Comparison) {
 /// `carrel review reject ID...`: the items stay where they are.
 pub fn reject(archive: Option<&Path>, ids: &[String]) -> Result<Report, Failure> {
     let archive = locate(archive)?;
+    let (found, ids) = crawler_findings(&archive, ids);
+    let mut text = String::new();
+    if !found.is_empty() {
+        let identity = Identity::load_or_create()?;
+        for entry in &found {
+            carrel_core::crawl::findings::reject(&archive, entry, identity.device)?;
+            writeln!(
+                text,
+                "Rejected {}: the crawler won't suggest it again",
+                short_id(entry.id)
+            )
+            .unwrap();
+        }
+        if ids.is_empty() {
+            let rejected: Vec<String> = found.iter().map(|e| e.id.to_string()).collect();
+            return Ok(Report::new(text, json!({ "rejected": rejected })));
+        }
+    }
+    let ids = ids.as_slice();
     let entries = actions::proposals(&archive, ids)?;
     // Approved and held proposals are on their way; rejecting is for those still undecided.
     if let Some(entry) = entries.iter().find(|e| !e.state.is_open()) {
@@ -282,7 +373,6 @@ pub fn reject(archive: Option<&Path>, ids: &[String]) -> Result<Report, Failure>
             entry.state.as_str()
         )));
     }
-    let mut text = String::new();
     for entry in actions::reject(&archive, entries)? {
         writeln!(
             text,
@@ -306,10 +396,16 @@ pub fn approve(
     related_to: Option<&str>,
 ) -> Result<Report, Failure> {
     let archive = locate(archive)?;
+    let (found, ids) = crawler_findings(&archive, ids);
+    let approved = approve_findings(&archive, &found)?;
+    if !all_high && ids.is_empty() && !found.is_empty() {
+        let ids: Vec<String> = found.iter().map(|e| e.id.to_string()).collect();
+        return Ok(Report::new(approved, json!({ "approved": ids })));
+    }
     let mut entries = if all_high {
         actions::all_high(&archive)?
     } else {
-        actions::proposals(&archive, ids)?
+        actions::proposals(&archive, &ids)?
     };
     let kept = as_version_of
         .map(|t| (actions::Kept::AsVersion, t))
@@ -320,7 +416,9 @@ pub fn approve(
             actions::keep(&archive, entry, kept, target)?;
         }
     }
-    decide(&archive, entries, Placement::Destination)
+    let mut report = decide(&archive, entries, Placement::Destination)?;
+    report.text.insert_str(0, &approved);
+    Ok(report)
 }
 
 /// `carrel review hold ID...`: files the items in Holding, to be placed later.
@@ -474,29 +572,8 @@ fn decide(
 /// The editor to open: the `editor` preference, then `$VISUAL`, then `$EDITOR`, then
 /// `notepad` on Windows or `vi`. Its words are split as a shell would, so `code --wait` works.
 pub(crate) fn editor() -> (String, &'static str) {
-    if let Some(chosen) = crate::config::Prefs::load()
-        .ok()
-        .and_then(|p| p.editor)
-        .filter(|e| !e.trim().is_empty())
-    {
-        return (chosen, "Carrel's editor setting");
-    }
-    for var in ["VISUAL", "EDITOR"] {
-        if let Some(chosen) = std::env::var(var).ok().filter(|e| !e.trim().is_empty()) {
-            return (
-                chosen,
-                if var == "VISUAL" {
-                    "$VISUAL"
-                } else {
-                    "$EDITOR"
-                },
-            );
-        }
-    }
-    (
-        if cfg!(windows) { "notepad" } else { "vi" }.to_owned(),
-        "the system's default",
-    )
+    let preference = crate::config::Prefs::load().ok().and_then(|p| p.editor);
+    carrel_core::file_pickers::editor_in_use(preference.as_deref())
 }
 
 /// Opens `path` in the editor and waits for it to close.

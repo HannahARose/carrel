@@ -11,15 +11,19 @@ use std::sync::{Arc, Mutex};
 use carrel_core::coordinator::{Coordinator as _, DEFAULT_LEASE, DiskLock};
 use carrel_core::history::History;
 use carrel_core::librarian::changes::{self, Change as CoreChange, Outcome};
+use carrel_core::librarian::model::NoModel;
 use carrel_core::librarian::{
     self as core, Conversation, ItemLink, Librarian, LibrarianError, Stopped, journal, model,
 };
 use carrel_core::providers::Registry;
-use carrel_core::providers::device::AvailableModel;
+use carrel_core::providers::device::{AvailableModel, text_models};
+use carrel_core::questions::moments::Conversing;
 
 use crate::correct::ModelProvider;
 use crate::history::Change;
+use crate::models::{CatalogModel, catalog_model};
 use crate::records::Sensitivity;
+use crate::review::Question;
 use crate::{ArchiveHandle, CarrelError, ProgressListener};
 
 /// An item an answer links to.
@@ -208,6 +212,10 @@ pub struct LibrarianAnswer {
     pub tokens: u64,
     /// Why it stopped before it could answer, when it did: `steps` or `tokens`.
     pub stopped: Option<String>,
+    /// Now and then, Carrel's question about an item the answer found, put in the queue to
+    /// answer: at most one an answer, never after two in a row, and never twice about one
+    /// item in a conversation.
+    pub asks: Option<Question>,
 }
 
 impl From<&core::Answer> for LibrarianAnswer {
@@ -253,6 +261,7 @@ impl From<&core::Answer> for LibrarianAnswer {
                 }
                 .to_owned()
             }),
+            asks: None,
         }
     }
 }
@@ -262,6 +271,8 @@ impl From<&core::Answer> for LibrarianAnswer {
 #[derive(Debug, Default, uniffi::Object)]
 pub struct LibrarianConversation {
     conversation: Mutex<Conversation>,
+    /// Which items Carrel has asked about in it, and whether it asked after the last answer.
+    conversing: Mutex<Conversing>,
 }
 
 #[uniffi::export]
@@ -319,15 +330,34 @@ impl From<journal::SaveError> for CarrelError {
     }
 }
 
+/// Which model the librarian answers with, or, when it has none, why and what would let it:
+/// the setting to clear, or a model to download.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct LibrarianModelChoice {
+    /// The model it answers with, for people; `None` when there's none.
+    pub label: Option<String>,
+    /// When there's none, why and what to do, in words.
+    pub problem: Option<String>,
+    /// What `librarian.model` names, when it's a model that isn't available.
+    pub gone: Option<String>,
+    /// The text models this device has, `provider/offer`, best first.
+    pub available: Vec<String>,
+    /// The one it runs on once `librarian.model` is cleared, `provider/offer`.
+    pub instead: Option<String>,
+    /// When there's no text model at all, the catalog's to download for this device. Download
+    /// it with [`ArchiveHandle::download_model`] once the owner has seen its size.
+    pub download: Option<CatalogModel>,
+}
+
 impl ArchiveHandle {
     /// The providers for the librarian, and the model it runs on: the app's model when it
     /// gives one; else this device's `librarian.model`, or the strongest one that fits in
-    /// `memory_gb`.
-    fn librarian_model(
+    /// `memory_gb`. Without one, why and what would let it.
+    fn explain_librarian_model(
         &self,
         model: Option<Arc<dyn ModelProvider>>,
         memory_gb: Option<u64>,
-    ) -> Result<(Registry, AvailableModel), CarrelError> {
+    ) -> Result<(Registry, Result<AvailableModel, Box<NoModel>>), CarrelError> {
         let from_app = model.is_some();
         let registry = self.correction_registry(model);
         let setting = if from_app {
@@ -335,14 +365,20 @@ impl ArchiveHandle {
         } else {
             self.prefs()?.librarian_model
         };
-        let chosen = model::choose(&registry, setting.as_deref(), memory_gb)
-            .map_err(|e| CarrelError::invalid(format!("librarian.model: {e}")))?
-            .ok_or_else(|| {
-                CarrelError::invalid(
-                    "the librarian needs a text model, and this Mac has none; download one in \
-                     Settings → Models",
-                )
-            })?;
+        let dir = self.models_dir();
+        let chosen =
+            model::choose_or_explain(&registry, setting.as_deref(), memory_gb, dir.as_deref());
+        Ok((registry, chosen))
+    }
+
+    /// As [`ArchiveHandle::explain_librarian_model`], with no model an error saying why.
+    fn librarian_model(
+        &self,
+        model: Option<Arc<dyn ModelProvider>>,
+        memory_gb: Option<u64>,
+    ) -> Result<(Registry, AvailableModel), CarrelError> {
+        let (registry, chosen) = self.explain_librarian_model(model, memory_gb)?;
+        let chosen = chosen.map_err(|missing| CarrelError::invalid(missing.to_string()))?;
         Ok((registry, chosen))
     }
 }
@@ -362,6 +398,46 @@ impl ArchiveHandle {
         memory_gb: Option<u64>,
     ) -> Result<String, CarrelError> {
         Ok(self.librarian_model(model, memory_gb)?.1.label)
+    }
+
+    /// Which model the librarian would answer with, as [`ArchiveHandle::ask_librarian`]
+    /// chooses it, or why there's none and what would let it: the models this device has
+    /// once a `librarian.model` that's gone is cleared, or the catalog model to download for
+    /// `memory_gb`.
+    ///
+    /// # Errors
+    ///
+    /// [`CarrelError::Failed`] if the preferences can't be read.
+    pub fn librarian_model_choice(
+        &self,
+        model: Option<Arc<dyn ModelProvider>>,
+        memory_gb: Option<u64>,
+    ) -> Result<LibrarianModelChoice, CarrelError> {
+        let (registry, chosen) = self.explain_librarian_model(model, memory_gb)?;
+        let available = text_models(&registry)
+            .iter()
+            .map(AvailableModel::name)
+            .collect();
+        Ok(match chosen {
+            Ok(chosen) => LibrarianModelChoice {
+                label: Some(chosen.label),
+                problem: None,
+                gone: None,
+                available,
+                instead: None,
+                download: None,
+            },
+            Err(missing) => LibrarianModelChoice {
+                label: None,
+                problem: Some(missing.to_string()),
+                gone: missing.gone,
+                available,
+                instead: missing.instead.as_ref().map(AvailableModel::name),
+                download: missing
+                    .download
+                    .map(|m| catalog_model(m, self.models_dir().as_deref())),
+            },
+        })
     }
 
     /// Whether the archive lets the librarian make the changes it's sure of on its own
@@ -409,11 +485,24 @@ impl ArchiveHandle {
             .with_progress(&report);
         // The conversation is held while the model answers, so two questions in one
         // conversation are answered in turn.
+        let conversation_state = &conversation;
         let mut conversation = conversation
             .conversation
             .lock()
             .map_err(|_| CarrelError::failed("the conversation was poisoned"))?;
-        Ok(librarian.ask(&mut conversation, &question)?.into())
+        let answer = librarian.ask(&mut conversation, &question)?;
+        let mut answered: LibrarianAnswer = answer.into();
+        let items: Vec<carrel_core::card::Id> = answer.items.iter().map(|i| i.id).collect();
+        if let Ok(mut conversing) = conversation_state.conversing.lock() {
+            answered.asks = conversing
+                .after(&archive, &items, jiff::Zoned::now().date())
+                .ok()
+                .flatten()
+                .and_then(|q| carrel_core::questions::moments::ask(&archive, &q).ok())
+                .as_ref()
+                .map(Into::into);
+        }
+        Ok(answered)
     }
 
     /// Saves `conversation` to this month's Journal, as one history change.
@@ -484,5 +573,83 @@ impl ArchiveHandle {
                 .map(|(e, why)| format!("{}: {why}", e.summary))
                 .collect(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::correct::{ModelAnswer, ModelRequest};
+    use crate::tests::Sample;
+    use carrel_core::local::Prefs;
+
+    /// A model the app gives, as Apple's would be.
+    struct Answers;
+
+    impl ModelProvider for Answers {
+        fn complete(&self, _: ModelRequest) -> Result<ModelAnswer, CarrelError> {
+            Ok(ModelAnswer {
+                text: "{}".into(),
+                model: "swift/answers".into(),
+            })
+        }
+    }
+
+    #[test]
+    fn the_apps_model_is_the_librarians() {
+        let sample = Sample::new();
+        let choice = sample
+            .handle
+            .librarian_model_choice(Some(Arc::new(Answers)), Some(16))
+            .unwrap();
+        assert!(choice.label.is_some(), "{choice:?}");
+        assert_eq!(choice.problem, None);
+        assert_eq!(choice.download, None);
+    }
+
+    #[test]
+    fn with_no_model_it_names_one_to_download_with_its_size() {
+        let sample = Sample::new();
+        let choice = sample.handle.librarian_model_choice(None, Some(8)).unwrap();
+        assert_eq!(choice.label, None);
+        assert_eq!(choice.available, Vec::<String>::new());
+        let download = choice.download.unwrap();
+        assert_eq!(download.name, "qwen3.5-4b");
+        assert!(download.size > 0);
+        let problem = choice.problem.unwrap();
+        assert!(problem.contains("needs a text model"), "{problem}");
+        // Asking says the same.
+        let asked = sample.handle.ask_librarian(
+            LibrarianConversation::new(),
+            "Anything?".into(),
+            None,
+            Some(8),
+            None,
+        );
+        assert!(matches!(asked, Err(CarrelError::Invalid { message }) if message == problem));
+    }
+
+    #[test]
+    fn a_setting_naming_a_model_thats_gone_is_said() {
+        let sample = Sample::new();
+        let config = sample.dir.path().join("config");
+        let mut prefs = Prefs::load_from(&config).unwrap();
+        prefs.librarian_model = Some("llama/gone-7b".into());
+        prefs.save_to(&config).unwrap();
+        let choice = sample
+            .handle
+            .librarian_model_choice(None, Some(16))
+            .unwrap();
+        assert_eq!(choice.gone.as_deref(), Some("llama/gone-7b"));
+        assert_eq!(choice.instead, None, "nothing else here");
+        assert_eq!(
+            choice.download.map(|m| m.name).as_deref(),
+            Some("gemma-4-e4b")
+        );
+        let problem = choice.problem.unwrap();
+        assert!(
+            problem.contains("librarian.model names llama/gone-7b"),
+            "{problem}"
+        );
     }
 }

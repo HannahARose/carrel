@@ -49,6 +49,8 @@ final class AppModel {
     var activeArchive: URL?
     /// An item for its archive's window to choose, from a link the agent's menu opened.
     var pendingLink: AgentLink?
+    /// A screen for an archive's window to show, such as Backups from Settings.
+    var pendingScreen: PendingScreen?
 
     init(recents: RecentArchives = RecentArchives()) {
         self.recents = recents
@@ -62,11 +64,13 @@ final class AppModel {
         return root
     }
 
-    /// Creates an archive in the new or empty folder `url`, named after the folder, notes it
-    /// as recent, and returns its root.
-    func create(at url: URL) throws -> URL {
-        let handle = try ArchiveHandle.create(
-            path: url.path(percentEncoded: false), name: url.lastPathComponent)
+    /// Creates an archive in the new or empty folder `url`, named after the folder, with
+    /// `embeddingModel` as its embedding model (the default one when `nil`), notes it as
+    /// recent, and returns its root.
+    func create(at url: URL, embeddingModel: String? = nil) throws -> URL {
+        let handle = try ArchiveHandle.createWithEmbeddingModel(
+            path: url.path(percentEncoded: false), name: url.lastPathComponent,
+            embeddingModel: embeddingModel ?? defaultEmbeddingModel())
         let root = URL(filePath: handle.root(), directoryHint: .isDirectory).standardizedFileURL
         recents.note(root)
         return root
@@ -89,17 +93,30 @@ final class AppModel {
     func open(link url: URL, then show: (URL) -> Void) {
         guard let link = AgentLink(url) else { return }
         open(link.archive) { root in
-            pendingLink = link.item.map { AgentLink(archive: root, item: $0) }
+            pendingLink = link.item.map { AgentLink(archive: root, item: $0, action: link.action) }
             show(root)
         }
     }
 
+    /// Has the window for the archive at `root` show `screen`, once it's in front.
+    func show(_ screen: Screen, in root: URL) {
+        pendingScreen = PendingScreen(archive: root.standardizedFileURL, screen: screen)
+    }
+
+    /// The screen the window for the archive at `root` was asked to show, once.
+    func takePendingScreen(for root: URL) -> Screen? {
+        guard let pending = pendingScreen, pending.archive == root.standardizedFileURL
+        else { return nil }
+        pendingScreen = nil
+        return pending.screen
+    }
+
     /// The item a link asked the window for the archive at `root` to choose, once.
-    func takePendingItem(for root: URL) -> String? {
+    func takePendingLink(for root: URL) -> AgentLink? {
         guard let link = pendingLink, link.archive.standardizedFileURL == root.standardizedFileURL
         else { return nil }
         pendingLink = nil
-        return link.item
+        return link
     }
 
     func chooseArchive(then show: (URL) -> Void) {
@@ -120,9 +137,11 @@ final class AppModel {
         panel.nameFieldStringValue = "Archive"
         panel.prompt = "Create"
         panel.canCreateDirectories = true
+        let models = EmbeddingModelPicker()
+        panel.accessoryView = models.view
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            show(try create(at: url))
+            show(try create(at: url, embeddingModel: models.chosen))
         } catch {
             Self.report(error, opening: url)
         }
@@ -136,7 +155,35 @@ final class AppModel {
     }
 }
 
+/// New Archive's choice of embedding model, as `carrel init --embedding-model` takes it, for
+/// the save panel's accessory view.
+@MainActor
+final class EmbeddingModelPicker {
+    let view: NSView
+    private let popUp: NSPopUpButton
+
+    init() {
+        popUp = NSPopUpButton(frame: .zero, pullsDown: false)
+        popUp.addItems(withTitles: embeddingModelChoices())
+        popUp.selectItem(withTitle: defaultEmbeddingModel())
+        popUp.toolTip = "The model that finds items by meaning. It can be changed later."
+        let label = NSTextField(labelWithString: "Embedding model:")
+        let stack = NSStackView(views: [label, popUp])
+        stack.edgeInsets = NSEdgeInsets(top: 8, left: 16, bottom: 8, right: 16)
+        view = stack
+    }
+
+    /// The model chosen.
+    var chosen: String? { popUp.titleOfSelectedItem }
+}
+
 /// What went wrong, in the core's own words for the core's errors.
 func message(for error: any Error) -> String {
     (error as? CarrelError)?.message ?? error.localizedDescription
+}
+
+/// A screen an archive's window is asked to show.
+struct PendingScreen: Equatable {
+    var archive: URL
+    var screen: Screen
 }

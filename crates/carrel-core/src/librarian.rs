@@ -43,8 +43,11 @@ pub struct Limits {
     pub steps: usize,
     /// How many tokens its prompts and answers may take in all.
     pub tokens: u64,
-    /// Room for each of the model's answers, in tokens.
+    /// Room for each step's reply naming a tool, in tokens.
     pub answer_tokens: u32,
+    /// Room for the final answer, with its items, passages and suggestions, in tokens; less
+    /// when the model's context is small.
+    pub final_tokens: u32,
 }
 
 impl Default for Limits {
@@ -53,9 +56,13 @@ impl Default for Limits {
             steps: 8,
             tokens: 40_000,
             answer_tokens: 900,
+            final_tokens: 2_400,
         }
     }
 }
+
+/// The context assumed for a model that doesn't say, in tokens.
+const DEFAULT_CONTEXT: u64 = 4_096;
 
 /// An item, as an answer links to it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -328,6 +335,10 @@ impl<'a> Librarian<'a> {
 
     /// Asks the model, step by step, running the tools it asks for, until it answers or a
     /// limit is reached. Returns its answer, if it gave one.
+    ///
+    /// A tool call it already made isn't run again or counted as a step: it's told the call
+    /// was already done, with the earlier result (#356). Past as many repeats as it has
+    /// steps, a repeat costs a step, so it can't go round for ever.
     fn steps(
         &self,
         stacks: &Shelf<'_>,
@@ -337,7 +348,16 @@ impl<'a> Librarian<'a> {
         work: &mut Work,
     ) -> Result<Option<Reply>, LibrarianError> {
         let system = prompts::system(self.rights.is_some());
-        for step in 0..self.limits.steps {
+        let asking = Asking {
+            system: &system,
+            setting,
+            earlier,
+            question,
+            context: self.context(),
+        };
+        let mut step = 0;
+        let mut repeats = 0;
+        while step < self.limits.steps {
             let left = self.limits.steps - step;
             if let Some(progress) = self.progress {
                 progress(Progress {
@@ -346,49 +366,178 @@ impl<'a> Librarian<'a> {
                     did: work.steps.last().map(|s| s.did.as_str()),
                 });
             }
-            let prompt = prompts::step(setting, earlier, question, &work.done, left);
-            let needed = estimate_tokens(&system) + estimate_tokens(&prompt);
-            if work.tokens + needed > self.limits.tokens {
+            let Asked::Replied(reply) = self.ask_model(&asking, work, left)? else {
                 work.stopped = Some(Stopped::Tokens);
                 return Ok(None);
-            }
-            let must_answer = left == 1
-                || work.tokens + 2 * needed + u64::from(self.limits.answer_tokens) * 2
-                    > self.limits.tokens;
-            let prompt = if must_answer && left > 1 {
-                prompt + "\nYou're nearly out of room: answer now, with what you have.\n"
-            } else {
-                prompt
             };
-            let request = CompletionRequest {
-                system: Some(system.clone()),
-                prompt,
-                schema: Some(prompts::schema(must_answer)),
-                max_tokens: Some(self.limits.answer_tokens),
-            };
-            let completion = self.complete(&request)?;
-            work.tokens += completion.usage.as_ref().map_or_else(
-                || needed + estimate_tokens(&completion.text),
-                |u| u.input_tokens + u.output_tokens,
-            );
-            let reply = completion
-                .json
-                .and_then(|j| serde_json::from_value::<Reply>(j).ok());
             match reply {
                 Some(reply) if reply.action == "answer" && !reply.answer.trim().is_empty() => {
                     return Ok(Some(reply));
                 }
                 Some(reply) if prompts::TOOLS.iter().any(|(n, _)| *n == reply.action) => {
-                    let ran = stacks.run(&reply.action, &reply.input, question);
-                    work.record(&reply.action, &reply.input, ran);
+                    if work.repeat(&reply.action, &reply.input) {
+                        repeats += 1;
+                        if repeats <= self.limits.steps {
+                            continue;
+                        }
+                    } else {
+                        let ran = stacks.run(&reply.action, &reply.input, question);
+                        work.record(&reply.action, &reply.input, ran);
+                    }
                 }
                 _ => work.done.push(
                     "Your answer wasn't usable: answer with the JSON form, naming a tool and its input, or the action answer with your answer.".into(),
                 ),
             }
+            step += 1;
         }
         work.stopped = Some(Stopped::Steps);
         Ok(None)
+    }
+
+    /// Asks the model for one step, with what's been done fitted to its context.
+    ///
+    /// A final answer gets more room than a step naming a tool. When the model runs out of
+    /// room anyway, as when its JSON is cut off, the step is asked again with room for a whole
+    /// answer, then briefly ([`Self::ask_again_after_cut_off`]); when its context overflows,
+    /// it's asked again once with what's been done shortened further.
+    fn ask_model(
+        &self,
+        asking: &Asking<'_>,
+        work: &mut Work,
+        left: usize,
+    ) -> Result<Asked, LibrarianError> {
+        let answer_room = self.answer_room(asking.context);
+        // The conversation so far takes at most a quarter of the context, so a long one
+        // still leaves room for the question, what's been done and the answer.
+        let earlier = fit_earlier(asking.earlier, asking.context / 4);
+        let earlier = earlier.as_slice();
+        let fixed = estimate_tokens(asking.system)
+            + estimate_tokens(&prompts::step(
+                asking.setting,
+                earlier,
+                asking.question,
+                &[],
+                left,
+            ));
+        let room = |answer: u32, share: u64| {
+            asking
+                .context
+                .saturating_sub(fixed + u64::from(answer) + 64)
+                / share
+        };
+        let done = fit_done(&work.done, room(answer_room, 1));
+        let prompt = prompts::step(asking.setting, earlier, asking.question, &done, left);
+        let needed = estimate_tokens(asking.system) + estimate_tokens(&prompt);
+        if work.tokens + needed > self.limits.tokens {
+            return Ok(Asked::OutOfTokens);
+        }
+        let must_answer = left == 1
+            || work.tokens
+                + 2 * needed
+                + u64::from(self.limits.answer_tokens)
+                + u64::from(answer_room)
+                > self.limits.tokens;
+        let nearly = if must_answer && left > 1 {
+            "\nYou're nearly out of room: answer now, with what you have.\n"
+        } else {
+            ""
+        };
+        let mut request = CompletionRequest {
+            system: Some(asking.system.to_owned()),
+            prompt: prompt + nearly,
+            schema: Some(prompts::schema(must_answer)),
+            max_tokens: Some(if must_answer {
+                answer_room
+            } else {
+                self.limits.answer_tokens
+            }),
+        };
+        let completion = match self.complete(&request) {
+            // A reply cut off before its JSON ended is asked for again; a model that failed for
+            // any other reason fails the question, to ask again.
+            Err(LibrarianError::Model(ProviderError::Failed(why))) if cut_off(&why) => {
+                work.tokens += needed;
+                let again = Again {
+                    answer_room,
+                    must_answer,
+                    needed,
+                };
+                match self.ask_again_after_cut_off(&mut request, &again, &mut work.tokens)? {
+                    Some(completion) => completion,
+                    None => return Ok(Asked::OutOfTokens),
+                }
+            }
+            Err(LibrarianError::Model(ProviderError::Unsupported(_))) => {
+                work.tokens += needed;
+                let done = fit_done(&work.done, room(answer_room, 2));
+                request.prompt =
+                    prompts::step(asking.setting, earlier, asking.question, &done, left) + nearly;
+                self.complete(&request)?
+            }
+            other => other?,
+        };
+        work.tokens += completion.usage.as_ref().map_or_else(
+            || needed + estimate_tokens(&completion.text),
+            |u| u.input_tokens + u.output_tokens,
+        );
+        Ok(Asked::Replied(
+            completion
+                .json
+                .and_then(|j| serde_json::from_value::<Reply>(j).ok()),
+        ))
+    }
+
+    /// Asks again for a step whose reply was cut off, adding the tokens each failed try took
+    /// to `tokens`. A reply that had less than the whole room gets it. One that's cut
+    /// off with the whole room is asked for once more, briefly ([`prompts::CUT_OFF`]): the
+    /// items and a few sentences, without passages or suggestions. Cut off even then, it's
+    /// `None`, and the question ends as out of room, keeping what was found (#401).
+    fn ask_again_after_cut_off(
+        &self,
+        request: &mut CompletionRequest,
+        again: &Again,
+        tokens: &mut u64,
+    ) -> Result<Option<crate::providers::Completion>, LibrarianError> {
+        if request.max_tokens < Some(again.answer_room) {
+            request.max_tokens = Some(again.answer_room);
+            match self.complete(request) {
+                Err(LibrarianError::Model(ProviderError::Failed(why))) if cut_off(&why) => {
+                    *tokens += again.needed;
+                }
+                other => return other.map(Some),
+            }
+        }
+        request.schema = Some(prompts::brief_schema(again.must_answer));
+        request.prompt.push_str(prompts::CUT_OFF);
+        match self.complete(request) {
+            Err(LibrarianError::Model(ProviderError::Failed(why))) if cut_off(&why) => {
+                *tokens += again.needed;
+                Ok(None)
+            }
+            other => other.map(Some),
+        }
+    }
+
+    /// The model's context, in tokens, as its offer says.
+    fn context(&self) -> u64 {
+        self.registry
+            .ranked(Capability::TextModel)
+            .iter()
+            .find(|(p, o)| p.name() == self.model.provider && o.id == self.model.offer)
+            .and_then(|(_, o)| o.extra.get("context_tokens"))
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(DEFAULT_CONTEXT)
+    }
+
+    /// Room for the final answer in a model with `context` tokens: [`Limits::final_tokens`],
+    /// up to a third of its context, and never less than a step's.
+    fn answer_room(&self, context: u64) -> u32 {
+        let third = u32::try_from(context / 3).unwrap_or(u32::MAX);
+        self.limits
+            .final_tokens
+            .min(third)
+            .max(self.limits.answer_tokens)
     }
 
     fn complete(
@@ -477,6 +626,34 @@ impl<'a> Librarian<'a> {
     }
 }
 
+/// What asking the model for a step came to.
+enum Asked {
+    /// The step wouldn't fit in what's left of the tokens.
+    OutOfTokens,
+    /// Its reply, if it was usable.
+    Replied(Option<Reply>),
+}
+
+/// How a step that failed is asked for again.
+struct Again {
+    /// Room for a whole answer, in tokens.
+    answer_room: u32,
+    /// Whether the step must answer.
+    must_answer: bool,
+    /// The tokens the step's prompt takes.
+    needed: u64,
+}
+
+/// What each step's prompt is made from, besides what's been done.
+struct Asking<'s> {
+    system: &'s str,
+    setting: &'s prompts::Setting,
+    earlier: &'s [(String, String)],
+    question: &'s str,
+    /// The model's context, in tokens.
+    context: u64,
+}
+
 /// What's been done towards one answer.
 #[derive(Debug, Default)]
 struct Work {
@@ -488,12 +665,29 @@ struct Work {
     seen: Vec<ItemLink>,
     /// The text the tools gave from items.
     read: Vec<(Id, String)>,
+    /// Each tool call made, by [`call_key`], with its result.
+    results: std::collections::HashMap<String, String>,
     tokens: u64,
     stopped: Option<Stopped>,
 }
 
 impl Work {
+    /// When `tool` has already been run with `input`, tells the model so, with the earlier
+    /// result, and says so.
+    fn repeat(&mut self, tool: &str, input: &str) -> bool {
+        let Some(result) = self.results.get(&call_key(tool, input)) else {
+            return false;
+        };
+        self.done.push(format!(
+            "{tool} {}\nAlready done, so it wasn't run again. Its result was:\n{result}\nUse it, or try another tool or other words.",
+            input.trim()
+        ));
+        true
+    }
+
     fn record(&mut self, tool: &str, input: &str, ran: Ran) {
+        self.results
+            .insert(call_key(tool, input), ran.text.trim_end().to_owned());
         self.done.push(format!(
             "{tool} {}\nResult:\n{}",
             input.trim(),
@@ -522,6 +716,85 @@ impl Work {
                 .iter()
                 .any(|(item, read)| *item == id && squash(read).contains(&wanted))
     }
+}
+
+/// A tool call, as far as telling a repeat: the tool, and its input with its white space run
+/// together, lowercased only for the tools that read it regardless of case. An item's card or
+/// contents path is matched as written, so a call that corrects a path's case is a new call.
+fn call_key(tool: &str, input: &str) -> String {
+    let words: Vec<&str> = input.split_whitespace().collect();
+    let input = words.join(" ");
+    match tool {
+        "search" | "collection" => format!("{tool} {}", input.to_lowercase()),
+        _ => format!("{tool} {input}"),
+    }
+}
+
+/// Whether a model's failure says its answer was cut off before it ended, as the llama.cpp and
+/// MLX providers say when it runs out of room.
+fn cut_off(why: &str) -> bool {
+    why.contains("was cut off")
+}
+
+/// The newest of `earlier`'s questions and answers that fit in `room` tokens, oldest first:
+/// older ones are left out first, then the newest answer is cut short.
+fn fit_earlier(earlier: &[(String, String)], room: u64) -> Vec<(String, String)> {
+    let size = |(q, a): &(String, String)| estimate_tokens(q) + estimate_tokens(a) + 8;
+    let mut kept: Vec<(String, String)> = Vec::new();
+    let mut used = 0;
+    for pair in earlier.iter().rev() {
+        if used + size(pair) > room {
+            if kept.is_empty() {
+                // Even the newest is too long: keep its start.
+                let (question, answer) = pair;
+                let left = room.saturating_sub(estimate_tokens(question) + 16);
+                let keep = usize::try_from(left * 3)
+                    .unwrap_or(usize::MAX)
+                    .min(answer.len());
+                let mut cut = keep;
+                while !answer.is_char_boundary(cut) {
+                    cut -= 1;
+                }
+                kept.push((
+                    question.clone(),
+                    format!("{}… (cut short, to fit)", &answer[..cut]),
+                ));
+            }
+            break;
+        }
+        used += size(pair);
+        kept.push(pair.clone());
+    }
+    kept.reverse();
+    kept
+}
+
+/// `done` shortened to take at most `room` tokens, so the prompt fits the model's context
+/// (#356): the oldest steps' results are left out first, then the newest is cut short.
+fn fit_done(done: &[String], room: u64) -> Vec<String> {
+    let size = |steps: &[String]| -> u64 { steps.iter().map(|s| estimate_tokens(s) + 4).sum() };
+    let mut fitted = done.to_vec();
+    let newest = fitted.len().saturating_sub(1);
+    for i in 0..newest {
+        if size(&fitted) <= room {
+            break;
+        }
+        let call = fitted[i].lines().next().unwrap_or_default().to_owned();
+        fitted[i] = format!("{call}\n(Its result is left out, to fit.)");
+    }
+    let before: u64 = size(&fitted[..newest.min(fitted.len())]);
+    if let Some(last) = fitted.last_mut()
+        && before + estimate_tokens(last) + 4 > room
+    {
+        // `estimate_tokens` counts three bytes a token.
+        let mut keep = usize::try_from(room.saturating_sub(before + 12) * 3).unwrap_or(0);
+        while !last.is_char_boundary(keep.min(last.len())) {
+            keep -= 1;
+        }
+        last.truncate(keep.min(last.len()));
+        last.push_str("\n… (cut short, to fit)");
+    }
+    fitted
 }
 
 /// `text` lowercased with its white space and `…` left out, for comparing quotes.

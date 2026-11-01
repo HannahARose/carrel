@@ -320,6 +320,10 @@ fn init_starts_history_for_an_archive_made_without_it() {
 /// The core's example provider, built if needed.
 fn echo_provider() -> PathBuf {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    // Built beside this test, in the target folder it runs from, which `cargo llvm-cov`
+    // moves.
+    let exe = std::env::current_exe().unwrap();
+    let profile = exe.parent().unwrap().parent().unwrap();
     let status = std::process::Command::new(env!("CARGO"))
         .args([
             "build",
@@ -329,15 +333,13 @@ fn echo_provider() -> PathBuf {
             "--example",
             "echo_provider",
         ])
+        .arg("--target-dir")
+        .arg(profile.parent().unwrap())
         .current_dir(&root)
         .status()
         .unwrap();
     assert!(status.success());
-    let exe = std::env::current_exe().unwrap();
-    exe.parent()
-        .unwrap()
-        .parent()
-        .unwrap()
+    profile
         .join("examples")
         .join(format!("echo_provider{}", std::env::consts::EXE_SUFFIX))
 }
@@ -3758,8 +3760,368 @@ fn librarian_settings_are_shown_and_checked() {
     sandbox.ok(&root, &["settings", "set", "librarian.confidence", "0.8"]);
     let wrong = sandbox.run_in(&root, &["settings", "set", "librarian.model", "nope/none"]);
     assert_eq!(wrong.status.code(), Some(1));
-    let none = sandbox.run_in(&root, &["ask", "Anything?"]);
+    // With no providers on the path, there's no text model, whatever this machine has.
+    let empty = sandbox.path("no-providers");
+    std::fs::create_dir_all(&empty).unwrap();
+    sandbox.ok(&root, &["settings", "set", "librarian.model", "default"]);
+    let none = run_with_providers(&sandbox, &root, &empty, &["ask", "Anything?"]);
     assert_eq!(none.status.code(), Some(1), "no text model here");
+    // It says what to do: the model that suits this device, and how to download it.
+    let why = String::from_utf8_lossy(&none.stderr);
+    assert!(why.contains("The librarian needs a text model"), "{why}");
+    assert!(
+        why.contains("Download it with `carrel models download "),
+        "{why}"
+    );
 }
 
 const PARTS_LIST: &str = "Projects/Hardware/parts-list.csv.md";
+
+/// The sample item Carrel has a question about: a project with no description.
+const ASKED_ABOUT: &str = "Projects/Hardware/notes.card.md";
+
+#[test]
+fn questions_come_up_on_status_in_show_on_a_wander_and_from_the_librarian() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+
+    // `carrel show` says what Carrel would ask, without adding it to the queue.
+    let shown = sandbox.json(&root, &["show", ASKED_ABOUT]);
+    assert_eq!(shown["questions"], json!(["What was this project for?"]));
+    let text = sandbox.ok(&root, &["show", ASKED_ABOUT]);
+    assert!(
+        text.contains("Carrel asks:\n  What was this project for?"),
+        "{text}"
+    );
+
+    // Status names a few new questions a day, the same all day, from the queue.
+    let status = sandbox.json(&root, &["status"]);
+    let today = status["questions_today"].as_array().unwrap().clone();
+    assert_eq!(today.len(), 1, "{status}");
+    assert_eq!(today[0]["question"], "What was this project for?");
+    assert_eq!(
+        sandbox.json(&root, &["status"])["questions_today"],
+        json!(today),
+        "the same all day"
+    );
+    let text = sandbox.ok(&root, &["status"]);
+    assert!(text.contains("Today's questions"), "{text}");
+    let queued = sandbox.json(&root, &["questions"]);
+    assert!(
+        queued.to_string().contains("What was this project for?"),
+        "{queued}"
+    );
+
+    // The librarian asks about an item that comes up, for answering later.
+    let script = [librarian_answer(
+        "Your hardware notes.",
+        &[ASKED_ABOUT],
+        json!([]),
+    )];
+    let out = with_script(&sandbox, &root, &script, &["ask", "Notes?", "--json"], "");
+    let answer: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(
+        answer["asks"]["question"], "What was this project for?",
+        "{answer}"
+    );
+    let out = with_script(&sandbox, &root, &script, &["ask", "Notes?"], "");
+    let text = String::from_utf8(out.stdout).unwrap();
+    assert!(text.contains("While we're here, about “"), "{text}");
+    assert!(
+        text.contains("Answer with `carrel questions answer "),
+        "{text}"
+    );
+
+    // A wander asks now and then, never on the first step.
+    let walk = sandbox.json(
+        &root,
+        &["discover", "wander", "--steps", "40", "--seed", "3"],
+    );
+    let steps = walk["steps"].as_array().unwrap().len();
+    for question in walk["questions"].as_array().unwrap() {
+        assert!(question["step"].as_u64().unwrap() >= 2, "{walk}");
+    }
+    assert!(steps > 1, "{walk}");
+}
+
+#[test]
+fn report_sums_up_the_decision_log_without_titles_or_queries() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    let empty = sandbox.ok(&root, &["report"]);
+    assert!(empty.contains("Nothing recorded yet"), "{empty}");
+
+    sandbox.ok(&root, &["review", "reject", "01a18701"]);
+    let found = sandbox.json(&root, &["search", "oscillators"]);
+    let first = found["results"][0]["found"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    sandbox.ok(&root, &["show", &first]);
+
+    let report = sandbox.json(&root, &["report", "--since", "1d"]);
+    assert_eq!(report["models"][0]["rejected"], 1, "{report}");
+    assert_eq!(report["search"][0]["opened"], 1, "{report}");
+    let log = std::fs::read_dir(sandbox.path("config/decisions"))
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|e| e.path().extension().is_some_and(|x| x == "jsonl"))
+        .map(|e| std::fs::read_to_string(e.path()).unwrap())
+        .collect::<String>();
+    let text = sandbox.ok(&root, &["report"]);
+    for shared in [&log, &report.to_string(), &text] {
+        assert!(!shared.to_lowercase().contains("oscillat"), "{shared}");
+    }
+    assert!(text.contains("carrel report --names"), "{text}");
+
+    sandbox.ok(&root, &["settings", "set", "report.log", "off"]);
+    let settings = sandbox.json(&root, &["settings"]);
+    assert_eq!(settings["device"]["report.log"], "off");
+    sandbox.ok(&root, &["search", "oscillators"]);
+    let after = std::fs::read_dir(sandbox.path("config/decisions"))
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|e| e.path().extension().is_some_and(|x| x == "jsonl"))
+        .map(|e| std::fs::read_to_string(e.path()).unwrap())
+        .collect::<String>();
+    assert_eq!(after, log, "nothing is logged while it's off");
+    assert!(sandbox.ok(&root, &["report"]).contains("is off"));
+    let bad = sandbox.run_in(&root, &["settings", "set", "report.keep_days", "0"]);
+    assert_eq!(bad.status.code(), Some(1));
+    let bad = sandbox.run_in(&root, &["report", "--since", "sometime"]);
+    assert_eq!(bad.status.code(), Some(1));
+}
+
+#[test]
+fn discover_graph_lists_the_strongest_connections() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    let graph = sandbox.json(&root, &["discover", "graph"]);
+    let first = &graph["connections"][0];
+    assert_eq!(
+        (&first["a"], &first["b"]),
+        (&"Projects".into(), &"Reading".into())
+    );
+    assert_eq!(first["links"], 1);
+    assert_eq!(graph["items"][0]["links"][0], "derived-from");
+    let text = sandbox.ok(&root, &["discover", "graph"]);
+    assert!(text.contains("Projects ↔ Reading"), "{text}");
+    let items = sandbox.ok(&root, &["discover", "graph", "--items", "-n", "1"]);
+    assert!(items.contains("oscillator-sim (Projects)"), "{items}");
+    assert!(items.contains("1 link (derived-from)"), "{items}");
+}
+
+#[test]
+fn a_returned_working_copy_is_kept_or_put_in_the_trash() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    let item = "Projects/Hardware/parts-list.csv";
+    let desk = sandbox.path("desk");
+    let check_out = || {
+        let out = sandbox.json(&root, &["checkout", item, "--to", desk.to_str().unwrap()]);
+        PathBuf::from(out["working"].as_str().unwrap())
+    };
+
+    // checkout.after_return asks by default; with --yes nobody is asked, so it's kept.
+    let working = check_out();
+    let kept = sandbox.json(&root, &["return", item, "--yes"]);
+    assert_eq!(kept["working_copy"], "kept", "{kept}");
+    assert!(working.exists());
+    std::fs::remove_file(&working).unwrap();
+
+    let working = check_out();
+    std::fs::write(&working, "changed,on,the,desk\n").unwrap();
+    let trashed = sandbox.json(&root, &["return", item, "--yes", "--working-copy", "trash"]);
+    assert_eq!(trashed["working_copy"], "trashed", "{trashed}");
+    assert!(!working.exists());
+    let name = working.file_name().unwrap();
+    assert!(
+        sandbox.path("Trash").join(name).is_file(),
+        "in the Trash, not deleted"
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.join(item)).unwrap(),
+        "changed,on,the,desk\n",
+        "the archive has the changes"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn edit_body_adds_notes_keeps_carrels_sections_and_undo_reverses_it() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(&root, &["init"]);
+    let card = root.join("Projects/Hardware/parts-list.csv.md");
+    let before = std::fs::read_to_string(&card).unwrap();
+    let edit = |script: &str| {
+        let editor = sandbox.path("editor.sh");
+        std::fs::write(&editor, format!("#!/bin/sh\n{script}\n")).unwrap();
+        std::fs::set_permissions(&editor, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::process::Command::new(env!("CARGO_BIN_EXE_carrel"))
+            .args([
+                "edit",
+                "Projects/Hardware/parts-list.csv",
+                "--body",
+                "--json",
+            ])
+            .current_dir(&root)
+            .env("CARREL_CONFIG_DIR", sandbox.path("config"))
+            .env("CARREL_WORKER", "off")
+            .env_remove("VISUAL")
+            .env("EDITOR", &editor)
+            .output()
+            .unwrap()
+    };
+
+    // A note at the top is saved; the fields and Carrel's sections are as they were.
+    let out = edit(
+        r#"{ echo "Bought the strip at the market."; cat "$1"; } > "$1.new" && mv "$1.new" "$1""#,
+    );
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(report["changed"], serde_json::json!(["notes"]));
+    let after = std::fs::read_to_string(&card).unwrap();
+    assert!(after.contains("Bought the strip at the market."), "{after}");
+    let fields = |text: &str| text.split("---").nth(1).unwrap().to_owned();
+    assert_eq!(fields(&after), fields(&before), "the fields are kept");
+
+    // Changing the history section is refused: the editor opens again saying so, and
+    // saving it as it opened changes nothing.
+    if after.contains("<!-- carrel:history -->") {
+        let out = edit(
+            r#"if grep -q "To fix" "$1"; then exit 0; fi; sed 's/^## History$/## Changed/' "$1" > "$1.new" && mv "$1.new" "$1""#,
+        );
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+        assert_eq!(report["changed"], serde_json::json!([]));
+        assert_eq!(std::fs::read_to_string(&card).unwrap(), after);
+    }
+
+    let change = sandbox.json(&root, &["log"])[0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    sandbox.ok(&root, &["undo", &change[..8]]);
+    assert_eq!(
+        std::fs::read_to_string(&card).unwrap(),
+        before,
+        "undo restores the card"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn edit_body_saved_another_way_meanwhile_reopens_with_both_versions() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(&root, &["init"]);
+    let card = root.join("Projects/Hardware/parts-list.csv.md");
+    // The first time the editor opens, a note is saved into the card another way, at the top
+    // of its body, and the owner writes theirs in the same place. The second time, both are
+    // there under a problem line; the owner tidies and saves.
+    let editor = sandbox.path("editor.sh");
+    let script = format!(
+        r#"#!/bin/sh
+if grep -q "To fix" "$1"; then
+  grep -q "Their note." "$1" && grep -q "My note." "$1" || exit 1
+  echo "Tidied." >> "$1"
+  exit 0
+fi
+awk 'BEGIN {{ n = 0 }} {{ print }} /^---$/ {{ n++; if (n == 2) print "Their note." }}' "{card}" > "{card}.new" && mv "{card}.new" "{card}"
+awk 'BEGIN {{ done = 0 }} {{ if (!done) {{ print "My note."; done = 1 }} print }}' "$1" > "$1.new" && mv "$1.new" "$1"
+"#,
+        card = card.display()
+    );
+    std::fs::write(&editor, script).unwrap();
+    std::fs::set_permissions(&editor, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_carrel"))
+        .args([
+            "edit",
+            "Projects/Hardware/parts-list.csv",
+            "--body",
+            "--json",
+        ])
+        .current_dir(&root)
+        .env("CARREL_CONFIG_DIR", sandbox.path("config"))
+        .env("CARREL_WORKER", "off")
+        .env_remove("VISUAL")
+        .env("EDITOR", &editor)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(report["changed"], serde_json::json!(["notes"]));
+    let after = std::fs::read_to_string(&card).unwrap();
+    for kept in ["Their note.", "My note.", "Tidied."] {
+        assert!(after.contains(kept), "{kept} is kept:\n{after}");
+    }
+    assert!(!after.contains("To fix"), "{after}");
+}
+
+#[cfg(unix)]
+#[test]
+fn edit_card_fields_saved_another_way_meanwhile_reopens_saying_so() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(&root, &["init"]);
+    let card = root.join("Projects/Hardware/parts-list.csv.md");
+    // The first time the editor opens, the title is saved into the card another way, and the
+    // owner gives it another and asks for snapshots only on return. The second time, a line
+    // above says what the title is now; the owner deletes it and saves, keeping theirs.
+    let editor = sandbox.path("editor.sh");
+    let script = format!(
+        r#"#!/bin/sh
+if grep -q "To fix" "$1"; then
+  grep -q 'title is now "Their title"' "$1" || exit 1
+  grep -v "^# To fix" "$1" > "$1.new" && mv "$1.new" "$1"
+  exit 0
+fi
+sed 's/^title: .*/title: Their title/' "{card}" > "{card}.new" && mv "{card}.new" "{card}"
+sed 's/^title: .*/title: My title/' "$1" > "$1.new" && mv "$1.new" "$1"
+echo "snapshots: return-only" >> "$1"
+"#,
+        card = card.display()
+    );
+    std::fs::write(&editor, script).unwrap();
+    std::fs::set_permissions(&editor, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_carrel"))
+        .args(["edit", "Projects/Hardware/parts-list.csv", "--json"])
+        .current_dir(&root)
+        .env("CARREL_CONFIG_DIR", sandbox.path("config"))
+        .env("CARREL_WORKER", "off")
+        .env_remove("VISUAL")
+        .env("EDITOR", &editor)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(report["changed"], serde_json::json!(["title", "snapshots"]));
+    let after = std::fs::read_to_string(&card).unwrap();
+    assert!(
+        after.contains("title: My title") && after.contains("snapshots: return-only"),
+        "{after}"
+    );
+}

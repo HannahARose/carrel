@@ -7,7 +7,7 @@ Most of Carrel is built by Claude sessions, each working on one issue, with one 
 The board moves itself from pull requests (`.github/scripts/project-status.sh`): a draft PR puts it and the issues it closes in **In progress**, a PR ready for review in **In review**, and merging in **Done**. So:
 
 1. **Open a draft PR as soon as you push your first commit,** with "Closes #N" (or "Part of #N" when the issue stays open) in the body. Push early, even a small first step; don't hold everything for one push at the end.
-2. **Mark it ready for review** (`gh pr ready`) once the checks below pass locally. Then turn on auto-merge (`gh pr merge --auto --squash`) for a PR into `dev`.
+2. **Mark it ready for review** (`gh pr ready`) once the checks below pass locally. Then turn on auto-merge (`gh pr merge --auto --squash`) for a PR into `dev`: with dev's merge queue, that adds it to the queue once its checks pass, and the queue tests it together with dev and the pull requests ahead of it before merging.
 3. **Ask the owner on the issue:** a comment starting `Question for the owner:`, then wait for the answer. The dashboard lists every open one.
 4. **Say when you're stuck,** in a comment on the issue starting `Blocked:`, with what you need.
 5. **When the plan changes,** for example when part of the issue moves elsewhere, say so in a comment on the issue, so the board and the issue agree.
@@ -16,7 +16,7 @@ The board moves itself from pull requests (`.github/scripts/project-status.sh`):
 
 Many sessions work at once, and macOS runners are few, so:
 
-- **Stay a draft while you work.** A draft PR runs only CI's Linux jobs; macOS and Windows run once you mark it ready. Run the checks below locally before marking it ready, so the full run passes the first time.
+- **Stay a draft while you work.** A PR into `dev` runs only CI's Linux jobs, and its macOS and Windows jobs run once, in the merge queue, so run the checks below locally (the Mac app's too, when you change it) before marking it ready. A failure in the queue drops the PR out and rebuilds the PRs behind it.
 - **One PR for issues that share files.** When you're given several issues that touch the same files, build them on one branch, with every issue in the body ("Closes #1, closes #2").
 - **After merging `origin/dev` in, rerun the checks before pushing,** not just the conflict markers: two branches can each pass and still clash, as two `archive_work` functions once did.
 - **Name things specifically.** A new function, type or test helper gets a name that says what it's for (`index_or_switch_work`, not `archive_work`), so it can't collide with another branch's.

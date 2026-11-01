@@ -18,6 +18,8 @@ fn echo_program() -> PathBuf {
         .join("examples")
         .join(format!("echo_provider{}", std::env::consts::EXE_SUFFIX));
     if !path.exists() {
+        // Built beside this test, in the target folder it runs from, which
+        // `cargo llvm-cov` moves.
         let status = std::process::Command::new(env!("CARGO"))
             .args([
                 "build",
@@ -27,6 +29,8 @@ fn echo_program() -> PathBuf {
                 "--example",
                 "echo_provider",
             ])
+            .arg("--target-dir")
+            .arg(profile_dir.parent().unwrap())
             .status()
             .unwrap();
         assert!(status.success(), "couldn't build the example provider");
@@ -508,4 +512,102 @@ fn the_estimate_errs_high() {
     assert_eq!(estimate_tokens("twelve bytes"), 4);
     // CJK characters are three bytes each and about a token each.
     assert_eq!(estimate_tokens("日本語"), 3);
+}
+
+/// The names of the providers in `registry` from `dir`.
+fn from_dir(registry: &Registry, dir: &Path) -> Vec<String> {
+    registry
+        .providers()
+        .filter(|p| {
+            p.program()
+                .is_some_and(|program| program.path.starts_with(dir))
+        })
+        .map(|p| p.name().to_owned())
+        .collect()
+}
+
+/// Two registries built at the same moment both finish quickly, rather than one waiting
+/// out the other's providers (#333); and once the providers have said what they offer, a
+/// registry is made without starting them.
+#[test]
+fn two_simultaneous_registry_builds_both_finish_quickly() {
+    use carrel_core::local::Prefs;
+    use carrel_core::providers::device::registry_with;
+
+    let dir = tempfile::tempdir().unwrap();
+    for name in ["echo", "echo-wide", "echo-card"] {
+        install(dir.path(), name);
+    }
+    let folders = [dir.path().to_owned()];
+    let builds: Vec<(Duration, Vec<String>, usize)> = std::thread::scope(|scope| {
+        let threads: Vec<_> = (0..2)
+            .map(|_| {
+                scope.spawn(|| {
+                    let started = std::time::Instant::now();
+                    let (registry, failed) = registry_with(&folders, &Prefs::default());
+                    let took = started.elapsed();
+                    (took, from_dir(&registry, dir.path()), failed.len())
+                })
+            })
+            .collect();
+        threads.into_iter().map(|t| t.join().unwrap()).collect()
+    });
+    for (took, names, failed) in &builds {
+        assert!(*took < Duration::from_secs(3), "took {took:?}");
+        assert_eq!(names, &["echo", "echo-card", "echo-wide"]);
+        assert_eq!(*failed, 0);
+    }
+
+    let started = std::time::Instant::now();
+    let (registry, _) = registry_with(&folders, &Prefs::default());
+    assert!(started.elapsed() < Duration::from_secs(1));
+    let echo = registry.providers().find(|p| p.name() == "echo").unwrap();
+    let answer = echo
+        .complete(
+            "echo",
+            &CompletionRequest {
+                prompt: "again".into(),
+                ..CompletionRequest::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(answer.text, "echo: again", "started when asked");
+}
+
+/// A provider in a registry made from what it offered before starts when it's first asked
+/// to do something, and says why if it can't.
+#[test]
+fn a_provider_found_before_starts_when_asked() {
+    use carrel_core::local::Prefs;
+    use carrel_core::providers::device::registry_with;
+
+    let dir = tempfile::tempdir().unwrap();
+    let found = install(dir.path(), "echo");
+    let folders = [dir.path().to_owned()];
+    drop(registry_with(&folders, &Prefs::default()));
+    let (registry, _) = registry_with(&folders, &Prefs::default());
+    assert_eq!(from_dir(&registry, dir.path()), ["echo"]);
+    std::fs::remove_file(&found.path).unwrap();
+
+    let echo = registry.providers().find(|p| p.name() == "echo").unwrap();
+    let request = CompletionRequest {
+        prompt: "hello".into(),
+        ..CompletionRequest::default()
+    };
+    let Err(ProviderError::Protocol(why)) = echo.complete("echo", &request) else {
+        panic!("a provider that's gone can't answer");
+    };
+    assert!(why.contains("can't start"), "{why}");
+    assert!(
+        matches!(
+            echo.complete("echo", &request),
+            Err(ProviderError::Protocol(_))
+        ),
+        "nor later"
+    );
+    let (again, _) = registry_with(&folders, &Prefs::default());
+    assert!(
+        from_dir(&again, dir.path()).is_empty(),
+        "and it's no longer found"
+    );
 }

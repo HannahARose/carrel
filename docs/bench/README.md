@@ -163,9 +163,39 @@ A model is recommended for the librarian when it shows no restricted text, finds
 
 The catalog's `librarian` flag records the recommendation, as `recommended` does for filing. Once a model has it, the librarian runs by default on the largest recommended model installed that fits the device's memory, and otherwise, as now, on the largest installed open model that fits, then Apple's model. The `librarian.model` setting still overrides both. No model has the flag yet.
 
-### Librarian: not run yet
+### Librarian: 2026-11-01
 
-No real model has been measured. The runs happen on the reference machine, one model at a time with nothing else compiling, and set the `librarian` flags from what they show.
+On DeskBook, an M2 Max MacBook Pro with 32 GB, with Carrel 0.5.1, one model at a time with nothing else compiling. [Full report](2026-11-01/librarian/report.md) · [results.json](2026-11-01/librarian/results.json)
+
+| Model | Recall | Precision | Facts | Restricted shown | Unanswered | Steps | s/question | Meets the bar |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Apple Foundation Model | 67% | 74% | 67% | 0 | 2 | 6.8 | 67.2 | no: recall, facts, too slow |
+| Granite 4.2 3B (llama.cpp) | 54% | 92% | 72% | 0 | 4 | 3.9 | 36.0 | no: recall, facts |
+| Qwen3.5 4B (llama.cpp) | 48% | 86% | 87% | 0 | 7 | 1.7 | 37.0 | no: recall |
+
+No model meets the bar yet, so none has the `librarian` flag, and the default stays as it was: the largest installed open model that fits, then Apple's model. What held them back is mostly in the librarian, not the models (#356):
+
+- **Answers cut off:** every one of Qwen's 7 unanswered questions, and all 4 of Granite's, stopped at the 900-token output limit before the answer ended. Qwen states the most facts when it does answer (87%).
+- **Repeated tool calls:** Apple's model ran the same tool call twice in a row 122 times over 41 questions, and Granite 40 times, using up steps and time. One question searched "laptop cost warranty" seven times.
+- **Context:** a listing question ("which receipts are from 2025?") was too long for Apple's on-device model.
+- **No restricted text was shown** by any model.
+
+### Librarian: after #361
+
+The same run on DeskBook with `dev` after #361, which lets the librarian finish its answers (a larger output limit), returns an earlier result for a repeated tool call and trims tool results to fit a model's context. The test set now has 116 items, as #357 added 35. [Full report](2026-11-01-after-361/librarian/report.md) · [results.json](2026-11-01-after-361/librarian/results.json)
+
+| Model | Recall | Precision | Facts | Restricted shown | Unanswered | Steps | s/question | Meets the bar |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Apple Foundation Model | 88% (was 67%) | 67% | 65% | 0 | 1 | 3.5 | 108.9 | no: facts, too slow |
+| Granite 4.2 3B (llama.cpp) | 60% (was 54%) | 93% | 70% | 0 | 4 | 2.4 | 53.9 | no: recall, facts |
+| Qwen3.5 4B (llama.cpp) | 70% (was 48%) | 90% | 89% | 0 | 4 | 1.8 | 51.3 | no: recall |
+
+- **Qwen3.5 4B is closest:** it meets every part of the bar but recall, 70% against 80%.
+- **Cut-off answers:** Qwen's and Granite's four unanswered questions are all still answers cut off, now at the 2,400-token limit. Finishing those would likely bring Qwen to the bar.
+- **Apple's model** finds the most (88%) but states the fewest facts, and at 109 seconds a question it's too slow. It takes fewer steps than before (3.5, from 6.8), but more tokens (35,000 a question, from 21,000).
+- **No model showed restricted text.**
+
+No model has the `librarian` flag yet, so the default is unchanged.
 
 ## Question value
 
@@ -187,9 +217,88 @@ carrel bench --questions --out bench-results
 
 It writes `bench-results/questions/results.json` and `report.md`, with every question, its known answer, what moved and what it won. Each model's run is saved to `questions/runs/` and reused; `--fresh` starts over.
 
-### Question value: not run yet
+### Question value: 2026-11-01
 
-No real model has been measured. The test set's file names were written for filing, so they raise few questions; if the first run shows too few to rank, the next step is a handful of items whose names share a term or a sender.
+On DeskBook, as above. [Report](2026-11-01/questions/report.md) · [results.json](2026-11-01/questions/results.json)
+
+The batch of 81 items raised no questions with any of the three models, so there was nothing to rank. Routing was 79% with Apple's model, 72% with Granite 4.2 3B and 88% with Qwen3.5 4B. As expected, the test set's file names don't raise questions, so the next step is the handful of items whose names share a term or a sender (#357).
+
+So 35 items were added for this benchmark (#357), each with its known answer in `answers.yaml`:
+
+- **names sharing an unknown term:** two or three items each for ORCA, QPCR, ISA, DnD, LIGO, EHIC, BrewLog, CNC, PhD and OSM. These raise a term question whatever the model does;
+- **a sender with no collection:** Calder Building Society and Mariner Travel, three or four items each, across collections;
+- **a group that would make a collection:** four Allotment items;
+- **uncertain placements:** three Larkspur Road items from an old flat, each fitting more than one collection.
+
+The senders, the group and the uncertain placements raise a group question when the model splits them or isn't sure of them. The filing, findability and librarian benchmarks see the added items too, so their totals from runs after this aren't comparable with the 2026-11-01 runs item for item.
+
+### Question value: after #357
+
+On DeskBook, with the 35 items above. [Report](2026-11-01-after-361/questions/report.md) · [results.json](2026-11-01-after-361/questions/results.json)
+
+| Model | Questions | Routing before | After all | Top 1 (best) | Top 3 (best) | Top 5 (best) | Rank correlation |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Apple Foundation Model | 14 | 73% | 77% | 75% (75%) | 75% (76%) | 76% (77%) | 0.58 |
+| Granite 4.2 3B | 14 | 62% | 68% | 64% (64%) | 67% (67%) | 68% (69%) | 0.87 |
+| Qwen3.5 4B | 14 | 82% | 84% | 84% (84%) | 84% (85%) | 84% (85%) | 0.48 |
+
+- **The ranking asks the right questions first:** with each model, answering the top 1, 3 or 5 questions comes within a point of the best any that many could do.
+- **Answers help most where routing is weakest:** answering every question adds 6 points for Granite, 4 for Apple's model and 2 for Qwen.
+- **Rank correlation** is high for Granite (0.87) and moderate for the others. That's over only 14 questions, many worth the same, so the top-k results say more.
+
+## Crawler
+
+How well each model finds misplaced items, as the crawler would (`docs/design/restructure.md`, "Measuring it"). [`fixtures/bench/muddle.yaml`](../../fixtures/bench/muddle.yaml) muddles a copy of the test set's archive. Every item is filed where `answers.yaml` expects it, except:
+
+- **a collection that's missing:** Recipes isn't there, and its 4 items wait in Home. The test archive's `min_collection_items` is 4, so a restructure proposal can gather them, and `carrel bench` checks that the missing and emptied collections have that many;
+- **a collection that's overfilled:** Manuals' 6 items are dumped in Home, and Manuals is left there empty;
+- **items scattered:** 8 single items filed in collections they have nothing to do with, such as the desk chair receipt in Reading.
+
+That makes 18 misplaced items among 113 that count; Holding's own items don't, since nothing fits there. What `answers.yaml` expects is the intended shape, which the restructure benchmark will score against too.
+
+`carrel bench --crawl` files the muddled archive into `crawl/archive` in the output folder, then has each text model judge every item there as the crawler does: whether it fits its collection's design document, and where it would go instead. Each model is scored by:
+
+- **recall:** the share of misplaced items it says don't fit, overall and for each kind of muddle;
+- **precision:** the share of the items it says don't fit that are misplaced. A false alarm is a finding the owner has to reject;
+- **placement:** of the misplaced items whose collection is there (14 of the 18), the share it would move to an acceptable collection. An item it missed counts as not placed;
+- **unusable answers and seconds per item.**
+
+As in the crawler, the model is asked which collection the item belongs in, its current one among the choices, rather than whether it fits: the first runs showed small models judging "fits" against whichever collection they had in mind (#428). An item counts as flagged when the model names another collection, or none, and is at least 0.5 sure; a less sure misfit counts as fitting. The muddled archive's cards are summarized from `descriptions.yaml`, as drafted cards would be, so run with `--fresh` after upgrading from a version without summaries.
+
+```bash
+carrel bench --crawl --out bench-results
+```
+
+It writes `bench-results/crawl/results.json` and `report.md`, with what each model missed, put wrong and raised false alarms on. Each judgment is saved to `crawl/runs/` as it's given, so a stopped run carries on; `--fresh` starts over, `--model NAME` measures one model and `--limit N` judges the first N items.
+
+### The bar and the crawler's default model
+
+A model is recommended for the crawler when it finds at least 70% of the misplaced items, at least 60% of what it flags is misplaced, it would put at least 70% of what it finds in the right place, and it takes under 30 seconds an item on the reference machine. This is a starting point, as the other bars were.
+
+The catalog's `crawler` flag records the recommendation. Once a model has it, the crawler judges with the largest recommended model installed that fits the device's memory, and otherwise, as now, with the librarian's choice: the strongest installed model that fits, then Apple's model. No model has the flag yet.
+
+### Crawler: not run yet
+
+No real model has been measured. The runs happen on the reference machine and set the `crawler` flags from what they show.
+
+## Restructure
+
+Whether a restructure proposal recovers what was muddled (`docs/design/restructure.md`, "Measuring it"). `carrel bench --restructure` builds the same muddled archive as `--crawl`, embeds its cards with the catalog's default embedding model when a provider here runs it, then has Carrel propose a restructure of the whole archive at each eagerness (settled, balanced and eager), once with numbers alone and once with each text model naming the groups and running the findability test. Each proposal is scored on:
+
+- **the shape:** how closely the items that end up together match the intended shape, as the F1 of the pairs of items put in the same collection, before and after the proposal. It recovers the shape when the F1 rises. Scoring by pairs means a new `Cooking` collection recovers the missing Recipes as well as a `Recipes` would;
+- **fixed and broken:** the misplaced items it would put in a collection `answers.yaml` accepts, or a subcollection of one, and the well-placed items it would move out of one;
+- **moves:** the items it moves, and those moves weighted by each change's invasiveness, from 1 for rewriting to 5 for moving top-level collections, with the weighted moves for each item it fixes;
+- **the findability gain:** in its own findability test, the held-out cards found in the proposed tree less those found in the current one, as a share of those tried. Numbers alone can't run the test.
+
+```bash
+carrel bench --restructure --out bench-results
+```
+
+It writes `bench-results/restructure/results.json` and `report.md`. Each proposal's score is saved to `restructure/runs/` as it's made, so a stopped run carries on; `--fresh` starts over, and `--model NAME` measures one text model beside numbers alone. Proposals are never applied: where each item would end up is worked out from the changes. The report lists each group a proposal held back, and why.
+
+### Restructure: not run yet
+
+No real model has been measured. The first run on the reference machine proposed nothing at all, since every card vector shares a direction, as an embedding model's do, so every item was grouped with every other (#404). Grouping now measures likeness from the archive's average cosine. On stub card vectors built that way, numbers alone at Eager gather the missing Recipes' items and the items dumped from Manuals into new collections of their own. On the stub card vectors in the tests that know the intended shape exactly, numbers alone at Balanced subdivide collections without breaking anything and bring the archive closer to the intended shape, but hold back the new top-level collections that would recover Recipes; each eagerness recovers at least as much as the one below it.
 
 ## Running it again
 

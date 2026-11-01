@@ -37,10 +37,21 @@ struct ReviewCommands: Commands {
                 if let id { Task { await questions?.answer(id) } }
             }
             .disabled(id.map { questions?.answer(for: $0).isEmpty ?? true } ?? true)
+            Button("Skip") {
+                if let id { Task { await questions?.skip(id) } }
+            }
+            .disabled(id == nil)
             Button("Dismiss") {
                 if let id { Task { await questions?.dismiss(id) } }
             }
             .disabled(id == nil)
+            Divider()
+            if let questions {
+                Toggle(
+                    "Show Skipped",
+                    isOn: Binding(
+                        get: { questions.showsSkipped }, set: { questions.showsSkipped = $0 }))
+            }
         }
     }
 }

@@ -111,7 +111,10 @@ struct LibrarianPanel: View {
 
     private var footer: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if let problem = librarian.problem {
+            if let choice = librarian.modelChoice, choice.label == nil {
+                LibrarianNoModel(librarian: librarian, choice: choice)
+            }
+            if let problem = librarian.problem, librarian.modelChoice?.problem != problem {
                 Label(problem, systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.red).font(.callout).textSelection(.enabled)
             }
@@ -144,6 +147,59 @@ struct LibrarianPanel: View {
         return librarian.makesChanges
             ? "\(model) It may make changes it’s sure of; undo them here or in History."
             : "\(model) It only suggests changes, for you to confirm."
+    }
+}
+
+/// Why the librarian has no model, and the way forward: the model to download for this Mac,
+/// asked about first with its size, or clearing a `librarian.model` that's gone.
+private struct LibrarianNoModel: View {
+    @Bindable var librarian: LibrarianModel
+    let choice: LibrarianModelChoice
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let problem = choice.problem {
+                Label(problem, systemImage: "exclamationmark.triangle")
+                    .font(.callout).textSelection(.enabled)
+            }
+            HStack {
+                if let download = choice.download {
+                    Button("Download \(download.title)…") {
+                        librarian.confirmingDownload = download
+                    }
+                    .disabled(librarian.archive.isWorking)
+                }
+                if let instead = choice.instead {
+                    Button("Use \(instead)") { Task { await librarian.useStrongest() } }
+                }
+                SettingsLink { Text("Models Settings…") }
+            }
+            if librarian.archive.isWorking, let progress = librarian.archive.progress {
+                ProgressView(progress.title, value: progress.fraction)
+                    .font(.caption)
+            }
+        }
+        .padding(10)
+        .background(.quaternary, in: .rect(cornerRadius: 8))
+        .confirmationDialog(
+            "Download \(librarian.confirmingDownload?.name ?? "")?",
+            isPresented: Binding(
+                get: { librarian.confirmingDownload != nil },
+                set: { if !$0 { librarian.confirmingDownload = nil } }),
+            presenting: librarian.confirmingDownload
+        ) { entry in
+            Button("Download \(byteCount(entry.size))") {
+                Task { await librarian.downloadConfirmed() }
+            }
+        } message: { entry in
+            Text(
+                "\(entry.title). \(byteCount(entry.size)) from the internet, under the \(entry.license) license; it needs about \(entry.memoryGb) GB of memory."
+            )
+        }
+    }
+
+    private func byteCount(_ bytes: UInt64) -> String {
+        ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
     }
 }
 
@@ -232,6 +288,15 @@ private struct AnswerView: View {
                 } header: {
                     heading("Suggestions")
                 }
+            }
+            // Now and then, Carrel's question about an item the answer found.
+            if let asks = answer.asks {
+                VStack(alignment: .leading, spacing: 4) {
+                    heading("While we’re here…")
+                    AskedQuestionView(question: asks, window: window)
+                }
+                .padding(8)
+                .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 6))
             }
             Text(footnote).font(.caption).foregroundStyle(.tertiary)
                 .help(

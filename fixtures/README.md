@@ -74,3 +74,7 @@ The findability test needs no text model, only an embedding model for the meanin
 ```bash
 cargo run -p carrel-cli -- bench --search --out bench-results
 ```
+
+## `pictures/`
+
+Pictures in formats the previews decode (#414): `photo.jpg`, a 96 × 64 baseline JPEG, and `scan.tiff`, the same picture as an LZW-compressed RGB TIFF. Both are a red–green gradient, made with `sips` from a generated PNG.

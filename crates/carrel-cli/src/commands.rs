@@ -342,11 +342,24 @@ fn archive_header(archive: &Archive) -> String {
 /// `carrel status`.
 pub fn status(archive: Option<&Path>) -> Result<Report, Failure> {
     let archive = locate(archive)?;
+    let mut records = crate::asking::Records::here(&archive);
+    status_on(&archive, &mut records, carrel_core::local::home_dir())
+}
+
+/// `carrel status` for `archive`, with this device's records of discovery and the day's
+/// questions in `records`, looking for active work in `home`'s Desktop and Code folders.
+pub fn status_on(
+    archive: &Archive,
+    records: &mut crate::asking::Records,
+    home: Option<std::path::PathBuf>,
+) -> Result<Report, Failure> {
+    let archive = archive.clone();
     let this_device = Identity::load()?.map(|i| i.device);
-    let summary = carrel_core::status::summary(&archive, &Looking::here(this_device))?;
+    let summary = carrel_core::status::summary(&archive, &Looking::in_home(this_device, home))?;
     let history = summary.history.as_deref();
 
     let mut text = archive_header(&archive);
+    let (reminders_text, reminders) = crate::reminders::status_section(&archive);
     let kinds: Vec<String> = summary
         .by_kind
         .iter()
@@ -364,12 +377,15 @@ pub fn status(archive: Option<&Path>) -> Result<Report, Failure> {
         }
     )
     .unwrap();
+    text.push_str(&reminders_text);
     text.push_str(&history_line(history));
     text.push_str(&crate::backup::status_line(&archive, history));
     text.push_str(&writer_line(summary.writer.as_ref(), this_device));
     text.push_str(&recent_section(&summary.recent));
     let (librarian_text, librarian) = crate::ask::status_section(history);
     text.push_str(&librarian_text);
+    let (crawler_text, crawler) = crate::crawl::status_section(history);
+    text.push_str(&crawler_text);
     if !summary.problems.is_empty() {
         writeln!(
             text,
@@ -388,8 +404,10 @@ pub fn status(archive: Option<&Path>) -> Result<Report, Failure> {
     text.push_str(&signals_section(&summary.signals));
     let (desk_text, desk) = crate::desk::suggestions_section(&summary.desk);
     text.push_str(&desk_text);
-    let (resurfaced_text, resurfaced) = crate::discover::resurfaced(&archive);
+    let (resurfaced_text, resurfaced) = crate::discover::resurfaced(&archive, records);
     text.push_str(&resurfaced_text);
+    let (daily_text, daily) = crate::asking::daily_section(&archive, records);
+    text.push_str(&daily_text);
     let mut warnings = Vec::new();
     if summary.synced {
         warnings.push(SYNCED_WARNING);
@@ -412,8 +430,11 @@ pub fn status(archive: Option<&Path>) -> Result<Report, Failure> {
         "recent": summary.recent.iter().map(|r| recent_line(r).1).collect::<Vec<_>>(),
         "signals": summary.signals,
         "librarian": librarian,
+        "crawler": crawler,
+        "reminders": reminders,
         "desk": desk,
         "resurfaced": resurfaced,
+        "questions_today": daily,
         "names": summary.names.iter().map(|f| json!({
             "path": f.path,
             "problems": f.problems,
@@ -676,6 +697,7 @@ pub(crate) fn describe(archive: &Archive, query: &str) -> Result<Shown, Failure>
 pub fn show(archive: Option<&Path>, query: &str) -> Result<Report, Failure> {
     let archive = locate(archive)?;
     let mut shown = describe(&archive, query)?;
+    carrel_core::decisions::opened(&archive, shown.id);
     if let Some((collection, _)) = shown.card_path.rsplit_once('/') {
         crate::discover::opened(&archive, collection);
     }
@@ -683,6 +705,8 @@ pub fn show(archive: Option<&Path>, query: &str) -> Result<Report, Failure> {
         .and_then(|index| crate::related::nearest(&archive, &index, &shown));
     let mut text = std::mem::take(&mut shown.text);
     text.push_str(&related_section(&shown.links, &near));
+    let (asks_text, asks) = crate::asking::show_section(&archive, &shown.card_path);
+    text.push_str(&asks_text);
     let history = match History::open(&archive) {
         Ok(history) => Some(history.item_log(shown.id)?),
         Err(HistoryError::NotInitialized) => None,
@@ -692,6 +716,7 @@ pub fn show(archive: Option<&Path>, query: &str) -> Result<Report, Failure> {
         text.push_str(&item_history_section(entries));
     }
     let mut json = shown.json;
+    json["questions"] = asks;
     json["history"] = history.map_or(Value::Null, |entries| {
         Value::Array(entries.iter().map(entry_json).collect())
     });

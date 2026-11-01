@@ -12,6 +12,11 @@ public enum AgentJob: Sendable, Equatable, CaseIterable {
     case sessions
     /// Take a scheduled snapshot of the archive.
     case backup
+    /// Let the crawler recheck a few items, when nothing else is due and the Mac is idle and
+    /// on power (its pace decides how often and how many).
+    case crawl
+    /// Post the reminders due that this Mac hasn't shown yet (docs/design/reminders.md).
+    case remind
 }
 
 /// What a changed path means to the agent.
@@ -38,6 +43,11 @@ public struct AgentPlan: Sendable, Equatable {
     public static let backupEvery: TimeInterval = 24 * 60 * 60
     /// How soon a snapshot that failed, as when the drive isn't plugged in, is tried again.
     public static let backupRetry: TimeInterval = 60 * 60
+    /// How often the agent asks the crawler whether a pass is due, and how long it waits
+    /// after a change it noticed: the crawler works only when the owner isn't.
+    public static let crawlEvery: TimeInterval = 5 * 60
+    /// How often the agent looks for reminders, besides just after recording work sessions.
+    public static let remindEvery: TimeInterval = 15 * 60
 
     /// The archive's root folder, as a path ending without a slash.
     public let root: String
@@ -56,6 +66,10 @@ public struct AgentPlan: Sendable, Equatable {
     public private(set) var workDue: Date?
     /// When sessions are next due to be recorded, if they are.
     public private(set) var sessionsDue: Date?
+    /// When the crawler is next asked whether a pass is due.
+    public private(set) var crawlDue: Date?
+    /// When the agent next looks for reminders.
+    public private(set) var remindDue: Date?
 
     public init(
         root: String, workingCopies: [String] = [], idleMinutes: UInt32 = 30,
@@ -102,6 +116,10 @@ public struct AgentPlan: Sendable, Equatable {
     public mutating func noticed(_ paths: [String], at now: Date) -> Bool {
         var active = false
         for change in paths.map(classify) {
+            if change != .ignored {
+                // Anything the owner does puts the crawler off a while.
+                crawlDue = max(crawlDue ?? .distantPast, now.addingTimeInterval(Self.crawlEvery))
+            }
             switch change {
             case .queue, .filed:
                 workDue = now.addingTimeInterval(Self.settle)
@@ -124,6 +142,8 @@ public struct AgentPlan: Sendable, Equatable {
     public mutating func start(at now: Date) {
         workDue = now
         sessionsDue = now
+        crawlDue = now.addingTimeInterval(Self.crawlEvery)
+        remindDue = now
     }
 
     /// When the next scheduled snapshot is due, if backups are set up.
@@ -139,6 +159,9 @@ public struct AgentPlan: Sendable, Equatable {
         if let workDue, workDue <= now { jobs.append(.work) }
         if let sessionsDue, sessionsDue <= now { jobs.append(.sessions) }
         if let backupDue, backupDue <= now { jobs.append(.backup) }
+        if let remindDue, remindDue <= now { jobs.append(.remind) }
+        // The crawler only gets the time nothing else needs.
+        if jobs.isEmpty, let crawlDue, crawlDue <= now { jobs.append(.crawl) }
         return jobs
     }
 
@@ -150,9 +173,17 @@ public struct AgentPlan: Sendable, Equatable {
             if let due = workDue, due <= started { workDue = nil }
         case .sessions:
             if let due = sessionsDue, due <= started { sessionsDue = nil }
+            // A session just recorded may have an entry to remind about.
+            remindDue = started
         case .backup:
             lastBackup = started
             backupFailed = !succeeded
+        case .crawl:
+            crawlDue = started.addingTimeInterval(Self.crawlEvery)
+        case .remind:
+            if let due = remindDue, due <= started {
+                remindDue = started.addingTimeInterval(Self.remindEvery)
+            }
         }
     }
 
@@ -162,11 +193,13 @@ public struct AgentPlan: Sendable, Equatable {
         case .work: workDue = later
         case .sessions: sessionsDue = later
         case .backup: break
+        case .crawl: crawlDue = later
+        case .remind: remindDue = later
         }
     }
 
     /// When something is next due, if anything is.
     public var nextDue: Date? {
-        [workDue, sessionsDue, backupDue].compactMap { $0 }.min()
+        [workDue, sessionsDue, backupDue, crawlDue, remindDue].compactMap { $0 }.min()
     }
 }

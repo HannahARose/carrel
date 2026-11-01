@@ -12,11 +12,19 @@ final class CorrectionModel {
     enum Target: Hashable {
         case proposal(id: String, title: String)
         case item(id: String, title: String)
+        /// The item question `id`, asking `question`, whose answer the words are.
+        case question(id: String, question: String)
 
         var title: String {
             switch self {
             case .proposal(_, let title), .item(_, let title): title
+            case .question(_, let question): question
             }
+        }
+
+        /// Whether the words answer an item question.
+        var isAnswer: Bool {
+            if case .question = self { true } else { false }
         }
     }
 
@@ -30,6 +38,8 @@ final class CorrectionModel {
         case prepared(Correction, CorrectionChanges)
         /// Saved.
         case saved(SavedCorrection)
+        /// An item question answered with no change to the card.
+        case settled
     }
 
     let archive: ArchiveModel
@@ -79,6 +89,9 @@ final class CorrectionModel {
                         proposal: id, words: words, model: provider)
                 case .item(let id, _):
                     try await archive.prepareCorrection(item: id, words: words, model: provider)
+                case .question(let id, _):
+                    try await archive.prepareCorrection(
+                        question: id, answer: words, model: provider)
                 }
             stage = .prepared(correction, correction.changes())
         } catch {
@@ -92,6 +105,22 @@ final class CorrectionModel {
     func rewrite() {
         stage = .writing
         problem = nil
+    }
+
+    /// Takes the item question being answered off the queue when its answer changes nothing
+    /// on the card.
+    func settle() async {
+        guard case .question(let id, _) = target else { return }
+        problem = nil
+        do {
+            try await archive.settle(id)
+        } catch {
+            archive.lastError = nil
+            problem = message(for: error)
+            return
+        }
+        stage = .settled
+        await saved()
     }
 
     /// Saves the correction the owner agreed to, and the fact it offers when they agreed to

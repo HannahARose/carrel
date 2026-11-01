@@ -39,6 +39,8 @@ struct ItemActions: View {
 
     var body: some View {
         AskAboutButton(model: model, item: item)
+        Button("Wander from Here", systemImage: "figure.walk") { model.wander(from: item.id) }
+            .disabled(model.discover == nil)
         if let browse = model.browse {
             Button("Rename…", systemImage: "pencil") {
                 Task { await browse.startRename(of: item) }
@@ -67,6 +69,13 @@ struct NewCollectionButton: View {
 }
 
 extension ArchiveWindowModel {
+    /// Starts a walk through the stacks from the item `id`, on Discover's Wander page.
+    func wander(from id: String) {
+        guard let discover else { return }
+        discover.wander(from: id)
+        screen = .discover(.wander)
+    }
+
     /// Whether Browse's actions can change the archive.
     var canChange: Bool { browse != nil && !isReadOnly }
 

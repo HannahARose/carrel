@@ -8,16 +8,36 @@ struct HistoryView: View {
     @Bindable var model: HistoryScreenModel
 
     var body: some View {
-        List(model.changes, id: \.id, selection: $model.selectedID) { change in
-            VStack(alignment: .leading, spacing: 2) {
-                Text(change.summary).lineLimit(2)
-                HStack(spacing: 6) {
-                    Text(change.when)
-                    if let operation = change.operation { Text("· \(operation)") }
-                    if change.agent == "librarian" { Text("· by the librarian") }
+        List(selection: $model.selectedID) {
+            ForEach(model.changes, id: \.id) { change in
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(change.summary).lineLimit(2)
+                    HStack(spacing: 6) {
+                        Text(change.when)
+                        if let operation = change.operation { Text("· \(operation)") }
+                        if let agent = change.agent { Text("· by the \(agent)") }
+                    }
+                    .font(.caption).foregroundStyle(.secondary)
                 }
-                .font(.caption).foregroundStyle(.secondary)
             }
+            if model.canLoadMore {
+                HStack {
+                    Text("The newest \(model.readCount) changes")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Load More") { Task { await model.loadMore() } }
+                    Button("Load All") { Task { await model.loadAll() } }
+                }
+                .selectionDisabled()
+            }
+        }
+        .toolbar {
+            Picker("Show", selection: $model.librarianOnly) {
+                Text("All Changes").tag(false)
+                Text("The Librarian’s").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .help("Show every change, or only those the librarian made on its own")
         }
         .contextMenu(forSelectionType: String.self) { _ in
             Button("Undo Change…") { model.askToUndo() }
@@ -28,7 +48,23 @@ struct HistoryView: View {
             return .handled
         }
         .overlay {
-            if model.changes.isEmpty {
+            if model.changes.isEmpty, model.librarianOnly {
+                ContentUnavailableView(
+                    "No Changes by the Librarian", systemImage: "books.vertical",
+                    description: Text(
+                        model.canLoadMore
+                            ? "None of the newest \(model.readCount) changes are the librarian’s."
+                            : "The librarian hasn’t changed anything on its own."))
+            } else if model.changes.isEmpty, model.archive.status?.hasHistory == false {
+                ContentUnavailableView {
+                    Label("No History Yet", systemImage: "clock.arrow.circlepath")
+                } description: {
+                    Text("Start it, and every change to the archive is kept here, to undo.")
+                } actions: {
+                    Button("Start History") { Task { try? await model.archive.startHistory() } }
+                        .disabled(model.archive.handle.isReadOnly())
+                }
+            } else if model.changes.isEmpty {
                 ContentUnavailableView(
                     "No History", systemImage: "clock.arrow.circlepath",
                     description: Text("Changes to the archive appear here."))
@@ -58,7 +94,7 @@ struct ChangeInspector: View {
                     if let agent = change.agent {
                         LabeledContent(
                             "Made by",
-                            value: agent == "librarian" ? "The librarian, on its own" : agent)
+                            value: "The \(agent), on its own")
                     }
                     LabeledContent("Change") {
                         Text(change.id.prefix(12)).monospaced().textSelection(.enabled)

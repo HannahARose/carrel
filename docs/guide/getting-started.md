@@ -13,7 +13,7 @@ You don't file things by hand. You give Carrel files, and it reads each one, dra
 Until the first release with downloads (v0.2), install from the source. On a Mac you need [Homebrew](https://brew.sh), Rust (`brew install rustup`, then `rustup toolchain install stable`) and Xcode for the Apple provider. On Linux or Windows, Rust is enough.
 
 ```bash
-git clone --branch dev https://github.com/HannahARose/carrel ~/Code/carrel-dev
+git clone --branch dev https://github.com/Horizon-Labs/carrel ~/Code/carrel-dev
 ```
 
 ```bash

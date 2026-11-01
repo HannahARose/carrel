@@ -11,7 +11,7 @@ use serde_json::json;
 
 use crate::commands::{holder, locate};
 use crate::config::{Identity, Prefs};
-use crate::picker::{BUILT_IN, Choice, KNOWN, choose};
+use crate::picker::KNOWN;
 use crate::{Failure, Report};
 
 /// This device's preferences that `carrel settings set` changes.
@@ -82,19 +82,7 @@ pub fn librarian_line(setting: Option<&str>) -> String {
 /// The file picker in use, and why, for people.
 #[must_use]
 pub fn picker_line(preference: Option<&str>) -> String {
-    match (preference, choose(preference)) {
-        (Some(p), Choice::BuiltIn) if p.eq_ignore_ascii_case(BUILT_IN) => {
-            "the built-in browser (chosen)".into()
-        }
-        (Some(p), _) => format!("{p} (chosen)"),
-        (None, Choice::Command(words)) => {
-            format!(
-                "{} (found installed)",
-                words.first().map_or("", String::as_str)
-            )
-        }
-        (None, Choice::BuiltIn) => "the built-in browser (no picker installed)".into(),
-    }
+    carrel_core::file_pickers::picker_in_use(preference)
 }
 
 /// `carrel settings`.
@@ -117,6 +105,12 @@ pub fn list(archive: Option<&Path>) -> Result<Report, Failure> {
     writeln!(text, "  librarian.model  {librarian}").unwrap();
     let previews = previews_line(prefs.previews.as_deref());
     writeln!(text, "  previews {previews}").unwrap();
+    let (report_log, keep_days) = crate::usage_report::preference_values(&prefs);
+    writeln!(
+        text,
+        "  report.log {report_log}, report.keep_days {keep_days}"
+    )
+    .unwrap();
     let missing: Vec<String> = KNOWN
         .iter()
         .filter(|k| !k.installed())
@@ -131,8 +125,9 @@ pub fn list(archive: Option<&Path>) -> Result<Report, Failure> {
     )
     .unwrap();
     let settings = archive.settings();
+    let width = Key::ALL.iter().map(|k| k.as_str().len()).max().unwrap_or(0);
     for key in Key::ALL {
-        writeln!(text, "  {:22} {}", key.as_str(), key.get(settings)).unwrap();
+        writeln!(text, "  {:width$} {}", key.as_str(), key.get(settings)).unwrap();
     }
     text.push_str("\nChange one with `carrel settings set KEY VALUE`.\n");
     Ok(Report::new(
@@ -149,6 +144,8 @@ pub fn list(archive: Option<&Path>) -> Result<Report, Failure> {
                 "librarian.model": prefs.librarian_model,
                 "librarian_in_use": librarian,
                 "previews": prefs.previews,
+                "report.log": report_log,
+                "report.keep_days": keep_days,
             },
             "archive": Key::ALL.iter().map(|k| (k.as_str().to_owned(), json!(k.get(settings)))).collect::<serde_json::Map<_, _>>(),
         }),
@@ -162,6 +159,9 @@ pub fn list(archive: Option<&Path>) -> Result<Report, Failure> {
 ///
 /// [`Failure`] if the key isn't known, the value is wrong, or saving fails.
 pub fn set(archive: Option<&Path>, key: &str, value: &str) -> Result<Report, Failure> {
+    if let Some(done) = crate::usage_report::set_preference(key, value) {
+        return done;
+    }
     if DEVICE_KEYS.contains(&key) {
         let mut prefs = Prefs::load()?;
         let cleared = value.trim().is_empty() || value.trim() == "default";
@@ -216,8 +216,9 @@ pub fn set(archive: Option<&Path>, key: &str, value: &str) -> Result<Report, Fai
     }
     let key = Key::parse(key).ok_or_else(|| {
         Failure::new(format!(
-            "no setting {key}; settings are {}, {}",
+            "no setting {key}; settings are {}, {}, {}",
             DEVICE_KEYS.join(", "),
+            crate::usage_report::PREFERENCES.join(", "),
             Key::ALL.map(Key::as_str).join(", ")
         ))
     })?;

@@ -2,6 +2,8 @@
 //! models and worker, and the archive's shared settings. It changes them the way
 //! `carrel settings set` does.
 
+use std::path::Path;
+
 use carrel_core::settings::Key;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 
@@ -21,6 +23,10 @@ pub enum Row {
     Model,
     /// The text model asked when the first isn't sure where an item goes.
     SecondModel,
+    /// The text model the librarian answers with.
+    LibrarianModel,
+    /// How Browse draws item previews.
+    Previews,
     /// Models for local providers.
     Models,
     /// The worker that drafts queued items.
@@ -31,6 +37,8 @@ pub enum Row {
     Providers,
     /// The file types this device reads and those it couldn't, as `carrel formats` lists them.
     Formats,
+    /// This device's decision log for `carrel report`, `report.log` or `report.keep_days`.
+    Report(&'static str),
     /// The archive shown, which the archive switcher changes.
     Archive,
     /// The embedding index search uses.
@@ -63,11 +71,14 @@ pub fn is_device(row: Row) -> bool {
             | Row::Editor
             | Row::Model
             | Row::SecondModel
+            | Row::LibrarianModel
+            | Row::Previews
             | Row::Models
             | Row::Worker
             | Row::Agent
             | Row::Providers
             | Row::Formats
+            | Row::Report(_)
     )
 }
 
@@ -81,24 +92,35 @@ impl App {
             editor_row(),
             model_row(&prefs),
             second_row(&prefs),
+            librarian_model_row(&prefs),
+            self.previews_row(&prefs),
             models_row(),
             self.worker_row(),
             self.agent_row(),
             self.providers_row(),
             self.formats_row(),
+            report_row(&prefs, "report.log"),
+            report_row(&prefs, "report.keep_days"),
             self.archive_row(),
             self.index_row(),
         ];
         let settings = self.archive.settings();
         // The index's row stands in for the embedding model, which switching changes.
         for key in Key::ALL.into_iter().filter(|k| *k != Key::EmbeddingModel) {
-            let mut detail = vec![key.describe().to_owned(), String::new()];
-            match key.choices() {
-                Some(choices) => {
-                    detail.push(format!("One of: {}. Enter to choose.", choices.join(", ")));
-                }
-                None => detail.push("A whole number. Enter to change it.".into()),
-            }
+            let mut detail = vec![
+                format!("{}: {}", key.title(), key.describe()),
+                String::new(),
+            ];
+            let takes = key.takes();
+            let enter = if key.choices().is_some() && !key.takes_several() {
+                "Enter to choose"
+            } else {
+                "Enter to change it"
+            };
+            detail.push(format!(
+                "Takes {takes}. {enter}, or `carrel settings set {}`.",
+                key.as_str()
+            ));
             detail.push("Shared by every device; each change can be undone from History.".into());
             rows.push(Shown {
                 row: Row::Shared(key),
@@ -190,11 +212,36 @@ impl App {
         }
     }
 
-    /// Finds the providers the first time Settings is shown, since it can take a moment.
+    /// Starts finding the providers the first time Settings is shown.
     pub(super) fn settings_shown(&mut self) {
         if self.tab == super::app::Tab::Settings && self.here.is_none() {
-            self.here = Some(super::embedding::Here::find());
-            self.load_settings();
+            self.find_here();
+        }
+    }
+
+    fn previews_row(&self, prefs: &crate::config::Prefs) -> Shown {
+        let now = match self.previews.protocol {
+            Some(protocol) => format!("Drawing them now with {protocol:?}."),
+            None => "Not drawing them now.".into(),
+        };
+        Shown {
+            row: Row::Previews,
+            label: "Previews".into(),
+            value: crate::settings::previews_line(prefs.previews.as_deref()),
+            detail: vec![
+                "Pictures of items beside their cards in Browse.".into(),
+                String::new(),
+                "auto draws them in terminals known to draw images (Kitty, WezTerm, Ghostty, \
+                 iTerm2, foot and others); off never does; kitty, iterm2 or sixel draws them \
+                 that way whatever the terminal."
+                    .into(),
+                now,
+                String::new(),
+                format!(
+                    "Enter to choose: {}. It applies at once.",
+                    crate::settings::PREVIEW_CHOICES.join(", ")
+                ),
+            ],
         }
     }
 
@@ -260,28 +307,20 @@ impl App {
             }
             Row::Model => self.model_picker("model", &["default"]),
             Row::SecondModel => self.model_picker("second_model", &["default", "off"]),
-            Row::Models => {
-                let available: Vec<String> = carrel_core::models::CATALOG
-                    .iter()
-                    .filter(|m| {
-                        m.is_pinned()
-                            && carrel_core::local::models_dir()
-                                .is_none_or(|d| !d.join(m.file_name()).is_file())
-                    })
-                    .map(|m| m.name.to_owned())
-                    .collect();
-                if available.is_empty() {
-                    self.message = Some("Every catalog model is downloaded".into());
-                } else {
-                    self.picker = Some(Picker {
-                        collections: available,
-                        filter: String::new(),
-                        chosen: 0,
-                        purpose: Purpose::Download,
-                    });
-                }
+            Row::LibrarianModel => self.model_picker("librarian.model", &["default"]),
+            Row::Previews => {
+                self.picker = Some(Picker {
+                    collections: crate::settings::PREVIEW_CHOICES
+                        .iter()
+                        .map(|c| (*c).to_owned())
+                        .collect(),
+                    filter: String::new(),
+                    chosen: 0,
+                    purpose: Purpose::Setting("previews".into()),
+                });
             }
-            Row::Shared(setting) => match setting.choices() {
+            Row::Models => self.models_picker(),
+            Row::Shared(setting) => match setting.choices().filter(|_| !setting.takes_several()) {
                 Some(choices) => {
                     self.picker = Some(Picker {
                         collections: choices.iter().map(|c| (*c).to_owned()).collect(),
@@ -297,6 +336,20 @@ impl App {
                     });
                 }
             },
+            Row::Report("report.log") => {
+                self.picker = Some(Picker {
+                    collections: vec!["on".into(), "off".into()],
+                    filter: String::new(),
+                    chosen: 0,
+                    purpose: Purpose::Setting("report.log".into()),
+                });
+            }
+            Row::Report(key) => {
+                self.input = Some(Input {
+                    purpose: InputPurpose::Setting(key.into()),
+                    text: shown.value.clone(),
+                });
+            }
             Row::Archive => self.archive_picker(),
             Row::Index => self.index_picker(),
             Row::Worker | Row::Agent | Row::Backups | Row::Providers | Row::Formats => {}
@@ -306,13 +359,13 @@ impl App {
 
     /// Opens a picker for the setting `key`: `fixed` choices, then every available model.
     fn model_picker(&mut self, key: &str, fixed: &[&str]) {
-        let (registry, _) = crate::providers::registry();
+        let Some(here) = &self.here else {
+            self.find_here();
+            self.message = Some("Still finding the models on this device…".into());
+            return;
+        };
         let mut choices: Vec<String> = fixed.iter().map(|c| (*c).to_owned()).collect();
-        choices.extend(
-            crate::providers::text_models(&registry)
-                .iter()
-                .map(crate::providers::TextModel::name),
-        );
+        choices.extend(here.text_models.iter().cloned());
         self.picker = Some(Picker {
             collections: choices,
             filter: String::new(),
@@ -419,6 +472,25 @@ fn second_row(prefs: &crate::config::Prefs) -> Shown {
     }
 }
 
+fn librarian_model_row(prefs: &crate::config::Prefs) -> Shown {
+    Shown {
+        row: Row::LibrarianModel,
+        label: "Librarian's model".into(),
+        value: prefs
+            .librarian_model
+            .clone()
+            .unwrap_or_else(|| "the strongest on this device".into()),
+        detail: vec![
+            "The text model the librarian answers and looks around with (the Librarian tab, \
+             and asking about items)."
+                .into(),
+            "Unset, Carrel uses the strongest model this device has room for.".into(),
+            String::new(),
+            "Enter to choose one of the available models, or default to let Carrel choose.".into(),
+        ],
+    }
+}
+
 fn models_row() -> Shown {
     let models = crate::models::list();
     Shown {
@@ -438,10 +510,51 @@ fn models_row() -> Shown {
             |r| {
                 let mut lines: Vec<String> = r.text.lines().map(str::to_owned).collect();
                 lines.push(String::new());
-                lines.push("Enter to download one; Carrel asks before downloading.".into());
+                lines.push(
+                    "Enter to download one or delete one, as GGUF or MLX; Carrel asks first."
+                        .into(),
+                );
                 lines
             },
         ),
+    }
+}
+
+/// Sets the setting `key` to `value` in the archive at `root`, as `carrel settings set` does,
+/// and puts it to use at once: previews are drawn the new way.
+pub(super) fn set_now(app: &mut App, root: &Path, key: &str, value: &str) -> Option<super::Done> {
+    let result = crate::settings::set(Some(root), key, value);
+    super::finished(app, result.map(|r| r.text).map_err(|crate::Failure(e)| e));
+    if key == "previews" {
+        app.previews = super::preview::Previews::detected();
+        app.load_settings();
+    }
+    None
+}
+
+/// A row for one of the decision log's preferences, `key`.
+fn report_row(prefs: &crate::config::Prefs, key: &'static str) -> Shown {
+    let (on, days) = crate::usage_report::preference_values(prefs);
+    let (value, what) = if key == "report.log" {
+        (
+            on,
+            "Whether this device keeps its decision log for the report: what was decided in Review, corrected, answered and found, by identifier only, never titles, text, names or searches. Enter to turn it on or off.",
+        )
+    } else {
+        (
+            days,
+            "How many days the decision log keeps. Enter to change it.",
+        )
+    };
+    Shown {
+        row: Row::Report(key),
+        label: key.into(),
+        value,
+        detail: vec![
+            what.into(),
+            String::new(),
+            "The Report section on Status, and `carrel report`, show what it says.".into(),
+        ],
     }
 }
 
@@ -451,5 +564,61 @@ pub fn set(key: &str, value: &str) -> Effect {
     Effect::SetSetting {
         key: key.to_owned(),
         value: value.to_owned(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ratatui::crossterm::event::KeyCode;
+
+    use super::super::app::Effect;
+    use super::super::tests::{key, sample};
+    use super::Row;
+    use carrel_core::settings::Key;
+
+    #[test]
+    fn every_setting_has_a_row_saying_what_it_takes() {
+        let (_dir, mut app) = sample(false);
+        app.key(key(KeyCode::Char('8')));
+        let row = |app: &super::App, wanted: Row| {
+            app.settings.iter().position(|s| s.row == wanted).unwrap()
+        };
+        for wanted in [Row::LibrarianModel, Row::Previews] {
+            row(&app, wanted);
+        }
+        for setting in Key::ALL.into_iter().filter(|k| *k != Key::EmbeddingModel) {
+            row(&app, Row::Shared(setting));
+        }
+        let confidence = &app.settings[row(&app, Row::Shared(Key::LibrarianConfidence))];
+        assert!(
+            confidence
+                .detail
+                .iter()
+                .any(|l| l.contains("from 0.5 to 1")),
+            "{:?}",
+            confidence.detail
+        );
+
+        app.settings_chosen = row(&app, Row::Previews);
+        app.key(key(KeyCode::Enter));
+        let picker = app.picker.clone().expect("a choice of previews");
+        assert_eq!(picker.collections, crate::settings::PREVIEW_CHOICES);
+        app.key(key(KeyCode::Down));
+        assert_eq!(
+            app.key(key(KeyCode::Enter)),
+            Some(Effect::SetSetting {
+                key: "previews".into(),
+                value: "off".into(),
+            })
+        );
+
+        // The reminders take several at once, so they're typed rather than picked.
+        app.settings_chosen = row(&app, Row::Shared(Key::Reminders));
+        app.key(key(KeyCode::Enter));
+        assert!(app.picker.is_none());
+        assert_eq!(
+            app.input.as_ref().map(|i| i.text.as_str()),
+            Some("idle, weekly, menu-bar")
+        );
     }
 }

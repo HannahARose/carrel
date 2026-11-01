@@ -1,0 +1,7 @@
+Toolpaths for plywood, 3 mm flat end mill
+
+Feed: 900 mm/min
+Plunge: 300 mm/min
+Step-down: 1 mm per pass
+Step-over: 40%
+Tabs every 120 mm so the parts don't move on the last pass.

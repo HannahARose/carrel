@@ -1,10 +1,13 @@
 //! Changing an archive's shared settings (`_System/settings.json`, FORMAT.md §7.2) one at a
 //! time, each as a history change so it can be undone (`docs/design/tui-ingest.md`).
 
+use std::path::{Path, PathBuf};
+
 use crate::archive::{Archive, ArchiveError};
 use crate::coordinator::WriterLease;
 use crate::documents::{Originals, OutsideEdits, Settings};
 use crate::history::{Change, History, HistoryError, Operation};
+use crate::restructure::eagerness::{Eagerness, MoveBudget, RestructureSettings};
 
 /// A setting the owner can change from Carrel's interfaces.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -26,6 +29,28 @@ pub enum Key {
     LibrarianChanges,
     /// How sure the librarian must be to make a change on its own.
     LibrarianConfidence,
+    /// Where items are checked out to when no folder is given.
+    CheckoutDestination,
+    /// What happens to a working copy once it's returned.
+    CheckoutAfterReturn,
+    /// How many minutes without changes end a work session.
+    IdleMinutes,
+    /// Which reminders are on.
+    Reminders,
+    /// How eager Carrel is to rearrange the archive (`docs/design/restructure.md`).
+    RestructureEagerness,
+    /// How much a restructure's benefit must beat its cost, before scaling by invasiveness.
+    RestructureMargin,
+    /// The cost added to restructuring a recently restructured section.
+    RestructureStabilityPenalty,
+    /// How many days a restructured section counts as recently changed.
+    RestructureStabilityDays,
+    /// How many items one restructure may move between branches.
+    RestructureMoveBudget,
+    /// Whether the crawler may make the refiles and corrections it's sure of without asking.
+    CrawlerChanges,
+    /// How much of the device's idle time the crawler uses.
+    CrawlerPace,
 }
 
 /// The embedding models an archive can choose: the catalog's, the default first.
@@ -35,17 +60,34 @@ const EMBEDDING_MODELS: [&str; 3] = [
     "apple-nl-sentence-en",
 ];
 
+/// The reminders an archive can turn on (FORMAT.md §7.2), in the order they're written.
+pub const REMINDERS: [&str; 4] = ["idle", "weekly", "menu-bar", "due-date"];
+
+/// What `checkout.destination` says for the Desktop.
+const DESKTOP: &str = "desktop";
+
 impl Key {
     /// Every setting, in the order they're shown.
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 19] = [
         Self::Originals,
         Self::CompressedFiles,
         Self::CrowdedItems,
         Self::SkipDays,
         Self::OutsideEdits,
+        Self::CheckoutDestination,
+        Self::CheckoutAfterReturn,
+        Self::IdleMinutes,
+        Self::Reminders,
         Self::EmbeddingModel,
         Self::LibrarianChanges,
         Self::LibrarianConfidence,
+        Self::RestructureEagerness,
+        Self::RestructureMargin,
+        Self::RestructureStabilityPenalty,
+        Self::RestructureStabilityDays,
+        Self::RestructureMoveBudget,
+        Self::CrawlerChanges,
+        Self::CrawlerPace,
     ];
 
     /// Its key in `settings.json`, as FORMAT.md §7.2 writes it.
@@ -60,6 +102,43 @@ impl Key {
             Self::EmbeddingModel => "embedding.model",
             Self::LibrarianChanges => "librarian.changes",
             Self::LibrarianConfidence => "librarian.confidence",
+            Self::RestructureEagerness => "restructure.eagerness",
+            Self::RestructureMargin => "restructure.margin",
+            Self::RestructureStabilityPenalty => "restructure.stability_penalty",
+            Self::RestructureStabilityDays => "restructure.stability_days",
+            Self::RestructureMoveBudget => "restructure.move_budget",
+            Self::CrawlerChanges => "crawler.changes",
+            Self::CrawlerPace => "crawler.pace",
+            Self::CheckoutDestination => "checkout.destination",
+            Self::CheckoutAfterReturn => "checkout.after_return",
+            Self::IdleMinutes => "sessions.idle_minutes",
+            Self::Reminders => "reminders",
+        }
+    }
+
+    /// Its name, for people.
+    #[must_use]
+    pub fn title(self) -> &'static str {
+        match self {
+            Self::Originals => "Originals",
+            Self::CrowdedItems => "Crowded collections",
+            Self::SkipDays => "Skipped questions rest",
+            Self::OutsideEdits => "Changes made outside Carrel",
+            Self::CompressedFiles => "Compressed files",
+            Self::EmbeddingModel => "Embedding model",
+            Self::LibrarianChanges => "Librarian's own changes",
+            Self::LibrarianConfidence => "Librarian's confidence",
+            Self::CheckoutDestination => "Check out to",
+            Self::CheckoutAfterReturn => "After a return",
+            Self::IdleMinutes => "Work sessions end after",
+            Self::Reminders => "Reminders",
+            Self::RestructureEagerness => "How eager to rearrange",
+            Self::RestructureMargin => "Gain needed to rearrange",
+            Self::RestructureStabilityPenalty => "Cost of rearranging again",
+            Self::RestructureStabilityDays => "Recently rearranged for",
+            Self::RestructureMoveBudget => "Items moved per proposal",
+            Self::CrawlerChanges => "Crawler's own changes",
+            Self::CrawlerPace => "Crawler's pace",
         }
     }
 
@@ -95,7 +174,75 @@ impl Key {
             Self::LibrarianConfidence => {
                 "How sure the librarian must be, from 0.5 to 1, to make a change on its own"
             }
+            Self::CheckoutDestination => {
+                "Where items are checked out to when no folder is given: the Desktop, or a folder"
+            }
+            Self::CheckoutAfterReturn => {
+                "What happens to the working copy once it's returned: ask each time, move it to the trash, or keep it"
+            }
+            Self::IdleMinutes => {
+                "How many minutes without changes end a work session, which History records as one"
+            }
+            Self::Reminders => {
+                "Which reminders are on: when work goes idle, a weekly review, in the menu bar, and when a checkout is due back"
+            }
+            Self::RestructureEagerness => {
+                "How eager Carrel is to propose rearranging: settled asks for a large gain before moving things between branches, balanced a clear one, eager any real gain; a collection can set its own in its design document"
+            }
+            Self::RestructureMargin => {
+                "How much a restructure's benefit must beat its cost, from 0 to 1, for moves between branches; less invasive changes need less. Unset, the eagerness level decides"
+            }
+            Self::RestructureStabilityPenalty => {
+                "The cost added to restructuring a section restructured recently, from 0 to 1, so the archive doesn't churn. Unset, the eagerness level decides"
+            }
+            Self::RestructureStabilityDays => {
+                "How many days after a restructure its section counts as recently changed. Unset, the eagerness level decides"
+            }
+            Self::RestructureMoveBudget => {
+                "How many items one restructure may move between branches or top-level collections, or none for no limit. Unset, the eagerness level decides"
+            }
+            Self::CrawlerChanges => {
+                "Whether the crawler may refile items and correct cards on its own when it's sure, each change undoable; off, its findings wait in Review"
+            }
+            Self::CrawlerPace => {
+                "How much of the device's idle time the crawler uses to recheck where items are filed: off, gentle, steady or brisk"
+            }
         }
+    }
+
+    /// The values it takes, in words, as a phrase such as "one of move, keep".
+    #[must_use]
+    pub fn takes(self) -> String {
+        match self {
+            Self::Reminders => format!(
+                "any of {}, separated by commas, or none",
+                REMINDERS.join(", ")
+            ),
+            _ if self.choices().is_some() => {
+                format!("one of {}", self.choices().unwrap_or_default().join(", "))
+            }
+            Self::LibrarianConfidence => "a number from 0.5 to 1, such as 0.9".into(),
+            Self::RestructureMargin | Self::RestructureStabilityPenalty => {
+                "a number from 0 to 1, such as 0.15, or default for the eagerness level's".into()
+            }
+            Self::RestructureMoveBudget => {
+                "a whole number, none for no limit, or default for the eagerness level's".into()
+            }
+            Self::RestructureStabilityDays => {
+                "a whole number of days, or default for the eagerness level's".into()
+            }
+            Self::CheckoutDestination => {
+                "desktop, or a folder's full path (~ for the home folder)".into()
+            }
+            _ => "a whole number, at least 1".into(),
+        }
+    }
+
+    /// Whether it takes several of its [`choices`](Self::choices) at once, separated by
+    /// commas, rather than one.
+    #[must_use]
+    pub fn takes_several(self) -> bool {
+        self == Self::Reminders
     }
 
     /// The values it can take, when they're a fixed list.
@@ -106,8 +253,20 @@ impl Key {
             Self::OutsideEdits => Some(&["flag", "reconcile", "drift"]),
             Self::CompressedFiles => Some(&["expand", "keep", "ask"]),
             Self::EmbeddingModel => Some(&EMBEDDING_MODELS),
-            Self::LibrarianChanges => Some(&["off", "on"]),
-            Self::CrowdedItems | Self::SkipDays | Self::LibrarianConfidence => None,
+            Self::LibrarianChanges | Self::CrawlerChanges => Some(&["off", "on"]),
+            Self::RestructureEagerness => Some(&["settled", "balanced", "eager"]),
+            Self::CrawlerPace => Some(&["off", "gentle", "steady", "brisk"]),
+            Self::CheckoutAfterReturn => Some(&["ask", "trash", "keep"]),
+            Self::Reminders => Some(&REMINDERS),
+            Self::CrowdedItems
+            | Self::SkipDays
+            | Self::LibrarianConfidence
+            | Self::CheckoutDestination
+            | Self::IdleMinutes
+            | Self::RestructureMargin
+            | Self::RestructureStabilityPenalty
+            | Self::RestructureStabilityDays
+            | Self::RestructureMoveBudget => None,
         }
     }
 
@@ -135,6 +294,23 @@ impl Key {
             }
             .into(),
             Self::LibrarianConfidence => settings.librarian.confidence.to_string(),
+            Self::CheckoutDestination => settings.checkout.destination.clone(),
+            Self::CheckoutAfterReturn => settings.checkout.after_return.clone(),
+            Self::IdleMinutes => settings.sessions.idle_minutes.to_string(),
+            Self::Reminders if settings.reminders.is_empty() => "none".into(),
+            Self::Reminders => settings.reminders.join(", "),
+            Self::RestructureEagerness
+            | Self::RestructureMargin
+            | Self::RestructureStabilityPenalty
+            | Self::RestructureStabilityDays
+            | Self::RestructureMoveBudget => restructure_value(self, &settings.restructure),
+            Self::CrawlerChanges => if settings.crawler.changes {
+                "on"
+            } else {
+                "off"
+            }
+            .into(),
+            Self::CrawlerPace => settings.crawler.pace.as_str().into(),
         }
     }
 
@@ -145,13 +321,7 @@ impl Key {
     /// A message saying what values it takes, if `value` isn't one.
     pub fn set(self, settings: &mut Settings, value: &str) -> Result<(), String> {
         let value = value.trim();
-        let wrong = || match self.choices() {
-            Some(choices) => format!("{} is one of {}", self.as_str(), choices.join(", ")),
-            None if self == Self::LibrarianConfidence => {
-                format!("{} is a number from 0.5 to 1, such as 0.9", self.as_str())
-            }
-            None => format!("{} is a whole number, at least 1", self.as_str()),
-        };
+        let wrong = || format!("{} is {}", self.as_str(), self.takes());
         match self {
             Self::Originals => {
                 settings.ingest.originals = match value {
@@ -200,6 +370,16 @@ impl Key {
                     _ => return Err(wrong()),
                 };
             }
+            Self::CrawlerChanges => {
+                settings.crawler.changes = match value {
+                    "on" => true,
+                    "off" => false,
+                    _ => return Err(wrong()),
+                };
+            }
+            Self::CrawlerPace => {
+                settings.crawler.pace = crate::crawl::Pace::parse(value).ok_or_else(wrong)?;
+            }
             Self::LibrarianConfidence => {
                 settings.librarian.confidence = value
                     .parse::<f64>()
@@ -207,9 +387,141 @@ impl Key {
                     .filter(|n| (0.5..=1.0).contains(n))
                     .ok_or_else(wrong)?;
             }
+            Self::CheckoutDestination => {
+                settings.checkout.destination = checkout_destination(value).ok_or_else(wrong)?;
+            }
+            Self::CheckoutAfterReturn => {
+                if !self.choices().unwrap_or_default().contains(&value) {
+                    return Err(wrong());
+                }
+                value.clone_into(&mut settings.checkout.after_return);
+            }
+            Self::IdleMinutes => {
+                settings.sessions.idle_minutes =
+                    value.parse().ok().filter(|n| *n >= 1).ok_or_else(wrong)?;
+            }
+            Self::Reminders => settings.reminders = reminders(value).ok_or_else(wrong)?,
+            Self::RestructureEagerness
+            | Self::RestructureMargin
+            | Self::RestructureStabilityPenalty
+            | Self::RestructureStabilityDays
+            | Self::RestructureMoveBudget => {
+                set_restructure(self, &mut settings.restructure, value).ok_or_else(wrong)?;
+            }
         }
         Ok(())
     }
+}
+
+/// `value` as `checkout.destination` stores it: `desktop`, or a folder's full path, which may
+/// start with `~` for the home folder. `None` for anything else.
+fn checkout_destination(value: &str) -> Option<String> {
+    if value.eq_ignore_ascii_case(DESKTOP) {
+        return Some(DESKTOP.into());
+    }
+    let from_home = value == "~" || value.starts_with("~/");
+    (from_home || Path::new(value).is_absolute()).then(|| value.to_owned())
+}
+
+/// The reminders `value` turns on, in the order FORMAT.md writes them: names separated by
+/// commas or spaces, or `none`. `None` if one isn't a reminder.
+fn reminders(value: &str) -> Option<Vec<String>> {
+    let named: Vec<&str> = value
+        .split(|c: char| c == ',' || c.is_whitespace())
+        .filter(|n| !n.is_empty() && *n != "none")
+        .collect();
+    if named.iter().any(|n| !REMINDERS.contains(n)) {
+        return None;
+    }
+    Some(
+        REMINDERS
+            .iter()
+            .filter(|r| named.contains(r))
+            .map(|r| (*r).to_owned())
+            .collect(),
+    )
+}
+
+/// The folder items are checked out to when no folder is given, by `settings`'
+/// `checkout.destination`: the Desktop in `home`, or the folder it names, with `~` for `home`.
+/// `None` when it needs `home` and there's none.
+#[must_use]
+pub fn checkout_folder(settings: &Settings, home: Option<&Path>) -> Option<PathBuf> {
+    let destination = settings.checkout.destination.trim();
+    if destination.eq_ignore_ascii_case(DESKTOP) {
+        return home.map(|h| h.join("Desktop"));
+    }
+    match destination.strip_prefix('~') {
+        Some(rest) if rest.is_empty() || rest.starts_with('/') => {
+            home.map(|h| h.join(rest.trim_start_matches('/')))
+        }
+        _ => Some(PathBuf::from(destination)),
+    }
+}
+
+/// A `restructure.*` setting's value: what's set directly, else the eagerness level's
+/// preset, marked as such.
+fn restructure_value(key: Key, settings: &RestructureSettings) -> String {
+    let preset = settings.thresholds(settings.eagerness);
+    let or_preset = |set: Option<String>, preset: String| {
+        set.unwrap_or_else(|| format!("{preset} (from {})", settings.eagerness))
+    };
+    match key {
+        Key::RestructureMargin => or_preset(
+            settings.margin.map(|n| n.to_string()),
+            preset.margin.to_string(),
+        ),
+        Key::RestructureStabilityPenalty => or_preset(
+            settings.stability_penalty.map(|n| n.to_string()),
+            preset.stability_penalty.to_string(),
+        ),
+        Key::RestructureStabilityDays => or_preset(
+            settings.stability_days.map(|n| n.to_string()),
+            preset.stability_days.to_string(),
+        ),
+        Key::RestructureMoveBudget => or_preset(
+            settings
+                .move_budget
+                .map(|b| MoveBudget::describe(b.limit())),
+            MoveBudget::describe(preset.move_budget),
+        ),
+        _ => settings.eagerness.as_str().to_owned(),
+    }
+}
+
+/// Sets a `restructure.*` setting to `value`; `default` clears a number back to the eagerness
+/// level's. `None` if the value isn't one it takes.
+fn set_restructure(key: Key, settings: &mut RestructureSettings, value: &str) -> Option<()> {
+    let default = value.eq_ignore_ascii_case("default");
+    let fraction = || {
+        value
+            .parse::<f64>()
+            .ok()
+            .filter(|n| (0.0..=1.0).contains(n))
+    };
+    match key {
+        Key::RestructureEagerness => settings.eagerness = Eagerness::parse(value)?,
+        Key::RestructureMargin => settings.margin = if default { None } else { Some(fraction()?) },
+        Key::RestructureStabilityPenalty => {
+            settings.stability_penalty = if default { None } else { Some(fraction()?) };
+        }
+        Key::RestructureStabilityDays => {
+            settings.stability_days = if default {
+                None
+            } else {
+                Some(value.parse().ok()?)
+            };
+        }
+        Key::RestructureMoveBudget => {
+            settings.move_budget = if default {
+                None
+            } else {
+                Some(MoveBudget::parse(value)?)
+            };
+        }
+        _ => return None,
+    }
+    Some(())
 }
 
 /// Why a setting couldn't be changed.
@@ -375,5 +687,83 @@ mod tests {
         Key::LibrarianConfidence.set(&mut settings, "0.75").unwrap();
         assert!(Key::LibrarianConfidence.set(&mut settings, "0.2").is_err());
         assert!(Key::LibrarianConfidence.set(&mut settings, "sure").is_err());
+    }
+
+    #[test]
+    fn checkout_session_and_reminder_settings_take_only_their_values() {
+        let mut settings = Settings::default();
+        assert_eq!(Key::CheckoutDestination.get(&settings), "desktop");
+        Key::CheckoutDestination
+            .set(&mut settings, "~/Checked out")
+            .unwrap();
+        assert_eq!(settings.checkout.destination, "~/Checked out");
+        let absolute = if cfg!(windows) { r"C:\Work" } else { "/work" };
+        Key::CheckoutDestination
+            .set(&mut settings, absolute)
+            .unwrap();
+        let relative = Key::CheckoutDestination
+            .set(&mut settings, "work")
+            .unwrap_err();
+        assert!(relative.contains("full path"), "{relative}");
+        Key::CheckoutDestination
+            .set(&mut settings, "Desktop")
+            .unwrap();
+        assert_eq!(Key::CheckoutDestination.get(&settings), "desktop");
+
+        assert_eq!(Key::CheckoutAfterReturn.get(&settings), "ask");
+        Key::CheckoutAfterReturn
+            .set(&mut settings, "trash")
+            .unwrap();
+        assert_eq!(settings.checkout.after_return, "trash");
+        assert!(
+            Key::CheckoutAfterReturn
+                .set(&mut settings, "delete")
+                .unwrap_err()
+                .contains("ask, trash, keep")
+        );
+
+        assert_eq!(Key::IdleMinutes.get(&settings), "45");
+        Key::IdleMinutes.set(&mut settings, "20").unwrap();
+        assert_eq!(settings.sessions.idle_minutes, 20);
+        assert!(Key::IdleMinutes.set(&mut settings, "0").is_err());
+        assert!(Key::IdleMinutes.set(&mut settings, "soon").is_err());
+
+        assert_eq!(Key::Reminders.get(&settings), "idle, weekly, menu-bar");
+        Key::Reminders
+            .set(&mut settings, "due-date, idle idle")
+            .unwrap();
+        assert_eq!(settings.reminders, ["idle", "due-date"]);
+        Key::Reminders.set(&mut settings, "none").unwrap();
+        assert_eq!(settings.reminders, Vec::<String>::new());
+        assert_eq!(Key::Reminders.get(&settings), "none");
+        let unknown = Key::Reminders.set(&mut settings, "hourly").unwrap_err();
+        assert!(unknown.contains("menu-bar, due-date"), "{unknown}");
+        assert!(Key::Reminders.takes_several());
+
+        for key in Key::ALL {
+            assert_eq!(Key::parse(key.as_str()), Some(key));
+            assert!(!key.title().is_empty() && !key.describe().is_empty());
+        }
+    }
+
+    #[test]
+    fn checkouts_go_to_the_desktop_or_the_folder_chosen() {
+        let home = Path::new("/home/owner");
+        let mut settings = Settings::default();
+        assert_eq!(
+            checkout_folder(&settings, Some(home)),
+            Some(home.join("Desktop"))
+        );
+        assert_eq!(checkout_folder(&settings, None), None);
+        settings.checkout.destination = "~/Out".into();
+        assert_eq!(
+            checkout_folder(&settings, Some(home)),
+            Some(home.join("Out"))
+        );
+        settings.checkout.destination = "/elsewhere".into();
+        assert_eq!(
+            checkout_folder(&settings, None),
+            Some(PathBuf::from("/elsewhere"))
+        );
     }
 }

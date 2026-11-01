@@ -153,6 +153,14 @@ impl App {
         }
         self.item = view;
         self.previews.want(&self.archive, &self.item);
+        // Showing an item is opening its collection, as `carrel show` does.
+        if self.tab == super::app::Tab::Browse
+            && let Some((collection, _)) = card.rsplit_once('/')
+        {
+            let collection = collection.to_owned();
+            self.records.opened(&collection);
+        }
+        self.load_item_questions();
     }
 
     /// Handles a key in an item's view: ↑↓ choose a change or related item, `u` undoes the
@@ -192,8 +200,16 @@ impl App {
     /// need the room; the screen keys are in ? help.
     pub(super) fn browse_keys(&self) -> Vec<(&'static str, &'static str)> {
         let mut keys = vec![("↑↓", "choose")];
+        if self.browse_pane != Pane::Collections && !self.item_questions.is_empty() {
+            keys.push(("a", "answer its question"));
+        }
         match self.browse_pane {
-            Pane::Collections => keys.extend([("→", "items"), ("n", "new collection")]),
+            Pane::Collections => keys.extend([
+                ("→", "items"),
+                ("n", "new collection"),
+                ("E", "eagerness"),
+                ("R", "propose a shape"),
+            ]),
             Pane::Items => keys.push(("←→", "collections/item")),
             Pane::Item => {
                 keys.push(("←", "items"));
@@ -202,11 +218,13 @@ impl App {
                     Some(Row::Related(_)) => keys.push(("Enter", "go to it")),
                     None => {}
                 }
+                keys.extend([("w", "wander from it"), ("A", "its questions")]);
             }
         }
         if self.browse_pane != Pane::Collections && !self.browse_items.is_empty() {
             keys.extend([
                 ("e", "edit"),
+                ("E", "edit body"),
                 ("c", "correct"),
                 ("o", "check out"),
                 ("r", "rename"),
@@ -235,7 +253,7 @@ impl App {
     }
 
     /// Shows the item whose card is at `card` in its collection, leaving any search.
-    fn go_to(&mut self, card: &str) {
+    pub(super) fn go_to(&mut self, card: &str) {
         self.search = None;
         if let Some(i) = self
             .collections

@@ -134,7 +134,10 @@ final class Reports: ProgressListener, @unchecked Sendable {
 
         var fields = editable.fields
         fields.title = " "
-        guard case .problems(let problems) = try await model.edit(item: item, fields: fields) else {
+        guard
+            case .problems(let problems) = try await model.edit(
+                item: item, base: editable.fields, fields: fields)
+        else {
             Issue.record("an empty title was saved")
             return
         }
@@ -143,7 +146,8 @@ final class Reports: ProgressListener, @unchecked Sendable {
         fields = editable.fields
         fields.summary = "Every part, with where it came from."
         guard
-            case .saved(let changed, let commit) = try await model.edit(item: item, fields: fields)
+            case .saved(let changed, let commit) = try await model.edit(
+                item: item, base: editable.fields, fields: fields)
         else {
             Issue.record("not saved")
             return
@@ -182,7 +186,7 @@ final class Reports: ProgressListener, @unchecked Sendable {
 
         try "part,source\nLED strip,shop\n".write(
             toFile: out.working, atomically: true, encoding: .utf8)
-        let preview = try model.handle.returnPreview(item: item)
+        let preview = try model.handle.returnPreview(item: item, from: nil)
         #expect(preview.changes.changed.count == 1)
         let returned = try await model.returnItem(item)
         #expect(returned.commit != nil)

@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-REPO_URL = "https://github.com/HannahARose/carrel"
+REPO_URL = "https://github.com/Horizon-Labs/carrel"
 
 # Each published file, and the wiki page it becomes (the page's file name, without .md).
 PAGES = {

@@ -60,6 +60,9 @@ extension CollectionSummary: Identifiable {
 }
 
 extension Proposal: Identifiable {}
+extension RestructureProposal: Identifiable {}
+extension CrawlerFinding: Identifiable {}
+extension RestructureChange: Identifiable {}
 extension ReviewBatch: Identifiable {}
 extension Question: Identifiable {}
 extension ActiveItem: Identifiable {}
@@ -72,6 +75,10 @@ extension Setting: Identifiable {
 
 extension CatalogModel: Identifiable {
     public var id: String { name }
+}
+
+extension GraphConnection: Identifiable {
+    public var id: String { a + "\u{0}" + b }
 }
 
 extension ProviderInfo: Identifiable {

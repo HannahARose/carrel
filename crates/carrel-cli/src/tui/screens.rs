@@ -33,6 +33,8 @@ pub enum InputPurpose {
     },
     /// What to search for: words, and filters such as `tag:receipts`.
     Search,
+    /// A question for the librarian.
+    Ask,
     /// Files and folders to ingest.
     Ingest,
     /// A new value for this setting.
@@ -93,6 +95,8 @@ pub enum InputPurpose {
         /// Its name now.
         from: String,
     },
+    /// One of the commands' options, asked for along the way.
+    Option(super::option_lines::OptionLine),
 }
 
 /// What a correction is for.
@@ -118,6 +122,7 @@ impl Input {
             } => "your answer; you see what it changes before it's saved",
             InputPurpose::Answer { .. } => "what it is",
             InputPurpose::Search => "words and filters",
+            InputPurpose::Ask => "your question for the librarian",
             InputPurpose::Ingest => "paths to ingest (or drop files here)",
             InputPurpose::Setting(_) => "the new value",
             InputPurpose::BackupRepository => "the backup folder (drop it here)",
@@ -135,6 +140,7 @@ impl Input {
             InputPurpose::CollectionDescription { .. } => "what belongs there, or nothing",
             InputPurpose::CollectionTags { .. } => "name=meaning; …, or nothing",
             InputPurpose::Rename { .. } => "the new name",
+            InputPurpose::Option(line) => line.prompt(),
         }
     }
 
@@ -261,27 +267,33 @@ impl App {
     /// Answers the question `id` with what the owner typed.
     fn typed_answer(&mut self, id: Id, text: String) -> Option<Effect> {
         let question = self.asked.iter().find(|q| q.id == id)?.clone();
+        // A suggestion's number picks it, as the number keys do on Questions.
+        if let Ok(n) = text.parse::<usize>()
+            && (1..=question.suggestions.len()).contains(&n)
+        {
+            return self.pick(&question, n);
+        }
         match question.kind {
             QuestionKind::Item => Self::answer_item(&question, &text),
-            QuestionKind::Sender if !matches!(text.to_lowercase().as_str(), "no" | "n") => {
-                let path = if matches!(text.to_lowercase().as_str(), "yes" | "y") {
-                    question
-                        .suggestions
-                        .iter()
-                        .find(|s| s.new_collection)
-                        .map(|s| s.answer.clone())
-                        .or_else(|| question.choices.first().cloned())
-                        .unwrap_or_default()
-                } else {
-                    text.clone()
-                };
-                self.confirm = Some(super::app::Confirm::Rule {
-                    id,
-                    answer: text,
-                    subject: question.subject.clone(),
-                    path,
-                });
-                None
+            QuestionKind::Sender => {
+                use carrel_core::questions::answer::{SenderAnswer, sender_answer};
+                match sender_answer(&question, &text, None, false) {
+                    Ok(SenderAnswer::Place { path, .. }) => {
+                        self.confirm = Some(super::app::Confirm::Rule {
+                            id,
+                            answer: text,
+                            subject: question.subject.clone(),
+                            path,
+                        });
+                        None
+                    }
+                    // No settles it, and a yes with no collection to name says so.
+                    Ok(SenderAnswer::Decline) | Err(_) => Some(Effect::Answer {
+                        id,
+                        answer: text,
+                        learn: false,
+                    }),
+                }
             }
             _ => Some(Effect::Answer {
                 id,
@@ -315,6 +327,11 @@ impl App {
                     }
                     InputPurpose::Answer { .. } => {
                         self.message = Some("No answer given; the question still waits".into());
+                    }
+                    InputPurpose::Ask if text.is_empty() => {}
+                    InputPurpose::Ask => {
+                        self.talk.waiting = Some(text.clone());
+                        return Some(Effect::Ask(text));
                     }
                     InputPurpose::Setting(key) => {
                         return Some(super::settings::set(&key, &text));
@@ -356,16 +373,16 @@ impl App {
                             self.message = Some("No folder given; nothing changed".into());
                             return None;
                         };
-                        return Some(if purpose == InputPurpose::OpenArchive {
-                            Effect::OpenArchive(path)
-                        } else {
-                            Effect::CreateArchive(path)
-                        });
+                        if purpose == InputPurpose::OpenArchive {
+                            return Some(Effect::OpenArchive(path));
+                        }
+                        self.ask_option(super::option_lines::OptionLine::EmbeddingModel { path });
                     }
                     purpose @ (InputPurpose::BackupRepository
                     | InputPurpose::RestoreItem { .. }) => {
                         return self.backup_input(purpose, text);
                     }
+                    InputPurpose::Option(line) => return self.option_entered(line, text),
                     purpose => return self.action_input(purpose, text),
                 }
             }
@@ -436,7 +453,8 @@ impl App {
 
     /// Handles a key on the Browse screen: ←→ move between collections, items and the chosen
     /// item's view, `e` and `c` edit or correct the chosen item, `o`, `r` and `z` check it out,
-    /// rename or expand it, `n` creates a collection, `/` searches, and Esc clears a search.
+    /// rename or expand it, `a` answers Carrel's question about it and `A` asks for them, `w`
+    /// wanders from it, `n` creates a collection, `/` searches, and Esc clears a search.
     pub(super) fn browse_key(&mut self, key: KeyEvent) -> Handled {
         if self.browse_pane == Pane::Item
             && let Handled::Yes(effect) = self.item_key(key)
@@ -444,6 +462,9 @@ impl App {
             return Handled::Yes(effect);
         }
         let on_item = self.browse_pane != Pane::Collections;
+        if !on_item && let Some(handled) = self.collection_restructure_key(key) {
+            return handled;
+        }
         if let Handled::Yes(effect) = self.browse_action_key(key, on_item) {
             return Handled::Yes(effect);
         }
@@ -454,7 +475,10 @@ impl App {
                     self.browse_pane = Pane::Items;
                     self.load_card();
                 }
-                Pane::Items if self.item.card.is_some() => self.browse_pane = Pane::Item,
+                Pane::Items if self.item.card.is_some() => {
+                    self.browse_pane = Pane::Item;
+                    self.note_search_result_opened();
+                }
                 _ => {}
             },
             KeyCode::Left | KeyCode::Char('h') => {
@@ -467,12 +491,31 @@ impl App {
                     return Handled::Yes(Some(Effect::EditItem(card.clone())));
                 }
             }
+            KeyCode::Char('E') if on_item => {
+                if let Some((card, _)) = self.browse_items.get(self.browse_item) {
+                    return Handled::Yes(Some(Effect::EditItemBody(card.clone())));
+                }
+            }
             KeyCode::Char('c') if on_item => {
                 if let Some((card, _)) = self.browse_items.get(self.browse_item) {
                     self.input = Some(Input {
                         purpose: InputPurpose::Correct(Correcting::Item(card.clone())),
                         text: String::new(),
                     });
+                }
+            }
+            KeyCode::Char('a') if on_item => match self.item_questions.first().cloned() {
+                Some(question) => self.answer_moment(&question),
+                None => self.message = Some("Carrel has no question about this item".into()),
+            },
+            KeyCode::Char('A') if on_item => {
+                if let Some((card, _)) = self.browse_items.get(self.browse_item) {
+                    return Handled::Yes(Some(Effect::QuestionsAbout(card.clone())));
+                }
+            }
+            KeyCode::Char('w') if on_item => {
+                if let Some((card, _)) = self.browse_items.get(self.browse_item).cloned() {
+                    self.wander_from(&card);
                 }
             }
             KeyCode::Char('/') => {

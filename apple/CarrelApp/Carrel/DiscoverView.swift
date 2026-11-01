@@ -18,6 +18,7 @@ struct DiscoverView: View {
             case .timeline: TimelinePage(discover: discover, window: window)
             case .map: ArchiveMapPage(discover: discover, window: window)
             case .activity: ActivityPage(discover: discover)
+            case .graph: GraphPage(discover: discover, window: window)
             }
         }
         .overlay(alignment: .bottom) {
@@ -210,6 +211,14 @@ private struct WanderStepView: View {
                 if let item = window.items.first(where: { $0.id == step.item.id }) {
                     AskAboutButton(model: window, item: item)
                 }
+            }
+            // Now and then, Carrel's question about the step's item.
+            if let question = step.question {
+                GroupBox("A question about it") {
+                    AskedQuestionView(question: question, window: window)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .id(question.id)
             }
         }
     }
@@ -476,6 +485,39 @@ private struct ActivityPage: View {
             } else {
                 ProgressView().padding()
             }
+        }
+        .toolbar {
+            ToolbarItemGroup {
+                DatePicker(
+                    "From", selection: day(\.activityFrom, or: yearAgo),
+                    displayedComponents: .date)
+                DatePicker(
+                    "To", selection: day(\.activityTo, or: .now), displayedComponents: .date)
+                Button("Last Year") {
+                    discover.activityFrom = nil
+                    discover.activityTo = nil
+                }
+                .disabled(discover.activityFrom == nil && discover.activityTo == nil)
+                .help("Show the year to today")
+            }
+        }
+        .onChange(of: [discover.activityFrom, discover.activityTo]) {
+            Task { await discover.refresh(.activity) }
+        }
+    }
+
+    private var yearAgo: Date {
+        Calendar.current.date(byAdding: .year, value: -1, to: .now) ?? .now
+    }
+
+    /// A day of the range, `fallback` until it's chosen.
+    private func day(_ path: ReferenceWritableKeyPath<DiscoverModel, Date?>, or fallback: Date)
+        -> Binding<Date>
+    {
+        Binding {
+            discover[keyPath: path] ?? fallback
+        } set: {
+            discover[keyPath: path] = $0
         }
     }
 

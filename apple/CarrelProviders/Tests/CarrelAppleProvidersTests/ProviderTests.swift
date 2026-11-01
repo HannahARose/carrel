@@ -30,7 +30,7 @@ func send(_ server: Server, _ request: [String: Any]) async throws -> [String: A
     return try #require(JSONSerialization.jsonObject(with: Data(reply.utf8)) as? [String: Any])
 }
 
-let server = Server(name: "Apple", version: "0.5.1", extractors: [PDFText()])
+let server = Server(name: "Apple", version: "0.6.0", extractors: [PDFText()])
 
 @Test func initializeReportsTheProtocolAndOffers() async throws {
     let reply = try await send(
@@ -159,7 +159,7 @@ struct ContextEcho: TextExtractor {
 }
 
 @Test func picturesToDescribeComeWithTheirContext() async throws {
-    let server = Server(name: "Apple", version: "0.5.1", extractors: [ContextEcho(), PDFText()])
+    let server = Server(name: "Apple", version: "0.6.0", extractors: [ContextEcho(), PDFText()])
     let start = try await send(
         server, ["jsonrpc": "2.0", "id": 1, "method": "initialize", "params": ["protocol": 1]])
     let offers = try #require((start["result"] as? [String: Any])?["offers"] as? [[String: Any]])

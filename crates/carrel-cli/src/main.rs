@@ -6,14 +6,18 @@
 
 mod agent;
 mod ask;
+mod asking;
 mod backup;
 mod bench;
+mod bench_crawl;
 mod bench_librarian;
 mod bench_questions;
+mod bench_restructure;
 mod checkout;
 mod commands;
 mod config;
 mod correct;
+mod crawl;
 mod desk;
 mod discover;
 mod edit;
@@ -29,11 +33,15 @@ mod progress;
 mod providers;
 mod questions;
 mod related;
+mod reminders;
+mod restructure;
+mod restructure_sections;
 mod review;
 mod search;
 mod sessions;
 mod settings;
 mod tui;
+mod usage_report;
 mod worker;
 
 use std::path::{Path, PathBuf};
@@ -132,6 +140,16 @@ enum Command {
     Providers,
     /// List the file types this device reads, and those it couldn't read so far.
     Formats,
+    /// How well Carrel is doing on this device and what to tweak, from its decision log: no
+    /// titles, text, names or searches, so it can be shared.
+    Report {
+        /// The period: a span such as 14d or 2w, `today`, or a date such as 2026-10-01.
+        #[arg(long, value_name = "WHEN", default_value = usage_report::DEFAULT_SINCE)]
+        since: String,
+        /// Show collections by path rather than identifier, for your eyes only.
+        #[arg(long)]
+        names: bool,
+    },
     /// Add files and folders to the intake queue. A worker drafts each one's card and
     /// destination in the background, saving proposals for `carrel review` as they're ready.
     /// Nothing is moved until a proposal is approved.
@@ -175,6 +193,10 @@ enum Command {
     Edit {
         /// The item: its identifier, or its card's or contents' path.
         item: String,
+        /// Edit the card's body instead, its notes and anything below the fields; Carrel's
+        /// own sections, such as the history, have to stay as they are.
+        #[arg(long)]
+        body: bool,
     },
     /// Expand a filed compressed file (zip, tar, gzip and the like) so what it holds can be
     /// browsed: it takes the compressed file's place, which goes to the Trash. One change undo
@@ -242,6 +264,10 @@ enum Command {
         /// returned version is snapshotted. Otherwise they're kept unless you say so.
         #[arg(long, conflicts_with = "discard")]
         trim_snapshots: bool,
+        /// What to do with the working copy once it's returned, instead of what
+        /// `checkout.after_return` says: put it in the system Trash, or keep it.
+        #[arg(long, value_enum, value_name = "WHAT", conflicts_with = "discard")]
+        working_copy: Option<checkout::WorkingCopy>,
     },
     /// Desk items: files and folders being worked on where they are, tracked without being
     /// archived.
@@ -277,6 +303,25 @@ enum Command {
         #[command(subcommand)]
         action: Option<QuestionsAction>,
     },
+    /// Restructure proposals: changes to how the archive is organized, reviewed and approved
+    /// all, in part or not at all, and undone as one change. `propose` suggests a better shape
+    /// for a collection or the whole archive; `tags` merges synonym tags, splits overloaded
+    /// ones and retires rare ones, with no files moved.
+    Restructure {
+        #[command(subcommand)]
+        action: RestructureAction,
+    },
+    /// The reminders due now: work sessions whose entries wait, checkouts due back, and the
+    /// weekly sum of what's waiting, as the `reminders` setting turns them on. `carrel agent`
+    /// shows them as notifications; `carrel status` lists them too.
+    Reminders,
+    /// The crawler, which rechecks where items are filed when the device is idle: how far it
+    /// has got (`status`, the default), a pass now (`run`), or undoing its changes (`undo`).
+    /// Its findings wait in `carrel review`.
+    Crawl {
+        #[command(subcommand)]
+        action: Option<crawl::CrawlAction>,
+    },
     /// Measure text models on the benchmark's test set, for choosing defaults
     /// (`docs/design/benchmark.md`).
     #[command(hide = true)]
@@ -286,6 +331,85 @@ enum Command {
     Models {
         #[command(subcommand)]
         action: Option<ModelsAction>,
+    },
+}
+
+#[derive(Debug, Clone, Subcommand)]
+enum RestructureAction {
+    /// Propose a better shape for a collection and everything in it, or the whole archive:
+    /// new subcollections, items moved to where they belong, small collections merged, and
+    /// design documents rewritten. Sealed bundles move whole and are never entered;
+    /// checked-out items stay put. How readily it proposes follows `restructure.eagerness`.
+    Propose {
+        /// The collection, such as Reading or Projects/Hardware; the whole archive if left out.
+        collection: Option<String>,
+        /// Build it from the numbers alone, without a text model: plain names, and the
+        /// findability test left for a device with a model.
+        #[arg(long)]
+        no_model: bool,
+    },
+    /// List the restructure proposals waiting, tag proposals too.
+    List,
+    /// Show a proposal: its rationale, cost, benefit and findability result, and each change,
+    /// grouped by how invasive it is, with why.
+    Show {
+        /// The proposal, if more than one is waiting: its identifier, or its start or end.
+        id: Option<String>,
+    },
+    /// Apply the proposal, or only some of its changes, as one change undo reverses, after a
+    /// backup snapshot when it moves files.
+    Approve {
+        /// The proposal, if more than one is waiting.
+        id: Option<String>,
+        /// Only these changes, by number, such as 1,3. Changes that need one left out are
+        /// dropped too, and said so.
+        #[arg(long, value_name = "N,…", value_delimiter = ',')]
+        only: Vec<String>,
+    },
+    /// Drop the proposal, changing nothing.
+    Reject {
+        /// The proposal, if more than one is waiting.
+        id: Option<String>,
+    },
+    /// How eager Carrel is to rearrange, archive-wide or at a collection, and the numbers that
+    /// stand for it. With a level, sets a collection's own in its design document; `default`
+    /// clears it so the archive's applies.
+    Eagerness {
+        /// The collection; the archive if left out.
+        collection: Option<String>,
+        /// settled, balanced, eager or default.
+        level: Option<String>,
+    },
+    /// Tag proposals: merge tags that mean the same thing, split a tag spread over items that
+    /// don't belong together, and retire tags hardly used. Tags you wrote yourself stay.
+    /// Without a subcommand, makes a proposal.
+    Tags {
+        #[command(subcommand)]
+        action: Option<RestructureTagsAction>,
+    },
+}
+
+#[derive(Debug, Clone, Subcommand)]
+enum RestructureTagsAction {
+    /// Make a proposal from the archive's tags and meaning index, replacing any waiting one.
+    Propose,
+    /// Show the waiting proposal: each change, why, and the items it touches.
+    Show {
+        /// The proposal, if more than one is waiting: its identifier, or its start or end.
+        id: Option<String>,
+    },
+    /// Apply the proposal, or only some of its changes, as one change undo reverses.
+    Approve {
+        /// The proposal, if more than one is waiting.
+        id: Option<String>,
+        /// Only these changes, by number, such as 1,3.
+        #[arg(long, value_name = "N,…", value_delimiter = ',')]
+        only: Vec<String>,
+    },
+    /// Drop the proposal, changing nothing.
+    Reject {
+        /// The proposal, if more than one is waiting.
+        id: Option<String>,
     },
 }
 
@@ -622,6 +746,17 @@ enum DiscoverAction {
         #[arg(long, value_name = "DATE")]
         to: Option<String>,
     },
+    /// The tag and link graph: which collections connect and why, through the tags their
+    /// items share, the links between them and the days they were worked on together,
+    /// strongest first.
+    Graph {
+        /// List the strongest connections between items in different collections instead.
+        #[arg(long)]
+        items: bool,
+        /// List at most this many connections.
+        #[arg(short = 'n', long, value_name = "COUNT", default_value_t = 10)]
+        limit: usize,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -939,6 +1074,9 @@ fn without_command(archive: Option<&std::path::Path>, json: bool) -> ExitCode {
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+    if !matches!(cli.command, Some(Command::Bench(_))) {
+        carrel_core::decisions::start();
+    }
     let Some(command) = cli.command else {
         return without_command(cli.archive.as_deref(), cli.json);
     };
@@ -978,6 +1116,9 @@ fn main() -> ExitCode {
         } => commands::log(cli.archive.as_deref(), max_count, librarian),
         Command::Providers => Ok(providers::list()),
         Command::Formats => Ok(formats::list()),
+        Command::Report { since, names } => {
+            usage_report::report(cli.archive.as_deref(), &since, names)
+        }
         Command::Ingest(args) => {
             ingest::command(cli.archive.as_deref(), &args.into_request(), cli.json)
         }
@@ -985,7 +1126,8 @@ fn main() -> ExitCode {
         Command::Agent(args) => agent_command(cli.archive.as_deref(), args, cli.json),
         Command::Settings { action } => settings_command(cli.archive.as_deref(), action),
         Command::Review { all, action } => review_command(cli.archive.as_deref(), all, action),
-        Command::Edit { item } => edit::edit(cli.archive.as_deref(), &item),
+        Command::Edit { item, body: false } => edit::edit(cli.archive.as_deref(), &item),
+        Command::Edit { item, body: true } => edit::edit_body(cli.archive.as_deref(), &item),
         Command::Expand { item, anyway } => expand::expand(cli.archive.as_deref(), &item, anyway),
         Command::Correct {
             item,
@@ -1008,24 +1150,24 @@ fn main() -> ExitCode {
             yes,
             discard,
             trim_snapshots,
+            working_copy,
         } => checkout::return_item(
             cli.archive.as_deref(),
             &item,
             from.as_deref(),
-            yes,
-            discard,
+            (yes, discard),
             trim_snapshots,
+            working_copy,
         ),
         Command::Collection { action } => collection_command(cli.archive.as_deref(), action),
         Command::Backup { action } => backup_command(cli.archive.as_deref(), action),
         Command::Questions { action } => questions_command(cli.archive.as_deref(), action),
         Command::Discover { action } => discover_command(cli.archive.as_deref(), action, cli.json),
+        Command::Restructure { action } => restructure_command(cli.archive.as_deref(), action),
+        Command::Crawl { action } => crawl::command(cli.archive.as_deref(), action),
+        Command::Reminders => reminders::list(cli.archive.as_deref()),
         Command::Bench(args) => bench::bench(&args, cli.json),
-        Command::Models { action } => models_command(
-            action.unwrap_or(ModelsAction::List),
-            cli.archive.as_deref(),
-            cli.json,
-        ),
+        Command::Models { action } => models_command(action, cli.archive.as_deref(), cli.json),
     };
     finish(after(result, changes, cli.archive.as_deref()), cli.json)
 }
@@ -1158,16 +1300,56 @@ fn discover_command(
         DiscoverAction::Activity { from, to } => {
             discover::activity(archive, from.as_deref(), to.as_deref())
         }
+        DiscoverAction::Graph { items, limit } => discover::graph(archive, items, limit),
+    }
+}
+
+/// `carrel restructure` and its subcommands.
+fn restructure_command(
+    archive: Option<&std::path::Path>,
+    action: RestructureAction,
+) -> Result<Report, Failure> {
+    let action = match action {
+        RestructureAction::Propose {
+            collection,
+            no_model,
+        } => return restructure_sections::propose(archive, collection.as_deref(), no_model),
+        RestructureAction::List => return restructure_sections::list(archive),
+        RestructureAction::Show { id } => {
+            return restructure_sections::show(archive, id.as_deref());
+        }
+        RestructureAction::Approve { id, only } => {
+            return restructure_sections::approve(archive, id.as_deref(), &only);
+        }
+        RestructureAction::Reject { id } => {
+            return restructure_sections::reject(archive, id.as_deref());
+        }
+        RestructureAction::Eagerness { collection, level } => {
+            return restructure_sections::eagerness(
+                archive,
+                collection.as_deref(),
+                level.as_deref(),
+            );
+        }
+        RestructureAction::Tags { action } => action,
+    };
+    match action.unwrap_or(RestructureTagsAction::Propose) {
+        RestructureTagsAction::Propose => restructure::propose_tags(archive),
+        RestructureTagsAction::Show { id } => restructure::show_tags(archive, id.as_deref()),
+        RestructureTagsAction::Approve { id, only } => {
+            restructure::approve_tags(archive, id.as_deref(), &only)
+        }
+        RestructureTagsAction::Reject { id } => restructure::reject_tags(archive, id.as_deref()),
     }
 }
 
 /// `carrel models` and its subcommands.
 fn models_command(
-    action: ModelsAction,
+    action: Option<ModelsAction>,
     archive: Option<&std::path::Path>,
     json: bool,
 ) -> Result<Report, Failure> {
-    match action {
+    match action.unwrap_or(ModelsAction::List) {
         ModelsAction::List => models::list(),
         ModelsAction::Download { name, format, yes } => models::download(&name, format, yes, json),
         ModelsAction::Embed { texts, query } => models::embed(archive, &texts, query),
@@ -1189,11 +1371,20 @@ fn changes_archive(command: &Command) -> bool {
         | Command::Return { .. }
         | Command::Collection { .. } => true,
         Command::Settings { action } => matches!(action, Some(SettingsAction::Set { .. })),
+        Command::Restructure { action } => matches!(
+            action,
+            RestructureAction::Approve { .. }
+                | RestructureAction::Eagerness { level: Some(_), .. }
+                | RestructureAction::Tags {
+                    action: Some(RestructureTagsAction::Approve { .. })
+                }
+        ),
         Command::Review { action, .. } => !matches!(
             action,
             None | Some(ReviewAction::List { .. } | ReviewAction::Show { .. })
         ),
         Command::Desk { action } => !matches!(action, None | Some(DeskAction::List)),
+        Command::Crawl { action } => !matches!(action, None | Some(crawl::CrawlAction::Status)),
         Command::Backup { action } => {
             matches!(action, BackupAction::Setup { .. } | BackupAction::Now)
         }

@@ -709,3 +709,434 @@ fn the_model_is_the_chosen_one_else_the_largest_that_fits_else_apples() {
     };
     assert_eq!(collection.item(), None);
 }
+
+/// A registry with a scripted model whose context is `context` tokens.
+fn scripted_with_context(
+    context: u64,
+    answers: Vec<Result<Value, carrel_core::providers::ProviderError>>,
+) -> (
+    Registry,
+    std::sync::Arc<std::sync::Mutex<Vec<carrel_core::providers::CompletionRequest>>>,
+) {
+    let model = Scripted::new("scripted", 10, context, answers);
+    let asked = model.asked.clone();
+    let mut registry = Registry::with_built_ins();
+    registry.add(Box::new(model));
+    (registry, asked)
+}
+
+/// The final answer gets more room than a step naming a tool, and a step whose reply was cut
+/// off is asked again once with that room, rather than failing the question (#356).
+#[test]
+fn a_cut_off_reply_is_asked_again_with_room_for_a_whole_answer() {
+    use carrel_core::providers::ProviderError;
+    let (_dir, archive, _) = sample();
+    let (registry, asked) = scripted(vec![
+        tool("search", "lamp"),
+        Err(ProviderError::Failed(
+            "m's answer was cut off at 900 tokens before the JSON ended".into(),
+        )),
+        answer("The parts list.", &[PARTS], json!([]), json!([])),
+    ]);
+    let librarian = Librarian::new(&archive, &registry, the_model(), &providers).unwrap();
+    let mut conversation = Conversation::default();
+    let answer = librarian
+        .ask(&mut conversation, "What's the lamp made of?")
+        .unwrap();
+    assert_eq!(answer.text, "The parts list.");
+    let asked = asked.lock().unwrap();
+    let room: Vec<_> = asked.iter().map(|r| r.max_tokens).collect();
+    assert_eq!(room, [Some(900), Some(900), Some(2_400)]);
+    assert_eq!(
+        asked[1].prompt, asked[2].prompt,
+        "the same step, asked again"
+    );
+
+    let (registry, asked) = scripted(vec![tool("search", "lamp"), tool("show", PARTS)]);
+    let librarian = Librarian::new(&archive, &registry, the_model(), &providers)
+        .unwrap()
+        .with_limits(Limits {
+            steps: 2,
+            ..Limits::default()
+        });
+    librarian
+        .ask(&mut Conversation::default(), "What's the lamp made of?")
+        .unwrap();
+    assert_eq!(
+        asked.lock().unwrap()[1].max_tokens,
+        Some(2_400),
+        "the last step, which must answer, has room for it"
+    );
+}
+
+/// The same tool call again isn't run or counted as a step: the model is told it's already
+/// done, with the earlier result (#356).
+#[test]
+fn a_repeated_call_is_answered_from_before_without_a_step() {
+    let (_dir, archive, _) = sample();
+    let (registry, asked) = scripted(vec![
+        tool("search", "lamp parts"),
+        tool("search", "  Lamp   PARTS "),
+        tool("search", "lamp parts"),
+        answer("The parts list.", &[PARTS], json!([]), json!([])),
+    ]);
+    let librarian = Librarian::new(&archive, &registry, the_model(), &providers)
+        .unwrap()
+        .with_limits(Limits {
+            steps: 2,
+            ..Limits::default()
+        });
+    let mut conversation = Conversation::default();
+    let answer = librarian
+        .ask(&mut conversation, "What's the lamp made of?")
+        .unwrap();
+    assert_eq!(answer.text, "The parts list.", "two repeats cost no steps");
+    assert_eq!(answer.steps.len(), 1, "the search ran once");
+    let asked = asked.lock().unwrap();
+    assert_eq!(asked.len(), 4);
+    assert!(
+        asked[2].prompt.contains("Already done"),
+        "{}",
+        asked[2].prompt
+    );
+    let again = asked[2].prompt.split("Already done").nth(1).unwrap();
+    assert!(
+        again.contains("Desk lamp parts list"),
+        "with the earlier result: {again}"
+    );
+
+    // Repeats past as many as it has steps cost a step each, so it can't go round for ever.
+    let (registry, asked) = scripted(vec![tool("search", "lamp"); 10]);
+    let librarian = Librarian::new(&archive, &registry, the_model(), &providers)
+        .unwrap()
+        .with_limits(Limits {
+            steps: 2,
+            ..Limits::default()
+        });
+    let mut conversation = Conversation::default();
+    let answer = librarian.ask(&mut conversation, "Lamp?").unwrap();
+    assert_eq!(answer.stopped, Some(Stopped::Steps));
+    assert_eq!(asked.lock().unwrap().len(), 4);
+}
+
+/// Each step's prompt fits the model's context: older results are left out, then the newest
+/// is cut short (#356). A model whose context overflows anyway is asked again once with what
+/// was done shortened further.
+#[test]
+fn tool_results_are_trimmed_to_fit_the_models_context() {
+    use carrel_core::providers::{ProviderError, estimate_tokens};
+    let (_dir, archive, _) = sample();
+    let context = 2_600;
+    let (registry, asked) = scripted_with_context(
+        context,
+        vec![
+            tool("collection", "Reading"),
+            tool("collection", "Projects/Hardware"),
+            tool("search", "oscillators"),
+            tool("collection", "Projects"),
+            answer("Two collections.", &[], json!([]), json!([])),
+        ],
+    );
+    let librarian = Librarian::new(&archive, &registry, the_model(), &providers).unwrap();
+    librarian
+        .ask(
+            &mut Conversation::default(),
+            "What's in Reading and Projects?",
+        )
+        .unwrap();
+    let asked = asked.lock().unwrap();
+    assert_eq!(asked.len(), 5);
+    for request in asked.iter() {
+        let used = estimate_tokens(request.system.as_deref().unwrap())
+            + estimate_tokens(&request.prompt)
+            + u64::from(request.max_tokens.unwrap());
+        assert!(used <= context, "{used} tokens: {}", request.prompt);
+    }
+    assert!(
+        asked[4].prompt.contains("left out, to fit"),
+        "{}",
+        asked[4].prompt
+    );
+
+    let (registry, asked) = scripted_with_context(
+        context,
+        vec![
+            tool("collection", "Projects"),
+            Err(ProviderError::Unsupported(
+                "too long for Apple's on-device model: Exceeded model context window size".into(),
+            )),
+            answer("Reading holds papers.", &[], json!([]), json!([])),
+        ],
+    );
+    let librarian = Librarian::new(&archive, &registry, the_model(), &providers).unwrap();
+    let mut conversation = Conversation::default();
+    let answer = librarian
+        .ask(&mut conversation, "What's in Reading?")
+        .unwrap();
+    assert_eq!(answer.text, "Reading holds papers.");
+    let asked = asked.lock().unwrap();
+    assert!(
+        asked[2].prompt.len() < asked[1].prompt.len(),
+        "shortened further"
+    );
+}
+
+#[test]
+fn the_journal_escapes_titles_and_shortens_a_long_question_in_its_heading() {
+    use carrel_core::card::Sensitivity;
+    use carrel_core::librarian::{Answer, ItemLink};
+    let question = "Which of the draft notes about the coupled oscillators mention the locking condition, and when?";
+    let conversation = Conversation {
+        answers: vec![Answer {
+            question: question.into(),
+            text: "Only one.".into(),
+            items: vec![ItemLink {
+                id: Id::new_v7(),
+                title: "[draft] notes | v2".into(),
+                card: "Reading/Draft notes.md".into(),
+                collection: "Reading".into(),
+                sensitivity: Sensitivity::Personal,
+            }],
+            passages: Vec::new(),
+            suggestions: Vec::new(),
+            steps: Vec::new(),
+            model: "scripted/m".into(),
+            tokens: 0,
+            stopped: None,
+        }],
+    };
+    let at: jiff::Zoned = "2026-10-31T09:30:00-07:00[America/Los_Angeles]"
+        .parse()
+        .unwrap();
+    let text = journal::markdown(&conversation, "Journal/2026", &at);
+    let heading = text.lines().next().unwrap();
+    assert!(
+        heading.starts_with("### 2026-10-31 09:30 · Which of the draft notes"),
+        "{heading}"
+    );
+    assert!(
+        heading.ends_with('…'),
+        "a long question is cut short: {heading}"
+    );
+    assert_eq!(
+        heading.chars().count(),
+        "### 2026-10-31 09:30 · ".chars().count() + 81
+    );
+    assert!(
+        text.contains(&format!("**You asked:** {question}")),
+        "in full below"
+    );
+    assert!(
+        text.contains("- [\\[draft\\] notes \\| v2](../../Reading/Draft%20notes.md)"),
+        "brackets and bars can't break the link: {text}"
+    );
+}
+
+/// Review of #361: a call that differs from an earlier one only in case is a different call
+/// when the tool tells them apart. Card paths resolve case-sensitively, so the lowercased path
+/// fails and the right one must still run.
+#[test]
+fn a_call_differing_in_case_that_resolves_differently_is_run() {
+    let (_dir, archive, _) = sample();
+    let (registry, asked) = scripted(vec![
+        tool("show", &NOTE_CARD.to_lowercase()),
+        tool("show", NOTE_CARD),
+        answer("The note.", &[NOTE], json!([]), json!([])),
+    ]);
+    let librarian = Librarian::new(&archive, &registry, the_model(), &providers).unwrap();
+    let answer = librarian
+        .ask(&mut Conversation::default(), "What's the oscillators note?")
+        .unwrap()
+        .clone();
+    let asked = asked.lock().unwrap();
+    assert!(
+        !asked[2].prompt.contains("Already done"),
+        "the right path was refused as a repeat: {}",
+        asked[2].prompt
+    );
+    assert_eq!(answer.steps.len(), 2, "{:?}", answer.steps);
+}
+
+/// Review of #361: each step's prompt fits the model's context even when the conversation so
+/// far is long. Only what was done is trimmed, never the earlier answers.
+#[test]
+fn a_long_conversation_still_fits_the_models_context() {
+    use carrel_core::providers::estimate_tokens;
+    let (_dir, archive, _) = sample();
+    let context = 4_096;
+    let long = "The lamp is made of brass and glass, with a cotton cord. ".repeat(50);
+    let mut script: Vec<_> = (0..4)
+        .map(|_| answer(&long, &[], json!([]), json!([])))
+        .collect();
+    script.push(tool("search", "lamp"));
+    script.push(answer("Brass.", &[], json!([]), json!([])));
+    let (registry, asked) = scripted_with_context(context, script);
+    let librarian = Librarian::new(&archive, &registry, the_model(), &providers).unwrap();
+    let mut conversation = Conversation::default();
+    for _ in 0..5 {
+        librarian
+            .ask(&mut conversation, "What's the lamp made of?")
+            .unwrap();
+    }
+    let asked = asked.lock().unwrap();
+    for request in asked.iter().skip(4) {
+        let used = estimate_tokens(request.system.as_deref().unwrap())
+            + estimate_tokens(&request.prompt)
+            + u64::from(request.max_tokens.unwrap());
+        assert!(
+            used <= context,
+            "{used} tokens in a {context}-token context"
+        );
+    }
+}
+
+/// Review of #361: a final answer cut off on the last step doesn't fail the whole question
+/// and lose what was found; it ends as running out does, with the items come across, once
+/// it's cut off when asked for briefly too (#401).
+#[test]
+fn a_cut_off_answer_on_the_last_step_keeps_what_was_found() {
+    use carrel_core::providers::ProviderError;
+    let (_dir, archive, _) = sample();
+    let cut = || {
+        Err(ProviderError::Failed(
+            "m's answer was cut off at 2400 tokens before the JSON ended".into(),
+        ))
+    };
+    let (registry, _) = scripted(vec![tool("search", "lamp"), cut(), cut()]);
+    let librarian = Librarian::new(&archive, &registry, the_model(), &providers)
+        .unwrap()
+        .with_limits(Limits {
+            steps: 2,
+            ..Limits::default()
+        });
+    let mut conversation = Conversation::default();
+    let answer = librarian.ask(&mut conversation, "What's the lamp made of?");
+    let answer = answer.expect("the question failed outright");
+    assert_ne!(answer.items, []);
+}
+
+#[test]
+fn a_model_that_fails_on_the_last_step_fails_the_question_to_ask_again() {
+    use carrel_core::providers::ProviderError;
+    let (_dir, archive, _) = sample();
+    let (registry, _) = scripted(vec![
+        tool("search", "lamp"),
+        Err(ProviderError::Failed("the model crashed".into())),
+    ]);
+    let librarian = Librarian::new(&archive, &registry, the_model(), &providers)
+        .unwrap()
+        .with_limits(Limits {
+            steps: 2,
+            ..Limits::default()
+        });
+    let mut conversation = Conversation::default();
+    let asked = librarian.ask(&mut conversation, "What's the lamp made of?");
+    assert!(asked.is_err(), "only a cut-off answer ends as out of room");
+    assert_eq!(conversation.answers, []);
+}
+
+/// An answer cut off with the whole room is asked for once more, briefly: the items first and
+/// a few sentences, without passages or suggestions. Cut off even then, the question ends as
+/// out of room with the items it came across, rather than failing (#401).
+#[test]
+fn an_answer_cut_off_with_the_whole_room_is_asked_for_briefly() {
+    use carrel_core::librarian::prompts;
+    use carrel_core::providers::ProviderError;
+    let cut = || {
+        Err(ProviderError::Failed(
+            "m's answer was cut off at 2400 tokens before the JSON ended".into(),
+        ))
+    };
+    let (_dir, archive, _) = sample();
+    let (registry, asked) = scripted(vec![
+        tool("search", "lamp"),
+        cut(),
+        cut(),
+        Ok(json!({"action": "answer", "input": "", "items": [PARTS], "answer": "The parts list."})),
+    ]);
+    let librarian = Librarian::new(&archive, &registry, the_model(), &providers).unwrap();
+    let mut conversation = Conversation::default();
+    let answer = librarian
+        .ask(&mut conversation, "What's the lamp made of?")
+        .unwrap();
+    assert_eq!(answer.text, "The parts list.");
+    assert_eq!(answer.stopped, None);
+    assert_eq!(answer.items.len(), 1);
+    let asked = asked.lock().unwrap();
+    let room: Vec<_> = asked.iter().map(|r| r.max_tokens).collect();
+    assert_eq!(room, [Some(900), Some(900), Some(2_400), Some(2_400)]);
+    assert_eq!(asked[1].prompt, asked[2].prompt);
+    assert_eq!(
+        asked[3].prompt,
+        format!("{}{}", asked[2].prompt, prompts::CUT_OFF)
+    );
+    let brief = asked[3].schema.as_ref().unwrap();
+    assert_eq!(
+        brief["required"],
+        json!(["action", "input", "items", "answer"])
+    );
+    assert!(brief["properties"].get("passages").is_none());
+
+    // Cut off when briefly asked too: what it came across is kept.
+    let (registry, asked) = scripted(vec![tool("search", "lamp"), cut(), cut(), cut()]);
+    let librarian = Librarian::new(&archive, &registry, the_model(), &providers).unwrap();
+    let mut conversation = Conversation::default();
+    let answer = librarian
+        .ask(&mut conversation, "What's the lamp made of?")
+        .unwrap();
+    assert_eq!(answer.stopped, Some(Stopped::Tokens));
+    assert!(
+        answer.items.iter().any(|i| i.card == PARTS_CARD),
+        "{answer:?}"
+    );
+    assert_eq!(asked.lock().unwrap().len(), 4);
+
+    // A failure that isn't a cut-off still fails the question, to ask again.
+    let (registry, _) = scripted(vec![
+        Err(ProviderError::Failed("m stopped".into())),
+        Err(ProviderError::Failed("m stopped".into())),
+    ]);
+    let librarian = Librarian::new(&archive, &registry, the_model(), &providers).unwrap();
+    assert!(
+        librarian
+            .ask(&mut Conversation::default(), "Lamp?")
+            .is_err()
+    );
+}
+
+/// The answer's items come before its text, and its lists are capped, so a model that goes on
+/// too long names what it found first and can't list until it runs out of room (#401).
+#[test]
+fn the_answer_form_lists_the_items_first_and_caps_its_lists() {
+    use carrel_core::librarian::prompts;
+    let schema = prompts::schema(true);
+    let order: Vec<&str> = schema["properties"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(
+        order,
+        [
+            "action",
+            "input",
+            "items",
+            "answer",
+            "passages",
+            "suggestions"
+        ]
+    );
+    assert_eq!(schema["required"], json!(order));
+    for (list, most) in [
+        ("items", prompts::MAX_ITEMS),
+        ("passages", prompts::MAX_PASSAGES),
+        ("suggestions", prompts::MAX_SUGGESTIONS),
+    ] {
+        assert_eq!(
+            schema["properties"][list]["maxItems"],
+            json!(most),
+            "{list}"
+        );
+    }
+}

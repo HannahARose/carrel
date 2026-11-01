@@ -14,7 +14,7 @@ name = "carrel"
 path = "src/main.rs"
 
 [dependencies]
-base64 = "0.22.1"
+base64 = "0.23.1"
 carrel-core.workspace = true
 clap = { version = "4.6.7", features = ["derive"] }
 jiff = "0.2.38"

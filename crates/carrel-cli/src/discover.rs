@@ -14,6 +14,7 @@ use carrel_core::discover::today::{self, OnThisDay};
 use carrel_core::discover::visits::{Forgotten, Visits};
 use carrel_core::discover::wander::{self, Reason, Step, Surroundings, Walk};
 use carrel_core::discover::{Catalog, DateKind, Item, map};
+use carrel_core::graph::{Connection, Edge, Graph};
 use carrel_core::human_size;
 use carrel_core::search::query::Query;
 use jiff::civil::Date;
@@ -85,7 +86,7 @@ fn what_text(what: &[DateKind]) -> String {
     words.join(", ")
 }
 
-fn today_text(day: &OnThisDay, date: Date) -> String {
+pub(crate) fn today_text(day: &OnThisDay, date: Date) -> String {
     let mut text = String::new();
     let heading = date.strftime("%-d %B").to_string();
     if day.years.is_empty() {
@@ -168,6 +169,8 @@ pub fn wander(archive: Option<&Path>, args: &WanderArgs, json: bool) -> Result<R
     let texts = carrel_core::search::texts::TextCache::of(&archive);
     let interactive = !json && std::io::stdin().is_terminal() && std::io::stdout().is_terminal();
     let mut steps = Vec::new();
+    let mut questions: Vec<(usize, carrel_core::questions::QuestionEntry)> = Vec::new();
+    let mut asked_at = None;
     let mut done = false;
     let mut around = Surroundings::new().with_texts(&texts);
     if let Some(near) = &near {
@@ -179,8 +182,20 @@ pub fn wander(archive: Option<&Path>, args: &WanderArgs, json: bool) -> Result<R
             break;
         };
         visits.open(&step.item.collection, today());
+        let question = carrel_core::questions::moments::wander_asks(step.number, asked_at)
+            .then(|| crate::asking::question_on(&archive, &step.item.card))
+            .flatten();
+        if let Some(question) = question {
+            asked_at = Some(step.number);
+            questions.push((step.number, question));
+        }
         if interactive {
             print!("{}", step_text(&step, &catalog));
+            if let Some((n, question)) = questions.last()
+                && *n == step.number
+            {
+                print!("{}", crate::asking::wander_question_text(question));
+            }
             steps.push(step);
             eprint!("\nEnter for the next step, q to stop: ");
             let _ = std::io::stderr().flush();
@@ -208,6 +223,9 @@ pub fn wander(archive: Option<&Path>, args: &WanderArgs, json: bool) -> Result<R
                 text.push('\n');
             }
             text.push_str(&step_text(step, &catalog));
+            if let Some((_, question)) = questions.iter().find(|(n, _)| *n == step.number) {
+                text.push_str(&crate::asking::wander_question_text(question));
+            }
         }
     }
     if done {
@@ -229,6 +247,12 @@ pub fn wander(archive: Option<&Path>, args: &WanderArgs, json: bool) -> Result<R
         "steps": steps,
         "visited": visited,
         "done": done,
+        "questions": questions.iter().map(|(n, q)| json!({
+            "step": n,
+            "id": q.id,
+            "question": q.question,
+            "subject": q.subject,
+        })).collect::<Vec<_>>(),
     });
     Ok(Report::new(text, json))
 }
@@ -266,7 +290,7 @@ fn reason_text(reason: &Reason, catalog: &Catalog) -> String {
     }
 }
 
-fn step_text(step: &Step, catalog: &Catalog) -> String {
+pub(crate) fn step_text(step: &Step, catalog: &Catalog) -> String {
     let mut text = String::new();
     writeln!(
         text,
@@ -330,7 +354,7 @@ pub fn timeline(archive: Option<&Path>, args: &TimelineArgs) -> Result<Report, F
     ))
 }
 
-fn timeline_text(timeline: &Timeline, listed: usize) -> String {
+pub(crate) fn timeline_text(timeline: &Timeline, listed: usize) -> String {
     let mut text = String::new();
     if timeline.periods.is_empty() {
         writeln!(text, "Nothing is on the timeline.").unwrap();
@@ -409,7 +433,7 @@ pub fn map(archive: Option<&Path>, depth: Option<usize>) -> Result<Report, Failu
     ))
 }
 
-fn map_text(map: &Map, depth: Option<usize>) -> String {
+pub(crate) fn map_text(map: &Map, depth: Option<usize>) -> String {
     let mut text = String::new();
     writeln!(
         text,
@@ -521,10 +545,153 @@ pub fn activity(
     ))
 }
 
+/// `carrel discover graph`: the strongest connections between collections, or with `items`
+/// between items in different collections, at most `limit` of each. `--json` gives both.
+pub fn graph(archive: Option<&Path>, items: bool, limit: usize) -> Result<Report, Failure> {
+    let archive = locate(archive)?;
+    let found = Graph::build(&Catalog::read(&archive)?);
+    let connections: Vec<Connection> = found.connections().into_iter().take(limit).collect();
+    let edges: Vec<&Edge> = found
+        .strongest_item_edges()
+        .into_iter()
+        .take(limit)
+        .collect();
+    let text = graph_text(&found, items, limit);
+    let node = |id| {
+        found.item(id).map(|i| {
+            json!({
+                "id": i.id,
+                "title": i.title,
+                "card": i.card,
+                "collection": i.collection,
+                "sensitivity": i.sensitivity,
+            })
+        })
+    };
+    let json = json!({
+        "connections": connections,
+        "items": edges.iter().map(|e| json!({
+            "a": node(e.a),
+            "b": node(e.b),
+            "weight": e.weight,
+            "tags": e.tags,
+            "links": e.links,
+            "days": e.days,
+        })).collect::<Vec<_>>(),
+    });
+    Ok(Report::new(text, json))
+}
+
+/// The graph's `limit` strongest connections, as `carrel discover graph` writes them:
+/// between collections, or with `items` between items in different collections.
+pub(crate) fn graph_text(found: &Graph, items: bool, limit: usize) -> String {
+    if items {
+        let edges: Vec<&Edge> = found
+            .strongest_item_edges()
+            .into_iter()
+            .take(limit)
+            .collect();
+        item_edges_text(found, &edges)
+    } else {
+        let connections: Vec<Connection> = found.connections().into_iter().take(limit).collect();
+        connections_text(&connections)
+    }
+}
+
+/// Why two things are connected, in words: their links, days worked on together and tags.
+fn ties_text(links: usize, link_types: &[String], days: usize, tags: &[String]) -> String {
+    let mut parts = Vec::new();
+    if links > 0 && link_types.is_empty() {
+        parts.push(plural(links, "link"));
+    } else if links > 0 {
+        let mut types = link_types.to_vec();
+        types.dedup();
+        parts.push(format!("{} ({})", plural(links, "link"), types.join(", ")));
+    }
+    if days > 0 {
+        parts.push(format!("worked on together on {}", plural(days, "day")));
+    }
+    if !tags.is_empty() {
+        let shown: Vec<&str> = tags.iter().take(5).map(String::as_str).collect();
+        let more = tags.len().saturating_sub(shown.len());
+        let mut listed = shown.join(", ");
+        if more > 0 {
+            write!(listed, " and {more} more").unwrap();
+        }
+        parts.push(format!("tags {listed}"));
+    }
+    parts.join("; ")
+}
+
+pub(crate) fn connections_text(connections: &[Connection]) -> String {
+    if connections.is_empty() {
+        return "No collections are connected yet: their items share no tags, links or days \
+                of work.\n"
+            .into();
+    }
+    let mut text = String::from("The strongest connections between collections:\n");
+    for c in connections {
+        let branches = if c.separate_branches {
+            ""
+        } else {
+            " (one inside the other)"
+        };
+        writeln!(
+            text,
+            "  {} ↔ {}{branches}  {:.1}\n    {} tied: {}",
+            c.a,
+            c.b,
+            c.weight,
+            plural(c.pairs, "pair"),
+            ties_text(
+                c.links,
+                &[],
+                c.days,
+                &c.tags
+                    .iter()
+                    .map(|t| format!("{} ({})", t.tag, t.pairs))
+                    .collect::<Vec<_>>()
+            )
+        )
+        .unwrap();
+    }
+    text
+}
+
+pub(crate) fn item_edges_text(graph: &Graph, edges: &[&Edge]) -> String {
+    if edges.is_empty() {
+        return "No items in different collections are connected yet.\n".into();
+    }
+    let name = |id| {
+        graph.item(id).map_or_else(String::new, |i| {
+            format!(
+                "{}{} ({})",
+                i.title,
+                crate::related::mark(i.sensitivity),
+                i.collection
+            )
+        })
+    };
+    let mut text =
+        String::from("The strongest connections between items in different collections:\n");
+    for e in edges {
+        let ties = ties_text(e.links.len(), &e.links, e.days, &e.tags);
+        writeln!(
+            text,
+            "  {} ↔ {}  {:.1}\n    {ties}",
+            name(e.a),
+            name(e.b),
+            e.weight
+        )
+        .unwrap();
+    }
+    text
+}
+
 /// The shades of a heatmap's cells, from nothing to the busiest.
 const SHADES: [char; 5] = ['·', '░', '▒', '▓', '█'];
 
-fn activity_text(activity: &Activity) -> String {
+pub(crate) fn activity_text(activity: &Activity) -> String {
     let mut text = String::new();
     let filed: usize = activity.days.iter().map(|d| d.filed).sum();
     let sessions: usize = activity.days.iter().map(|d| d.sessions).sum();
@@ -598,15 +765,14 @@ fn activity_text(activity: &Activity) -> String {
 
 /// The part of `carrel status` that now and then names a collection not opened in a long
 /// time, and the same for programs.
-pub fn resurfaced(archive: &Archive) -> (String, Value) {
+pub fn resurfaced(archive: &Archive, records: &mut crate::asking::Records) -> (String, Value) {
     let Ok(catalog) = Catalog::read(archive) else {
         return (String::new(), Value::Null);
     };
-    let (mut visits, path) = visits(archive);
-    let before = visits.resurfaced.clone();
-    let found = visits.resurface(&catalog, today());
-    if visits.resurfaced != before {
-        save(&visits, path.as_deref());
+    let before = records.visits.resurfaced.clone();
+    let found = records.visits.resurface(&catalog, today());
+    if records.visits.resurfaced != before {
+        records.save_visits();
     }
     let Some(found) = found else {
         return (String::new(), Value::Null);

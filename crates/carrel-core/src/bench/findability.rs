@@ -105,7 +105,7 @@ pub fn check(descriptions: &Descriptions, answers: &Answers) -> Vec<String> {
 }
 
 /// A file name without its extension.
-fn stem(file: &str) -> &str {
+pub(crate) fn stem(file: &str) -> &str {
     Path::new(file)
         .file_stem()
         .and_then(|s| s.to_str())
@@ -149,7 +149,7 @@ pub fn drafts(results: &serde_json::Value) -> BTreeMap<String, Drafted> {
 }
 
 /// Copies `from` into `to`, folders and all.
-fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
+pub(crate) fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(to)?;
     for entry in std::fs::read_dir(from)? {
         let entry = entry?;

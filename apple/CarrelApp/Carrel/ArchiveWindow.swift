@@ -20,10 +20,10 @@ struct ArchiveWindow: View {
     var body: some View {
         @Bindable var model = model
         NavigationSplitView {
-            Sidebar(model: model)
+            ArchiveSidebar(model: model)
                 .navigationSplitViewColumnWidth(min: 180, ideal: 220)
         } content: {
-            ScreenContent(model: model)
+            ArchiveScreenContent(model: model)
                 .navigationSplitViewColumnWidth(min: 260, ideal: 340)
         } detail: {
             Inspector(model: model)
@@ -57,6 +57,9 @@ struct ArchiveWindow: View {
             choosePendingItem()
         }
         .onChange(of: app.pendingLink) { choosePendingItem() }
+        .onChange(of: app.pendingScreen, initial: true) {
+            if let screen = app.takePendingScreen(for: model.root) { model.screen = screen }
+        }
         .handlesExternalEvents(preferring: [AgentLink.scheme], allowing: [AgentLink.scheme])
         .onOpenURL { url in
             app.open(link: url) { openWindow(id: Self.windowID, value: $0) }
@@ -68,25 +71,39 @@ struct ArchiveWindow: View {
 }
 
 extension ArchiveWindow {
-    /// Chooses the item a link from the agent's menu asked for, on Active.
+    /// Chooses the item a link from the agent's menu asked for, on Active, and starts what
+    /// a link from Finder asked to do with it.
     fileprivate func choosePendingItem() {
-        guard model.handle != nil, let item = app.takePendingItem(for: model.root) else { return }
+        guard model.handle != nil, let link = app.takePendingLink(for: model.root),
+            let item = link.item
+        else { return }
         model.screen = .active
         model.selectedItemID = item
+        if let action = link.action { Task { await model.start(action, on: item) } }
     }
 }
 
-private struct Sidebar: View {
+struct ArchiveSidebar: View {
     @Bindable var model: ArchiveWindowModel
 
     var body: some View {
+        // A row's tag goes last, after its badge: a tag with a modifier after it isn't the
+        // row's, so the row can't be chosen (#334).
         List(selection: $model.screen) {
             Section {
                 Label("Status", systemImage: "gauge.with.dots.needle.33percent").tag(Screen.status)
-                Label("Review", systemImage: "tray.full").tag(Screen.review)
-                    .badge(model.archive?.reviewCount ?? 0)
-                Label("Questions", systemImage: "questionmark.bubble").tag(Screen.questions)
+                Label("Review", systemImage: "tray.full")
+                    .badge(
+                        (model.archive?.reviewCount ?? 0)
+                            + (model.archive?.crawlerFindings.count ?? 0)
+                    )
+                    .tag(Screen.review)
+                Label("Questions", systemImage: "questionmark.bubble")
                     .badge(model.archive?.questions.count ?? 0)
+                    .tag(Screen.questions)
+                Label("Restructure", systemImage: "rectangle.3.group")
+                    .badge(model.archive?.restructureProposals.count ?? 0)
+                    .tag(Screen.restructure)
                 Label("Active", systemImage: "arrow.up.forward.square")
                     .badge(model.activeScreen?.pendingCount ?? 0)
                     .tag(Screen.active)
@@ -114,7 +131,7 @@ private struct Sidebar: View {
 }
 
 /// The content column for the chosen screen.
-private struct ScreenContent: View {
+struct ArchiveScreenContent: View {
     @Bindable var model: ArchiveWindowModel
 
     var body: some View {
@@ -156,11 +173,26 @@ private struct ScreenContent: View {
                 .help("Show the items as a list or a grid")
             }
         case .review:
-            if let review = model.review {
-                ReviewView(review: review, collections: model.collections.map(\.path))
+            VStack(spacing: 0) {
+                if let crawler = model.crawler {
+                    ReviewSourcePicker(
+                        crawler: crawler, proposals: model.review?.proposals.count ?? 0
+                    )
+                    .padding(8)
+                }
+                if let crawler = model.crawler, crawler.isShown {
+                    CrawlerFindingsView(crawler: crawler)
+                } else if let review = model.review {
+                    ReviewView(review: review, collections: model.collections.map(\.path))
+                }
             }
         case .questions:
             if let questions = model.questions { QuestionsView(questions: questions) }
+        case .restructure:
+            if let restructure = model.restructure {
+                RestructureView(
+                    restructure: restructure, collections: model.collections.map(\.path))
+            }
         case .active:
             if let active = model.activeScreen { ActiveView(model: active) }
         case .history:
@@ -180,14 +212,27 @@ private struct Inspector: View {
     let model: ArchiveWindowModel
 
     var body: some View {
-        if model.screen == .review, let review = model.review, let proposal = review.inspected {
+        if model.screen == .review, let crawler = model.crawler, crawler.isShown {
+            if let finding = crawler.inspected {
+                CrawlerFindingInspector(finding: finding, crawler: crawler, window: model)
+            } else {
+                ContentUnavailableView("Nothing Selected", systemImage: "binoculars")
+            }
+        } else if model.screen == .review, let review = model.review,
+            let proposal = review.inspected
+        {
             ProposalInspector(proposal: proposal, review: review, correct: model.correct)
         } else if model.screen == .questions, let questions = model.questions,
             let question = questions.selected
         {
             QuestionInspector(
                 question: question, questions: questions,
-                collections: model.collections.map(\.path))
+                collections: model.collections.map(\.path)
+            ) { id in model.items.first { $0.id == id }?.title }
+        } else if model.screen == .restructure, let restructure = model.restructure,
+            let proposal = restructure.selected
+        {
+            RestructureInspector(proposal: proposal, restructure: restructure)
         } else if model.screen == .active, let active = model.activeScreen {
             ActiveInspector(model: active)
         } else if model.screen == .history, let history = model.historyScreen {
@@ -198,22 +243,27 @@ private struct Inspector: View {
             BackupInspector(change: change, backups: backups, items: model.items)
         } else if let item = model.selectedItem {
             if let edit = model.editing, edit.target == .item(item.id) {
-                ItemEditor(item: item, edit: edit) { model.editing = nil }
+                ItemEditor(item: item, edit: edit, items: model.items) { model.editing = nil }
             } else {
                 VStack(spacing: 0) {
                     if let previews = model.previews {
                         ItemPreviewView(item: item, store: previews)
                     }
-                    ItemCardView(item: item, card: model.card(for: item), root: model.root) {
+                    ItemCardView(
+                        item: item, card: model.card(for: item), root: model.root,
+                        archive: model.archive, open: model.open(item:)
+                    ) {
                         ItemActions(model: model, item: item)
+                    } below: {
+                        ItemQuestionsSection(item: item, window: model)
                     }
                 }
                 .id(item.id)
             }
-        } else if case .collection = model.screen {
-            ContentUnavailableView(
-                "Nothing Selected", systemImage: "sidebar.right",
-                description: Text("Choose an item to see its preview and card."))
+        } else if case .collection(let path) = model.screen,
+            let collection = model.collections.first(where: { $0.path == path })
+        {
+            CollectionInspector(collection: collection, window: model)
         } else {
             ContentUnavailableView("Nothing Selected", systemImage: "sidebar.right")
         }

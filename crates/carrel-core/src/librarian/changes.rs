@@ -374,10 +374,10 @@ pub fn apply(
             .find(|i| i.id == item.id)
             .ok_or_else(|| format!("“{}” is no longer in the archive", item.title))
     };
-    let by = if lease.agent() == Some(AGENT) {
-        "Librarian"
-    } else {
-        "Owner"
+    let by = match lease.agent() {
+        Some(AGENT) => "Librarian",
+        Some(crate::crawl::AGENT) => "Crawler",
+        _ => "Owner",
     };
     let correct = |item: &ItemLink, lines: String| -> Result<Option<String>, String> {
         let prepared =
@@ -390,9 +390,28 @@ pub fn apply(
         let saved = prepare::save_holding(archive, prepared, lease).map_err(|e| e.to_string())?;
         Ok(saved.commit)
     };
+    // A correction is one `field: value` line; a value that ran onto another line would read
+    // as more fields, the owner's included, so it's refused.
+    let one_line = |value: &str| {
+        if value.contains(['\n', '\r']) {
+            Err(format!(
+                "“{}” runs over more than one line",
+                value.lines().next().unwrap_or_default()
+            ))
+        } else {
+            Ok(())
+        }
+    };
     match change {
-        Change::Refile { item, to } => correct(item, format!("collection: {to}")),
-        Change::Correct { item, field, value } => correct(item, format!("{field}: {value}")),
+        Change::Refile { item, to } => {
+            one_line(to)?;
+            correct(item, format!("collection: {to}"))
+        }
+        Change::Correct { item, field, value } => {
+            one_line(field)?;
+            one_line(value)?;
+            correct(item, format!("{field}: {value}"))
+        }
         Change::Rename { item, name } => {
             crate::rename::rename(archive, &item_ref(item)?, name, lease)
                 .map(|r| r.commit)
@@ -414,10 +433,17 @@ pub fn apply(
 /// after `since` (seconds since the Unix epoch), that haven't been undone, newest first.
 #[must_use]
 pub fn recent(log: &[Entry], since: i64) -> Vec<Entry> {
+    recent_by(log, AGENT, since)
+}
+
+/// The changes `agent` (`librarian`, or [`crate::crawl::AGENT`]) made on its own in `log`, as
+/// [`recent`] gives the librarian's.
+#[must_use]
+pub fn recent_by(log: &[Entry], agent: &str, since: i64) -> Vec<Entry> {
     let undone: std::collections::HashSet<&str> =
         log.iter().filter_map(|e| e.reverts.as_deref()).collect();
     log.iter()
-        .filter(|e| e.agent.as_deref() == Some(AGENT) && e.time >= since)
+        .filter(|e| e.agent.as_deref() == Some(agent) && e.time >= since)
         .filter(|e| !undone.contains(e.id.as_str()))
         .cloned()
         .collect()
@@ -444,9 +470,24 @@ pub fn undo_since(
     since: i64,
     lease: &WriterLease,
 ) -> Result<Undone, HistoryError> {
+    undo_since_by(archive, AGENT, since, lease)
+}
+
+/// Undoes every change `agent` made on its own at or after `since`, as [`undo_since`] does the
+/// librarian's.
+///
+/// # Errors
+///
+/// [`HistoryError`] if the history can't be read.
+pub fn undo_since_by(
+    archive: &Archive,
+    agent: &str,
+    since: i64,
+    lease: &WriterLease,
+) -> Result<Undone, HistoryError> {
     let history = History::open(archive)?;
     let mut done = Undone::default();
-    for entry in recent(&history.log()?, since) {
+    for entry in recent_by(&history.log()?, agent, since) {
         match history.undo(archive, &entry.id, lease) {
             Ok(commit) => done.undone.push((entry, commit)),
             Err(e) => done.failed.push((entry, e.to_string())),
@@ -529,5 +570,33 @@ mod tests {
         let ids: Vec<String> = recent(&log, 15).into_iter().map(|e| e.id).collect();
         assert_eq!(ids, ["c"]);
         assert_eq!(recent(&log, 0).len(), 2);
+
+        // Each agent's changes are its own: undoing the crawler's leaves the librarian's.
+        let crawler = crate::crawl::AGENT;
+        let mixed = [
+            entry("k2", 40, Some(crawler), None),
+            entry("l1", 30, Some(AGENT), None),
+            entry("k1", 20, Some(crawler), None),
+            entry("u", 25, None, Some("k1")),
+        ];
+        let ids = |agent| -> Vec<String> {
+            recent_by(&mixed, agent, 0)
+                .into_iter()
+                .map(|e| e.id)
+                .collect()
+        };
+        assert_eq!(ids(crawler), ["k2"], "k1 is undone already");
+        assert_eq!(ids(AGENT), ["l1"]);
+        assert_eq!(ids("someone"), Vec::<String>::new());
+    }
+
+    #[test]
+    fn since_refuses_negative_and_reads_zero_as_now() {
+        let now: jiff::Zoned = "2026-11-01T12:00:00+00:00[UTC]".parse().unwrap();
+        let at = now.timestamp().as_second();
+        assert_eq!(parse_since("0d", &now), Some(at));
+        assert_eq!(parse_since(" 2W ", &now), Some(at - 2 * 604_800));
+        assert_eq!(parse_since("-3d", &now), None);
+        assert_eq!(parse_since("", &now), None);
     }
 }

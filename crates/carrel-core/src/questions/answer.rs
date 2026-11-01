@@ -25,7 +25,8 @@ use crate::review::ReviewQueue;
 
 use super::rank::{Context, Ranked, rank, same};
 use super::{
-    QuestionEntry, QuestionKind, QuestionQueue, clear_waiting, mark_waiting, now, redirect,
+    QuestionEntry, QuestionKind, QuestionQueue, Suggestion, clear_waiting, mark_waiting, now,
+    redirect,
 };
 
 /// What answering a question with a collection did.
@@ -123,6 +124,12 @@ pub fn place(
     }
     let (refiled, not_refiled) = refile_all(archive, question, &target, holder)?;
     QuestionQueue::of(archive).remove(question.id)?;
+    crate::decisions::question(
+        archive,
+        question,
+        crate::decisions::QuestionOutcome::Answered,
+        moved.len() + refiled.len(),
+    );
     Ok(Placed {
         collection: target.path,
         created,
@@ -196,6 +203,12 @@ pub fn decline(archive: &Archive, question: &QuestionEntry) -> Result<(), Action
     let mut kept = question.clone();
     kept.declined = Some(now());
     QuestionQueue::of(archive).save(&kept)?;
+    crate::decisions::question(
+        archive,
+        question,
+        crate::decisions::QuestionOutcome::Declined,
+        0,
+    );
     Ok(())
 }
 
@@ -210,6 +223,12 @@ pub fn skip(archive: &Archive, question: &QuestionEntry) -> Result<QuestionEntry
     skipped.skipped = Some(now());
     skipped.skips += 1;
     QuestionQueue::of(archive).save(&skipped)?;
+    crate::decisions::question(
+        archive,
+        question,
+        crate::decisions::QuestionOutcome::Skipped,
+        0,
+    );
     Ok(skipped)
 }
 
@@ -220,7 +239,63 @@ pub fn skip(archive: &Archive, question: &QuestionEntry) -> Result<QuestionEntry
 ///
 /// A queue error.
 pub fn settled(archive: &Archive, question: &QuestionEntry) -> Result<(), ActionError> {
+    crate::decisions::question(
+        archive,
+        question,
+        crate::decisions::QuestionOutcome::Answered,
+        question.items.len(),
+    );
     crate::actions::dismiss(archive, question)
+}
+
+/// What answering a sender or project question does.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SenderAnswer {
+    /// No: it stays where it is, and the question isn't asked again ([`decline`]).
+    Decline,
+    /// Gather its items in the collection at `path`, creating it when `create`, then offer a
+    /// routing rule for future ones ([`place`], [`add_rule`]).
+    Place {
+        /// The collection's path.
+        path: String,
+        /// Whether it's a new collection.
+        create: bool,
+    },
+}
+
+/// What `answer` to the sender `question` does, `picked` being the suggestion it picks, if
+/// any: "no" declines; "yes" gathers its items in the collection the question proposes;
+/// anything else is a collection's path, created when `create` or the suggestion is a new
+/// collection.
+///
+/// # Errors
+///
+/// [`ActionError::Invalid`] for "yes" when the question proposes no collection.
+pub fn sender_answer(
+    question: &QuestionEntry,
+    answer: &str,
+    picked: Option<&Suggestion>,
+    create: bool,
+) -> Result<SenderAnswer, ActionError> {
+    let lower = answer.trim().to_lowercase();
+    if matches!(lower.as_str(), "no" | "n" | "no thanks") || picked.is_some_and(|s| s.no_change) {
+        return Ok(SenderAnswer::Decline);
+    }
+    if matches!(lower.as_str(), "yes" | "y") {
+        let path = question
+            .suggestions
+            .iter()
+            .find(|s| s.new_collection)
+            .map(|s| s.answer.clone())
+            .or_else(|| question.choices.first().cloned())
+            .ok_or_else(|| ActionError::Invalid("say which collection they go in".into()))?;
+        return Ok(SenderAnswer::Place { path, create: true });
+    }
+    let path = picked.map_or_else(|| answer.trim().to_owned(), |s| s.answer.clone());
+    Ok(SenderAnswer::Place {
+        path,
+        create: create || picked.is_some_and(|s| s.new_collection),
+    })
 }
 
 /// What an item question is about.
@@ -437,4 +512,59 @@ pub fn tidy(archive: &Archive) -> Result<Ranked, ActionError> {
         questions.remove(question.id)?;
     }
     Ok(ranked)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::questions::suggest;
+
+    fn sender() -> QuestionEntry {
+        let mut question = QuestionEntry::new(
+            QuestionKind::Sender,
+            "Northbridge Bank",
+            "Should Northbridge Bank have its own collection?",
+        );
+        question.suggestions = vec![
+            suggest::new_collection("Finances/Northbridge", "12 statements"),
+            suggest::no_change("no", None),
+        ];
+        question.choices = vec!["Finances".into()];
+        question
+    }
+
+    #[test]
+    fn a_sender_answer_declines_or_names_where_its_items_go() {
+        let question = sender();
+        let answer = |said: &str, picked| sender_answer(&question, said, picked, false).unwrap();
+        assert_eq!(answer("No", None), SenderAnswer::Decline);
+        assert_eq!(
+            answer("no", question.suggestions.get(1)),
+            SenderAnswer::Decline
+        );
+        let gathered = SenderAnswer::Place {
+            path: "Finances/Northbridge".into(),
+            create: true,
+        };
+        assert_eq!(
+            answer("yes", None),
+            gathered,
+            "yes takes the proposed collection"
+        );
+        assert_eq!(
+            answer("Finances/Northbridge", question.suggestions.first()),
+            gathered
+        );
+        assert_eq!(
+            answer("Finances", None),
+            SenderAnswer::Place {
+                path: "Finances".into(),
+                create: false
+            }
+        );
+        let mut bare = sender();
+        bare.suggestions.clear();
+        bare.choices.clear();
+        assert!(sender_answer(&bare, "yes", None, false).is_err());
+    }
 }

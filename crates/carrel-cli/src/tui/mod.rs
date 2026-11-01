@@ -6,17 +6,26 @@ mod active;
 mod agent;
 mod app;
 mod archives;
+mod asking;
 mod backups;
 mod browser;
+mod discover;
 mod embedding;
 mod intake;
 mod item;
+mod librarian;
+mod model_changes;
+mod option_lines;
 mod preview;
+mod reminders;
 mod review;
+mod review_crawler;
+mod review_restructure;
 mod screens;
 mod search;
 mod settings;
 mod ui;
+mod ui_discovery;
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -134,6 +143,15 @@ impl SessionLook {
     }
 }
 
+/// Edits the browsed item's card, its fields (`e`) or its body (`E`), in the owner's editor.
+fn edit_browsed(root: &Path, effect: &Effect) -> Result<Report, Failure> {
+    match effect {
+        Effect::EditItemBody(card) => crate::edit::edit_body(Some(root), card),
+        Effect::EditItem(card) => crate::edit::edit(Some(root), card),
+        _ => unreachable!("only the browsed item's two edits"),
+    }
+}
+
 /// Takes the terminal back after a program that needed it to itself, such as the editor,
 /// which leaves no picture behind.
 fn reenter(terminal: &mut ratatui::DefaultTerminal, painter: &mut preview::Painter) {
@@ -174,8 +192,10 @@ fn event_loop(
     let mut sessions = SessionLook::default();
     let mut painter = preview::Painter::default();
     while !app.quit {
+        librarian::Asking::poll(app);
         sessions.tick(app);
         app.previews.poll();
+        app.poll_here();
         // The worker runs in another process; see what it has done about once a second.
         if checked.elapsed() >= Duration::from_secs(1) {
             checked = std::time::Instant::now();
@@ -198,13 +218,7 @@ fn event_loop(
             && let Ok(result) = done.try_recv()
         {
             running = None;
-            app.busy = None;
-            if let Ok(mut progress) = app.progress.lock() {
-                *progress = None;
-            }
-            finished(app, result);
-            // After a download, Settings finds what the providers offer again.
-            app.settings_shown();
+            work_done(app, result);
         }
         draw(terminal, app, theme, &mut painter)?;
         if !event::poll(Duration::from_millis(100))
@@ -240,10 +254,10 @@ fn event_loop(
             Some(Effect::Correction(step)) if preparing.is_none() => {
                 correction(app, step, &mut preparing);
             }
-            Some(Effect::EditItem(card)) => {
+            Some(effect @ (Effect::EditItem(_) | Effect::EditItemBody(_))) => {
                 // The editor needs the terminal to itself.
                 leave();
-                let result = crate::edit::edit(Some(app.archive.root()), &card);
+                let result = edit_browsed(app.archive.root(), &effect);
                 reenter(terminal, &mut painter);
                 changed(app.archive.root(), &result);
                 finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
@@ -299,6 +313,19 @@ fn answer_work(root: PathBuf, id: Id, answer: String, learn: bool) -> (String, W
 }
 
 /// Shows how work went and reads everything again.
+/// Background work has finished with `result`: says so, and asks what follows it.
+fn work_done(app: &mut App, result: Result<String, String>) {
+    app.busy = None;
+    if let Ok(mut progress) = app.progress.lock() {
+        *progress = None;
+    }
+    let succeeded = result.is_ok();
+    finished(app, result);
+    app.ask_about_working_copy(succeeded);
+    // After a download, Settings finds what the providers offer again.
+    app.settings_shown();
+}
+
 fn finished(app: &mut App, result: Result<String, String>) {
     let text = match result {
         Ok(text) | Err(text) => text,
@@ -395,9 +422,6 @@ fn prepared(app: &mut App, result: Result<crate::correct::Prepared, String>) {
 /// Changes proposals without filing anything: their destination, or whether a compressed file
 /// is expanded.
 fn change_proposals(root: &Path, effect: Effect) -> Result<String, String> {
-    let ids = |ids: &[carrel_core::card::Id]| -> Vec<String> {
-        ids.iter().map(ToString::to_string).collect()
-    };
     match effect {
         Effect::Compressed {
             ids: chosen,
@@ -419,11 +443,13 @@ fn change_proposals(root: &Path, effect: Effect) -> Result<String, String> {
     }
 }
 
+/// The identifiers `ids`, as the commands take them.
+fn ids(ids: &[carrel_core::card::Id]) -> Vec<String> {
+    ids.iter().map(ToString::to_string).collect()
+}
+
 fn background(app: &mut App, effect: Effect) -> Option<Done> {
     let root: PathBuf = app.archive.root().to_owned();
-    let ids = |ids: &[carrel_core::card::Id]| -> Vec<String> {
-        ids.iter().map(ToString::to_string).collect()
-    };
     let (busy, work): (String, Work) = match effect {
         Effect::Undo(id) => {
             let result = crate::commands::undo(Some(&root), &id);
@@ -443,31 +469,33 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
         // The run loop does these itself, on the terminal or in the pop-up.
         Effect::Edit(_)
         | Effect::EditItem(_)
+        | Effect::EditItemBody(_)
         | Effect::EditEntry { .. }
         | Effect::Pick(_)
         | Effect::Correction(_)
         | Effect::Open(_) => return None,
+        effect @ (Effect::Ask(_) | Effect::SaveConversation | Effect::UndoLibrarian) => {
+            librarian::librarian_work(app, effect);
+            return None;
+        }
         effect @ (Effect::Dismiss(_) | Effect::Skip(_)) => {
             finished(app, settle_question(&root, &effect));
             return None;
         }
-        Effect::Agent(change) => {
-            let result = app.change_agent(&change);
-            finished(app, result);
-            return None;
-        }
-        Effect::SetSetting { key, value } => {
-            let result = crate::settings::set(Some(&root), &key, &value);
-            finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
-            return None;
-        }
-        effect @ (Effect::Return(_) | Effect::CancelCheckout(_) | Effect::Entries { .. }) => {
-            active_work(root, effect)
-        }
+        Effect::Agent(change) => return agent_now(app, &change),
+        Effect::SetSetting { key, value } => return settings::set_now(app, &root, &key, &value),
+        effect @ (Effect::Return(_)
+        | Effect::TrashWorkingCopy(_)
+        | Effect::CancelCheckout(_)
+        | Effect::Entries { .. }) => active_work(root, effect),
         effect @ (Effect::Download(_)
+        | Effect::ModelChange(_)
+        | Effect::Restructure(_)
         | Effect::Index(_)
         | Effect::OpenArchive(_)
-        | Effect::CreateArchive(_)) => switch_or_index_work(app, root, effect)?,
+        | Effect::CreateArchive(_)
+        | Effect::StartHistory(_)) => switch_or_index_work(app, root, effect)?,
+        Effect::QuestionsAbout(card) => option_lines::questions_about_work(root, card),
         Effect::Queue { paths, options } => {
             let result = queue(&root, &paths, options);
             finished(app, result.map_err(|Failure(e)| e));
@@ -489,7 +517,7 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
             holding,
         } => decide(root, ids(&chosen), holding),
         effect @ (Effect::BackupNow
-        | Effect::BackupVerify
+        | Effect::BackupVerify(_)
         | Effect::BackupRestore { .. }
         | Effect::BackupSetup { .. }) => backup_work(root, effect),
         Effect::ApproveAllHigh => (
@@ -518,17 +546,25 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
     Some(receive)
 }
 
-/// The work for downloading a model, the index and switching archives: downloads and the
-/// index's in the background, and switching at once, since the app is replaced.
+/// The work for restructuring and the crawler, downloading a model, the index and switching
+/// archives: all in the background but switching, which happens at once, since the app is
+/// replaced.
 fn switch_or_index_work(app: &mut App, root: PathBuf, effect: Effect) -> Option<(String, Work)> {
     match effect {
+        Effect::Restructure(action) => Some(review_restructure::restructure_work(root, action)),
         Effect::Download(name) => {
             // What the providers offer changes once it's here.
             app.here = None;
             Some((
                 format!("Downloading {name}…"),
-                Box::new(move || crate::models::download_quietly(&name)),
+                Box::new(move || {
+                    crate::models::download_quietly(&name, crate::models::Format::Gguf)
+                }),
             ))
+        }
+        Effect::ModelChange(change) => {
+            app.here = None;
+            Some(model_changes::model_change_work(change))
         }
         Effect::Index(work) => Some(embedding::index_work(
             root,
@@ -546,8 +582,13 @@ fn switch_or_index_work(app: &mut App, root: PathBuf, effect: Effect) -> Option<
             app.message = Some(result.unwrap_or_else(|Failure(e)| e));
             None
         }
-        Effect::CreateArchive(path) => {
-            let result = app.create_archive(&path);
+        Effect::CreateArchive(new) => {
+            let result = app.create_archive(&new);
+            app.message = Some(result.unwrap_or_else(|Failure(e)| e));
+            None
+        }
+        Effect::StartHistory(path) => {
+            let result = app.start_history(&path);
             app.message = Some(result.unwrap_or_else(|Failure(e)| e));
             None
         }
@@ -608,21 +649,27 @@ fn backup_work(root: PathBuf, effect: Effect) -> (String, Work) {
             "Taking a snapshot…".into(),
             Box::new(move || crate::backup::now(Some(&root))),
         ),
-        Effect::BackupVerify => (
+        Effect::BackupVerify(percent) => (
             "Checking the backups…".into(),
-            Box::new(move || crate::backup::verify(Some(&root), backups::VERIFY_PERCENT)),
+            Box::new(move || crate::backup::verify(Some(&root), percent)),
         ),
-        Effect::BackupRestore { item, at } => (
+        Effect::BackupRestore { item, at, to } => (
             format!("Restoring {item}…"),
-            Box::new(move || crate::backup::restore(Some(&root), &item, Some(&at), None)),
+            Box::new(move || crate::backup::restore(Some(&root), &item, Some(&at), to.as_deref())),
         ),
         Effect::BackupSetup {
             repository,
             password,
+            description,
         } => (
             "Setting up backups…".into(),
             Box::new(move || {
-                crate::backup::setup(Some(&root), &repository, None, Some(&password.0))
+                crate::backup::setup(
+                    Some(&root),
+                    &repository,
+                    description.as_deref(),
+                    Some(&password.0),
+                )
             }),
         ),
         _ => unreachable!("only backup effects come here"),
@@ -632,10 +679,19 @@ fn backup_work(root: PathBuf, effect: Effect) -> (String, Work) {
 /// The work for the Active screen's effects, which `carrel return` and `carrel sessions` do.
 fn active_work(root: PathBuf, effect: Effect) -> (String, Work) {
     match effect {
-        Effect::Return(id) => (
+        Effect::Return(returning) => (
             "Returning it…".into(),
-            Box::new(move || crate::checkout::return_now(Some(&root), &id.to_string())),
+            Box::new(move || {
+                crate::checkout::return_now(
+                    Some(&root),
+                    &returning.id.to_string(),
+                    returning.from.as_deref(),
+                    returning.trim,
+                    None,
+                )
+            }),
         ),
+        Effect::TrashWorkingCopy(working) => active::trash_working_copy_work(root, working),
         Effect::CancelCheckout(id) => (
             "Cancelling the checkout…".into(),
             Box::new(move || crate::checkout::cancel_now(Some(&root), &id.to_string())),
@@ -671,9 +727,20 @@ fn archive_work(root: PathBuf, effect: Effect) -> (String, Work) {
                 crate::checkout::checkout(Some(root), &item, Some(&to), due.as_deref())
             }),
         ),
-        Effect::DeskAdd(path) => (
-            "Putting it on the desk and drafting its card…",
-            Box::new(move |root| crate::desk::add_item(Some(root), &path, None, None)),
+        Effect::DeskAdd(card) => (
+            if card.title.is_some() && card.summary.is_some() {
+                "Putting it on the desk…"
+            } else {
+                "Putting it on the desk and drafting its card…"
+            },
+            Box::new(move |root| {
+                crate::desk::add_item(
+                    Some(root),
+                    &card.path,
+                    card.title.as_deref(),
+                    card.summary.as_deref(),
+                )
+            }),
         ),
         Effect::DeskRemove { path, delete_card } => (
             "Taking it off the desk…",
@@ -733,6 +800,13 @@ fn open(path: &Path) -> Result<(), Failure> {
             std::thread::spawn(move || child.wait());
         })
         .map_err(|e| Failure::new(format!("couldn't run {program}: {e}")))
+}
+
+/// Makes the agent `change` at once, and says what it did.
+fn agent_now(app: &mut App, change: &agent::AgentChange) -> Option<Done> {
+    let result = app.change_agent(change);
+    finished(app, result);
+    None
 }
 
 /// The work for [`Effect::Decide`]: filing proposals where proposed, or in Holding.
@@ -868,9 +942,10 @@ mod tests {
             ),
             "{text}"
         );
-        assert!(text.contains(" Sample archive "));
+        assert!(text.contains(" Sample archive "), "{text}");
         assert!(
-            text.contains("Waiting for you: 1 proposal (2 to review), 0 questions (3 to answer).")
+            text.contains("Waiting for you: 1 proposal (2 to review), 1 question (4 to answer)."),
+            "{text}"
         );
         assert!(text.contains("items in"), "the status report");
         assert!(
@@ -1089,14 +1164,21 @@ mod tests {
         for c in "pw".chars() {
             app.key(key(KeyCode::Char(c)));
         }
+        assert_eq!(app.key(key(KeyCode::Enter)), None, "then its name");
+        assert!(screen(&app, 220, 30).contains("A name for the backups"));
+        for c in "Drive".chars() {
+            app.key(key(KeyCode::Char(c)));
+        }
         match app.key(key(KeyCode::Enter)) {
             Some(Effect::BackupSetup {
                 repository: given,
                 password,
+                description,
             }) => {
                 assert_eq!(given, repository);
                 assert_eq!(password.0, "pw");
                 assert_eq!(format!("{password:?}"), "Secret(…)", "never printed");
+                assert_eq!(description.as_deref(), Some("Drive"));
             }
             other => panic!("{other:?}"),
         }
@@ -1409,7 +1491,16 @@ mod tests {
         assert!(app.keys().iter().any(|(k, v)| *k == "e" && *v == "edit"));
         assert_eq!(
             app.key(key(KeyCode::Char('e'))),
-            Some(Effect::EditItem(card))
+            Some(Effect::EditItem(card.clone()))
+        );
+        assert!(
+            app.keys()
+                .iter()
+                .any(|(k, v)| *k == "E" && *v == "edit body")
+        );
+        assert_eq!(
+            app.key(key(KeyCode::Char('E'))),
+            Some(Effect::EditItemBody(card))
         );
     }
 
@@ -2196,7 +2287,11 @@ mod tests {
         app.key(key(KeyCode::Char('r')));
         assert_eq!(
             app.key(key(KeyCode::Char('y'))),
-            Some(Effect::Return(item.id))
+            Some(Effect::Return(super::active::Returning {
+                id: item.id,
+                from: None,
+                trim: false,
+            }))
         );
 
         app.key(key(KeyCode::Char('x')));
@@ -2221,7 +2316,15 @@ mod tests {
         );
         assert_eq!(busy, "Approving…");
         assert_eq!(
-            super::active_work(app.archive.root().to_owned(), Effect::Return(item.id)).0,
+            super::active_work(
+                app.archive.root().to_owned(),
+                Effect::Return(super::active::Returning {
+                    id: item.id,
+                    from: None,
+                    trim: false,
+                })
+            )
+            .0,
             "Returning it…"
         );
         let desk = app.active.last().unwrap();
