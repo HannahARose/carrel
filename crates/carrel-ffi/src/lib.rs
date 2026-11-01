@@ -993,6 +993,36 @@ mod tests {
     }
 
     #[test]
+    fn search_by_words_alone_finds_what_search_does_once_the_text_is_read() {
+        let sample = Sample::new();
+        let before = sample.handle.search_words("lamp".into(), 10).unwrap();
+        assert_ne!(
+            before.hits.len(),
+            0,
+            "found by their cards before the text is read"
+        );
+        let full = sample.handle.search("lamp".into(), 10, None).unwrap();
+        let words = sample.handle.search_words("lamp".into(), 10).unwrap();
+        assert_eq!(words.hits, full.hits);
+        assert!(!words.by_meaning);
+        assert_eq!(words.words_only, None);
+        let filtered = sample
+            .handle
+            .search_words("collection:Reading".into(), 10)
+            .unwrap();
+        assert!(
+            filtered
+                .hits
+                .iter()
+                .all(|h| h.collection.as_deref() == Some("Reading"))
+        );
+        assert!(matches!(
+            sample.handle.search_words("  ".into(), 10),
+            Err(CarrelError::Invalid { .. })
+        ));
+    }
+
+    #[test]
     fn an_items_detail_and_related_say_why_when_there_is_no_index() {
         let sample = Sample::new();
         let item = sample.item_titled("Desk lamp parts list");
