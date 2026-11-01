@@ -68,6 +68,7 @@ pub mod models;
 pub mod previews;
 pub mod questions;
 pub mod records;
+pub mod reminders;
 pub mod restructure;
 pub mod review;
 pub mod search;

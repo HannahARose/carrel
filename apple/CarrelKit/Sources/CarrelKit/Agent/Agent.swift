@@ -7,6 +7,14 @@
 import Foundation
 import Observation
 
+/// Shows the agent's reminders to the owner (docs/design/reminders.md): the agent app posts
+/// them as notifications; tests remember them.
+public protocol ReminderPoster: Sendable {
+    /// Shows `reminder`, from the archive `name` at `archive`, and says whether it did; one it
+    /// didn't is tried again later.
+    func post(_ reminder: Reminder, archive: URL, name: String) async -> Bool
+}
+
 /// What the menu bar list shows for one archive.
 public struct AgentArchive: Identifiable, Sendable, Equatable {
     /// The archive's root folder.
@@ -22,6 +30,8 @@ public struct AgentArchive: Identifiable, Sendable, Equatable {
     public var crawled: String?
     /// What went wrong last, if the last job failed.
     public var problem: String?
+    /// Whether the archive's `reminders` setting has the menu bar list on.
+    public var showsMenuBar = true
 
     public var id: URL { root }
 
@@ -56,24 +66,34 @@ public final class Agent {
     private let now: @Sendable () -> Date
     private let badges: URL?
     private var badgesWritten: BadgeState?
+    private let reminders: (any ReminderPoster)?
     private var sleeper: Task<Void, Never>?
     private let spotlight: SpotlightIndexer?
 
     /// An agent opening archives with `options` (the device's own when `nil`), keeping when
-    /// it last backed each up in `state`, and the badge state file at `badges` if given. It
-    /// watches files only when `watching` says so; tests tell it what changed instead. It keeps
-    /// what Spotlight finds in `spotlight`, when given one.
+    /// it last backed each up in `state`, the badge state file at `badges` if given, and
+    /// showing reminders through `reminders`, if given. It watches files only when `watching`
+    /// says so; tests tell it what changed instead. It keeps what Spotlight finds in
+    /// `spotlight`, when given one.
     public init(
         options: OpenOptions? = nil, state: UserDefaults = .standard, watching: Bool = true,
-        badges: URL? = nil, spotlight: (any SpotlightIndexing)? = nil,
+        badges: URL? = nil, reminders: (any ReminderPoster)? = nil,
+        spotlight: (any SpotlightIndexing)? = nil,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.options = options
         self.state = state
         self.watching = watching
         self.badges = badges
+        self.reminders = reminders
         self.spotlight = spotlight.map(SpotlightIndexer.init)
         self.now = now
+    }
+
+    /// Whether the menu bar list is shown: when no archive is followed yet, or any followed
+    /// has the `menu-bar` reminder on.
+    public var showsMenuBar: Bool {
+        archives.isEmpty || archives.contains(where: \.showsMenuBar)
     }
 
     // MARK: - Which archives
@@ -325,6 +345,8 @@ public final class Agent {
                     .value
             case .crawl:
                 try await crawl(handle, in: root, name: name)
+            case .remind:
+                try await remind(handle, in: root, name: name)
             }
         } catch CarrelError.Busy {
             // Another writer has the archive; try again shortly.
@@ -370,6 +392,19 @@ public final class Agent {
         }
     }
 
+    /// Posts the reminders due that this Mac hasn't shown yet, and marks those posted shown.
+    private func remind(_ handle: ArchiveHandle, in root: URL, name: String) async throws {
+        guard let reminders else { return }
+        let due = try await Task.detached { try handle.remindersToShow() }.value
+        var shown: [String] = []
+        for reminder in due where await reminders.post(reminder, archive: root, name: name) {
+            shown.append(reminder.key)
+        }
+        if !shown.isEmpty {
+            try await Task.detached { try handle.markRemindersShown(keys: shown) }.value
+        }
+    }
+
     // MARK: - What the menu bar shows
 
     /// Reads what's active and queued in `root` again, and the working copies to watch.
@@ -380,7 +415,8 @@ public final class Agent {
             (
                 try? handle.active(), (try? handle.intake())?.waiting.count ?? 0,
                 handle.idleMinutes(), handle.backupsSetUp(),
-                (try? handle.crawlerFindings())?.count ?? 0, known ?? (try? handle.items())
+                (try? handle.crawlerFindings())?.count ?? 0, known ?? (try? handle.items()),
+                handle.showsMenuBar()
             )
         }.value
         guard followed[root] != nil else { return }
@@ -395,6 +431,7 @@ public final class Agent {
             archives[index].active = active
             archives[index].queued = read.1
             archives[index].findings = read.4
+            archives[index].showsMenuBar = read.6
         }
         if moved, followed[root]?.claim != nil { watch(root) }
         writeBadges()
@@ -433,6 +470,21 @@ public final class Agent {
             throw AgentRefusal("Another Carrel agent looks after this archive.")
         }
         return (root, followed.handle)
+    }
+
+    /// The item at `path` in the archive at `root`: its contents or its card, a checkout's
+    /// working copy or a desk item, or anything inside one of those. `nil` if it's none.
+    func item(at path: String, in root: URL) async -> String? {
+        let path = Self.realPath(path)
+        if followed[root]?.items == nil { await refresh(root) }
+        guard let followed = followed[root] else { return nil }
+        func inside(_ folder: String) -> Bool { path == folder || path.hasPrefix(folder + "/") }
+        let active = archives.first { $0.root == root }?.active ?? []
+        if let item = active.first(where: { inside(Self.realPath($0.working)) }) { return item.id }
+        let base = followed.plan.root + "/"
+        return followed.items?.first { item in
+            path == base + item.card || item.item.map { inside(base + $0) } == true
+        }?.id
     }
 
     /// Reads `root` again after a request changed it, and wakes the loop for what's now due.

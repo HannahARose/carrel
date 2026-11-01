@@ -48,7 +48,7 @@ pub fn system(changes: bool) -> String {
          - Each step, answer with the JSON form: either an action naming one tool and its input, or the action \"answer\".\n\
          - Search first, then show, read or follow related items as the question needs. Don't guess: say what you found, and say plainly when you found nothing.\n\
          - Answer first, directly. Then be curious: in a sentence or two, offer what the owner might not have thought of: a related item they didn't ask about, a collection they may have forgotten, or a gap (\"you have the 2023 and 2025 statements but not 2024\"). Never instead of the answer.\n\
-         - In \"items\", list the items your answer is about, by id or card path, as the tools gave them. In \"passages\", quote word for word the few passages you used, from what read or search returned, each with its item.\n\
+         - In \"items\", list the items your answer is about, by id or card path, as the tools gave them. In \"passages\", quote word for word the few passages you used (at most four), from what read or search returned, each with its item.\n\
          - Restricted items are found by their card only: never ask to read them, and never quote or guess their contents.\n\
          - Keep answers short and plain: a few sentences, or a short list.\n\n\
          Tools:\n",
@@ -57,7 +57,7 @@ pub fn system(changes: bool) -> String {
         writeln!(text, "- {name}: {what}").unwrap();
     }
     text.push_str(
-        "\nSuggestions: when you notice something wrong or missing in the catalog, add a suggestion with your final answer: refile an item to a better collection, correct a card's title, summary, created date or tags, rename an item, or create a collection for items that belong together. Give each one why, and how sure you are, from 0 to 1. Suggest only what the tools showed you. Never suggest deleting anything or changing a file's contents.\n",
+        "\nSuggestions: when you notice something wrong or missing in the catalog, add a suggestion with your final answer: refile an item to a better collection, correct a card's title, summary, created date or tags, rename an item, or create a collection for items that belong together, at most three. Give each one why, and how sure you are, from 0 to 1. Suggest only what the tools showed you. Never suggest deleting anything or changing a file's contents.\n",
     );
     if changes {
         text.push_str(
@@ -69,12 +69,21 @@ pub fn system(changes: bool) -> String {
     text
 }
 
-/// The JSON Schema the model answers to, each step. When `must_answer` is set, `answer` is the
-/// only action left. Every field is required, with an empty string or list for none: models
-/// constrained by a grammar otherwise stop early.
-#[must_use]
-pub fn schema(must_answer: bool) -> Value {
-    let actions: Vec<&str> = if must_answer {
+/// The most items a final answer may list: more than any question needs, few enough that a
+/// small model can't list them until it runs out of room.
+pub const MAX_ITEMS: usize = 12;
+/// The most passages a final answer may quote.
+pub const MAX_PASSAGES: usize = 4;
+/// The most changes a final answer may suggest.
+pub const MAX_SUGGESTIONS: usize = 3;
+
+/// What a step's prompt ends with when the model's reply to it was cut off, to ask for a
+/// shorter one (#401).
+pub const CUT_OFF: &str = "\nYour reply to this was cut off before it ended. Reply again, briefly: name a tool with a short input, or answer with the items first, then a few sentences, and no passages or suggestions.\n";
+
+/// The actions the model may take: only `answer` when `must_answer` is set.
+fn actions(must_answer: bool) -> Vec<&'static str> {
+    if must_answer {
         vec!["answer"]
     } else {
         TOOLS
@@ -82,16 +91,27 @@ pub fn schema(must_answer: bool) -> Value {
             .map(|(name, _)| *name)
             .chain(["answer"])
             .collect()
-    };
+    }
+}
+
+/// The JSON Schema the model answers to, each step. When `must_answer` is set, `answer` is the
+/// only action left. Every field is required, with an empty string or list for none: models
+/// constrained by a grammar otherwise stop early.
+///
+/// The items come before the answer, and the lists are capped, so a model that goes on too
+/// long has named what it found first, and can't list until it runs out of room (#401).
+#[must_use]
+pub fn schema(must_answer: bool) -> Value {
     json!({
         "type": "object",
         "properties": {
-            "action": {"type": "string", "enum": actions, "description": "A tool to run, or answer to give your final answer"},
+            "action": {"type": "string", "enum": actions(must_answer), "description": "A tool to run, or answer to give your final answer"},
             "input": {"type": "string", "description": "The tool's input; an empty string when answering"},
+            "items": {"type": "array", "items": {"type": "string"}, "maxItems": MAX_ITEMS, "description": "The items the answer is about, by id or card path; empty when using a tool"},
             "answer": {"type": "string", "description": "Your final answer to the owner; an empty string when using a tool"},
-            "items": {"type": "array", "items": {"type": "string"}, "description": "The items the answer is about, by id or card path; empty when using a tool"},
             "passages": {
                 "type": "array",
+                "maxItems": MAX_PASSAGES,
                 "description": "Passages quoted word for word from what the tools returned; empty when using a tool",
                 "items": {
                     "type": "object",
@@ -104,6 +124,7 @@ pub fn schema(must_answer: bool) -> Value {
             },
             "suggestions": {
                 "type": "array",
+                "maxItems": MAX_SUGGESTIONS,
                 "description": "Changes to the catalog you suggest; usually empty",
                 "items": {
                     "type": "object",
@@ -119,8 +140,22 @@ pub fn schema(must_answer: bool) -> Value {
                 }
             }
         },
-        "required": ["action", "input", "answer", "items", "passages", "suggestions"]
+        "required": ["action", "input", "items", "answer", "passages", "suggestions"]
     })
+}
+
+/// The schema for a reply asked for again after it was cut off ([`CUT_OFF`]): as
+/// [`schema`], without passages or suggestions.
+#[must_use]
+pub fn brief_schema(must_answer: bool) -> Value {
+    let mut brief = schema(must_answer);
+    for field in ["passages", "suggestions"] {
+        if let Some(properties) = brief["properties"].as_object_mut() {
+            properties.remove(field);
+        }
+    }
+    brief["required"] = json!(["action", "input", "items", "answer"]);
+    brief
 }
 
 /// What the model knows of the archive before it uses any tool.

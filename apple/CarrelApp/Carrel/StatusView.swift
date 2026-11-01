@@ -1,5 +1,5 @@
-// Status: what the archive holds, the intake queue and the worker's progress, Recent,
-// problems and suggestions, as `carrel status` shows them.
+// Status: the reminders due, what the archive holds, the intake queue and the worker's
+// progress, Recent, problems and suggestions, as `carrel status` shows them.
 
 import CarrelKit
 import SwiftUI
@@ -10,6 +10,7 @@ struct StatusView: View {
     var body: some View {
         let summary = model.summary
         Form {
+            StatusRemindersSection(window: model)
             Section("Archive") {
                 LabeledContent("Name", value: model.name)
                 LabeledContent("Folder") {

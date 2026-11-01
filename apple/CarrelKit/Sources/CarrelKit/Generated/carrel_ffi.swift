@@ -1852,6 +1852,39 @@ public protocol ArchiveHandleProtocol: AnyObject, Sendable {
     func skippedQuestions() throws  -> [Question]
     
     /**
+     * Records the reminders `keys` as shown on this device, so they aren't shown again.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the record can't be written.
+     */
+    func markRemindersShown(keys: [String]) throws 
+    
+    /**
+     * The reminders due now, as the `reminders` setting turns them on, for Status.
+     *
+     * # Errors
+     *
+     * [`CarrelError`] if the archive can't be read.
+     */
+    func reminders() throws  -> [Reminder]
+    
+    /**
+     * The reminders due that this device hasn't shown yet, for the agent to post; once it
+     * has, it marks them shown ([`ArchiveHandle::mark_reminders_shown`]).
+     *
+     * # Errors
+     *
+     * [`CarrelError`] if the archive can't be read.
+     */
+    func remindersToShow() throws  -> [Reminder]
+    
+    /**
+     * Whether the agent shows its menu bar list: the `menu-bar` reminder.
+     */
+    func showsMenuBar()  -> Bool
+    
+    /**
      * Approves the proposal `id`: the changes `only` names, or all of them when it's
      * `None`, as one change in history that undoes as one. A change that needs one left out
      * is dropped too.
@@ -4243,6 +4276,67 @@ open func skippedQuestions()throws  -> [Question]  {
     return try  FfiConverterSequenceTypeQuestion.lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
         uniffiCallStatus in
     uniffi_carrel_ffi_fn_method_archivehandle_skipped_questions(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Records the reminders `keys` as shown on this device, so they aren't shown again.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the record can't be written.
+     */
+open func markRemindersShown(keys: [String])throws   {try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_mark_reminders_shown(
+            self.uniffiCloneHandle(),
+        FfiConverterSequenceString.lower(keys),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * The reminders due now, as the `reminders` setting turns them on, for Status.
+     *
+     * # Errors
+     *
+     * [`CarrelError`] if the archive can't be read.
+     */
+open func reminders()throws  -> [Reminder]  {
+    return try  FfiConverterSequenceTypeReminder.lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_reminders(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * The reminders due that this device hasn't shown yet, for the agent to post; once it
+     * has, it marks them shown ([`ArchiveHandle::mark_reminders_shown`]).
+     *
+     * # Errors
+     *
+     * [`CarrelError`] if the archive can't be read.
+     */
+open func remindersToShow()throws  -> [Reminder]  {
+    return try  FfiConverterSequenceTypeReminder.lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_reminders_to_show(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Whether the agent shows its menu bar list: the `menu-bar` reminder.
+     */
+open func showsMenuBar() -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_shows_menu_bar(
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
@@ -15865,6 +15959,105 @@ public func FfiConverterTypeRelatedItem_lower(_ value: RelatedItem) -> RustBuffe
 
 
 /**
+ * A reminder due now.
+ */
+public struct Reminder: Equatable, Hashable {
+    /**
+     * Which reminder: `idle`, `weekly` or `due-date`.
+     */
+    public var kind: String
+    /**
+     * What makes it this reminder, to mark it shown.
+     */
+    public var key: String
+    /**
+     * A short heading, such as "Due back tomorrow".
+     */
+    public var title: String
+    /**
+     * What it says.
+     */
+    public var text: String
+    /**
+     * The identifier of the item it's about, to open when it's chosen.
+     */
+    public var item: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Which reminder: `idle`, `weekly` or `due-date`.
+         */kind: String, 
+        /**
+         * What makes it this reminder, to mark it shown.
+         */key: String, 
+        /**
+         * A short heading, such as "Due back tomorrow".
+         */title: String, 
+        /**
+         * What it says.
+         */text: String, 
+        /**
+         * The identifier of the item it's about, to open when it's chosen.
+         */item: String?) {
+        self.kind = kind
+        self.key = key
+        self.title = title
+        self.text = text
+        self.item = item
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension Reminder: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeReminder: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Reminder {
+        return
+            try Reminder(
+                kind: FfiConverterString.read(from: &buf), 
+                key: FfiConverterString.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                text: FfiConverterString.read(from: &buf), 
+                item: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: Reminder, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.kind, into: &buf)
+        FfiConverterString.write(value.key, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterString.write(value.text, into: &buf)
+        FfiConverterOptionString.write(value.item, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeReminder_lift(_ buf: RustBuffer) throws -> Reminder {
+    return try FfiConverterTypeReminder.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeReminder_lower(_ value: Reminder) -> RustBuffer {
+    return FfiConverterTypeReminder.lower(value)
+}
+
+
+/**
  * An item that was renamed.
  */
 public struct RenamedItem: Equatable, Hashable {
@@ -23461,6 +23654,31 @@ fileprivate struct FfiConverterSequenceTypeRelatedItem: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeReminder: FfiConverterRustBuffer {
+    typealias SwiftType = [Reminder]
+
+    public static func write(_ value: [Reminder], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeReminder.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [Reminder] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [Reminder]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeReminder.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeRestructureChange: FfiConverterRustBuffer {
     typealias SwiftType = [RestructureChange]
 
@@ -24180,6 +24398,18 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_skipped_questions() != 2080) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_mark_reminders_shown() != 62460) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_reminders() != 36917) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_reminders_to_show() != 50861) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_shows_menu_bar() != 252) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_approve_restructure() != 42869) {

@@ -95,6 +95,7 @@ pub mod names;
 pub mod previews;
 pub mod providers;
 pub mod questions;
+pub mod reminders;
 pub mod rename;
 pub mod restructure;
 pub mod review;

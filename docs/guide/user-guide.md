@@ -396,6 +396,17 @@ Without the [Mac app](mac-app.md#the-background-agent), work is noticed when `ca
 
 There's one agent per archive on each device. While the Mac app's agent looks after an archive, `carrel agent` steps aside and says so, and takes over within a minute once the app's agent stops. While either one runs, `carrel ingest` and changes to filed items start no worker of their own, and `carrel ingest --status` says the agent drafts the queue. Its log is `workers/agent.log` in Carrel's folder on macOS and Windows; on Linux, `journalctl --user -u carrel-agent` shows it.
 
+### Reminders
+
+The `reminders` setting (`carrel settings set reminders idle,weekly,due-date,menu-bar`, or Settings) turns on any of four reminders. `idle`, `weekly` and `menu-bar` are on unless you change it.
+
+- **`idle`:** a work session was recorded and its entry is waiting: “You worked on “oscillator-sim” for 1h 10m. Its entry is waiting for you.”
+- **`weekly`:** once a week, on the first day Carrel runs in it (weeks start on Monday), what's waiting for you: proposals, questions, history entries to approve, checkouts out for more than two weeks, and a backup more than a week old. Nothing waiting, no reminder.
+- **`due-date`:** a checkout with a due date (`carrel checkout --due`) is due back tomorrow, today, or is overdue, once a day.
+- **`menu-bar`:** the Mac app's agent shows its menu bar list. Off, it runs without the icon, and you manage it from the app's Settings → Agent.
+
+`carrel status`, the interactive mode's Status and the app's Status list the reminders due, and `carrel reminders` lists them alone (`--json` for scripts). Only the agents notify, never a command. On a Mac the app's agent posts a notification, asking permission the first time one is due, and choosing it opens the item. `carrel agent` uses `notify-send` on Linux when it's installed, and a toast through PowerShell on Windows; without either, the reminders wait in Status. Each device notifies once for each reminder, and keeps what it has shown in `reminders.json` in Carrel's folder, not in the archive. In the interactive mode, `Enter` on Status goes to the first reminder's item on Active.
+
 ## History and undo
 
 Every change Carrel makes to the archive is recorded: filing a batch, renaming, creating a collection, changing a shared setting, answering a term question. History is a Git repository in `_System/history.git` holding the cards and documents, not the files themselves (backups have those).
@@ -579,6 +590,7 @@ Outside any archive, in `~/Library/Application Support/Carrel` on macOS, `%APPDA
 | `models/` | Downloaded models (or `CARREL_MODELS_DIR`) |
 | `workers/` | Each archive's worker lock, status and log |
 | `backups/` | Kopia's configuration for each archive's repository |
+| `reminders.json` | For each archive, the reminders this device has shown, so each is shown once |
 | `sessions/` | When each archive's checked-out and desk items were last looked at for work sessions |
 | `discover/` | For each archive, which collections this device opened when, the collection Status last resurfaced, and the last walk through the stacks |
 | `questions/` | For each archive, the day's few questions Status names, so they stay the same all day |
