@@ -188,18 +188,15 @@ fn an_agent_notifies_each_reminder_once_per_device() {
         "nothing shown, nothing recorded"
     );
 
-    let mut notifier = FakeNotifier::default();
-    let notified = notify(&archive, None, &config, &at("2026-10-29"), &mut notifier).unwrap();
+    let mut fake = FakeNotifier::default();
+    let notified = notify(&archive, None, &config, &at("2026-10-29"), &mut fake).unwrap();
     assert_eq!(notified.shown.len(), 2, "tried again");
-    assert_eq!(notifier.shown[1].0, "Sample archive");
-    assert_eq!(
-        notifier.shown[1].1,
-        "“oscillator-sim” is due back tomorrow."
-    );
+    assert_eq!(fake.shown[1].0, "Sample archive");
+    assert_eq!(fake.shown[1].1, "“oscillator-sim” is due back tomorrow.");
 
-    let again = notify(&archive, None, &config, &at("2026-10-29"), &mut notifier).unwrap();
+    let again = notify(&archive, None, &config, &at("2026-10-29"), &mut fake).unwrap();
     assert_eq!(again.shown, [], "each is shown once");
-    let next_day = notify(&archive, None, &config, &at("2026-10-30"), &mut notifier).unwrap();
+    let next_day = notify(&archive, None, &config, &at("2026-10-30"), &mut fake).unwrap();
     assert_eq!(
         next_day
             .shown

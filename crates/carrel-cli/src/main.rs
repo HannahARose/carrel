@@ -1167,11 +1167,7 @@ fn main() -> ExitCode {
         Command::Crawl { action } => crawl::command(cli.archive.as_deref(), action),
         Command::Reminders => reminders::list(cli.archive.as_deref()),
         Command::Bench(args) => bench::bench(&args, cli.json),
-        Command::Models { action } => models_command(
-            action.unwrap_or(ModelsAction::List),
-            cli.archive.as_deref(),
-            cli.json,
-        ),
+        Command::Models { action } => models_command(action, cli.archive.as_deref(), cli.json),
     };
     finish(after(result, changes, cli.archive.as_deref()), cli.json)
 }
@@ -1349,11 +1345,11 @@ fn restructure_command(
 
 /// `carrel models` and its subcommands.
 fn models_command(
-    action: ModelsAction,
+    action: Option<ModelsAction>,
     archive: Option<&std::path::Path>,
     json: bool,
 ) -> Result<Report, Failure> {
-    match action {
+    match action.unwrap_or(ModelsAction::List) {
         ModelsAction::List => models::list(),
         ModelsAction::Download { name, format, yes } => models::download(&name, format, yes, json),
         ModelsAction::Embed { texts, query } => models::embed(archive, &texts, query),

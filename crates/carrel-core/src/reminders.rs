@@ -10,7 +10,7 @@
 //!   ([`shows_menu_bar`]).
 //!
 //! [`due`] lists the reminders due now, which every interface's Status shows. Only the agents
-//! notify: [`notify`] shows each one this device hasn't shown yet through a [`Notifier`] and
+//! notify: [`notify()`] shows each one this device hasn't shown yet through a [`Notifier`] and
 //! records it in [`Shown`], kept per device in the configuration folder (`reminders.json`),
 //! not in the archive.
 
@@ -418,7 +418,7 @@ pub trait Notifier {
     fn show(&mut self, archive: &str, reminder: &Reminder) -> Result<(), String>;
 }
 
-/// What [`notify`] did.
+/// What [`notify()`] did.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Notified {
     /// The reminders shown.
@@ -444,20 +444,20 @@ pub fn notify(
     let id = archive.doc().id;
     let mut shown = Shown::load(config);
     let fresh = shown.fresh(id, due(archive, device, now, &shown));
-    let mut notified = Notified::default();
+    let mut done = Notified::default();
     for reminder in fresh {
         match notifier.show(&archive.doc().name, &reminder) {
             Ok(()) => {
                 shown.mark(id, &reminder.key, now.timestamp());
-                notified.shown.push(reminder);
+                done.shown.push(reminder);
             }
-            Err(why) => notified.failed.push((reminder, why)),
+            Err(why) => done.failed.push((reminder, why)),
         }
     }
-    if !notified.shown.is_empty() {
+    if !done.shown.is_empty() {
         shown.save(config)?;
     }
-    Ok(notified)
+    Ok(done)
 }
 
 /// Records the reminders `keys` of `archive` as shown at `now` in `config`, for an interface

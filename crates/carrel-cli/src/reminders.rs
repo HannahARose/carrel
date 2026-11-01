@@ -21,7 +21,7 @@ use crate::{Failure, Report};
 pub const NOTIFY_LOG_ENV: &str = "CARREL_NOTIFY_LOG";
 
 /// The reminders due in `archive` now, as this device has shown them.
-fn due_now(archive: &Archive) -> Vec<Reminder> {
+pub(crate) fn due_now(archive: &Archive) -> Vec<Reminder> {
     let device = Identity::load().ok().flatten().map(|i| i.device);
     let shown = crate::config::dir()
         .map(|config| Shown::load(&config))
@@ -210,7 +210,7 @@ pub fn notification_args(desktop: Desktop, title: &str, text: &str) -> Vec<Strin
 ///
 /// Why, in words, if the record of what was shown can't be written.
 pub fn remind_for_agent(archive: &Archive, device: Id) -> Result<Option<String>, String> {
-    let Some(mut notifier) = DesktopNotifier::here() else {
+    let Some(mut desktop) = DesktopNotifier::here() else {
         return Ok(None);
     };
     let config = crate::config::dir().map_err(|Failure(e)| e)?;
@@ -219,7 +219,7 @@ pub fn remind_for_agent(archive: &Archive, device: Id) -> Result<Option<String>,
         Some(device),
         &config,
         &jiff::Zoned::now(),
-        &mut notifier,
+        &mut desktop,
     )
     .map_err(|e| e.to_string())?;
     if let Some((_, why)) = notified.failed.first() {

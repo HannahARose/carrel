@@ -1,6 +1,7 @@
 // Carrel Agent: the login item that keeps working while the app is closed (docs/design/
 // mac-app.md, "The background agent"). It follows the archives the app has open or opened
-// recently, runs CarrelKit's Agent for them, and shows the menu bar list.
+// recently, runs CarrelKit's Agent for them, posts their reminders as notifications, and shows
+// the menu bar list unless the archives' `reminders` setting turns `menu-bar` off.
 
 import AppKit
 import CarrelKit
@@ -11,7 +12,8 @@ struct CarrelAgentApp: App {
     @State private var agent = AgentHost()
 
     var body: some Scene {
-        MenuBarExtra {
+        // Without the menu bar list, the agent is managed from the app's Settings.
+        MenuBarExtra(isInserted: .constant(agent.agent.showsMenuBar)) {
             AgentMenu(host: agent)
         } label: {
             Image(systemName: agent.agent.activity == nil ? "archivebox" : "archivebox.fill")
@@ -30,10 +32,14 @@ final class AgentHost {
     private static let pausedKey = "paused"
 
     let agent: Agent
+    private let notifications: ReminderNotifications
     private var loop: Task<Void, Never>?
 
     init(environment: [String: String] = ProcessInfo.processInfo.environment) {
-        agent = Agent(options: .app(helpers: Self.helpers))
+        notifications = ReminderNotifications { link in
+            Task { @MainActor in AgentHost.open(link) }
+        }
+        agent = Agent(options: .app(helpers: Self.helpers), reminders: notifications)
         if UserDefaults.standard.bool(forKey: Self.pausedKey) { agent.pause() }
         let override = environment[Self.archivesEnv].map {
             $0.split(separator: ":").map { URL(filePath: String($0)) }
@@ -70,6 +76,11 @@ final class AgentHost {
 
     /// Shows `link` in the app.
     func open(_ link: AgentLink) {
+        Self.open(link)
+    }
+
+    /// Shows `link` in the app.
+    static func open(_ link: AgentLink) {
         if let app = Self.app {
             NSWorkspace.shared.open(
                 [link.url], withApplicationAt: app,

@@ -17,6 +17,7 @@ mod librarian;
 mod model_changes;
 mod option_lines;
 mod preview;
+mod reminders;
 mod review;
 mod review_crawler;
 mod review_restructure;
