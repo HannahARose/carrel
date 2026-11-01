@@ -60,6 +60,7 @@ pub mod intake;
 pub mod librarian;
 pub mod models;
 pub mod previews;
+pub mod questions;
 pub mod records;
 pub mod review;
 pub mod search;

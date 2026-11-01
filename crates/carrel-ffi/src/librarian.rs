@@ -16,10 +16,12 @@ use carrel_core::librarian::{
 };
 use carrel_core::providers::Registry;
 use carrel_core::providers::device::AvailableModel;
+use carrel_core::questions::moments::Conversing;
 
 use crate::correct::ModelProvider;
 use crate::history::Change;
 use crate::records::Sensitivity;
+use crate::review::Question;
 use crate::{ArchiveHandle, CarrelError, ProgressListener};
 
 /// An item an answer links to.
@@ -208,6 +210,10 @@ pub struct LibrarianAnswer {
     pub tokens: u64,
     /// Why it stopped before it could answer, when it did: `steps` or `tokens`.
     pub stopped: Option<String>,
+    /// Now and then, Carrel's question about an item the answer found, put in the queue to
+    /// answer: at most one an answer, never after two in a row, and never twice about one
+    /// item in a conversation.
+    pub asks: Option<Question>,
 }
 
 impl From<&core::Answer> for LibrarianAnswer {
@@ -253,6 +259,7 @@ impl From<&core::Answer> for LibrarianAnswer {
                 }
                 .to_owned()
             }),
+            asks: None,
         }
     }
 }
@@ -262,6 +269,8 @@ impl From<&core::Answer> for LibrarianAnswer {
 #[derive(Debug, Default, uniffi::Object)]
 pub struct LibrarianConversation {
     conversation: Mutex<Conversation>,
+    /// Which items Carrel has asked about in it, and whether it asked after the last answer.
+    conversing: Mutex<Conversing>,
 }
 
 #[uniffi::export]
@@ -409,11 +418,24 @@ impl ArchiveHandle {
             .with_progress(&report);
         // The conversation is held while the model answers, so two questions in one
         // conversation are answered in turn.
+        let conversation_state = &conversation;
         let mut conversation = conversation
             .conversation
             .lock()
             .map_err(|_| CarrelError::failed("the conversation was poisoned"))?;
-        Ok(librarian.ask(&mut conversation, &question)?.into())
+        let answer = librarian.ask(&mut conversation, &question)?;
+        let mut answered: LibrarianAnswer = answer.into();
+        let items: Vec<carrel_core::card::Id> = answer.items.iter().map(|i| i.id).collect();
+        if let Ok(mut conversing) = conversation_state.conversing.lock() {
+            answered.asks = conversing
+                .after(&archive, &items, jiff::Zoned::now().date())
+                .ok()
+                .flatten()
+                .and_then(|q| carrel_core::questions::moments::ask(&archive, &q).ok())
+                .as_ref()
+                .map(Into::into);
+        }
+        Ok(answered)
     }
 
     /// Saves `conversation` to this month's Journal, as one history change.
