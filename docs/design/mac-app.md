@@ -80,7 +80,7 @@ Each screen does what its interactive-mode counterpart does, through the same co
 
 The cache is `_System/cache.nosync/previews/`, made and read through `carrel_core::previews` so the interactive mode's previews (#258) share it:
 
-- **`thumbnails/<key>.png`:** a thumbnail at most 512 pixels on its longer side. The Mac app makes them with `QLThumbnailGenerator`.
+- **`thumbnails/<key>.png`:** a thumbnail at most 512 pixels on its longer side. The Mac app makes them with `QLThumbnailGenerator`, and the interactive mode makes them for PNG, JPEG and TIFF items itself.
 - **`drawings/<key>.png`:** Carrel's own drawing of a STEP, IGES or 3MF file: the first picture a text extractor for its type returns, such as the CAD provider's four views or a 3MF's embedded thumbnail.
 - **`<key>`** is the SHA-256, in hex, of the item's path relative to the archive root, its size and its modification time, so a changed or moved file gets a new preview and an old one is never shown. Previews left behind only take up space, and the whole folder is safe to delete.
 - **Nothing is kept for a restricted item:** its thumbnail isn't made, and its drawing, when its preview is asked for, is a temporary file that's deleted once shown.
