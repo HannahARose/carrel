@@ -641,6 +641,7 @@
 				ARCHS = arm64;
 				CARREL_APP_GROUP = "$(CARREL_BUNDLE_IDENTIFIER)";
 				CARREL_BUNDLE_IDENTIFIER = io.github.hannaharose.Carrel.dev;
+				CARREL_CLOUDKIT_CONTAINER = iCloud.io.github.hannaharose.Carrel;
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
 				CODE_SIGN_IDENTITY = "-";
@@ -674,6 +675,7 @@
 				ARCHS = arm64;
 				CARREL_APP_GROUP = "$(CARREL_BUNDLE_IDENTIFIER)";
 				CARREL_BUNDLE_IDENTIFIER = io.github.hannaharose.Carrel;
+				CARREL_CLOUDKIT_CONTAINER = iCloud.io.github.hannaharose.Carrel;
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
 				CODE_SIGN_IDENTITY = "-";

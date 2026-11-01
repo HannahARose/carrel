@@ -43,7 +43,7 @@ enum Request {
     },
     Save {
         archive: Id,
-        record: LockRecord,
+        record: Box<LockRecord>,
         expected: Option<String>,
     },
 }
@@ -51,7 +51,7 @@ enum Request {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 enum Reply {
-    Record(Option<StoredRecord>),
+    Record(Option<Box<StoredRecord>>),
     Saved(Saved),
     Error(String),
 }
@@ -96,7 +96,7 @@ impl AgentLockClient {
 impl RemoteLock for AgentLockClient {
     fn fetch(&self, archive: Id) -> Result<Option<StoredRecord>, RemoteError> {
         match self.send(&Request::Fetch { archive })? {
-            Reply::Record(record) => Ok(record),
+            Reply::Record(record) => Ok(record.map(|r| *r)),
             Reply::Error(e) => Err(RemoteError(e)),
             Reply::Saved(_) => Err(RemoteError("Carrel Agent answered another request".into())),
         }
@@ -110,7 +110,7 @@ impl RemoteLock for AgentLockClient {
     ) -> Result<Saved, RemoteError> {
         let request = Request::Save {
             archive,
-            record: record.clone(),
+            record: Box::new(record.clone()),
             expected: expected.map(str::to_owned),
         };
         match self.send(&request)? {
@@ -161,7 +161,7 @@ impl AgentLockService {
                     }
                     let Ok(stream) = stream else { continue };
                     let remote = Arc::clone(&remote);
-                    std::thread::spawn(move || answer(stream, remote.as_ref()));
+                    std::thread::spawn(move || answer(&stream, remote.as_ref()));
                 }
             })?;
         Ok(Self {
@@ -186,17 +186,17 @@ impl Drop for AgentLockService {
     }
 }
 
-fn answer(stream: UnixStream, remote: &dyn RemoteLock) {
+fn answer(stream: &UnixStream, remote: &dyn RemoteLock) {
     let _ = stream.set_read_timeout(Some(TIMEOUT));
     let mut line = String::new();
-    let mut reader = BufReader::new(&stream);
+    let mut reader = BufReader::new(stream);
     if reader.read_line(&mut line).is_err() || line.is_empty() {
         return;
     }
     let reply = match serde_json::from_str::<Request>(&line) {
         Ok(Request::Fetch { archive }) => remote
             .fetch(archive)
-            .map_or_else(|e| Reply::Error(e.0), Reply::Record),
+            .map_or_else(|e| Reply::Error(e.0), |r| Reply::Record(r.map(Box::new))),
         Ok(Request::Save {
             archive,
             record,
@@ -208,5 +208,6 @@ fn answer(stream: UnixStream, remote: &dyn RemoteLock) {
     };
     let mut text = serde_json::to_string(&reply).expect("replies always serialize");
     text.push('\n');
-    let _ = (&stream).write_all(text.as_bytes());
+    let mut stream = stream;
+    let _ = stream.write_all(text.as_bytes());
 }

@@ -931,7 +931,17 @@ On a local or external disk, the writer is whoever holds `_System/writer.lock`, 
 - **Before each commit** the writer re-reads the lock and commits only if it still holds its own `token` and has not expired. A writer whose lease was lost stops and does not commit.
 - **Expired locks** may be taken over: rename the lock to `writer.lock.expired-<token>` (only one program's rename succeeds), delete it, and take the lock as usual. A lock that is not valid JSON is never taken over automatically; a person must confirm no writer is running before it is removed.
 - **Releasing:** the writer deletes the lock when it finishes, but only while it still holds its own `token`.
-- **Synced folders:** a lock file is only safe while a single device uses the archive. Sync services such as iCloud Drive can let two devices each create the file before either sees the other's, so archives shared between devices use a coordinator the sync service supports instead (to be specified with iCloud support). Programs should warn when the lock is used inside a synced folder.
+- **Synced folders:** a lock file is only safe while a single device uses the archive. Sync services can let two devices each create the file before either sees the other's, so programs should warn when the lock file is used inside a synced folder.
+
+#### iCloud Drive
+
+In iCloud Drive, the writing device is chosen through a record in the owner's private CloudKit database, one per archive, holding the lease's `token`, `person`, `device`, `purpose`, `program`, `acquired` and `expires` as above, and `head`, the history commit the last writer recorded. It never holds file contents.
+
+- **Taking the lock:** a device saves its lease into the record only if the lease there has expired or was released, and only if the record hasn't changed since it read it (CloudKit's record change tag), so of several devices trying at once exactly one succeeds. It keeps `head`.
+- **Before writing,** it waits until iCloud Drive has delivered `head`: the history's `HEAD` is that commit or descends from it. A device that gives up waiting releases the lock unchanged.
+- **Renewing and releasing** record the history's `HEAD` in `head`. Releasing sets `expires` to the time of release.
+- **On the device,** its programs take turns with the lock file above, kept at `_System/cache.nosync/writer.lock` so it never syncs.
+- **`_System/coordinator.json`,** `{"coordinator": "cloudkit"}`, is written when the CloudKit lock is first taken. Once it exists, a program that can't reach CloudKit **must not** write the archive's history; it acts through its device's inbox (§7.8) instead.
 
 ## 9. Active items and the Journal
 

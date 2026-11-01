@@ -262,7 +262,7 @@ sequenceDiagram
 - **Writing the archive** needs the writer lease ([`DiskLock`](https://horizon-labs.github.io/carrel/carrel_core/coordinator/struct.DiskLock.html), [`WriterLease`](https://horizon-labs.github.io/carrel/carrel_core/coordinator/struct.WriterLease.html)): filing, undo, renames, new collections, settings. Only the lease holder may commit history. Reading needs nothing.
 - **The worker doesn't hold the lease while drafting**; drafting only writes queue files. It takes the lease briefly only when a rule files an item.
 - **A crash** loses at most the item being drafted: its intake entry stays and is drafted again. A crash in the moment between saving a proposal and removing its entry would leave the entry to be drafted a second time, giving two proposals for one item; rejecting the extra one is safe.
-- **Two devices** on one archive need a coordinator other than the lock file; the CLI warns in synced folders until CloudKit's lock arrives (v0.8).
+- **Two devices** on one archive need a coordinator other than the lock file; in iCloud Drive that's CloudKit's lock record (`coordinator/cloud.rs`), which the Mac agent reaches and serves to the app and the CLI over a socket; elsewhere the CLI warns in synced folders.
 
 ## Where to add things
 

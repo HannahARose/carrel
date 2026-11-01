@@ -80,7 +80,7 @@ pub enum Saved {
     /// Saved, as this new version.
     Saved(String),
     /// Not saved: the record had changed. This is what it holds now, if anything.
-    Changed(Option<StoredRecord>),
+    Changed(Option<Box<StoredRecord>>),
 }
 
 /// The record store couldn't be reached or refused the request, in its words.
@@ -266,7 +266,7 @@ impl CloudLock {
                     }
                     return Ok(hold);
                 }
-                Saved::Changed(now_stored) => stored = now_stored,
+                Saved::Changed(now_stored) => stored = now_stored.map(|s| *s),
             }
         }
         Err(CoordinatorError::Unavailable(
@@ -335,7 +335,7 @@ impl CloudHold {
             if waited >= self.lock.wait {
                 return Err(CoordinatorError::HistoryBehind { head: want.clone() });
             }
-            std::thread::sleep(self.lock.poll.min(self.lock.wait - waited));
+            std::thread::sleep(self.lock.poll.min(self.lock.wait.saturating_sub(waited)));
         }
     }
 
@@ -437,6 +437,10 @@ impl FakeCloudKit {
     }
 
     /// Moves the clock forward by `by`.
+    ///
+    /// # Panics
+    ///
+    /// If the clock would pass the year 9999.
     pub fn advance(&self, by: Duration) {
         let by = jiff::SignedDuration::try_from(by).expect("a test's duration fits");
         let mut state = self.state();
@@ -498,7 +502,7 @@ impl RemoteLock for FakeCloudKit {
         let mut state = self.state();
         let current = state.records.get(&archive).cloned();
         if current.as_ref().map(|s| s.tag.as_str()) != expected {
-            return Ok(Saved::Changed(current));
+            return Ok(Saved::Changed(current.map(Box::new)));
         }
         state.versions += 1;
         let tag = format!("v{}", state.versions);
