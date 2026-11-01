@@ -563,27 +563,7 @@ pub fn finish_return(
         let _ = std::fs::rename(&outgoing, &archived);
         return Err(io(&archived)(e));
     }
-    // Without a snapshot first, the archive copy as it was waits in the holding folder for one.
-    let held = if backup.is_none() && crate::holding::needed(archive) {
-        let keeping = crate::holding::Keeping {
-            item: Some(plan.item),
-            title: &plan.title,
-            why: crate::holding::Why::Return,
-            name: archived.file_name().and_then(|n| n.to_str()),
-        };
-        let holder = Holder {
-            person: lease.info().person,
-            device: lease.info().device,
-        };
-        match crate::holding::keep(archive, &outgoing, &keeping, holder) {
-            Ok(held) => Some(held),
-            // Left where it is, under its temporary name, rather than lost.
-            Err(_) => None,
-        }
-    } else {
-        remove_any(&outgoing);
-        None
-    };
+    let held = keep_replaced(archive, plan, &archived, &outgoing, backup.is_none(), lease);
 
     let card = file.card_mut();
     card.checked_out = None;
@@ -628,6 +608,34 @@ pub fn finish_return(
         snapshot: backup,
         held,
     })
+}
+
+/// The archive copy a return replaced, now at `outgoing`: kept in the holding folder when no
+/// snapshot was taken first on a device without Kopia, otherwise removed. Left where it is,
+/// under its temporary name, rather than lost, if it can't be kept.
+fn keep_replaced(
+    archive: &Archive,
+    plan: &ReturnPlan,
+    archived: &Path,
+    outgoing: &Path,
+    unsnapshotted: bool,
+    lease: &WriterLease,
+) -> Option<crate::holding::Held> {
+    if !(unsnapshotted && crate::holding::needed(archive)) {
+        remove_any(outgoing);
+        return None;
+    }
+    let keeping = crate::holding::Keeping {
+        item: Some(plan.item),
+        title: &plan.title,
+        why: crate::holding::Why::Return,
+        name: archived.file_name().and_then(|n| n.to_str()),
+    };
+    let holder = Holder {
+        person: lease.info().person,
+        device: lease.info().device,
+    };
+    crate::holding::keep(archive, outgoing, &keeping, holder).ok()
 }
 
 /// Cancels `item`'s checkout, holding `lease`: the archive copy is unlocked as it was, the

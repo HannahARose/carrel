@@ -287,6 +287,15 @@ fn apply_one(
                 crate::flags::unflag(archive, &what, sender)?.commit,
             ))
         }
+        Request::Expand { .. } | Request::Undo { .. } | Request::Record { .. } => {
+            recorded(archive, &entry.request, sender)
+        }
+    }
+}
+
+/// Expands a compressed file, undoes a change, or records one, as the sender's.
+fn recorded(archive: &Archive, request: &Request, sender: Holder) -> Result<Done, NotApplied> {
+    match request {
         Request::Expand { item, anyway } => {
             let item = find_item(archive, *item)?;
             let lease = super::lease_as(archive, sender, "expand")?;
@@ -315,6 +324,7 @@ fn apply_one(
             lease.release()?;
             Ok(Done::commit(commit))
         }
+        _ => Ok(Done::default()),
     }
 }
 
@@ -523,7 +533,7 @@ fn answer(
                 .refiled
                 .into_iter()
                 .filter_map(|(_, commit)| commit)
-                .last()
+                .next_back()
         }
     };
     Ok(Done::commit(commit))
@@ -547,7 +557,7 @@ fn correct(
         return Ok(Done::default());
     };
     let worked = Worked {
-        changes: changes.clone(),
+        changes: (**changes).clone(),
         model: model.clone(),
         attempts: Vec::new(),
     };

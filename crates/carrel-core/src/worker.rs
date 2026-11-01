@@ -355,6 +355,7 @@ impl Worker<'_> {
         let mut held = Some(held);
         let mut done = 0;
         self.apply_inbox();
+        self.clear_holding();
         loop {
             let mut queue = waiting(self.archive, device, false)?;
             if queue.is_empty() {
@@ -421,6 +422,21 @@ impl Worker<'_> {
             backups: self.backups,
         };
         let _ = crate::inbox::apply(self.archive, &applying);
+    }
+
+    /// Snapshots the archive and clears its holding folder, when this device has backups and
+    /// another device without them left versions there ([`crate::holding`]). Nothing happens
+    /// while this device acts through its inbox.
+    fn clear_holding(&self) {
+        let Some(backups) = self.backups else {
+            return;
+        };
+        if crate::holding::list(self.archive).is_empty()
+            || crate::inbox::sending(self.archive, self.holder.device).is_some()
+        {
+            return;
+        }
+        let _ = crate::holding::snapshot_and_clear(self.archive, backups);
     }
 
     /// Embeds what's behind in the archive's index with its embedding model, if a provider

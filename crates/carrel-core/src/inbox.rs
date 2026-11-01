@@ -150,7 +150,7 @@ pub enum Request {
         /// The owner's words.
         words: String,
         /// What they were worked out into.
-        changes: Changes,
+        changes: Box<Changes>,
         /// The model that worked them out, as `provider/offer`, when one did.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         model: Option<String>,
