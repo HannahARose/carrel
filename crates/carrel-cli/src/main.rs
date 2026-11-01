@@ -34,6 +34,7 @@ mod providers;
 mod questions;
 mod related;
 mod reminders;
+mod report_gaps;
 mod restructure;
 mod restructure_sections;
 mod review;
@@ -141,8 +142,11 @@ enum Command {
     /// List the file types this device reads, and those it couldn't read so far.
     Formats,
     /// How well Carrel is doing on this device and what to tweak, from its decision log: no
-    /// titles, text, names or searches, so it can be shared.
+    /// titles, text, names or searches, so it can be shared. `carrel report gaps` lists what
+    /// Carrel couldn't do, to report to development.
     Report {
+        #[command(subcommand)]
+        action: Option<report_gaps::ReportAction>,
         /// The period: a span such as 14d or 2w, `today`, or a date such as 2026-10-01.
         #[arg(long, value_name = "WHEN", default_value = usage_report::DEFAULT_SINCE)]
         since: String,
@@ -1128,9 +1132,11 @@ fn main() -> ExitCode {
         } => commands::log(cli.archive.as_deref(), max_count, librarian),
         Command::Providers => Ok(providers::list()),
         Command::Formats => Ok(formats::list()),
-        Command::Report { since, names } => {
-            usage_report::report(cli.archive.as_deref(), &since, names)
-        }
+        Command::Report {
+            action,
+            since,
+            names,
+        } => report_gaps::command(cli.archive.as_deref(), action, &since, names),
         Command::Ingest(args) => {
             ingest::command(cli.archive.as_deref(), &args.into_request(), cli.json)
         }
