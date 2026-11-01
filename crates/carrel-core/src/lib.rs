@@ -104,6 +104,7 @@ pub mod sections;
 pub mod sessions;
 pub mod settings;
 pub mod signals;
+pub mod spotlight;
 pub mod status;
 pub mod trash;
 pub mod worker;

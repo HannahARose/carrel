@@ -68,14 +68,17 @@ public final class Agent {
     private var badgesWritten: BadgeState?
     private let reminders: (any ReminderPoster)?
     private var sleeper: Task<Void, Never>?
+    private let spotlight: SpotlightIndexer?
 
     /// An agent opening archives with `options` (the device's own when `nil`), keeping when
     /// it last backed each up in `state`, the badge state file at `badges` if given, and
     /// showing reminders through `reminders`, if given. It watches files only when `watching`
-    /// says so; tests tell it what changed instead.
+    /// says so; tests tell it what changed instead. It keeps what Spotlight finds in
+    /// `spotlight`, when given one.
     public init(
         options: OpenOptions? = nil, state: UserDefaults = .standard, watching: Bool = true,
         badges: URL? = nil, reminders: (any ReminderPoster)? = nil,
+        spotlight: (any SpotlightIndexing)? = nil,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.options = options
@@ -83,6 +86,7 @@ public final class Agent {
         self.watching = watching
         self.badges = badges
         self.reminders = reminders
+        self.spotlight = spotlight.map(SpotlightIndexer.init)
         self.now = now
     }
 
@@ -131,12 +135,14 @@ public final class Agent {
         for root in opened { await refresh(root) }
         if !opened.isEmpty { nudge() }
         writeBadges()
+        for root in opened { indexForSpotlight(root, changed: true) }
     }
 
     /// Reads what every archive followed shows again.
     public func refresh() async {
         for archive in archives where followed[archive.root] != nil {
             await refresh(archive.root)
+            indexForSpotlight(archive.root, changed: false)
         }
     }
 
@@ -158,6 +164,7 @@ public final class Agent {
     }
 
     private func drop(_ root: URL) {
+        if let handle = followed[root]?.handle { spotlight?.remove(handle.id()) }
         followed[root]?.claim?.release()
         stopWatching(root)
         followed[root] = nil
@@ -214,7 +221,27 @@ public final class Agent {
         if followed[root]?.plan.noticed(paths, at: now()) == true {
             Task { await refresh(root) }
         }
+        if paths.contains(where: Self.changesSpotlight) { indexForSpotlight(root, changed: true) }
         nudge()
+    }
+
+    // MARK: - Spotlight
+
+    /// Brings what Spotlight finds in `root` up to date: at once when something `changed`.
+    private func indexForSpotlight(_ root: URL, changed: Bool) {
+        guard let handle = followed[root]?.handle else { return }
+        spotlight?.sync(handle, root: root, at: now(), changed: changed)
+    }
+
+    /// Whether a change at `path` may change what Spotlight finds: a card, a collection's
+    /// design document, the glossary or the settings.
+    nonisolated static func changesSpotlight(_ path: String) -> Bool {
+        path.hasSuffix(".md") || path.hasSuffix("/_System/settings.json")
+    }
+
+    /// Waits until what Spotlight finds is up to date.
+    public func spotlightIndexed() async {
+        await spotlight?.settled()
     }
 
     private func watch(_ root: URL) {

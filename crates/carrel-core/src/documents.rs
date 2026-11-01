@@ -175,6 +175,12 @@ pub struct Settings {
         skip_serializing_if = "crate::crawl::CrawlerSettings::is_default"
     )]
     pub crawler: crate::crawl::CrawlerSettings,
+    /// How much of the archive Spotlight finds on a Mac (`docs/design/macos-integration.md`).
+    #[serde(
+        default,
+        skip_serializing_if = "crate::spotlight::SpotlightSettings::is_default"
+    )]
+    pub spotlight: crate::spotlight::SpotlightSettings,
     /// Keys this version doesn't know.
     #[serde(flatten)]
     pub extra: Extra,
@@ -456,6 +462,7 @@ impl Default for Settings {
             librarian: LibrarianSettings::default(),
             restructure: crate::restructure::eagerness::RestructureSettings::default(),
             crawler: crate::crawl::CrawlerSettings::default(),
+            spotlight: crate::spotlight::SpotlightSettings::default(),
             extra: Extra::new(),
         }
     }
