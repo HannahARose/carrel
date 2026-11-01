@@ -270,6 +270,18 @@ The command line has its own agent, [`carrel agent`](user-guide.md#keeping-work-
 
 While either agent runs, `carrel ingest` and the interactive mode start no worker of their own: the agent drafts what they add.
 
+## Spotlight
+
+While the agent runs, Spotlight finds what's in the archives it looks after: each item's card (its title, summary, tags, collection, dates and kind), the collections and the glossary's facts. Choosing a result opens the item, or the archive, in Carrel. Spotlight already finds the files themselves where macOS can read them.
+
+Anyone using your Mac sees Spotlight, so **Settings → General → Spotlight finds** (`spotlight.index`) says how much goes in:
+
+- **standard,** the default: public and personal items in full, sensitive items by title only;
+- **all-but-restricted:** every item in full but restricted ones;
+- **off:** nothing.
+
+Restricted items are never in Spotlight. The index stays current as items are filed, edited and moved, and an archive's entries are removed when the agent stops looking after it, or when you turn the setting off.
+
 ## Working alongside the command line and the interactive mode
 
 The app, `carrel` and its interactive mode are three ways into the **same archive**, through the same core. Use whichever suits the moment; you can have all three open on one archive at once.

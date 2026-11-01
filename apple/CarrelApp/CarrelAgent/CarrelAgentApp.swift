@@ -9,6 +9,7 @@ import SwiftUI
 @main
 struct CarrelAgentApp: App {
     @State private var agent = AgentHost()
+    @NSApplicationDelegateAdaptor private var spotlightResults: SpotlightResultOpener
 
     var body: some Scene {
         MenuBarExtra {
@@ -33,7 +34,7 @@ final class AgentHost {
     private var loop: Task<Void, Never>?
 
     init(environment: [String: String] = ProcessInfo.processInfo.environment) {
-        agent = Agent(options: .app(helpers: Self.helpers))
+        agent = Agent(options: .app(helpers: Self.helpers), spotlight: CoreSpotlightIndex())
         if UserDefaults.standard.bool(forKey: Self.pausedKey) { agent.pause() }
         let override = environment[Self.archivesEnv].map {
             $0.split(separator: ":").map { URL(filePath: String($0)) }
