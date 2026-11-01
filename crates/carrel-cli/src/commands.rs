@@ -402,6 +402,7 @@ pub fn status_on(
     }
     text.push_str(&names_section(&summary.names));
     text.push_str(&signals_section(&summary.signals));
+    text.push_str(&crate::flag::status_section(&summary.flagged));
     let (desk_text, desk) = crate::desk::suggestions_section(&summary.desk);
     text.push_str(&desk_text);
     let (resurfaced_text, resurfaced) = crate::discover::resurfaced(&archive, records);
@@ -429,6 +430,7 @@ pub fn status_on(
         "writer": writer_json(summary.writer.as_ref()),
         "recent": summary.recent.iter().map(|r| recent_line(r).1).collect::<Vec<_>>(),
         "signals": summary.signals,
+        "flagged": summary.flagged,
         "librarian": librarian,
         "crawler": crawler,
         "reminders": reminders,
@@ -645,6 +647,9 @@ pub(crate) fn describe(archive: &Archive, query: &str) -> Result<Shown, Failure>
             "checked out",
             &format!("to {} since {}", checkout.to, checkout.since.0),
         );
+    }
+    if let Some(flag) = &card.needs_work {
+        row("flagged", &carrel_core::flags::describe(flag));
     }
     if let Some(summary) = &card.summary {
         writeln!(text, "\n{}", summary.trim_end()).unwrap();

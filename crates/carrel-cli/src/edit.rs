@@ -73,10 +73,14 @@ pub fn edit(archive: Option<&Path>, query: &str) -> Result<Report, Failure> {
             fields,
             summary,
             commit,
-        } => Ok(Report::new(
-            format!("{summary}; undo it from History or with `carrel undo`.\n"),
-            json!({"item": item.id, "changed": fields, "commit": commit}),
-        )),
+        } => {
+            let mut report = Report::new(
+                format!("{summary}; undo it from History or with `carrel undo`.\n"),
+                json!({"item": item.id, "changed": fields, "commit": commit}),
+            );
+            crate::flag::offer_to_clear(&archive, item.id, &mut report)?;
+            Ok(report)
+        }
         _ => Ok(Report::new(
             "Nothing changed\n",
             json!({"item": item.id, "changed": [], "commit": null}),
@@ -188,10 +192,14 @@ pub fn edit_body(archive: Option<&Path>, query: &str) -> Result<Report, Failure>
     match saved {
         Saved::Changed {
             summary, commit, ..
-        } => Ok(Report::new(
-            format!("{summary}; undo it from History or with `carrel undo`.\n"),
-            json!({"item": item.id, "changed": ["notes"], "commit": commit}),
-        )),
+        } => {
+            let mut report = Report::new(
+                format!("{summary}; undo it from History or with `carrel undo`.\n"),
+                json!({"item": item.id, "changed": ["notes"], "commit": commit}),
+            );
+            crate::flag::offer_to_clear(&archive, item.id, &mut report)?;
+            Ok(report)
+        }
         _ => Ok(Report::new(
             "Nothing changed\n",
             json!({"item": item.id, "changed": [], "commit": null}),

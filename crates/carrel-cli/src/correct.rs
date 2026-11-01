@@ -452,12 +452,16 @@ pub fn filed(
     working(&words);
     let prepared = prepare_filed(&archive, query, &words)?;
     let json = json!({"item": item.id, "card": item.card});
-    finish(
+    let mut report = finish(
         &archive,
         format!("Correcting {title}\n"),
         prepared,
         yes,
         learn_fact,
         json,
-    )
+    )?;
+    if report.json["saved"] == json!(true) {
+        crate::flag::offer_to_clear(&archive, item.id, &mut report)?;
+    }
+    Ok(report)
 }

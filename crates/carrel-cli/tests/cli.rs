@@ -4182,3 +4182,56 @@ fn ingest_url_files_a_web_address_with_its_note_and_goes_to_the_inbox_while_anot
     assert!(inbox.starts_with(&inboxes), "{}", inbox.display());
     assert!(inbox.is_file());
 }
+
+#[test]
+fn flag_unflag_and_flagged_mark_items_and_collections_that_need_work() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    let card = "Reading/On the Origin of Species.md";
+
+    let flagged = sandbox.json(&root, &["flag", card, "--note", "wrong title"]);
+    assert_eq!(flagged["changed"], true);
+    assert_eq!(flagged["flagged"]["kind"], "item");
+    let text = std::fs::read_to_string(root.join(card)).unwrap();
+    assert!(
+        text.contains("needs_work:") && text.contains("wrong title"),
+        "{text}"
+    );
+    let out = sandbox.ok(&root, &["flag", "Projects", "--note", "split this folder"]);
+    assert!(out.contains("Flag “Projects” as needing work"), "{out}");
+
+    let listed = sandbox.json(&root, &["flagged"]);
+    let flagged = listed["flagged"].as_array().unwrap();
+    assert_eq!(flagged.len(), 2);
+    assert_eq!(flagged[0]["kind"], "collection");
+    assert_eq!(flagged[0]["path"], "Projects");
+    assert_eq!(flagged[1]["card"], card);
+    assert_eq!(flagged[1]["flag"]["note"], "wrong title");
+    let out = sandbox.ok(&root, &["flagged"]);
+    assert!(
+        out.contains("⚑ Projects/ (collection): split this folder"),
+        "{out}"
+    );
+
+    let status = sandbox.ok(&root, &["status"]);
+    assert!(status.contains("Flagged as needing work"), "{status}");
+    assert!(
+        status.contains("flagged as needing work: split this folder"),
+        "{status}"
+    );
+    let found = sandbox.json(&root, &["search", "flagged"]);
+    assert_eq!(found["total"], 1, "{found}");
+    let shown = sandbox.ok(&root, &["show", card]);
+    assert!(shown.contains("flagged      wrong title"), "{shown}");
+
+    // Undo reverses a flag, and unflagging clears one.
+    let log = sandbox.json(&root, &["log"]);
+    let last = log[0]["id"].as_str().unwrap().to_owned();
+    sandbox.ok(&root, &["undo", &last]);
+    let unflagged = sandbox.json(&root, &["unflag", card]);
+    assert_eq!(unflagged["changed"], true);
+    assert_eq!(sandbox.json(&root, &["flagged"])["flagged"], json!([]));
+    let again = sandbox.ok(&root, &["unflag", card]);
+    assert!(again.contains("isn't flagged"), "{again}");
+}
