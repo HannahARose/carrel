@@ -26,6 +26,7 @@ PAGES = {
     "docs/guide/getting-started.md": "Getting-Started",
     "docs/guide/user-guide.md": "User-Guide",
     "docs/guide/commands.md": "Command-Line Tool",
+    "docs/guide/mac-app.md": "Mac-App",
     "docs/guide/editors.md": "Neovim-and-Emacs",
     "docs/dev/architecture.md": "Architecture",
     "docs/dev/interfaces.md": "Interfaces",
