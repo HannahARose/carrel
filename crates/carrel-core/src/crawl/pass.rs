@@ -123,7 +123,9 @@ impl Crawler<'_> {
                 continue;
             };
             let collection = folder(&item.card);
-            let Some(judgment) = self.judge(&card, collection, &places)? else {
+            let judged = self.judge(&card, collection, &places);
+            self.note_gap(item, &judged);
+            let Some(judgment) = judged? else {
                 crawled
                     .failed
                     .push(format!("{}: the model's answer wasn't usable", card.title));
@@ -165,6 +167,19 @@ impl Crawler<'_> {
         mine.last_pass = Some(now.to_string());
         mine.save(archive, device)?;
         Ok(crawled)
+    }
+
+    /// Records in the gap log ([`crate::gaps`]) that `item` couldn't be judged, when it
+    /// couldn't: its type and the model, never its name.
+    fn note_gap(&self, item: &ItemRef, judged: &Result<Option<Judgment>, CrawlError>) {
+        let why = match judged {
+            Ok(None) => crate::gaps::CrawlerGap::Unusable,
+            Err(CrawlError::Model(_)) => crate::gaps::CrawlerGap::ModelFailed,
+            Err(CrawlError::NoModel(_)) => crate::gaps::CrawlerGap::NoModel,
+            Ok(Some(_)) | Err(_) => return,
+        };
+        let path = item.item.as_ref().map(|p| self.archive.root().join(p));
+        crate::gaps::crawler_failed(path.as_deref(), &self.model_name(), why);
     }
 
     fn model_name(&self) -> String {

@@ -11,6 +11,7 @@ mod backups;
 mod browser;
 mod discover;
 mod embedding;
+mod gaps;
 mod intake;
 mod item;
 mod librarian;

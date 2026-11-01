@@ -106,6 +106,7 @@ pub fn draw(frame: &mut Frame, app: &App, theme: Theme) {
         Tab::Active => draw_active(frame, app, theme, inner),
         Tab::Questions => draw_questions(frame, app, theme, inner),
         Tab::Browse => draw_browse(frame, app, theme, inner),
+        Tab::Status if app.gaps.shown => super::gaps::draw_gaps(frame, app, theme, inner),
         Tab::Status => draw_report(frame, app, inner, Some(waiting_line(app))),
         Tab::Ingest => draw_ingest(frame, app, theme, inner),
         Tab::Settings => draw_settings(frame, app, theme, inner),
@@ -1112,6 +1113,7 @@ fn draw_input(frame: &mut Frame, input: &Input, theme: Theme, area: Rect) {
                 .to_owned(),
         ),
         InputPurpose::Option(line) => line.text(),
+        InputPurpose::Gap(gap) => gap.text(),
         purpose => super::actions::input_text(purpose).unwrap_or((" ", String::new())),
     };
     let shown = if input.masked() {

@@ -59,9 +59,12 @@ pub fn start() {
     start_in(&config, &prefs);
 }
 
-/// Starts logging to the configuration folder `config` as `prefs` say: nothing when
-/// `report.log` is off. For apps that keep their own folder, and for tests.
+/// Starts logging decisions to the configuration folder `config` as `prefs` say (none when
+/// `report.log` is off), and gaps ([`crate::gaps`]) either way. For apps that keep their own
+/// folder, and for tests.
 pub fn start_in(config: &Path, prefs: &Prefs) {
+    // The gap log holds no more than `unreadable.json` does, so it's kept either way.
+    crate::gaps::start_in(config);
     let dir = folder_in(config);
     let on = prefs.report_log != Some(false);
     if on {
@@ -72,8 +75,9 @@ pub fn start_in(config: &Path, prefs: &Prefs) {
     }
 }
 
-/// Stops logging until [`start`] is called again.
+/// Stops logging decisions and gaps until [`start`] is called again.
 pub fn stop() {
+    crate::gaps::stop();
     if let Ok(mut log) = LOG.lock() {
         *log = None;
     }

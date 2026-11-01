@@ -80,6 +80,7 @@ pub mod file_pickers;
 pub mod finder;
 pub mod formats;
 pub mod frontmatter;
+pub mod gaps;
 pub mod graph;
 pub mod history;
 pub mod inbox;

@@ -456,7 +456,13 @@ pub fn process(
             entry.note.as_deref(),
             progress,
         )
-        .map_err(|e: IngestError| e.to_string()),
+        .map_err(|e: IngestError| {
+            // Only the last attempt counts, so an item is one item however often it's tried.
+            if entry.attempts + 1 >= MAX_ATTEMPTS {
+                crate::gaps::drafting_failed(&path, &e);
+            }
+            e.to_string()
+        }),
         Err(failure) => Err(failure),
     };
     // The page's text was only for drafting; a `url` item keeps no file.
@@ -496,6 +502,7 @@ pub fn process(
     }
     run.save(archive)?;
     crate::decisions::drafted(archive, Some(&entry.added), &run, started);
+    crate::gaps::from_run(&run);
     let new: Vec<Id> = run.entries.iter().flatten().map(|e| e.id).collect();
     let questions = ask_with_waiting(archive, &new)?;
     let chosen = run.filed_by_rule();

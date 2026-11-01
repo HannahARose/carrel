@@ -4264,6 +4264,101 @@ fn ingest_url_files_a_web_address_with_its_note_and_goes_to_the_inbox_while_anot
 }
 
 #[test]
+fn gaps_are_logged_without_names_and_drafted_as_issues_carrel_never_sends() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    let downloads = sandbox.path("Downloads");
+    std::fs::create_dir(&downloads).unwrap();
+    std::fs::write(
+        downloads.join("Secret Plans.F3D"),
+        [0u8, 159, 146, 150, 255, 1, 2],
+    )
+    .unwrap();
+    sandbox.ok(
+        &root,
+        &["ingest", "--wait", "--each", downloads.to_str().unwrap()],
+    );
+    let log = std::fs::read_to_string(sandbox.path("config/gaps.json")).unwrap();
+    assert!(log.contains("\"kind\": \"unread-format\""), "{log}");
+    assert!(!log.contains("Secret"), "no file names: {log}");
+
+    let gaps = sandbox.json(&root, &["report", "gaps"]);
+    let gap = &gaps["gaps"][0];
+    assert_eq!(gap["extension"], "f3d", "{gaps}");
+    assert_eq!(gap["items"], 1);
+    let number = gap["number"].as_u64().unwrap().to_string();
+    let text = sandbox.ok(&root, &["report", "gaps"]);
+    assert!(text.contains("no reader for the file type: .f3d"), "{text}");
+
+    // The draft is only printed: nothing is sent, and nothing from the archive is in it.
+    let draft = sandbox.json(
+        &root,
+        &[
+            "report",
+            "gaps",
+            "--report",
+            &number,
+            "--print",
+            "--add",
+            "Fusion files",
+        ],
+    );
+    let url = draft["url"].as_str().unwrap();
+    assert!(
+        url.starts_with("https://github.com/Horizon-Labs/carrel/issues/new?title="),
+        "{url}"
+    );
+    assert_eq!(draft["opened"], false);
+    let body = draft["body"].as_str().unwrap();
+    assert!(body.contains("Fusion files"), "{body}");
+    for private in ["Secret", "Plans", "Downloads", root.to_str().unwrap()] {
+        assert!(!body.contains(private), "{private} in {body}");
+        assert!(!url.contains(private), "{private} in {url}");
+    }
+
+    let issue = "https://github.com/Horizon-Labs/carrel/issues/999";
+    sandbox.ok(&root, &["report", "gaps", "--reported", &number, issue]);
+    let text = sandbox.ok(&root, &["report", "gaps"]);
+    assert!(text.contains(&format!("Reported: {issue}")), "{text}");
+    let refused = sandbox.run_in(&root, &["report", "gaps", "--reported", &number, "soon"]);
+    assert!(!refused.status.success());
+    let why = String::from_utf8_lossy(&refused.stderr);
+    assert!(why.contains("isn't the issue's web address"), "{why}");
+}
+
+#[test]
+fn the_owner_reports_a_missing_feature_on_an_item_in_their_own_words() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    let reported = sandbox.json(
+        &root,
+        &[
+            "report",
+            "gaps",
+            "--missing",
+            "Read the equations in it",
+            "--item",
+            "Reading/Coupled oscillators note.pdf",
+        ],
+    );
+    let gap = &reported["gap"];
+    assert_eq!(gap["kind"], "owner-reported", "{reported}");
+    assert_eq!(gap["extension"], "pdf");
+    assert_eq!(gap["words"], "Read the equations in it");
+    let log = std::fs::read_to_string(sandbox.path("config/gaps.json")).unwrap();
+    assert!(!log.contains("oscillators"), "no names: {log}");
+    let number = gap["number"].as_u64().unwrap().to_string();
+    let draft = sandbox.json(&root, &["report", "gaps", "--report", &number, "--print"]);
+    assert!(
+        draft["body"]
+            .as_str()
+            .unwrap()
+            .contains("Read the equations in it"),
+        "{draft}"
+    );
+}
+
+#[test]
 fn tui_and_gui_take_the_same_screens() {
     let sandbox = Sandbox::new();
     let root = sandbox.sample();

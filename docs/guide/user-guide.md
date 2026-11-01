@@ -584,6 +584,16 @@ The report covers the last 30 days, or `--since 14d`, `--since 2w` or a date. It
 
 **To turn the log off**, `carrel settings set report.log off`, or **Decision log** in Settings; nothing more is recorded on this device until you turn it on again. What's older than `report.keep_days` (90 days unless you set it) is removed as Carrel starts. Deleting the `decisions/` folder removes the log.
 
+### Reporting what Carrel can't do
+
+Sometimes a card isn't up to par because Carrel is missing something: nothing on the device reads a file type, reading a file's text or drafting its card fails, or the crawler's model fails. Carrel keeps each such **gap** in `gaps.json` in its own folder, one entry per kind, file type and stage, with how many items it affected and the version of Carrel that saw it. Like the decision log, **it never records titles, text, names, file names or paths**. The file types in `unreadable.json` are gaps too.
+
+`carrel report gaps` lists them, most items first (`--json` for the same as JSON); the interactive mode lists them from Status (`g`), and the Mac app in Status's Gaps section.
+
+**To report one to development**, `carrel report gaps --report N` (or `r` in the interactive mode, or **Report…** in the app) builds an issue draft for Carrel on GitHub: a title, the gap, the version and the counts, and anything you add (`--add "…"`). It opens in your browser as a new issue for you to read, edit and submit; **Carrel never sends anything itself**. `--print` prints the draft's address instead of opening it. Once it's submitted, `carrel report gaps --reported N ADDRESS` (`l` in the interactive mode, **Reported at** in the app) records the issue's address, and the gap shows as reported; when a newer Carrel hasn't seen it since, it says so.
+
+**To report a missing feature yourself**, `carrel report gaps --missing "what Carrel should do"`, with `--item ITEM` when it's about an item (`M` on an item in Browse, `m` in the Gaps view, or **Report a Missing Feature…** on an item or in Status in the app). The item's type is recorded with your words, never its name.
+
 ## What Carrel keeps on this device
 
 Outside any archive, in `~/Library/Application Support/Carrel` on macOS, `%APPDATA%\Carrel` on Windows, or `~/.config/carrel` elsewhere (or `CARREL_CONFIG_DIR`):
@@ -601,6 +611,7 @@ Outside any archive, in `~/Library/Application Support/Carrel` on macOS, `%APPDA
 | `questions/` | For each archive, the day's few questions Status names, so they stay the same all day |
 | `decisions/` | The decision log for `carrel report`, a file per month, by identifier only (see [How Carrel is doing](#how-carrel-is-doing)) |
 | `unreadable.json` | The file types this device couldn't read, by type and extension only |
+| `gaps.json` | What Carrel couldn't do on this device, to report to development, by kind, type and stage only (see [Reporting what Carrel can't do](#reporting-what-carrel-cant-do)) |
 | `logs/network.log` | Every request `carrel-fetch` made |
 
 ## Troubleshooting
