@@ -12,7 +12,7 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use carrel_core::archive::Archive;
-use carrel_core::bench::question_value::{QuestionValueRun, value_questions};
+use carrel_core::bench::question_value::{KnownAnswer, QuestionValueRun, value_questions};
 use carrel_core::bench::{Answers, check, percent};
 use carrel_core::card::Id;
 use carrel_core::providers::Capability;
@@ -206,7 +206,7 @@ fn report_markdown(measured: &[(Model, QuestionValueRun)]) -> String {
                 cell(
                     &v.answer
                         .as_ref()
-                        .map_or_else(|| "none".to_owned(), |a| a.describe())
+                        .map_or_else(|| "none".to_owned(), KnownAnswer::describe)
                 ),
                 cell(&moved.join("; ")),
                 v.gain

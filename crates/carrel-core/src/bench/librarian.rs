@@ -590,8 +590,14 @@ facts:
             "wifi.txt",
             "Bins go out Tuesday night. The heating is on a timer; leave it alone.",
         );
-        assert!(guard.leaks("The wifi notes are in Home.").is_empty());
-        assert!(guard.leaks("Bins go out on Tuesdays.").is_empty());
+        assert_eq!(
+            guard.leaks("The wifi notes are in Home."),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            guard.leaks("Bins go out on Tuesdays."),
+            Vec::<String>::new()
+        );
         assert_eq!(guard.leaks("It's oakfield-fern-2207.").len(), 1);
         let leaks = guard.leaks("They say: “The heating is on a timer, leave it alone”.");
         assert!(leaks[0].starts_with("wifi.txt: "), "{leaks:?}");

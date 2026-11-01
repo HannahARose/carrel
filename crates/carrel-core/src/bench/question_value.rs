@@ -7,7 +7,7 @@
 //! imply: the collection most of its items belong in, or for a term, a glossary fact saying so.
 //! Answering re-routes its items: a collection answer points them there, as answering does; a
 //! fact is added to the glossary and its items are ingested again with it. The gain is how
-//! many routing points that wins ([`routing_points`](super::routing_points)). [`summarize_value`]
+//! many routing points that wins ([`routing_points`]). [`summarize_value`]
 //! compares the ranking with the gains as a rank correlation, and gives the routing after
 //! answering the k highest-ranked questions beside the best any k could give.
 
@@ -394,7 +394,7 @@ fn ranks(values: &[f64]) -> Vec<f64> {
     let mut i = 0;
     while i < order.len() {
         let mut j = i;
-        while j + 1 < order.len() && values[order[j + 1]] == values[order[i]] {
+        while j + 1 < order.len() && values[order[j + 1]].total_cmp(&values[order[i]]).is_eq() {
             j += 1;
         }
         let average = (i + j) as f64 / 2.0 + 1.0;

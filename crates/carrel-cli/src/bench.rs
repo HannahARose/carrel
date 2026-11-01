@@ -72,6 +72,20 @@ pub struct BenchArgs {
     /// ingest does with a recommended model. Without it, each model is measured alone.
     #[arg(long, value_name = "MODEL")]
     pub second: Option<String>,
+    /// What to measure, when it isn't filing.
+    #[command(flatten)]
+    pub mode: BenchMode,
+    /// With `--search`: title and summarize each item's card as a model drafted it in an
+    /// earlier run's `results.json`, instead of by its file name; repeat for more.
+    #[arg(long, value_name = "RESULTS", requires = "search", conflicts_with_all = ["librarian", "questions"])]
+    pub cards: Vec<PathBuf>,
+}
+
+/// What `carrel bench` measures instead of filing: one at most.
+#[derive(Debug, clap::Args)]
+#[group(multiple = false)]
+#[allow(clippy::struct_excessive_bools)] // one flag per mode, and clap allows only one
+pub struct BenchMode {
     /// Measure search instead of filing: look up the test set's hand-written descriptions
     /// (`descriptions.yaml`) by words, by meaning and by both, with each embedding model, and
     /// write `results.json` and `report.md` to `search/` in `--out`. Each model's index is
@@ -81,18 +95,14 @@ pub struct BenchArgs {
     /// Measure the librarian instead of filing: ask each text model the test set's
     /// hand-written questions (`librarian.yaml`) over the filed test set, and write
     /// `results.json` and `report.md` to `librarian/` in `--out`.
-    #[arg(long, conflicts_with_all = ["compare", "second", "search", "questions"])]
+    #[arg(long, conflicts_with_all = ["compare", "second"])]
     pub librarian: bool,
     /// Measure question value instead of filing: with each text model, ingest the test set in
     /// one batch, answer each question it raises with the known answer, and compare what each
     /// answer wins with the question queue's ranking. Writes `results.json` and `report.md` to
     /// `questions/` in `--out`.
-    #[arg(long, conflicts_with_all = ["compare", "second", "search"])]
+    #[arg(long, conflicts_with_all = ["compare", "second"])]
     pub questions: bool,
-    /// With `--search`: title and summarize each item's card as a model drafted it in an
-    /// earlier run's `results.json`, instead of by its file name; repeat for more.
-    #[arg(long, value_name = "RESULTS", requires = "search")]
-    pub cards: Vec<PathBuf>,
 }
 
 /// `carrel bench`.
@@ -102,11 +112,11 @@ pub struct BenchArgs {
 /// [`Failure`] if the test set is inconsistent, a model asked for isn't available, or the
 /// results can't be written; or, with `--compare`, if a model no longer meets the bar.
 pub fn bench(args: &BenchArgs, json: bool) -> Result<Report, Failure> {
-    if args.search {
+    if args.mode.search {
         crate::findability::findability(args, json)
-    } else if args.librarian {
+    } else if args.mode.librarian {
         crate::bench_librarian::librarian_bench(args, json)
-    } else if args.questions {
+    } else if args.mode.questions {
         crate::bench_questions::question_value_bench(args, json)
     } else {
         filing(args, json)
