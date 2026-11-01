@@ -23,6 +23,7 @@
 
 pub mod findings;
 pub mod judge;
+pub mod model;
 pub mod order;
 pub mod pass;
 pub mod verdicts;
