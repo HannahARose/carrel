@@ -101,6 +101,8 @@ final class ArchiveWindowModel {
     private(set) var backups: BackupsModel?
     /// The correction sheet's, while it's open.
     var correction: CorrectionModel?
+    /// Report a Missing Feature's sheet, while it's open (#455).
+    var missingFeature: MissingFeatureModel?
     /// The filed item whose card the inspector is editing (⌘E).
     var editing: CardEditModel?
 

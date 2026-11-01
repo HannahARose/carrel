@@ -56,6 +56,7 @@ struct StatusView: View {
             StatusDiscoverySections(model: model)
             StatusQuestionsSection(window: model)
             StatusCrawlerSection(window: model)
+            StatusGapsSection(window: model)
         }
         .formStyle(.grouped)
         .overlay {
