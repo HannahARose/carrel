@@ -12,10 +12,12 @@ use crate::providers::{Capability, CompletionRequest, Offer, Provider, Registry,
 use crate::review::Attempt;
 
 use super::Candidate;
+use super::readings::{self, MAX_READINGS, MAX_REASON, Reading};
 use super::text::{ItemText, fit};
 
-/// Room left in the context for the model's answer, in tokens.
-pub const ANSWER_TOKENS: u32 = 400;
+/// Room left in the context for the model's answer, in tokens: the card, and up to two other
+/// readings of what the item is.
+pub const ANSWER_TOKENS: u32 = 700;
 
 /// The context assumed for a model that doesn't report its size.
 const DEFAULT_CONTEXT: u64 = 4096;
@@ -139,6 +141,9 @@ pub struct Draft {
     pub attempts: Vec<Attempt>,
     /// What's left for the owner to settle; empty when the draft is complete.
     pub problems: Vec<String>,
+    /// When the model wasn't sure what the item is, its readings, the card's first; empty
+    /// otherwise ([`readings`]).
+    pub readings: Vec<Reading>,
 }
 
 /// A model's answer, before checking.
@@ -154,11 +159,36 @@ struct Answer {
     new_tag: Option<String>,
     #[serde(default)]
     created: Option<String>,
+    #[serde(default)]
+    reason: String,
+    #[serde(default)]
+    alternatives: Vec<AnswerReading>,
 }
+
+/// Another reading in a model's answer, before checking.
+#[derive(Debug, Deserialize)]
+struct AnswerReading {
+    #[serde(default)]
+    title: String,
+    #[serde(default)]
+    summary: String,
+    #[serde(default)]
+    tags: Vec<String>,
+    #[serde(default)]
+    reason: String,
+}
+
+/// The problem raised for a card that says nothing of what a chosen file name says. Worth one
+/// retry, in which the model can give other readings, but accepted on the last attempt.
+const IGNORES_NAME: &str = "doesn't fit the card; if you aren't sure what the item is, give the other readings as alternatives";
+
+/// The start of a problem with another reading, which drops that reading on the last attempt
+/// rather than failing the card.
+const ALTERNATIVE: &str = "alternative ";
 
 /// Words in file names that cameras, scanners, browsers and programs make up, which say nothing
 /// about what a file is.
-const GENERIC_WORDS: [&str; 31] = [
+pub(crate) const GENERIC_WORDS: [&str; 31] = [
     "attachment",
     "copy",
     "dcim",
@@ -222,21 +252,41 @@ pub fn schema(vocabulary: &Vocabulary) -> Value {
         "title": {"type": "string", "description": "A short, specific title for the item, not just its file name"},
         "summary": {"type": "string", "description": "One to three sentences saying what the item is"},
         "new_tag": {"type": "string", "description": "Only if none of the tags fit: one new tag, lowercase, with words joined by -"},
-        "created": {"type": "string", "description": "When the item was made, as YYYY-MM-DD, or an empty string if the text doesn't say"}
+        "created": {"type": "string", "description": "When the item was made, as YYYY-MM-DD, or an empty string if the text doesn't say"},
+        "reason": {"type": "string", "description": "Only with alternatives: why this reading is the most likely; otherwise an empty string"}
     });
     // The date is required, with an empty string for none: models constrained by a grammar
     // otherwise end the answer before optional fields and never give one.
-    let mut required = vec!["title", "summary", "created"];
+    let mut required = vec!["title", "summary", "created", "reason", "alternatives"];
+    let mut alternative = json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["title", "summary", "reason"],
+        "properties": {
+            "title": {"type": "string", "description": "The title under this reading"},
+            "summary": {"type": "string", "description": "One sentence saying what the item is under this reading"},
+            "reason": {"type": "string", "description": "What in the item points to this reading"}
+        }
+    });
     if !vocabulary.tags.is_empty() {
         let names: Vec<&str> = vocabulary.tags.iter().map(|(t, _)| t.0.as_str()).collect();
-        properties["tags"] = json!({
+        let tags = json!({
             "type": "array",
             "items": {"enum": names},
             "maxItems": MAX_TAGS,
             "description": "Up to five tags from the list that describe the item"
         });
+        properties["tags"] = tags.clone();
+        alternative["properties"]["tags"] = tags;
+        alternative["required"] = json!(["title", "summary", "tags", "reason"]);
         required.push("tags");
     }
+    properties["alternatives"] = json!({
+        "type": "array",
+        "items": alternative,
+        "maxItems": MAX_READINGS - 1,
+        "description": "Only when you aren't sure what the item is: up to two other things it might be, most likely first; otherwise an empty list"
+    });
     json!({
         "type": "object",
         "additionalProperties": false,
@@ -253,7 +303,10 @@ pub fn system_prompt(context: &Context<'_>) -> String {
          using only what the item itself shows; don't invent details. The summary says what the item \
          contains or is for, beyond its title. Choose only tags that clearly describe the item: one or \
          two is usual, and none is fine. Never repeat account numbers, passwords or identity numbers \
-         in a card.\n",
+         in a card. When you can't tell for sure what the item is, because its name, folder and \
+         text point different ways or it could be one of several things, describe the most likely \
+         reading in the card, give up to two other readings as alternatives, and say why in each \
+         reason. Otherwise give no alternatives.\n",
         context.archive_name
     );
     if !context.vocabulary.tags.is_empty() {
@@ -303,6 +356,9 @@ fn describe(candidate: &Candidate, text: &ItemText) -> String {
         },
     };
     let mut described = format!("Name: {name}\nWhat it is: {kind}\n");
+    if let Some(folder) = readings::chosen_folder(&candidate.path) {
+        writeln!(described, "In the folder: {folder}").unwrap();
+    }
     if let Some(context) = &candidate.context {
         writeln!(described, "The owner's note about it: {context}").unwrap();
     }
@@ -387,7 +443,84 @@ fn check(
         .as_deref()
         .map(|d| DateOrTime(d.trim().to_owned()))
         .filter(DateOrTime::is_valid);
+    problems.extend(check_readings(answer, vocabulary, draft));
+    if problems.is_empty()
+        && draft.readings.is_empty()
+        && candidate.kind == Kind::File
+        && let Some(name) = readings::ignores_name(&candidate.path, title, summary)
+    {
+        problems.push(format!("{name} {IGNORES_NAME}"));
+    }
     problems
+}
+
+/// Checks the other readings in `answer` as the card is checked, keeping those that pass in
+/// `draft.readings` after the card's own. Returns their problems.
+fn check_readings(answer: &Answer, vocabulary: &Vocabulary, draft: &mut Draft) -> Vec<String> {
+    let mut problems = Vec::new();
+    draft.readings.clear();
+    let mut kept = Vec::new();
+    for (i, other) in answer.alternatives.iter().enumerate() {
+        let n = i + 1;
+        let title = other.title.trim();
+        let summary = other.summary.trim();
+        let reason = other.reason.trim();
+        let wrong = if title.is_empty() {
+            Some("the title is empty".to_owned())
+        } else if title.chars().count() > MAX_TITLE {
+            Some(format!("the title is longer than {MAX_TITLE} characters"))
+        } else if summary.is_empty() {
+            Some("the summary is empty".to_owned())
+        } else if summary.chars().count() > MAX_SUMMARY {
+            Some(format!("the summary is longer than {MAX_SUMMARY} characters"))
+        } else if reason.chars().count() > MAX_REASON {
+            Some(format!("the reason is longer than {MAX_REASON} characters"))
+        } else {
+            None
+        };
+        if let Some(wrong) = wrong {
+            problems.push(format!("{ALTERNATIVE}{n}: {wrong}"));
+            continue;
+        }
+        // One that only repeats the card isn't another reading.
+        if title.eq_ignore_ascii_case(&draft.title)
+            || kept.iter().any(|r: &Reading| r.title.eq_ignore_ascii_case(title))
+        {
+            continue;
+        }
+        let mut tags: Vec<Tag> = Vec::new();
+        for tag in &other.tags {
+            if vocabulary.contains(tag) && !tags.iter().any(|t| &t.0 == tag) {
+                tags.push(Tag(tag.clone()));
+            }
+        }
+        tags.truncate(MAX_TAGS);
+        kept.push(Reading {
+            title: title.to_owned(),
+            summary: summary.to_owned(),
+            tags,
+            reason: reason.to_owned(),
+            against: Vec::new(),
+        });
+    }
+    kept.truncate(MAX_READINGS - 1);
+    if !kept.is_empty() {
+        let reason: String = answer.reason.trim().chars().take(MAX_REASON).collect();
+        draft.readings.push(Reading {
+            title: draft.title.clone(),
+            summary: draft.summary.clone().unwrap_or_default(),
+            tags: draft.tags.clone(),
+            reason,
+            against: Vec::new(),
+        });
+        draft.readings.extend(kept);
+    }
+    problems
+}
+
+/// Whether a problem is worth a retry but is accepted on the last attempt.
+fn soft(problem: &str) -> bool {
+    problem == REPEATS_NAME || problem.ends_with(IGNORES_NAME) || problem.starts_with(ALTERNATIVE)
 }
 
 /// Drafts a card for `candidate`, trying each available text model in turn, best first. Each
@@ -415,6 +548,7 @@ pub fn draft(
         generated: None,
         attempts: Vec::new(),
         problems: Vec::new(),
+        readings: Vec::new(),
     };
     let ranked = registry.ranked(Capability::TextModel);
     let Some(best_priority) = ranked.first().map(|(_, o)| o.priority) else {
@@ -450,6 +584,7 @@ pub fn draft(
                 if draft.created.is_none() {
                     draft.created.clone_from(&text.created);
                 }
+                weigh_readings(&mut draft, candidate, text);
                 return draft;
             }
             Err(problems) => last_problems = problems,
@@ -460,6 +595,7 @@ pub fn draft(
     draft.summary = None;
     draft.tags.clear();
     draft.new_tag = None;
+    draft.readings.clear();
     draft.created.clone_from(&text.created);
     let declined: Vec<String> = draft
         .attempts
@@ -481,6 +617,19 @@ pub fn draft(
         )
     });
     draft
+}
+
+/// Weighs the draft's readings against the item, and when another comes first, the card takes
+/// it. A new tag the model proposed goes with the reading it was for.
+fn weigh_readings(draft: &mut Draft, candidate: &Candidate, text: &ItemText) {
+    if !readings::weigh(&mut draft.readings, &candidate.path, &text.text) {
+        return;
+    }
+    let first = &draft.readings[0];
+    draft.title.clone_from(&first.title);
+    draft.summary = Some(first.summary.clone());
+    draft.tags.clone_from(&first.tags);
+    draft.new_tag = None;
 }
 
 /// One model's turn at drafting.
@@ -559,7 +708,7 @@ impl Asking<'_> {
             };
             problems = check(&answer, self.candidate, self.context.vocabulary, draft);
             if round == 1 {
-                problems.retain(|p| p != REPEATS_NAME);
+                problems.retain(|p| !soft(p));
             }
             if problems.is_empty() {
                 draft.attempts.push(attempt(provider, offer, "ok", None));

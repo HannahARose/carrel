@@ -255,7 +255,8 @@ pub fn run_with_context(
         index.add_by_title(entry);
     }
     let proposed: Vec<ReviewEntry> = entries.iter().flatten().cloned().collect();
-    let questions = ask(archive, &collections, &glossary, &proposed);
+    let mut questions = ask(archive, &collections, &glossary, &proposed);
+    questions.extend(proposed.iter().filter_map(super::readings::question));
     for entry in entries.iter_mut().flatten() {
         mark_waiting(entry, &questions);
     }

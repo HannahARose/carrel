@@ -65,6 +65,7 @@ fn draft(title: &str, tags: &[&str]) -> Draft {
         generated: None,
         attempts: Vec::new(),
         problems: Vec::new(),
+        readings: Vec::new(),
     }
 }
 

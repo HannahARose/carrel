@@ -41,6 +41,8 @@ pub struct Prepared {
     pub kept_sensitive: bool,
     /// Tags left off because they don't apply in the collection it moves to.
     pub dropped: Vec<String>,
+    /// The reading it picks, counting from 1, when it picks one of a proposal's readings.
+    pub picked: Option<usize>,
     /// Who said it, as the change's summary names them: the owner, unless
     /// [`Prepared::said_by`] says otherwise.
     by: String,
@@ -266,16 +268,30 @@ pub fn prepare_review(
         .into_iter()
         .map(|n| n.said)
         .collect();
-    let text = item_text(archive, registry, &entry.source.path, entry.kind);
-    let subject = Subject {
-        card: &before,
-        collection: &entry.destination.path,
-        text: &text,
-        collections: &context.described,
-        vocabulary: &context.vocabulary,
+    // Picking one of its readings needs no model.
+    let picked = crate::ingest::readings::picked(words);
+    let (worked, words) = if let Some(n) = picked {
+        crate::ingest::readings::pick(&entry, n)
+            .map_err(|why| PrepareError::Correction(CorrectionError::BadLine(why)))?
+    } else {
+        let text = item_text(archive, registry, &entry.source.path, entry.kind);
+        let subject = Subject {
+            card: &before,
+            collection: &entry.destination.path,
+            text: &text,
+            collections: &context.described,
+            vocabulary: &context.vocabulary,
+        };
+        let worked = crate::correct::work_out(registry, &subject, words, &earlier)?;
+        (worked, words.to_owned())
     };
-    let worked = crate::correct::work_out(registry, &subject, words, &earlier)?;
-    let corrected = actions::correct_proposal(archive, registry, &entry, &worked, words)?;
+    let mut corrected = actions::correct_proposal(archive, registry, &entry, &worked, &words)?;
+    if picked.is_some() {
+        // The owner has settled what it is.
+        for reading in &mut corrected.entry.readings {
+            reading.against.clear();
+        }
+    }
     let after = corrected.entry.card.fields();
     Ok(Prepared {
         title: entry.card.title.clone(),
@@ -283,10 +299,11 @@ pub fn prepare_review(
         after,
         moved: corrected.to.map(|to| (entry.destination.path.clone(), to)),
         worked,
-        words: words.to_owned(),
+        words,
         changed: corrected.changed,
         kept_sensitive: corrected.kept_sensitive,
         dropped: corrected.dropped,
+        picked,
         by: OWNER.into(),
         pending: Pending::Proposal(Box::new(corrected.entry)),
     })
@@ -391,6 +408,7 @@ fn filed(
         changed,
         kept_sensitive,
         dropped: Vec::new(),
+        picked: None,
         by: OWNER.into(),
         pending: Pending::Filed {
             item,
@@ -423,6 +441,10 @@ pub fn save<E: From<PrepareError>>(
             ReviewQueue::of(archive)
                 .save(&entry)
                 .map_err(PrepareError::from)?;
+            if prepared.picked.is_some() {
+                crate::ingest::readings::settle_questions(archive, entry.id)
+                    .map_err(PrepareError::from)?;
+            }
             Ok(Saved {
                 title: entry.card.title.clone(),
                 filed: false,
@@ -653,6 +675,7 @@ fn reroute(
         generated: None,
         attempts: Vec::new(),
         problems: Vec::new(),
+        readings: Vec::new(),
     };
     let source = path.parent().unwrap_or(&path).to_owned();
     let route = router.route(registry, &candidate, &source, &draft);

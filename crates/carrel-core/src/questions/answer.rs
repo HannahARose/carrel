@@ -322,9 +322,13 @@ pub fn target(question: &QuestionEntry) -> Option<Target> {
 
 /// The owner's words for a correction answering the item `question` with `answer`: the
 /// question and the answer together, so the model knows what the answer is about. `field:
-/// value` lines are taken as they are, applied without a model.
+/// value` lines are taken as they are, applied without a model, and a suggested reading of a
+/// proposal picks it ([`crate::ingest::readings`]).
 #[must_use]
 pub fn item_words(question: &QuestionEntry, answer: &str) -> String {
+    if let Some(words) = crate::ingest::readings::answer_words(question, answer) {
+        return words;
+    }
     let answer = answer.trim();
     let lines = answer.lines().all(|l| {
         l.split_once(':').is_some_and(|(f, _)| {

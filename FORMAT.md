@@ -670,6 +670,7 @@ The writer records what it applied as one `inbox` change (§8.2), and removes th
 | `attempts` | Every provider call made for the entry: `stage`, `provider`, `offer`, `result` (`ok`, `unsupported`, `unavailable`, `declined` (a model's safety refusal) or `failed`) and an optional `message` |
 | `sensitivity_reasons` | Why `card.sensitivity` is `sensitive` or `restricted`, in words that never quote what was found; absent otherwise |
 | `owner_fields` | Optional. The card fields the owner set by editing or correcting the entry (`title`, `summary`, `tags`, `dates`, `sensitivity`), which drafting the entry again keeps |
+| `readings` | Optional. When the drafting model wasn't sure what the item is, two or three readings of it, each with a `title`, `summary`, `tags` and the model's `reason`, and `against`: what about the item (its file name, folder or text) doesn't fit that reading. The one the card was drafted from comes first. Picking another is a correction of the card's title, summary and tags; the readings stay, and their `against` is cleared once the owner has picked |
 | `desk_card` | Optional. For a desk item being archived (§9.4), its desk card's absolute path: the filed card keeps that card's `id` and body |
 | `url` | For `kind: url`, the web address the card's `url` gets when it's filed |
 | `note` | Optional. The owner's note from adding it (the intake entry's `note`), which the filed card keeps at the start of its body |

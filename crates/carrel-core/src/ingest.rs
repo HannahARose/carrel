@@ -9,6 +9,7 @@ pub mod card;
 pub mod filing;
 pub mod likely;
 pub mod questions;
+pub mod readings;
 pub mod redraft;
 pub mod route;
 pub mod run;
@@ -617,7 +618,7 @@ impl Batch<'_> {
         } else {
             State::NeedsOwner
         };
-        Some(ReviewEntry {
+        let mut entry = ReviewEntry {
             carrel: ReviewMarker::Review,
             format: crate::FORMAT_VERSION,
             id: Id::new_v7(),
@@ -666,8 +667,11 @@ impl Batch<'_> {
             attempts,
             sensitivity_reasons: sensitivity.reasons.clone(),
             owner_fields: Vec::new(),
+            readings: draft.readings.clone(),
             compressed,
             extra: crate::card::Extra::new(),
-        })
+        };
+        readings::lower_confidence(&mut entry);
+        Some(entry)
     }
 }
