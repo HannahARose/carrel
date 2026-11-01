@@ -16,10 +16,15 @@ use crate::card::{Card, Extra, Id};
 use crate::card_file::CardFile;
 use crate::coordinator::{Coordinator as _, DEFAULT_LEASE, DiskLock, Holder};
 use crate::providers::device::AvailableModel;
-use crate::providers::{Capability, CompletionRequest, Registry};
+use crate::providers::{Capability, CompletionRequest, ProviderError, Registry};
 
-/// Room for the model's answer, in tokens.
-const ANSWER_TOKENS: u32 = 600;
+/// Room for the model's answer, in tokens: a local model's fuller reason and summary fit.
+const ANSWER_TOKENS: u32 = 1_200;
+/// Room for the answer when it's asked again after being cut off, up to a third of the
+/// model's context.
+const RETRY_TOKENS: u32 = 2_400;
+/// The context a model is taken to have when its offer doesn't say.
+const DEFAULT_CONTEXT: u64 = 4_096;
 
 /// The card fields the crawler may correct, with the name each has in a card's
 /// `generated.fields` when a model wrote it (FORMAT.md §5.6). A field the owner wrote is
@@ -199,7 +204,7 @@ impl Crawler<'_> {
             text: text.as_deref(),
         };
         let paths: Vec<String> = places.iter().map(|p| p.path.clone()).collect();
-        let request = CompletionRequest {
+        let mut request = CompletionRequest {
             system: Some(judge::system()),
             prompt: judge::prompt(&shown, places),
             schema: Some(judge::schema(&paths)),
@@ -212,9 +217,24 @@ impl Crawler<'_> {
             .ok_or_else(|| {
                 CrawlError::NoModel(format!("{} isn't available any more", self.model.label))
             })?;
-        let completion = provider
-            .complete(&offer.id, &request)
-            .map_err(CrawlError::Model)?;
+        let context = offer
+            .extra
+            .get("context_tokens")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(DEFAULT_CONTEXT);
+        let retry_room = RETRY_TOKENS
+            .min(u32::try_from(context / 3).unwrap_or(u32::MAX))
+            .max(ANSWER_TOKENS);
+        // An answer that fails, as one cut off before its JSON ends does, is asked for once
+        // more with more room.
+        let completion = match provider.complete(&offer.id, &request) {
+            Err(ProviderError::Failed(_)) if retry_room > ANSWER_TOKENS => {
+                request.max_tokens = Some(retry_room);
+                provider.complete(&offer.id, &request)
+            }
+            other => other,
+        }
+        .map_err(CrawlError::Model)?;
         Ok(completion
             .json
             .and_then(|answer| judge::read(&answer, card, collection)))

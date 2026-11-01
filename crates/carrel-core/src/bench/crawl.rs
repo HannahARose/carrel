@@ -116,7 +116,8 @@ impl Muddle {
 
     /// What's wrong with the muddle against the test set: items and collections it names that
     /// aren't there, items scattered into the missing collection or where they already belong,
-    /// and a muddle that misplaces nothing. Empty when it's consistent.
+    /// a muddle that misplaces nothing, and a missing or emptied collection with too few items
+    /// for literary warrant. Empty when it's consistent.
     #[must_use]
     pub fn check(&self, answers: &Answers, archive: &Archive) -> Vec<String> {
         let collections: Vec<String> = archive
@@ -156,6 +157,26 @@ impl Muddle {
             .all(|(_, kind)| kind.is_none())
         {
             problems.push("the muddle misplaces nothing".into());
+        }
+        // A restructure proposal groups items into a collection only with literary warrant.
+        let warrant = archive.doc().min_collection_items.unwrap_or(5);
+        for (what, collection) in [
+            ("missing", &self.missing.collection),
+            ("emptied", &self.overfilled.from),
+        ] {
+            let items = answers
+                .items
+                .iter()
+                .filter(|(file, a)| {
+                    a.destinations.first() == Some(collection)
+                        && !self.scattered.contains_key(*file)
+                })
+                .count();
+            if u32::try_from(items).unwrap_or(u32::MAX) < warrant {
+                problems.push(format!(
+                    "the {what} {collection} has {items} items, fewer than the archive's min_collection_items ({warrant}), so no restructure could gather them"
+                ));
+            }
         }
         problems
     }

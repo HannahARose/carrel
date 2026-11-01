@@ -70,6 +70,12 @@ fn the_muddle_is_consistent_with_the_test_set() {
         problems.iter().any(|p| p.contains("where it belongs")),
         "{problems:?}"
     );
+    assert!(
+        problems
+            .iter()
+            .any(|p| p.contains("missing Nowhere has 0 items") && p.contains("(4)")),
+        "{problems:?}"
+    );
 }
 
 #[test]
