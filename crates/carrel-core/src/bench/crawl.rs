@@ -184,7 +184,9 @@ impl Muddle {
 
 /// Files the test set in `items` into `work`, a copy of the archive `fixture` made the first
 /// time without the muddle's missing collection, each item where the muddle puts it, with a
-/// card made from its answer. Run again, it keeps each card's identifier, as
+/// card made from its answer, summarized by its first description in `descriptions`, as a
+/// card a model drafted would be: the restructure benchmark groups items by their cards and
+/// tests findability from their summaries. Run again, it keeps each card's identifier, as
 /// [`findability::build`] does.
 ///
 /// # Errors
@@ -195,6 +197,7 @@ pub fn build(
     items: &Path,
     answers: &Answers,
     muddle: &Muddle,
+    descriptions: &findability::Descriptions,
     work: &Path,
 ) -> Result<Archive, String> {
     if !work.join("ARCHIVE.md").is_file() {
@@ -208,7 +211,20 @@ pub fn build(
             answer.destinations = vec![place];
         }
     }
-    findability::build(fixture, items, &muddled, &BTreeMap::new(), work)
+    let drafts: BTreeMap<String, findability::Drafted> = descriptions
+        .items
+        .iter()
+        .filter_map(|(file, said)| {
+            Some((
+                file.clone(),
+                findability::Drafted {
+                    title: findability::stem(file).to_owned(),
+                    summary: Some(said.first()?.clone()),
+                },
+            ))
+        })
+        .collect();
+    findability::build(fixture, items, &muddled, &drafts, work)
 }
 
 /// What a model concluded about one item, as a run saves it.

@@ -25,15 +25,15 @@ This is done once, by the owner, on the Mac. It needs an administrator account f
 
    Download the rest of the catalog too if the weekly benchmark should cover it.
 5. **Register the runner:** on GitHub, open the repository's Settings → Actions → Runners → New self-hosted runner, choose macOS and ARM64, and follow its download and `config.sh` steps as `carrel-ci`. When it asks for labels, add `carrel-on-device`.
-6. **Run it as a LaunchDaemon,** so it starts when the Mac does, with nobody logged in, as it must with FileVault on: `sudo sh scripts/install-runner-daemon.sh` from this repository, as an administrator. It runs the runner's `runsvc.sh` as `carrel-ci`, which reads the `PATH` and environment that `config.sh` saved. (The runner's own `./svc.sh install` makes a LaunchAgent instead, which runs only while `carrel-ci` is logged in.)
+6. **Run it as a service, logged in as `carrel-ci`:** `./svc.sh install`, then `./svc.sh start`, in the runner's folder. That makes a LaunchAgent, which runs in `carrel-ci`'s session, as `xcodebuild test` needs for the MLX provider's tests. Keep `carrel-ci` logged in: log in as it, then switch back to your own account with Fast User Switching. With FileVault on, it can't be logged in automatically, so after a restart log it in again; until then, jobs wait in the queue.
 
-   Outside a logged-in session, `xcodebuild test` can't reach its test runner, so the MLX provider's tests with real models are skipped there, with a warning. Run `scripts/on-device-tests.sh` by hand, logged in as `carrel-ci`, to include them.
+   If you'd rather the runner start with the Mac, logged in or not, run it as a LaunchDaemon instead: `sudo sh scripts/install-runner-daemon.sh`, after `./svc.sh uninstall`. Don't run both, since they'd share one work folder. Outside a session, the MLX provider's tests with real models are skipped, with a warning; `scripts/on-device-tests.sh` run by hand includes them.
 7. **Try it:** in Actions → On-device → Run workflow, run `tests`, then `benchmark`.
 
 ## Living with it
 
 - **One job at a time.** A push that arrives while the benchmark runs waits for it, so nothing compiles during a benchmark. Only the newest waiting run is kept.
-- **Your own work affects it.** The benchmark times models, so heavy work on the Mac while it runs, such as building Carrel, makes its timings slower. Sunday at 03:00 is chosen to avoid that. If you need the Mac, stop the runner (`sudo launchctl bootout system/com.horizon-labs.carrel-runner`), and start it again later (`sudo launchctl bootstrap system /Library/LaunchDaemons/com.horizon-labs.carrel-runner.plist`); a stopped runner's jobs wait in the queue.
+- **Your own work affects it.** The benchmark times models, so heavy work on the Mac while it runs, such as building Carrel, makes its timings slower. Sunday at 03:00 is chosen to avoid that. If you need the Mac, stop the runner (`./svc.sh stop`, or for the LaunchDaemon `sudo launchctl bootout system/com.horizon-labs.carrel-runner`), and start it again later; a stopped runner's jobs wait in the queue.
 - **Results** are kept as the run's `bench-results` artifact for 90 days, and the run's summary shows each model's scores with the change since the last run. A run fails only when a model that met the bar no longer does.
 - **`docs/bench/`** is updated by a pull request when a release changes the recommended models, not by CI.
-- **Removing it:** `sudo launchctl bootout system/com.horizon-labs.carrel-runner` and delete `/Library/LaunchDaemons/com.horizon-labs.carrel-runner.plist`, then remove the runner in the repository's settings and delete the `carrel-ci` user.
+- **Removing it:** `./svc.sh uninstall` (or, for the LaunchDaemon, `sudo launchctl bootout system/com.horizon-labs.carrel-runner` and delete its plist in `/Library/LaunchDaemons`), then remove the runner in the repository's settings and delete the `carrel-ci` user.

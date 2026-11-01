@@ -86,6 +86,11 @@ pub struct CandidateGroup {
     pub members: Vec<Id>,
     /// How similar its members are on average, from 0 to 1.
     pub cohesion: f64,
+    /// How much more alike its members are to each other than to the other items of the
+    /// collections they're in now (Holding aside), from 0 to 1: how much closer together
+    /// placing it brings them. Its cohesion when nothing else is there.
+    #[serde(default)]
+    pub separation: f64,
     /// The tags at least half its members have, most used first: a hint for its name.
     pub tags: Vec<String>,
     /// Where its members are now, most first.
@@ -326,6 +331,7 @@ fn candidate(
     items: &[&ItemNode],
     similarity: &Similarity,
     per_collection: &HashMap<&str, usize>,
+    places: &[&str],
 ) -> Option<CandidateGroup> {
     let mut sources: BTreeMap<&str, usize> = BTreeMap::new();
     for item in items {
@@ -364,9 +370,28 @@ fn candidate(
         })
         .collect();
     sources.sort_by(|a, b| b.items.cmp(&a.items).then(a.collection.cmp(&b.collection)));
+    let cohesion = total / pairs as f64;
+    // The items the group would leave behind, in the collections it takes its members from.
+    let left: Vec<usize> = (0..places.len())
+        .filter(|k| !members.contains(k))
+        .filter(|&k| sources.iter().any(|s| s.collection == places[k]))
+        .filter(|&k| !is_within(places[k], HOLDING))
+        .collect();
+    let separation = if left.is_empty() {
+        cohesion
+    } else {
+        let apart: f64 = members
+            .iter()
+            .flat_map(|&m| left.iter().map(move |&k| (m, k)))
+            .map(|(m, k)| similarity.between(m, k))
+            .sum::<f64>()
+            / (members.len() * left.len()) as f64;
+        (cohesion - apart).clamp(0.0, 1.0)
+    };
     Some(CandidateGroup {
         members: items.iter().map(|i| i.id).collect(),
-        cohesion: total / pairs as f64,
+        cohesion,
+        separation,
         tags: tags.into_iter().map(|(t, _)| t.to_owned()).collect(),
         sources,
         home,
@@ -461,12 +486,16 @@ pub fn group_section<S: std::hash::BuildHasher>(
     for item in &graph.items {
         *per_collection.entry(item.collection.as_str()).or_default() += 1;
     }
+    let places: Vec<&str> = chosen
+        .iter()
+        .map(|&i| graph.items[i].collection.as_str())
+        .collect();
     let mut groups: Vec<CandidateGroup> = clusters
         .into_iter()
         .filter(|members| members.len() >= options.warrant.max(2))
         .filter_map(|members| {
             let items: Vec<&ItemNode> = members.iter().map(|&k| &graph.items[chosen[k]]).collect();
-            candidate(&members, &items, &similarity, &per_collection)
+            candidate(&members, &items, &similarity, &per_collection, &places)
         })
         .collect();
     drop_collections_as_they_are(&mut groups, &per_collection);

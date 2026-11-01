@@ -89,6 +89,8 @@ fn the_muddled_archive_is_built_without_its_missing_collection() {
         &bench().join("items"),
         &answers,
         &muddle,
+        &carrel_core::bench::findability::Descriptions::load(&bench().join("descriptions.yaml"))
+            .unwrap(),
         &work,
     )
     .unwrap();
@@ -116,6 +118,8 @@ fn the_muddled_archive_is_built_without_its_missing_collection() {
         &bench().join("items"),
         &answers,
         &muddle,
+        &carrel_core::bench::findability::Descriptions::load(&bench().join("descriptions.yaml"))
+            .unwrap(),
         &work,
     )
     .unwrap();
@@ -373,6 +377,8 @@ fn a_model_that_knows_the_answers_finds_and_places_everything_and_one_that_doesn
         &bench().join("items"),
         &answers,
         &muddle(),
+        &carrel_core::bench::findability::Descriptions::load(&bench().join("descriptions.yaml"))
+            .unwrap(),
         &dir.path().join("archive"),
     )
     .unwrap();

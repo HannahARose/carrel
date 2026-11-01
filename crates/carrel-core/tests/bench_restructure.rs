@@ -159,6 +159,8 @@ fn muddled(dir: &Path) -> (carrel_core::archive::Archive, BTreeMap<Id, String>) 
         &bench().join("items"),
         &Answers::load(&bench().join("answers.yaml")).unwrap(),
         &Muddle::load(&bench().join("muddle.yaml")).unwrap(),
+        &carrel_core::bench::findability::Descriptions::load(&bench().join("descriptions.yaml"))
+            .unwrap(),
         &dir.join("archive"),
     )
     .unwrap();
@@ -339,14 +341,16 @@ fn a_proposal_built_from_the_muddled_archive_is_scored_without_a_model() {
 
 /// Stub card vectors like an embedding model's: every one shares a strong common direction,
 /// so even unrelated items have a cosine around 0.6, with a weaker direction for each item's
-/// intended collection and a little noise.
+/// intended collection and a little noise. The four Allotment items, a series in Home, share
+/// a direction of their own too, as items named alike do.
 #[allow(clippy::cast_precision_loss)]
 fn embedding_like_vectors(
     files: &BTreeMap<Id, String>,
     answers: &Answers,
     collections: &[String],
 ) -> HashMap<Id, Vec<f32>> {
-    let dimensions = collections.len() + 33;
+    let dimensions = collections.len() + 34;
+    let series = collections.len() + 1;
     let mut seed = 12_345_u64;
     let mut noise = move || {
         seed ^= seed << 13;
@@ -362,6 +366,9 @@ fn embedding_like_vectors(
             let mut v: Vec<f32> = (0..dimensions).map(|_| noise()).collect();
             v[collections.len()] = 1.1;
             v[place] = 0.8;
+            if file.starts_with("Allotment") {
+                v[series] = 0.8;
+            }
             Some((*id, v))
         })
         .collect()
@@ -417,9 +424,147 @@ fn numbers_alone_at_eager_bring_back_the_missing_collection_from_embedding_like_
         .collect();
     assert!(moved.contains(&intended("Recipes")), "{moved:?}");
     assert!(moved.contains(&intended("Manuals")), "{moved:?}");
+    // The Allotment series is alike, but already in Home with items like it: splitting it off
+    // brings nothing closer together.
+    let allotment: Vec<Id> = files
+        .iter()
+        .filter(|(_, f)| f.starts_with("Allotment"))
+        .map(|(id, _)| *id)
+        .collect();
+    assert!(
+        moved
+            .iter()
+            .all(|m| !allotment.iter().all(|a| m.contains(a))),
+        "{moved:?}"
+    );
     assert!(
         scored.held_back.iter().all(|h| !h.contains("116 items")),
         "the archive isn't one group: {:?}",
         scored.held_back
+    );
+}
+
+/// A text model that names no groups and gets lost in every tree, so no shape is easier to
+/// find things in for it; or, `failing`, fails every walk.
+struct LostWalker {
+    offers: Vec<carrel_core::providers::Offer>,
+    failing: bool,
+}
+
+impl LostWalker {
+    fn registry(failing: bool) -> carrel_core::providers::Registry {
+        let mut registry = carrel_core::providers::Registry::new();
+        registry.add(Box::new(Self {
+            offers: vec![carrel_core::providers::Offer {
+                capability: carrel_core::providers::Capability::TextModel,
+                id: "lost".into(),
+                label: None,
+                priority: 10,
+                available: true,
+                reason: None,
+                media_types: Vec::new(),
+                extra: serde_json::Map::new(),
+            }],
+            failing,
+        }));
+        registry
+    }
+}
+
+impl carrel_core::providers::Provider for LostWalker {
+    fn name(&self) -> &'static str {
+        "lost"
+    }
+
+    fn offers(&self) -> &[carrel_core::providers::Offer] {
+        &self.offers
+    }
+
+    fn complete(
+        &self,
+        _offer: &str,
+        request: &carrel_core::providers::CompletionRequest,
+    ) -> Result<carrel_core::providers::Completion, carrel_core::providers::ProviderError> {
+        let schema = request.schema.as_ref().unwrap();
+        let json = if schema["properties"].get("groups").is_some() {
+            serde_json::json!({"groups": [], "rationale": "Tidier."})
+        } else if self.failing {
+            return Err(carrel_core::providers::ProviderError::Failed(
+                "the walk was cut off".into(),
+            ));
+        } else {
+            serde_json::json!({"choice": "nowhere at all"})
+        };
+        Ok(carrel_core::providers::Completion {
+            text: json.to_string(),
+            json: Some(json),
+            model: "lost-1".into(),
+            usage: None,
+        })
+    }
+}
+
+#[test]
+fn with_a_model_the_findability_test_runs_and_holds_back_a_shape_no_easier_to_navigate() {
+    let dir = tempfile::tempdir().unwrap();
+    let answers = Answers::load(&bench().join("answers.yaml")).unwrap();
+    let muddle = Muddle::load(&bench().join("muddle.yaml")).unwrap();
+    let (archive, files) = muddled(dir.path());
+    let archive = at_eagerness(&archive, Eagerness::Eager).unwrap();
+    let collections: Vec<String> = archive
+        .collections()
+        .unwrap()
+        .into_iter()
+        .map(|c| c.path)
+        .chain(["Recipes".to_owned()])
+        .collect();
+    let vectors = embedding_like_vectors(&files, &answers, &collections);
+    let registry = LostWalker::registry(false);
+    let proposal = propose_section(
+        &archive,
+        "",
+        &vectors,
+        Some(&registry),
+        &SectionOptions::for_archive(&archive),
+    )
+    .unwrap();
+    let assessment = proposal.assessment.as_ref().unwrap();
+    // The muddled archive's cards have summaries, so the test runs.
+    let findability = assessment.findability.as_ref().expect("the test ran");
+    assert!(findability.tried > 0);
+    assert!(!findability.is_better());
+    assert_eq!(proposal.changes.len(), 0, "even Eager holds it back");
+    assert!(
+        assessment
+            .held_back
+            .iter()
+            .any(|h| h.why.contains("wasn't easier to find things in")),
+        "{:?}",
+        assessment.held_back
+    );
+    let scored = score(&proposal, &files, &muddle.places(&answers), &answers, 0.0);
+    assert!(
+        (scored.after.f1 - scored.before.f1).abs() < 1e-9,
+        "nothing moved"
+    );
+
+    // A test that can't run with a model at hand holds it back too.
+    let proposal = propose_section(
+        &archive,
+        "",
+        &vectors,
+        Some(&LostWalker::registry(true)),
+        &SectionOptions::for_archive(&archive),
+    )
+    .unwrap();
+    assert_eq!(proposal.changes.len(), 0);
+    let assessment = proposal.assessment.unwrap();
+    assert!(
+        assessment
+            .held_back
+            .iter()
+            .any(|h| h.why.contains("couldn't be tested for findability")),
+        "{:?}",
+        assessment.held_back
     );
 }

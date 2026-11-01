@@ -112,25 +112,45 @@ impl Tree {
 pub struct HeldOut {
     /// The item.
     pub id: Id,
-    /// Its card's summary.
+    /// Its card's summary, or its title and tags when no card in the section has a summary.
     pub summary: String,
 }
 
 /// Up to `count` cards in `section` (a collection's path, or empty for the whole archive)
-/// with a summary, chosen by `seed`: the same seed gives the same cards. Restricted items are
-/// never held out, since their summaries would go to a model.
+/// with a summary, chosen by `seed`: the same seed gives the same cards. When no card there
+/// has a summary, as before any were drafted, each is looked for by its title and tags
+/// instead, so the test still runs. Restricted items are never held out, since what they're
+/// looked for by would go to a model.
 #[must_use]
 pub fn hold_out(catalog: &Catalog, section: &str, count: usize, seed: u64) -> Vec<HeldOut> {
-    let mut candidates: Vec<HeldOut> = catalog
+    let open: Vec<&crate::discover::Entry> = catalog
         .entries
         .iter()
         .filter(|e| is_within(&e.item.collection, section))
         .filter(|e| e.item.sensitivity != Sensitivity::Restricted)
+        .collect();
+    let summarized = |e: &crate::discover::Entry| {
+        let summary = e.summary.as_deref()?.trim();
+        (!summary.is_empty()).then(|| summary.to_owned())
+    };
+    let titled = |e: &crate::discover::Entry| {
+        let title = e.item.title.trim();
+        (!title.is_empty()).then(|| {
+            if e.tags.is_empty() {
+                title.to_owned()
+            } else {
+                format!("{title} ({})", e.tags.join(", "))
+            }
+        })
+    };
+    let by_summary = open.iter().any(|e| summarized(e).is_some());
+    let mut candidates: Vec<HeldOut> = open
+        .iter()
         .filter_map(|e| {
-            let summary = e.summary.as_deref()?.trim();
-            (!summary.is_empty()).then(|| HeldOut {
+            let said = if by_summary { summarized(e) } else { titled(e) }?;
+            Some(HeldOut {
                 id: e.item.id,
-                summary: summary.to_owned(),
+                summary: said,
             })
         })
         .collect();
@@ -489,6 +509,21 @@ mod tests {
         assert_eq!(some, hold_out(&catalog, "", 3, 7));
         assert_eq!(some.len(), 3);
         assert_eq!(hold_out(&catalog, "Holding", 100, 1).len(), 4);
+
+        // With no summaries at all, cards are looked for by their titles and tags.
+        let mut bare = catalog.clone();
+        for entry in &mut bare.entries {
+            entry.summary = None;
+        }
+        bare.entries[0].tags = vec!["birds".into()];
+        let titled = hold_out(&bare, "", 100, 7);
+        assert_eq!(titled.len(), 9, "still no restricted item");
+        assert!(
+            titled
+                .iter()
+                .any(|h| h.id == bare.entries[0].item.id && h.summary.ends_with("(birds)")),
+            "{titled:?}"
+        );
     }
 
     #[test]

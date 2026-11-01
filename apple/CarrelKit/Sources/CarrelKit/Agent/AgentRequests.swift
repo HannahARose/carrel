@@ -114,6 +114,35 @@ public final class AgentRequestHandler {
         case .snapshot:
             let taken = try await Task.detached { try handle.snapshotNow(password: nil) }.value
             return AgentReply(.done, "Took snapshot \(taken.snapshot).")
+        case .items(_, let ids):
+            let wanted = Set(ids)
+            let items = try await Task.detached { try handle.items() }.value
+                .filter { wanted.contains($0.id) }
+                .map {
+                    AgentFoundItem(
+                        id: $0.id, title: $0.title,
+                        path: $0.item.map { root.appending(path: $0).path(percentEncoded: false) })
+                }
+            return AgentReply(
+                .done, items.isEmpty ? "No such items." : "Found \(items.count).", items: items)
+        case .collections:
+            let collections = try await Task.detached { try handle.collections() }.value
+            return AgentReply(
+                .done, "\(collections.count) collections.",
+                items: collections.map {
+                    AgentFoundItem(id: $0.path, title: $0.title, collection: $0.path)
+                })
+        case .active:
+            let active = try await Task.detached { try handle.active() }.value
+            let items = active.map { AgentFoundItem(id: $0.id, title: $0.title, path: $0.working) }
+            let message =
+                active.isEmpty
+                ? "Nothing is checked out or on the desk."
+                : active.map {
+                    "\($0.title) (\($0.kind == .checkedOut ? "checked out" : "on the desk"))"
+                }
+                .joined(separator: ", ")
+            return AgentReply(.done, message, items: items)
         }
     }
 

@@ -35,8 +35,13 @@ final class AgentHost {
     static let serviceEnv = "CARREL_AGENT_SERVICE"
     private static let pausedKey = "paused"
 
+    /// The agent host running in this process, for Shortcuts' intents.
+    static weak var current: AgentHost?
+
     let agent: Agent
     private let notifications: ReminderNotifications
+    private let handler: AgentRequestHandler
+    private let override: [URL]?
     private var loop: Task<Void, Never>?
     private var service: AgentXPCListener?
     private var quickActions: AgentQuickActions?
@@ -51,8 +56,9 @@ final class AgentHost {
         let override = environment[Self.archivesEnv].map {
             $0.split(separator: ":").map { URL(filePath: String($0)) }
         }
+        self.override = override
         if UserDefaults.standard.bool(forKey: Self.pausedKey) { agent.pause() }
-        let handler = AgentRequestHandler(agent: agent) { [weak self] in self?.open($0) }
+        handler = AgentRequestHandler(agent: agent) { AgentHost.open($0) }
         // Run from the build rather than as a login item, it has no Mach service to offer.
         if override == nil || environment[Self.serviceEnv] != nil {
             let service = AgentXPCListener(handler: handler)
@@ -69,6 +75,14 @@ final class AgentHost {
         loop = Task { [agent] in
             await agent.run { override ?? Self.recentArchives() }
         }
+        Self.current = self
+    }
+
+    /// Answers a request from Shortcuts in this process, once the archives are followed: the
+    /// system may have just launched the agent to run it.
+    func answer(_ request: AgentRequest) async -> AgentReply {
+        if agent.archives.isEmpty { await agent.follow(override ?? Self.recentArchives()) }
+        return await handler.handle(request)
     }
 
     /// The archives the app has open or opened recently, newest first.
