@@ -56,9 +56,11 @@ Collections are made in the app too (see [Browse](#browse)), but their design do
 
 The window has three columns:
 
-- **The sidebar:** the screens, in the interactive mode's order, with counts beside Review, Questions and Active: **Status**, **Review**, **Questions**, **Active**, then your **Collections** (Browse), then **History** and **Backups**.
+- **The sidebar:** the screens, in the interactive mode's order, with counts beside Review, Questions and Active: **Status**, **Review**, **Questions**, **Active**, then your **Collections** (Browse), then **Discover**'s views, then **History** and **Backups**.
 - **The list** for the chosen screen.
 - **The inspector:** the chosen thing in full, such as a proposal's card, an item's preview and card, or what a change did.
+
+Beside them, the **Librarian** panel opens on the right when you want it (see [The librarian](#the-librarian)).
 
 Every action is in the menus, so you can find it there and see its key. In lists, single letters work too, as in the interactive mode, where they can't be mistaken for typing. Right-click anything in a list for its actions.
 
@@ -68,7 +70,11 @@ What the archive holds: its name and folder, whether it's read only, its format 
 
 **Intake** shows the worker drafting new items, with its progress, how many are waiting, and how many failed (hover over the count to see why). When items are waiting and nothing is drafting them, because the agent is off or paused, **Draft Now** drafts them in the app.
 
-Status doesn't show Recent, structure signals or suggestions yet; `carrel status` and the interactive mode do.
+**Not Opened in a While** appears now and then: a collection you haven't opened in six months, with an item or two from it, as `carrel status` names it ([Discovering the archive](user-guide.md#discovering-the-archive)). Choose the collection or an item to open it in Browse, which counts as opening it.
+
+**The Librarian's Changes This Week** lists what the librarian changed on its own, when you've let it ([What the librarian may change](user-guide.md#what-the-librarian-may-change)), with **Undo All of Them…**.
+
+Status doesn't show Recent, structure signals, suggestions or the day's few questions yet; `carrel status` and the interactive mode do.
 
 ### Review
 
@@ -95,7 +101,7 @@ When several items share a term Carrel doesn't know, or it can't tell where they
 - **Answer:** type what the term means, or choose the collection where its items go, and press Return. Carrel drafts those items again with what you said, and remembers it.
 - **Dismiss** (`d`): drop the question.
 
-Both are in the Questions menu. Suggested answers, skipping a question for now, and questions about a single item or a sender are in the interactive mode and `carrel questions` for now.
+Both are in the Questions menu. Suggested answers, skipping a question for now, and questions about a single item or a sender are in the interactive mode and `carrel questions` for now ([Questions and the glossary](user-guide.md#questions-and-the-glossary)), as are the questions Carrel asks beside an item, on a wander and from the librarian ([Questions as you go](user-guide.md#questions-as-you-go)); the app gains them in a later build (#319, #316).
 
 ### Active
 
@@ -132,7 +138,7 @@ The card shows the item's fields, your notes, its history and the items it links
 | Rename… | ⇧⌘R | Renames the item, starting from a name that works on every system |
 | Expand… | ⇧⌘E | For a filed zip or other compressed file, asks first, then expands it in place |
 
-Edit Card and Correct… are in the Edit menu; New Collection, Rename and Expand in the File menu; Check Out in the Active menu. They're also in each item's context menu. ⌘K works on a proposal in Review too.
+Edit Card and Correct… are in the Edit menu; New Collection, Rename and Expand in the File menu; Check Out in the Active menu. They're also in each item's context menu, with **Ask About This** (⇧⌘L), which asks [the librarian](#the-librarian). ⌘K works on a proposal in Review too.
 
 ### Search
 
@@ -144,7 +150,37 @@ Results by words appear as you type. Search by meaning runs when you pause, with
 
 Every change to the archive, newest first. Choose one to see what it did: the operation, the device, the items it touched, and the backup snapshot taken with it.
 
+A change the librarian made on its own says **by the librarian**, and its details name the librarian as who made it.
+
 **Undo Change…** (`u`, or ⌥⌘Z in the History menu) asks first, saying what undoing restores and what it leaves alone, then undoes it. Files the change moved go back. Undoing is itself a change, so it can be undone too. (Only the change that created the archive's history can't be.)
+
+### The librarian
+
+The **Librarian** panel answers questions about your archive in your own words, as `carrel ask` does ([Asking the librarian](user-guide.md#asking-the-librarian)). Open it with the **Librarian** button in the toolbar, or **View → Show Librarian** (⌥⌘L), and it stays beside the window as you move between screens.
+
+- **Ask:** type a question and press Return (or ⌘Return). While it works, the panel shows its steps ("Step 2 of up to 8 · searched…"). Each question can build on the ones before.
+- **Each answer** lists the **Items** it's about, the **Passages** it read, quoted from the items, and its **Suggestions**. Choose an item or a passage's title to show the item in Browse; hover over an item for its card's path. Under the answer is the model that gave it and how many steps it took, and hovering there lists each step.
+- **Ask About This** (⇧⌘L, in the View menu, an item's context menu, and on a wander step) opens the panel with a question about the chosen item, for you to finish and ask.
+- **Save to Journal** in the panel's toolbar writes the conversation to this month's Journal, as one change in History; the panel says where. **New Conversation** starts again. A conversation you don't save is gone when you start a new one or close the window, and nothing about it is written into the archive.
+- **Which model:** the line under the question field names the model that answers, and whether the librarian only suggests changes or may make them. Choose a model in **Settings → Models → Librarian**.
+
+**What it changes.** By default it changes nothing: each suggestion has **Review This Change…**, which opens the sheet that makes it, worked out already. A refile or a correction is shown before and after in the correction sheet, a rename in the rename sheet and a new collection in the new collection sheet, and nothing is saved until you confirm it there. It's your own change.
+
+With `librarian.changes` on in **Settings → General**, it makes the changes it's at least as sure of as `librarian.confidence` itself. Each says **Done by the librarian**, with **Undo**. The panel lists **The Librarian's Changes This Week** below the conversation, each with **Undo** and all of them with **Undo All…**, as Status does; History marks them **by the librarian**. Undoing is a new change, newest first, and any that can't be undone, because you've changed the same card since, are left and listed. The librarian never changes a field you wrote yourself, never acts on restricted items, and never deletes anything, edits a file, changes settings or sends anything off the Mac.
+
+A **restricted** item is found by its card only: the librarian can say it exists, but never reads or quotes its text.
+
+### Discover
+
+The **Discover** section of the sidebar has the discovery views ([Discovering the archive](user-guide.md#discovering-the-archive)). Choose an item in any of them to see its preview and card in the inspector; its context menu has **Show in Browse** and **Ask About This**.
+
+- **On This Day:** what was made, filed or worked on on today's date in other years, by year. The date picker in the toolbar looks back from another day.
+- **Wander:** a walk through the stacks, one item at a time: its title, why it came next, its preview, its card's summary, the start of its text and its tags, with **Show in Browse** and **Ask About This**. **Next** (→) takes the next step, and **Start Again** starts a new walk. The items visited so far are along the bottom, to go back to. A restricted item shows its card only.
+- **Timeline:** items by date, newest period first, each period with a bar for how many it has. Type words or search's filters, such as `tag:receipts after:2024`, and press Return; **By** places items by when they were made, filed or worked on, and **Per** groups them by year, month or day. Below, it says how many items have no such date.
+- **Archive Map:** collections as a treemap, each sized by how much space it takes or how many items it holds (**Measure** in the toolbar). Hover for a collection's items and size. Click one to zoom into it (or, with nothing inside, to show it in Browse), and double-click to show it in Browse; the path above the map takes you back out.
+- **Activity:** when you filed and worked on things over the last year, as a heatmap, a column a week, darker for busier days. Hover over a day for what happened on it.
+
+Which collections you opened and your walk are kept on this Mac, never in the archive, so looking around never changes it.
 
 ### Backups
 
@@ -160,8 +196,8 @@ What `carrel backup` does (see [Backups](user-guide.md#backups)), using the Kopi
 
 **Carrel → Settings…** (⌘,) shows this Mac's settings and those of the archive whose window was last in front:
 
-- **General:** this Mac's settings, and the archive's own, shared by every device that opens it (see [Settings](user-guide.md#settings)). Changing an archive setting is a change in history; **Undo** beside it takes it back.
-- **Models:** which model drafts cards and which gives a second opinion, the text and embedding models with their sizes, and **Download…** and **Delete…**, which ask first and show the size. Nothing downloads without your OK.
+- **General:** this Mac's settings, and the archive's own, shared by every device that opens it (see [Settings](user-guide.md#settings)), including `librarian.changes`, which lets the librarian make the changes it's sure of, and `librarian.confidence`, how sure it must be. Changing an archive setting is a change in history; **Undo** beside it takes it back.
+- **Models:** which model drafts cards, which gives a second opinion and which the **Librarian** answers with (the strongest that fits this Mac, unless you choose one), the text and embedding models with their sizes, and **Download…** and **Delete…**, which ask first and show the size. Nothing downloads without your OK.
 - **Search:** the archive's index for search by meaning: rebuilding it, and switching to another embedding model, which asks first and can be stopped and carried on.
 - **Providers:** the providers this Mac found, the file types it reads, and those it couldn't read so far.
 - **Backups:** whether Kopia is installed and backups are set up for this archive. Set them up from the [Backups](#backups) screen.

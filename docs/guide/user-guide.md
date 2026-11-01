@@ -196,7 +196,7 @@ Editing opens the card's fields in your editor. When you save, Carrel checks the
 
 ## Questions and the glossary
 
-Questions are where you teach Carrel what it can't know. When several items share something it doesn't know, such as a project's code name in their file names, it asks one question instead of guessing on each. Questions wait on the Questions screen (`4`), or in `carrel questions`, the most worth answering first: those whose answer would place or improve the most items Carrel is least sure of. Each shows the items it's about, and likely answers to pick by number, beside your own answer, Skip and Dismiss.
+Questions are where you teach Carrel what it can't know. When several items share something it doesn't know, such as a project's code name in their file names, it asks one question instead of guessing on each. Questions wait on the Questions screen (`4`), in `carrel questions`, or on the Mac app's Questions screen, the most worth answering first: those whose answer would place or improve the most items Carrel is least sure of. Each shows the items it's about, and likely answers to pick by number, beside your own answer, Skip and Dismiss.
 
 - **A term** ("What is “scope-ds”?"): answer in a sentence. Carrel saves it to `_System/glossary.md`, which every model reads from then on, and puts the waiting items back at the front of the queue, so the worker drafts them again with what you said.
 - **A collection or a group** ("These 12 items about “Daves Chicken”: Finances, or a new Finances/Daves Chicken collection?"): pick or choose a collection, and the waiting items go there. Picking a new collection creates it; typing one that doesn't exist needs `--create` on the command line.
@@ -209,6 +209,8 @@ Questions the glossary or a routing rule already answers are dropped from the qu
 
 Items waiting on a question aren't approved in bulk until it's answered or dismissed.
 
+The Mac app answers and dismisses term and collection questions for now; suggested answers, skipping, and the other kinds come to it in #319.
+
 ### Questions as you go
 
 Carrel also asks about items at natural moments, never in a pop-up, and an answer always goes through the same correction, shown before it's saved, with the fields you wrote yourself kept:
@@ -217,6 +219,8 @@ Carrel also asks about items at natural moments, never in a pop-up, and an answe
 - **On a wander:** now and then a step asks about its item, at most every three steps and never on the first; `a` answers it in Discover, and `carrel discover wander` prints it with the command that answers it.
 - **From the librarian:** when an item it found has a question, it asks after its answer ("While we're here…"), at most once an answer, never after two answers in a row, and never twice about the same item in a conversation. `a` answers it on the Librarian screen; in a conversation at the terminal, `carrel ask` asks for your answer there (a number picks a suggestion, an empty line leaves it for later).
 - **On Status:** at most three new questions a day, the same all day, chosen from all over the archive; they join Questions, and drop off Status once answered or skipped.
+
+These are in the command line and the interactive mode now, and come to the Mac app's inspector, Discover, Librarian panel and Status in #316.
 
 A question you skipped rests and one you declined is never asked again, wherever it would have come up.
 
@@ -327,6 +331,8 @@ In the interactive mode, `L` opens the **Librarian** screen: the conversation on
 - With it on, the changes it made are listed under **The librarian's changes this week**: `u` undoes the chosen one and `U` all of them, after asking.
 - `s` saves the conversation to the Journal, and `n` starts a new one; an unsaved conversation is gone when you leave.
 
+In the Mac app, the **Librarian** panel sits beside the window (⌥⌘L), and **Ask About This** (⇧⌘L) asks about the chosen item; each suggestion opens the sheet that makes it, and the librarian's own changes can be undone there, on Status and in History (see [The Mac app](mac-app.md#the-librarian)).
+
 ## Discovering the archive
 
 Search finds what you ask for. Discovery shows you the archive itself, so you come across what you'd forgotten. Each view is computed by Carrel's core and drawn by each interface in its own way; on the command line they're `carrel discover` and its subcommands, with `--json` for programs.
@@ -339,6 +345,8 @@ Search finds what you ask for. Discovery shows you the archive itself, so you co
 - **Resurfacing:** now and then, `carrel status` names a collection you haven't opened in six months, with an item or two from it. It names the same one all day, then none for a week. Showing an item in it (`carrel show`, or a wander step) counts as opening it.
 
 In the interactive mode, `D` opens the **Discover** screen, with a key for each view: `d` on this day, `w` wander (`Space` takes the next step, `n` starts another walk, `o` opens the item in Browse; the item's preview is beside it where the terminal draws one), `t` the timeline (`p` changes between months, days and years), `m` the archive map as a sized tree, and `h` activity as a block heatmap. Status shows the resurfaced collection, and showing an item in Browse counts as opening its collection.
+
+In the Mac app, the views are in the sidebar's **Discover** section: wander with each item's preview, the archive map as a treemap and activity as a heatmap, and Status's **Not Opened in a While** (see [The Mac app](mac-app.md#discover)).
 
 Which collections you opened, and your last walk, are kept on this device (see [What Carrel keeps on this device](#what-carrel-keeps-on-this-device)), never in the archive: looking around never changes it. A collection this device has never opened counts as last seen when something in it was last filed or worked on.
 
