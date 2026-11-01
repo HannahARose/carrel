@@ -1180,6 +1180,80 @@ public protocol ArchiveHandleProtocol: AnyObject, Sendable {
     func saveCorrection(correction: Correction) throws  -> SavedCorrection
     
     /**
+     * Approves the finding `id`: makes its change as the owner's, through the corrections
+     * path, with `model` or the device's for a correction. Returns the history commit.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Busy`] if another writer holds the archive, or [`CarrelError::Failed`]
+     * if it isn't found or the change can't be made, as when the item has gone; the finding
+     * is kept then.
+     */
+    func approveCrawlerFinding(id: String, model: ModelProvider?) throws  -> String?
+    
+    /**
+     * A pass of the crawler, when its pace says one is due and this Mac (idle for
+     * `idle_seconds`, on mains power when `on_power`; `None` when unknown) allows: what it
+     * did, or `None` when it didn't run. It judges with `model` or, when it's `None`, the
+     * strongest model this Mac has that fits in `memory_gb`, and asks `stop` before each
+     * item. What the app's agent runs.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if there's no text model, or [`CarrelError::Failed`] if the
+     * pass failed.
+     */
+    func crawlWhenIdle(idleSeconds: UInt64?, onPower: Bool?, model: ModelProvider?, memoryGb: UInt64?, stop: CrawlStop?) throws  -> CrawlerPassed?
+    
+    /**
+     * The changes the crawler made on its own at or after `since` (seconds since the Unix
+     * epoch) that haven't been undone, newest first.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the history can't be read.
+     */
+    func crawlerChanges(since: Int64) throws  -> [Change]
+    
+    /**
+     * The crawler's findings waiting in Review, oldest first.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the queue can't be read.
+     */
+    func crawlerFindings() throws  -> [CrawlerFinding]
+    
+    /**
+     * How far the crawler has got through the archive, as `carrel crawl status` says.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the archive, the verdicts or the findings can't be read.
+     */
+    func crawlerStatus() throws  -> CrawlerStatus
+    
+    /**
+     * Rejects the finding `id`: it leaves Review, and the crawler doesn't suggest it again.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if it isn't found or can't be removed.
+     */
+    func rejectCrawlerFinding(id: String) throws 
+    
+    /**
+     * Undoes every change the crawler made on its own at or after `since`, newest first, as
+     * `carrel crawl undo` does. One that can't be undone is reported, and the rest are still
+     * undone.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Busy`] if another writer holds the archive, or [`CarrelError::Failed`].
+     */
+    func undoCrawlerChanges(since: Int64) throws  -> LibrarianUndone
+    
+    /**
      * Filing and work sessions by day, from `from` to `to` (`YYYY-MM-DD`; the last year to
      * today when `None`).
      *
@@ -2724,6 +2798,138 @@ open func saveCorrection(correction: Correction)throws  -> SavedCorrection  {
 }
     
     /**
+     * Approves the finding `id`: makes its change as the owner's, through the corrections
+     * path, with `model` or the device's for a correction. Returns the history commit.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Busy`] if another writer holds the archive, or [`CarrelError::Failed`]
+     * if it isn't found or the change can't be made, as when the item has gone; the finding
+     * is kept then.
+     */
+open func approveCrawlerFinding(id: String, model: ModelProvider?)throws  -> String?  {
+    return try  FfiConverterOptionString.lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_approve_crawler_finding(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(id),
+        FfiConverterOptionTypeModelProvider.lower(model),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * A pass of the crawler, when its pace says one is due and this Mac (idle for
+     * `idle_seconds`, on mains power when `on_power`; `None` when unknown) allows: what it
+     * did, or `None` when it didn't run. It judges with `model` or, when it's `None`, the
+     * strongest model this Mac has that fits in `memory_gb`, and asks `stop` before each
+     * item. What the app's agent runs.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if there's no text model, or [`CarrelError::Failed`] if the
+     * pass failed.
+     */
+open func crawlWhenIdle(idleSeconds: UInt64?, onPower: Bool?, model: ModelProvider?, memoryGb: UInt64?, stop: CrawlStop?)throws  -> CrawlerPassed?  {
+    return try  FfiConverterOptionTypeCrawlerPassed.lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_crawl_when_idle(
+            self.uniffiCloneHandle(),
+        FfiConverterOptionUInt64.lower(idleSeconds),
+        FfiConverterOptionBool.lower(onPower),
+        FfiConverterOptionTypeModelProvider.lower(model),
+        FfiConverterOptionUInt64.lower(memoryGb),
+        FfiConverterOptionTypeCrawlStop.lower(stop),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * The changes the crawler made on its own at or after `since` (seconds since the Unix
+     * epoch) that haven't been undone, newest first.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the history can't be read.
+     */
+open func crawlerChanges(since: Int64)throws  -> [Change]  {
+    return try  FfiConverterSequenceTypeChange.lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_crawler_changes(
+            self.uniffiCloneHandle(),
+        FfiConverterInt64.lower(since),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * The crawler's findings waiting in Review, oldest first.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the queue can't be read.
+     */
+open func crawlerFindings()throws  -> [CrawlerFinding]  {
+    return try  FfiConverterSequenceTypeCrawlerFinding.lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_crawler_findings(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * How far the crawler has got through the archive, as `carrel crawl status` says.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the archive, the verdicts or the findings can't be read.
+     */
+open func crawlerStatus()throws  -> CrawlerStatus  {
+    return try  FfiConverterTypeCrawlerStatus_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_crawler_status(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Rejects the finding `id`: it leaves Review, and the crawler doesn't suggest it again.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if it isn't found or can't be removed.
+     */
+open func rejectCrawlerFinding(id: String)throws   {try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_reject_crawler_finding(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(id),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * Undoes every change the crawler made on its own at or after `since`, newest first, as
+     * `carrel crawl undo` does. One that can't be undone is reported, and the rest are still
+     * undone.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Busy`] if another writer holds the archive, or [`CarrelError::Failed`].
+     */
+open func undoCrawlerChanges(since: Int64)throws  -> LibrarianUndone  {
+    return try  FfiConverterTypeLibrarianUndone_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_undo_crawler_changes(
+            self.uniffiCloneHandle(),
+        FfiConverterInt64.lower(since),uniffiCallStatus
+    )
+})
+}
+    
+    /**
      * Filing and work sessions by day, from `from` to `to` (`YYYY-MM-DD`; the last year to
      * today when `None`).
      *
@@ -4242,6 +4448,216 @@ public func FfiConverterTypeCorrection_lift(_ handle: UInt64) throws -> Correcti
 #endif
 public func FfiConverterTypeCorrection_lower(_ value: Correction) -> UInt64 {
     return FfiConverterTypeCorrection.lower(value)
+}
+
+
+
+
+
+
+/**
+ * Asked before each item of a pass whether to stop, as when the owner starts using the Mac,
+ * implemented in Swift.
+ */
+public protocol CrawlStop: AnyObject, Sendable {
+    
+    /**
+     * Whether to stop now.
+     */
+    func shouldStop()  -> Bool
+    
+}
+/**
+ * Asked before each item of a pass whether to stop, as when the owner starts using the Mac,
+ * implemented in Swift.
+ */
+open class CrawlStopImpl: CrawlStop, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_carrel_ffi_fn_clone_crawlstop(self.handle, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_carrel_ffi_fn_free_crawlstop(handle, $0) }
+    }
+
+    
+
+    
+    /**
+     * Whether to stop now.
+     */
+open func shouldStop() -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_crawlstop_should_stop(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+
+    
+}
+
+
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+fileprivate struct UniffiCallbackInterfaceCrawlStop {
+
+    // Create the VTable using a series of closures.
+    // Swift automatically converts these into C callback functions.
+    //
+    // Store the vtable directly.
+    static let vtable: UniffiVTableCallbackInterfaceCrawlStop = UniffiVTableCallbackInterfaceCrawlStop(
+        uniffiFree: { (uniffiHandle: UInt64) -> () in
+            do {
+                try FfiConverterTypeCrawlStop.handleMap.remove(handle: uniffiHandle)
+            } catch {
+                print("Uniffi callback interface CrawlStop: handle missing in uniffiFree")
+            }
+        },
+        uniffiClone: { (uniffiHandle: UInt64) -> UInt64 in
+            do {
+                return try FfiConverterTypeCrawlStop.handleMap.clone(handle: uniffiHandle)
+            } catch {
+                fatalError("Uniffi callback interface CrawlStop: handle missing in uniffiClone")
+            }
+        },
+        shouldStop: { (
+            uniffiHandle: UInt64,
+            uniffiOutReturn: UnsafeMutablePointer<Int8>,
+            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+            let makeCall = {
+                () throws -> Bool in
+                guard let uniffiObj = try? FfiConverterTypeCrawlStop.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return uniffiObj.shouldStop(
+                )
+            }
+
+            
+            let writeReturn = { uniffiOutReturn.pointee = FfiConverterBool.lower($0) }
+            uniffiTraitInterfaceCall(
+                callStatus: uniffiCallStatus,
+                makeCall: makeCall,
+                writeReturn: writeReturn
+            )
+        }
+    )
+
+    // Rust stores this pointer for future callback invocations, so it must live
+    // for the process lifetime (not just for the init function call).
+    //
+    // `nonisolated(unsafe)` is needed under Swift 6 strict concurrency.
+    // This is safe because the pointee is initialized once during static init
+    // and never mutated by either side of the FFI.  Its fields are C function pointers.
+    nonisolated(unsafe) static let vtablePtr: UnsafePointer<UniffiVTableCallbackInterfaceCrawlStop> = {
+        let ptr = UnsafeMutablePointer<UniffiVTableCallbackInterfaceCrawlStop>.allocate(capacity: 1)
+        ptr.initialize(to: vtable)
+        return UnsafePointer(ptr)
+    }()
+}
+
+private func uniffiCallbackInitCrawlStop() {
+    uniffi_carrel_ffi_fn_init_callback_vtable_crawlstop(UniffiCallbackInterfaceCrawlStop.vtablePtr)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCrawlStop: FfiConverter {
+    fileprivate static let handleMap = UniffiHandleMap<CrawlStop>()
+
+    typealias FfiType = UInt64
+    typealias SwiftType = CrawlStop
+
+    public static func lift(_ handle: UInt64) throws -> CrawlStop {
+        if ((handle & 1) == 0) {
+            // Rust-generated handle, construct a new class that uses the handle to implement the
+            // interface
+            return CrawlStopImpl(unsafeFromHandle: handle)
+        } else {
+            // Swift-generated handle, get the object from the handle map
+            return try handleMap.remove(handle: handle)
+        }
+    }
+
+    public static func lower(_ value: CrawlStop) -> UInt64 {
+         if let rustImpl = value as? CrawlStopImpl {
+             // Rust-implemented object.  Clone the handle and return it
+            return rustImpl.uniffiCloneHandle()
+         } else {
+            // Swift object, generate a new vtable handle and return that.
+            return handleMap.insert(obj: value)
+         }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CrawlStop {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: CrawlStop, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCrawlStop_lift(_ handle: UInt64) throws -> CrawlStop {
+    return try FfiConverterTypeCrawlStop.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCrawlStop_lower(_ value: CrawlStop) -> UInt64 {
+    return FfiConverterTypeCrawlStop.lower(value)
 }
 
 
@@ -7433,6 +7849,561 @@ public func FfiConverterTypeCorrectionChanges_lift(_ buf: RustBuffer) throws -> 
 #endif
 public func FfiConverterTypeCorrectionChanges_lower(_ value: CorrectionChanges) -> RustBuffer {
     return FfiConverterTypeCorrectionChanges.lower(value)
+}
+
+
+/**
+ * A finding of the crawler's, waiting in Review.
+ */
+public struct CrawlerFinding: Equatable, Hashable {
+    /**
+     * Its identifier.
+     */
+    public var id: String
+    /**
+     * The item it's about.
+     */
+    public var item: String
+    /**
+     * The item's card when it was found.
+     */
+    public var card: String
+    /**
+     * The item's title when it was found.
+     */
+    public var title: String
+    /**
+     * For a move, the collection it's in.
+     */
+    public var from: String?
+    /**
+     * For a move, the collection it fits better.
+     */
+    public var to: String?
+    /**
+     * For a correction, the field: `title`, `summary`, `created` or `tags`.
+     */
+    public var field: String?
+    /**
+     * For a correction, the new value; for tags, `+tag` for each to add.
+     */
+    public var value: String?
+    /**
+     * What it would change, in words.
+     */
+    public var description: String
+    /**
+     * Why, in the model's words.
+     */
+    public var reason: String
+    /**
+     * How sure the model was, from 0 to 1.
+     */
+    public var confidence: Double
+    /**
+     * The model, as `provider/offer`.
+     */
+    public var model: String
+    /**
+     * When it was found, as RFC 3339.
+     */
+    public var created: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Its identifier.
+         */id: String, 
+        /**
+         * The item it's about.
+         */item: String, 
+        /**
+         * The item's card when it was found.
+         */card: String, 
+        /**
+         * The item's title when it was found.
+         */title: String, 
+        /**
+         * For a move, the collection it's in.
+         */from: String?, 
+        /**
+         * For a move, the collection it fits better.
+         */to: String?, 
+        /**
+         * For a correction, the field: `title`, `summary`, `created` or `tags`.
+         */field: String?, 
+        /**
+         * For a correction, the new value; for tags, `+tag` for each to add.
+         */value: String?, 
+        /**
+         * What it would change, in words.
+         */description: String, 
+        /**
+         * Why, in the model's words.
+         */reason: String, 
+        /**
+         * How sure the model was, from 0 to 1.
+         */confidence: Double, 
+        /**
+         * The model, as `provider/offer`.
+         */model: String, 
+        /**
+         * When it was found, as RFC 3339.
+         */created: String) {
+        self.id = id
+        self.item = item
+        self.card = card
+        self.title = title
+        self.from = from
+        self.to = to
+        self.field = field
+        self.value = value
+        self.description = description
+        self.reason = reason
+        self.confidence = confidence
+        self.model = model
+        self.created = created
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CrawlerFinding: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCrawlerFinding: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CrawlerFinding {
+        return
+            try CrawlerFinding(
+                id: FfiConverterString.read(from: &buf), 
+                item: FfiConverterString.read(from: &buf), 
+                card: FfiConverterString.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                from: FfiConverterOptionString.read(from: &buf), 
+                to: FfiConverterOptionString.read(from: &buf), 
+                field: FfiConverterOptionString.read(from: &buf), 
+                value: FfiConverterOptionString.read(from: &buf), 
+                description: FfiConverterString.read(from: &buf), 
+                reason: FfiConverterString.read(from: &buf), 
+                confidence: FfiConverterDouble.read(from: &buf), 
+                model: FfiConverterString.read(from: &buf), 
+                created: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CrawlerFinding, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.item, into: &buf)
+        FfiConverterString.write(value.card, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterOptionString.write(value.from, into: &buf)
+        FfiConverterOptionString.write(value.to, into: &buf)
+        FfiConverterOptionString.write(value.field, into: &buf)
+        FfiConverterOptionString.write(value.value, into: &buf)
+        FfiConverterString.write(value.description, into: &buf)
+        FfiConverterString.write(value.reason, into: &buf)
+        FfiConverterDouble.write(value.confidence, into: &buf)
+        FfiConverterString.write(value.model, into: &buf)
+        FfiConverterString.write(value.created, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCrawlerFinding_lift(_ buf: RustBuffer) throws -> CrawlerFinding {
+    return try FfiConverterTypeCrawlerFinding.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCrawlerFinding_lower(_ value: CrawlerFinding) -> RustBuffer {
+    return FfiConverterTypeCrawlerFinding.lower(value)
+}
+
+
+/**
+ * A collection whose items keep failing the crawler's checks.
+ */
+public struct CrawlerMisfits: Equatable, Hashable {
+    /**
+     * The collection.
+     */
+    public var collection: String
+    /**
+     * How many of its items don't fit.
+     */
+    public var misfits: UInt64
+    /**
+     * Of how many judged.
+     */
+    public var judged: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The collection.
+         */collection: String, 
+        /**
+         * How many of its items don't fit.
+         */misfits: UInt64, 
+        /**
+         * Of how many judged.
+         */judged: UInt64) {
+        self.collection = collection
+        self.misfits = misfits
+        self.judged = judged
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CrawlerMisfits: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCrawlerMisfits: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CrawlerMisfits {
+        return
+            try CrawlerMisfits(
+                collection: FfiConverterString.read(from: &buf), 
+                misfits: FfiConverterUInt64.read(from: &buf), 
+                judged: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CrawlerMisfits, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.collection, into: &buf)
+        FfiConverterUInt64.write(value.misfits, into: &buf)
+        FfiConverterUInt64.write(value.judged, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCrawlerMisfits_lift(_ buf: RustBuffer) throws -> CrawlerMisfits {
+    return try FfiConverterTypeCrawlerMisfits.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCrawlerMisfits_lower(_ value: CrawlerMisfits) -> RustBuffer {
+    return FfiConverterTypeCrawlerMisfits.lower(value)
+}
+
+
+/**
+ * What a pass did.
+ */
+public struct CrawlerPassed: Equatable, Hashable {
+    /**
+     * What it did, in a line, or `None` when it judged nothing.
+     */
+    public var summary: String?
+    /**
+     * Findings left in Review.
+     */
+    public var proposed: UInt64
+    /**
+     * Changes it made itself, in words.
+     */
+    public var made: [String]
+    /**
+     * What went wrong with single items, in words.
+     */
+    public var failed: [String]
+    /**
+     * Whether it stopped before the end, because the owner was doing something.
+     */
+    public var stopped: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * What it did, in a line, or `None` when it judged nothing.
+         */summary: String?, 
+        /**
+         * Findings left in Review.
+         */proposed: UInt64, 
+        /**
+         * Changes it made itself, in words.
+         */made: [String], 
+        /**
+         * What went wrong with single items, in words.
+         */failed: [String], 
+        /**
+         * Whether it stopped before the end, because the owner was doing something.
+         */stopped: Bool) {
+        self.summary = summary
+        self.proposed = proposed
+        self.made = made
+        self.failed = failed
+        self.stopped = stopped
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CrawlerPassed: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCrawlerPassed: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CrawlerPassed {
+        return
+            try CrawlerPassed(
+                summary: FfiConverterOptionString.read(from: &buf), 
+                proposed: FfiConverterUInt64.read(from: &buf), 
+                made: FfiConverterSequenceString.read(from: &buf), 
+                failed: FfiConverterSequenceString.read(from: &buf), 
+                stopped: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CrawlerPassed, into buf: inout [UInt8]) {
+        FfiConverterOptionString.write(value.summary, into: &buf)
+        FfiConverterUInt64.write(value.proposed, into: &buf)
+        FfiConverterSequenceString.write(value.made, into: &buf)
+        FfiConverterSequenceString.write(value.failed, into: &buf)
+        FfiConverterBool.write(value.stopped, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCrawlerPassed_lift(_ buf: RustBuffer) throws -> CrawlerPassed {
+    return try FfiConverterTypeCrawlerPassed.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCrawlerPassed_lower(_ value: CrawlerPassed) -> RustBuffer {
+    return FfiConverterTypeCrawlerPassed.lower(value)
+}
+
+
+/**
+ * How many items wait for the crawler at one stage of its order.
+ */
+public struct CrawlerStage: Equatable, Hashable {
+    /**
+     * The stage, for people, such as "in Holding".
+     */
+    public var stage: String
+    /**
+     * How many items are due.
+     */
+    public var items: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The stage, for people, such as "in Holding".
+         */stage: String, 
+        /**
+         * How many items are due.
+         */items: UInt64) {
+        self.stage = stage
+        self.items = items
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CrawlerStage: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCrawlerStage: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CrawlerStage {
+        return
+            try CrawlerStage(
+                stage: FfiConverterString.read(from: &buf), 
+                items: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CrawlerStage, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.stage, into: &buf)
+        FfiConverterUInt64.write(value.items, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCrawlerStage_lift(_ buf: RustBuffer) throws -> CrawlerStage {
+    return try FfiConverterTypeCrawlerStage.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCrawlerStage_lower(_ value: CrawlerStage) -> RustBuffer {
+    return FfiConverterTypeCrawlerStage.lower(value)
+}
+
+
+/**
+ * How far the crawler has got through the archive.
+ */
+public struct CrawlerStatus: Equatable, Hashable {
+    /**
+     * Its pace: `off`, `gentle`, `steady` or `brisk` (`crawler.pace`).
+     */
+    public var pace: String
+    /**
+     * Whether it makes the changes it's sure of itself (`crawler.changes`).
+     */
+    public var changes: Bool
+    /**
+     * The items it can judge.
+     */
+    public var items: UInt64
+    /**
+     * Those it has judged, on any device.
+     */
+    public var judged: UInt64
+    /**
+     * Those due, by stage, in the order it takes them.
+     */
+    public var waiting: [CrawlerStage]
+    /**
+     * Collections whose items keep failing.
+     */
+    public var misfits: [CrawlerMisfits]
+    /**
+     * Its findings waiting in Review.
+     */
+    public var findings: UInt64
+    /**
+     * When a pass last ran on this Mac, as RFC 3339.
+     */
+    public var lastPass: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Its pace: `off`, `gentle`, `steady` or `brisk` (`crawler.pace`).
+         */pace: String, 
+        /**
+         * Whether it makes the changes it's sure of itself (`crawler.changes`).
+         */changes: Bool, 
+        /**
+         * The items it can judge.
+         */items: UInt64, 
+        /**
+         * Those it has judged, on any device.
+         */judged: UInt64, 
+        /**
+         * Those due, by stage, in the order it takes them.
+         */waiting: [CrawlerStage], 
+        /**
+         * Collections whose items keep failing.
+         */misfits: [CrawlerMisfits], 
+        /**
+         * Its findings waiting in Review.
+         */findings: UInt64, 
+        /**
+         * When a pass last ran on this Mac, as RFC 3339.
+         */lastPass: String?) {
+        self.pace = pace
+        self.changes = changes
+        self.items = items
+        self.judged = judged
+        self.waiting = waiting
+        self.misfits = misfits
+        self.findings = findings
+        self.lastPass = lastPass
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CrawlerStatus: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCrawlerStatus: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CrawlerStatus {
+        return
+            try CrawlerStatus(
+                pace: FfiConverterString.read(from: &buf), 
+                changes: FfiConverterBool.read(from: &buf), 
+                items: FfiConverterUInt64.read(from: &buf), 
+                judged: FfiConverterUInt64.read(from: &buf), 
+                waiting: FfiConverterSequenceTypeCrawlerStage.read(from: &buf), 
+                misfits: FfiConverterSequenceTypeCrawlerMisfits.read(from: &buf), 
+                findings: FfiConverterUInt64.read(from: &buf), 
+                lastPass: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CrawlerStatus, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.pace, into: &buf)
+        FfiConverterBool.write(value.changes, into: &buf)
+        FfiConverterUInt64.write(value.items, into: &buf)
+        FfiConverterUInt64.write(value.judged, into: &buf)
+        FfiConverterSequenceTypeCrawlerStage.write(value.waiting, into: &buf)
+        FfiConverterSequenceTypeCrawlerMisfits.write(value.misfits, into: &buf)
+        FfiConverterUInt64.write(value.findings, into: &buf)
+        FfiConverterOptionString.write(value.lastPass, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCrawlerStatus_lift(_ buf: RustBuffer) throws -> CrawlerStatus {
+    return try FfiConverterTypeCrawlerStatus.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCrawlerStatus_lower(_ value: CrawlerStatus) -> RustBuffer {
+    return FfiConverterTypeCrawlerStatus.lower(value)
 }
 
 
@@ -18333,6 +19304,30 @@ fileprivate struct FfiConverterOptionUInt64: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionBool: FfiConverterRustBuffer {
+    typealias SwiftType = Bool?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterBool.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterBool.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionString: FfiConverterRustBuffer {
     typealias SwiftType = String?
 
@@ -18373,6 +19368,30 @@ fileprivate struct FfiConverterOptionTypeAgentClaim: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeAgentClaim.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeCrawlStop: FfiConverterRustBuffer {
+    typealias SwiftType = CrawlStop?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeCrawlStop.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeCrawlStop.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -18517,6 +19536,30 @@ fileprivate struct FfiConverterOptionTypeCompressedChoice: FfiConverterRustBuffe
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeCompressedChoice.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeCrawlerPassed: FfiConverterRustBuffer {
+    typealias SwiftType = CrawlerPassed?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeCrawlerPassed.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeCrawlerPassed.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -19081,6 +20124,81 @@ fileprivate struct FfiConverterSequenceTypeComparison: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeComparison.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeCrawlerFinding: FfiConverterRustBuffer {
+    typealias SwiftType = [CrawlerFinding]
+
+    public static func write(_ value: [CrawlerFinding], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeCrawlerFinding.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [CrawlerFinding] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [CrawlerFinding]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeCrawlerFinding.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeCrawlerMisfits: FfiConverterRustBuffer {
+    typealias SwiftType = [CrawlerMisfits]
+
+    public static func write(_ value: [CrawlerMisfits], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeCrawlerMisfits.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [CrawlerMisfits] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [CrawlerMisfits]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeCrawlerMisfits.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeCrawlerStage: FfiConverterRustBuffer {
+    typealias SwiftType = [CrawlerStage]
+
+    public static func write(_ value: [CrawlerStage], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeCrawlerStage.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [CrawlerStage] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [CrawlerStage]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeCrawlerStage.read(from: &buf))
         }
         return seq
     }
@@ -20492,6 +21610,27 @@ private let initializationResult: InitializationResult = {
     if (uniffi_carrel_ffi_checksum_method_archivehandle_save_correction() != 28820) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_approve_crawler_finding() != 13073) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_crawl_when_idle() != 6415) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_crawler_changes() != 6744) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_crawler_findings() != 41650) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_crawler_status() != 47333) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_reject_crawler_finding() != 48650) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_undo_crawler_changes() != 27024) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_activity() != 27389) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -20729,6 +21868,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_carrel_ffi_checksum_method_modelprovider_complete() != 7807) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_carrel_ffi_checksum_method_crawlstop_should_stop() != 40881) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_carrel_ffi_checksum_method_wander_seed() != 47151) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -20751,6 +21893,7 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
 
+    uniffiCallbackInitCrawlStop()
     uniffiCallbackInitModelProvider()
     uniffiCallbackInitProgressListener()
     uniffiCallbackInitTextModel()

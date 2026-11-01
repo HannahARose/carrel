@@ -36,6 +36,7 @@ struct StatusView: View {
                 IntakeSection(intake: intake, isReadOnly: model.isReadOnly)
             }
             StatusDiscoverySections(model: model)
+            StatusCrawlerSection(window: model)
             Section("Activity") {
                 Text(
                     "The worker’s progress, recent changes and suggestions appear here in a later build."

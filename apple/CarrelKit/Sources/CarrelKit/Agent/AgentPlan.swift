@@ -12,6 +12,9 @@ public enum AgentJob: Sendable, Equatable, CaseIterable {
     case sessions
     /// Take a scheduled snapshot of the archive.
     case backup
+    /// Let the crawler recheck a few items, when nothing else is due and the Mac is idle and
+    /// on power (its pace decides how often and how many).
+    case crawl
 }
 
 /// What a changed path means to the agent.
@@ -38,6 +41,9 @@ public struct AgentPlan: Sendable, Equatable {
     public static let backupEvery: TimeInterval = 24 * 60 * 60
     /// How soon a snapshot that failed, as when the drive isn't plugged in, is tried again.
     public static let backupRetry: TimeInterval = 60 * 60
+    /// How often the agent asks the crawler whether a pass is due, and how long it waits
+    /// after a change it noticed: the crawler works only when the owner isn't.
+    public static let crawlEvery: TimeInterval = 5 * 60
 
     /// The archive's root folder, as a path ending without a slash.
     public let root: String
@@ -56,6 +62,8 @@ public struct AgentPlan: Sendable, Equatable {
     public private(set) var workDue: Date?
     /// When sessions are next due to be recorded, if they are.
     public private(set) var sessionsDue: Date?
+    /// When the crawler is next asked whether a pass is due.
+    public private(set) var crawlDue: Date?
 
     public init(
         root: String, workingCopies: [String] = [], idleMinutes: UInt32 = 30,
@@ -102,6 +110,10 @@ public struct AgentPlan: Sendable, Equatable {
     public mutating func noticed(_ paths: [String], at now: Date) -> Bool {
         var active = false
         for change in paths.map(classify) {
+            if change != .ignored {
+                // Anything the owner does puts the crawler off a while.
+                crawlDue = max(crawlDue ?? .distantPast, now.addingTimeInterval(Self.crawlEvery))
+            }
             switch change {
             case .queue, .filed:
                 workDue = now.addingTimeInterval(Self.settle)
@@ -124,6 +136,7 @@ public struct AgentPlan: Sendable, Equatable {
     public mutating func start(at now: Date) {
         workDue = now
         sessionsDue = now
+        crawlDue = now.addingTimeInterval(Self.crawlEvery)
     }
 
     /// When the next scheduled snapshot is due, if backups are set up.
@@ -139,6 +152,8 @@ public struct AgentPlan: Sendable, Equatable {
         if let workDue, workDue <= now { jobs.append(.work) }
         if let sessionsDue, sessionsDue <= now { jobs.append(.sessions) }
         if let backupDue, backupDue <= now { jobs.append(.backup) }
+        // The crawler only gets the time nothing else needs.
+        if jobs.isEmpty, let crawlDue, crawlDue <= now { jobs.append(.crawl) }
         return jobs
     }
 
@@ -153,6 +168,8 @@ public struct AgentPlan: Sendable, Equatable {
         case .backup:
             lastBackup = started
             backupFailed = !succeeded
+        case .crawl:
+            crawlDue = started.addingTimeInterval(Self.crawlEvery)
         }
     }
 
@@ -162,11 +179,12 @@ public struct AgentPlan: Sendable, Equatable {
         case .work: workDue = later
         case .sessions: sessionsDue = later
         case .backup: break
+        case .crawl: crawlDue = later
         }
     }
 
     /// When something is next due, if anything is.
     public var nextDue: Date? {
-        [workDue, sessionsDue, backupDue].compactMap { $0 }.min()
+        [workDue, sessionsDue, backupDue, crawlDue].compactMap { $0 }.min()
     }
 }
