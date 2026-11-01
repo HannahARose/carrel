@@ -82,6 +82,7 @@ pub mod search;
 pub mod settings;
 pub mod sharing;
 pub mod spotlight;
+pub mod sync;
 pub mod usage_report;
 pub mod working_copy;
 
@@ -191,6 +192,8 @@ failed_from!(
     carrel_core::search::run::SearchError,
     carrel_core::models::ModelError,
     carrel_core::card_file::CardFileError,
+    carrel_core::cloud_files::SyncError,
+    carrel_core::icloud_move::MoveError,
     std::io::Error,
 );
 

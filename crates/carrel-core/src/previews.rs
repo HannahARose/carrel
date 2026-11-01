@@ -160,7 +160,11 @@ pub fn preview(
     if path.is_dir() {
         return Preview::Listing(listing(&path));
     }
-    let Some(key) = key(root, relative) else {
+    // A file iCloud evicted to a `.icloud` placeholder has no key until it's downloaded.
+    let Some(key) = key(root, relative).or_else(|| {
+        crate::cloud_files::ensure_downloaded(&path).ok()?;
+        key(root, relative)
+    }) else {
         return Preview::Nothing;
     };
     let kept = cache.thumbnail(&key);
@@ -169,6 +173,9 @@ pub fn preview(
             path: kept,
             png: true,
         };
+    }
+    if crate::cloud_files::ensure_downloaded(&path).is_err() {
+        return Preview::Nothing;
     }
     if is_drawn(&path) {
         return makers

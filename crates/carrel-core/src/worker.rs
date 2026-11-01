@@ -385,6 +385,9 @@ impl Worker<'_> {
                 updated: now(),
             };
             self.write(&status);
+            // Drafting reads the item: download it first if iCloud evicted it. One that can't
+            // be is drafted from what can be read, as an unreadable file is.
+            let _ = crate::cloud_files::ensure_downloaded(&entry.path);
             let processed = process(
                 self.archive,
                 self.registry,

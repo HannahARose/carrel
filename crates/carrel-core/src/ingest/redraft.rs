@@ -199,6 +199,7 @@ pub fn redraft(
     if registry.ranked(Capability::TextModel).is_empty() {
         return Err(RedraftError::NoTextModel);
     }
+    let _ = crate::cloud_files::ensure_downloaded(&old.source.path);
     if !old.source.path.exists() {
         return Err(ActionError::Invalid(format!(
             "{short}'s item, {}, is no longer there",

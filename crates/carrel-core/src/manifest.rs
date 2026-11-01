@@ -86,6 +86,10 @@ pub struct Manifest {
     /// header's `built` field. Checksums are only reused for files modified well before it
     /// (FORMAT.md §7.7); without it, none are.
     pub built: Option<SystemTime>,
+    /// Files whose contents iCloud evicted and that no previous manifest knew, so they have no
+    /// checksum yet (`docs/design/sync-and-mobile.md`). They are never counted as removed, and
+    /// aren't written to the manifest file.
+    pub not_downloaded: Vec<String>,
 }
 
 /// Why a manifest couldn't be built or read.
@@ -165,6 +169,10 @@ impl Manifest {
     /// modified within the file system's clock resolution of that build may have been edited
     /// again without its modification time changing, so it is always read.
     ///
+    /// A file iCloud evicted, a placeholder, is never read, which would download it: it keeps
+    /// its entry in `previous`, whatever its modification time, and without one it is listed in
+    /// [`Manifest::not_downloaded`].
+    ///
     /// ```
     /// use carrel_core::card::Id;
     /// use carrel_core::detect::Rules;
@@ -198,6 +206,13 @@ impl Manifest {
             .map(|m| m.entries.iter().map(|e| (e.path.as_str(), e)).collect())
             .unwrap_or_default();
         let mut entries = Vec::new();
+        let mut not_downloaded = Vec::new();
+        let on_demand = crate::cloud_files::provider();
+        let mut evicted =
+            |relative: String, entries: &mut Vec<Entry>| match known.get(relative.as_str()) {
+                Some(old) => entries.push((*old).clone()),
+                None => not_downloaded.push(relative),
+            };
         let mut stack = vec![(root.to_path_buf(), String::new())];
         while let Some((dir, prefix)) = stack.pop() {
             for dir_entry in std::fs::read_dir(&dir).map_err(io(&dir))? {
@@ -207,14 +222,23 @@ impl Manifest {
                     .file_name()
                     .into_string()
                     .map_err(|_| ManifestError::NonUtf8Name(path.clone()))?;
+                let join = |name: &str| {
+                    if prefix.is_empty() {
+                        name.to_owned()
+                    } else {
+                        format!("{prefix}/{name}")
+                    }
+                };
+                if let Some(real) = crate::cloud_files::placeholder_for(&name) {
+                    if !dir.join(real).exists() {
+                        evicted(join(real), &mut entries);
+                    }
+                    continue;
+                }
                 if is_ignored(&name) {
                     continue;
                 }
-                let relative = if prefix.is_empty() {
-                    name.clone()
-                } else {
-                    format!("{prefix}/{name}")
-                };
+                let relative = join(&name);
                 let meta = std::fs::symlink_metadata(&path).map_err(io(&path))?;
                 if meta.is_dir() {
                     if !rules.is_regenerable(&name) {
@@ -233,6 +257,9 @@ impl Manifest {
                         size: target.len() as u64,
                         modified,
                     }
+                } else if on_demand.state(&path).is_evicted() {
+                    evicted(relative, &mut entries);
+                    continue;
                 } else {
                     let size = meta.len();
                     let checksum = match known.get(relative.as_str()) {
@@ -256,10 +283,12 @@ impl Manifest {
             }
         }
         entries.sort_by(|a, b| a.path.cmp(&b.path));
+        not_downloaded.sort();
         Ok(Self {
             item,
             entries,
             built: Some(built),
+            not_downloaded,
         })
     }
 
@@ -366,11 +395,12 @@ impl Manifest {
             item,
             entries,
             built,
+            not_downloaded: Vec::new(),
         })
     }
 
     /// The differences from `self` (older) to `newer`. Modification times are ignored: only
-    /// paths and contents count.
+    /// paths and contents count, and a file `newer` found evicted isn't removed.
     ///
     /// ```
     /// use carrel_core::card::Id;
@@ -403,6 +433,7 @@ impl Manifest {
             match new.get(path) {
                 Some(n) if n.checksum != entry.checksum => diff.changed.push((*path).to_owned()),
                 Some(_) => {}
+                None if newer.not_downloaded.iter().any(|p| p == path) => {}
                 None => removed.push(entry),
             }
         }

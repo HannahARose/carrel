@@ -381,6 +381,7 @@ pub fn status_on(
     text.push_str(&history_line(history));
     text.push_str(&crate::backup::status_line(&archive, history));
     text.push_str(&writer_line(summary.writer.as_ref(), this_device));
+    text.push_str(&crate::sync::status_lines(&archive, summary.synced));
     text.push_str(&recent_section(&summary.recent));
     let (librarian_text, librarian) = crate::ask::status_section(history);
     text.push_str(&librarian_text);
@@ -500,7 +501,7 @@ fn history_line(history: Option<&[Entry]>) -> String {
     }
 }
 
-fn writer_line(lock: Option<&LockInfo>, this_device: Option<Id>) -> String {
+pub(crate) fn writer_line(lock: Option<&LockInfo>, this_device: Option<Id>) -> String {
     let Some(info) = lock else {
         return "Nobody is writing\n".to_owned();
     };

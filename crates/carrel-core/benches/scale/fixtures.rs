@@ -111,6 +111,7 @@ pub fn manifest(n: usize) -> Manifest {
         item: Id::new_v7(),
         entries,
         built: None,
+        not_downloaded: Vec::new(),
     }
 }
 
