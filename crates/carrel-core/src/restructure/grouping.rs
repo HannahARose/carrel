@@ -3,12 +3,13 @@
 //! together doesn't hinge on one model's whim. A model names the groups later; this only says
 //! which items they hold.
 //!
-//! Two items are as similar as their card vectors' cosine says, measured from the section's
-//! baseline (the average cosine of any two of its items, since an embedding model puts even
-//! unrelated texts at a cosine well above zero), raised by their ties in the graph (shared
-//! tags, links, days worked on together) as [`GroupingOptions::graph_weight`] says; items
-//! without a vector are as similar as their ties alone. Items are
-//! clustered by average linkage: the two groups whose items are most similar on average join,
+//! Two items are as similar as their card vectors' cosine says, on the section's own scale:
+//! from its baseline (the average cosine of any two of its items, since an embedding model puts
+//! even unrelated texts at a cosine well above zero) to how alike an item typically is to its
+//! nearest neighbours (since how close related texts come differs from model to model, and
+//! from archive to archive). That's raised by their ties in the graph (shared tags, links, days
+//! worked on together) as [`GroupingOptions::graph_weight`] says; items without a vector are as
+//! similar as their ties alone. Items are clustered by average linkage: the two groups whose items are most similar on average join,
 //! until no two are similar enough ([`GroupingOptions::threshold`]). Literary warrant decides
 //! which groups are worth a collection: at least `min_collection_items` members (FORMAT.md
 //! §6.2).
@@ -16,7 +17,10 @@
 //! Each candidate says where it would go and how invasive placing it would be: a new
 //! subcollection inside the collection all its members are in (subdividing), or a collection
 //! gathering items from several branches (moving items between branches). Items in Holding
-//! don't count against a group: filing them disturbs nothing the owner knows.
+//! don't count against a group: filing them disturbs nothing the owner knows. It also says
+//! which of its members don't fit where they are, and the existing collection it's most like,
+//! and grouping says how well each item fits where it is ([`ItemFit`]), so a proposal can move
+//! items into collections that are already there ([`super::rehoming`]).
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -91,6 +95,16 @@ pub struct CandidateGroup {
     /// placing it brings them. Its cohesion when nothing else is there.
     #[serde(default)]
     pub separation: f64,
+    /// Its members that don't fit where they are: less similar on average to the other items
+    /// of their collection than [`GroupingOptions::threshold`], and by at least as much less
+    /// than to the group. Holding's items aren't counted here, since nothing is meant to stay
+    /// there.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub misfits: Vec<Id>,
+    /// The existing collection, outside those its members are in now (Holding aside), that
+    /// they're most similar to on average, and how similar, from 0 to 1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nearest: Option<(String, f64)>,
     /// The tags at least half its members have, most used first: a hint for its name.
     pub tags: Vec<String>,
     /// Where its members are now, most first.
@@ -100,6 +114,32 @@ pub struct CandidateGroup {
     pub home: String,
     /// How invasive placing it would be.
     pub invasiveness: Invasiveness,
+}
+
+/// How well an item fits the collection it's in, against the one it's most like.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ItemFit {
+    /// The item.
+    pub id: Id,
+    /// The collection it's in.
+    pub collection: String,
+    /// How similar it is on average to the other items there, from 0 to 1; none when it's
+    /// alone there, or in Holding.
+    pub own: Option<f64>,
+    /// How similar it is on average to the items of each other collection in the section,
+    /// Holding aside, from 0 to 1, most similar first.
+    pub others: Vec<(String, f64)>,
+}
+
+impl ItemFit {
+    /// How similar it is on average to the items of `collection`, if that has any.
+    #[must_use]
+    pub fn to(&self, collection: &str) -> Option<f64> {
+        self.others
+            .iter()
+            .find(|(c, _)| c == collection)
+            .map(|(_, likeness)| *likeness)
+    }
 }
 
 /// A section's candidate groups.
@@ -115,6 +155,9 @@ pub struct Grouping {
     pub left_out: usize,
     /// The candidate groups, most cohesive first.
     pub groups: Vec<CandidateGroup>,
+    /// How well each grouped item fits where it is, in the graph's order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fits: Vec<ItemFit>,
 }
 
 /// The card vectors `index` has for the graph's items in `section`.
@@ -171,31 +214,99 @@ fn baseline_cosine(vectors: &[Option<&[f32]>]) -> f64 {
 }
 
 /// What the similarity of two items is made from.
-struct Similarity<'a> {
-    vectors: Vec<Option<&'a [f32]>>,
+struct Similarity {
+    /// Every two items' cosine, row by row, or NaN when either has no vector.
+    cosines: Vec<f32>,
+    n: usize,
     /// The average cosine of any two items, which counts as no likeness at all.
     baseline: f64,
+    /// How alike an item typically is to its nearest neighbours, which counts as fully alike.
+    near: f64,
     ties: HashMap<(usize, usize), f64>,
     options: GroupingOptions,
 }
 
-impl Similarity<'_> {
+impl Similarity {
+    /// The similarity of the items with `vectors` and `ties`.
+    fn new(
+        vectors: &[Option<&[f32]>],
+        ties: HashMap<(usize, usize), f64>,
+        options: GroupingOptions,
+    ) -> Self {
+        let n = vectors.len();
+        let mut cosines = vec![f32::NAN; n * n];
+        for i in 0..n {
+            for j in i + 1..n {
+                if let (Some(a), Some(b)) = (vectors[i], vectors[j])
+                    && let Some(c) = cosine(a, b)
+                {
+                    #[allow(clippy::cast_possible_truncation)] // cosines are in -1..1
+                    let c = c as f32;
+                    cosines[i * n + j] = c;
+                    cosines[j * n + i] = c;
+                }
+            }
+        }
+        let baseline = baseline_cosine(vectors);
+        let near = nearest_cosine(&cosines, n, options.warrant.max(2) - 1).max(baseline);
+        Self {
+            cosines,
+            n,
+            baseline,
+            near,
+            ties,
+            options,
+        }
+    }
+
+    /// How alike the items at `i` and `j` are by meaning, from 0 (no more than any two items)
+    /// to 1 (as alike as items and their nearest neighbours typically are), or none without
+    /// both vectors.
+    fn meaning(&self, i: usize, j: usize) -> Option<f64> {
+        let c = f64::from(self.cosines[i * self.n + j]);
+        (!c.is_nan())
+            .then(|| ((c - self.baseline) / (self.near - self.baseline).max(1e-9)).clamp(0.0, 1.0))
+    }
+
     /// How similar the items at `i` and `j` are, from 0 to 1.
     fn between(&self, i: usize, j: usize) -> f64 {
         let key = if i < j { (i, j) } else { (j, i) };
         // A tie's weight, brought into 0..1: one tag only two items share is about 0.7.
         let tie = 1.0 - (-2.0 * self.ties.get(&key).copied().unwrap_or(0.0)).exp();
-        let meaning = match (self.vectors[i], self.vectors[j]) {
-            (Some(a), Some(b)) => cosine(a, b)
-                .map(|c| ((c - self.baseline) / (1.0 - self.baseline).max(1e-9)).clamp(0.0, 1.0)),
-            _ => None,
-        };
-        match meaning {
+        match self.meaning(i, j) {
             // Ties raise similarity by meaning toward 1; they never lower it.
             Some(m) => m + self.options.graph_weight.clamp(0.0, 1.0) * tie * (1.0 - m),
             None => tie,
         }
     }
+}
+
+/// How alike an item typically is to its `k` nearest neighbours: the median, over the items
+/// with a vector, of the average cosine to their `k` most alike. An embedding model's scale
+/// differs from model to model and archive to archive, so likeness is measured against this
+/// rather than against a fixed cosine. 1 with no cosines at all.
+fn nearest_cosine(cosines: &[f32], n: usize, k: usize) -> f64 {
+    let mut typical: Vec<f64> = (0..n)
+        .filter_map(|i| {
+            let mut row: Vec<f32> = cosines[i * n..(i + 1) * n]
+                .iter()
+                .copied()
+                .filter(|c| !c.is_nan())
+                .collect();
+            if row.is_empty() {
+                return None;
+            }
+            row.sort_unstable_by(|a, b| b.total_cmp(a));
+            let nearest = &row[..k.clamp(1, row.len())];
+            #[allow(clippy::cast_precision_loss)] // neighbour counts
+            Some(nearest.iter().map(|c| f64::from(*c)).sum::<f64>() / nearest.len() as f64)
+        })
+        .collect();
+    if typical.is_empty() {
+        return 1.0;
+    }
+    typical.sort_unstable_by(f64::total_cmp);
+    typical[typical.len() / 2]
 }
 
 /// Clusters `n` items by average linkage, joining groups while their items' average
@@ -388,15 +499,87 @@ fn candidate(
             / (members.len() * left.len()) as f64;
         (cohesion - apart).clamp(0.0, 1.0)
     };
+    let misfits = misfits(members, items, similarity, places, &left);
+    let nearest = nearest_elsewhere(members, similarity, places, &sources);
     Some(CandidateGroup {
         members: items.iter().map(|i| i.id).collect(),
         cohesion,
         separation,
+        misfits,
+        nearest,
         tags: tags.into_iter().map(|(t, _)| t.to_owned()).collect(),
         sources,
         home,
         invasiveness,
     })
+}
+
+/// Which of `members` (their places in `similarity`, which are `items`) don't fit where they
+/// are: less similar on average to the items of their collection the group leaves behind
+/// (`left`, by place) than the threshold, and by at least that much less than to the group.
+#[allow(clippy::cast_precision_loss)] // item counts
+fn misfits(
+    members: &[usize],
+    items: &[&ItemNode],
+    similarity: &Similarity,
+    places: &[&str],
+    left: &[usize],
+) -> Vec<Id> {
+    let average = |m: usize, others: &mut dyn Iterator<Item = usize>| {
+        let (sum, count) = others.fold((0.0, 0_usize), |(sum, count), k| {
+            (sum + similarity.between(m, k), count + 1)
+        });
+        (count > 0).then(|| sum / count as f64)
+    };
+    let threshold = similarity.options.threshold;
+    members
+        .iter()
+        .zip(items)
+        .filter(|(m, item)| {
+            let with_group = average(**m, &mut members.iter().copied().filter(|k| k != *m));
+            let with_rest = average(
+                **m,
+                &mut left
+                    .iter()
+                    .copied()
+                    .filter(|&k| places[k] == item.collection),
+            );
+            match (with_rest, with_group) {
+                (Some(rest), Some(group)) => rest < threshold && group - rest >= threshold,
+                _ => false,
+            }
+        })
+        .map(|(_, item)| item.id)
+        .collect()
+}
+
+/// The collection outside `sources` (Holding aside) whose items `members` are most similar to
+/// on average, and how similar.
+#[allow(clippy::cast_precision_loss)] // item counts
+fn nearest_elsewhere(
+    members: &[usize],
+    similarity: &Similarity,
+    places: &[&str],
+    sources: &[GroupSource],
+) -> Option<(String, f64)> {
+    let mut elsewhere: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
+    for (k, place) in places.iter().enumerate() {
+        if !is_within(place, HOLDING) && !sources.iter().any(|s| s.collection == *place) {
+            elsewhere.entry(place).or_default().push(k);
+        }
+    }
+    elsewhere
+        .into_iter()
+        .map(|(collection, there)| {
+            let all = members
+                .iter()
+                .flat_map(|&m| there.iter().map(move |&k| (m, k)))
+                .map(|(m, k)| similarity.between(m, k))
+                .sum::<f64>()
+                / (members.len() * there.len()) as f64;
+            (collection.to_owned(), all)
+        })
+        .max_by(|a, b| a.1.total_cmp(&b.1).then(b.0.cmp(&a.0)))
 }
 
 /// Drops the groups that are a collection as it is: more than half of one collection's items
@@ -431,6 +614,45 @@ fn drop_collections_as_they_are(
         .collect();
     let mut kept = dropped.iter().map(|d| !d);
     groups.retain(|_| kept.next().unwrap_or(true));
+}
+
+/// How well each of the items in `places` (each one's collection) fits where it is, and how
+/// similar it is to each other collection's items.
+#[allow(clippy::cast_precision_loss)] // item counts
+fn item_fits(ids: &[Id], places: &[&str], similarity: &Similarity) -> Vec<ItemFit> {
+    let mut by_collection: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
+    for (k, place) in places.iter().enumerate() {
+        by_collection.entry(place).or_default().push(k);
+    }
+    let average = |k: usize, others: &[usize]| {
+        let others: Vec<usize> = others.iter().copied().filter(|&o| o != k).collect();
+        (!others.is_empty()).then(|| {
+            others
+                .iter()
+                .map(|&o| similarity.between(k, o))
+                .sum::<f64>()
+                / others.len() as f64
+        })
+    };
+    (0..places.len())
+        .map(|k| {
+            let own = (!is_within(places[k], HOLDING))
+                .then(|| average(k, &by_collection[places[k]]))
+                .flatten();
+            let mut others: Vec<(String, f64)> = by_collection
+                .iter()
+                .filter(|(c, _)| **c != places[k] && !is_within(c, HOLDING))
+                .filter_map(|(c, members)| Some(((*c).to_owned(), average(k, members)?)))
+                .collect();
+            others.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+            ItemFit {
+                id: ids[k],
+                collection: places[k].to_owned(),
+                own,
+                others,
+            }
+        })
+        .collect()
 }
 
 /// The candidate groups among the graph's items in `section` (a collection's path, or empty
@@ -470,13 +692,8 @@ pub fn group_section<S: std::hash::BuildHasher>(
         .iter()
         .map(|&i| vectors.get(&graph.items[i].id).map(Vec::as_slice))
         .collect();
-    let similarity = Similarity {
-        baseline: baseline_cosine(&item_vectors),
-        vectors: item_vectors,
-        ties,
-        options: *options,
-    };
-    let without_vectors = similarity.vectors.iter().filter(|v| v.is_none()).count();
+    let similarity = Similarity::new(&item_vectors, ties, *options);
+    let without_vectors = item_vectors.iter().filter(|v| v.is_none()).count();
     let clusters = average_linkage(
         chosen.len(),
         &|i, j| similarity.between(i, j),
@@ -499,6 +716,8 @@ pub fn group_section<S: std::hash::BuildHasher>(
         })
         .collect();
     drop_collections_as_they_are(&mut groups, &per_collection);
+    let ids: Vec<Id> = chosen.iter().map(|&i| graph.items[i].id).collect();
+    let fits = item_fits(&ids, &places, &similarity);
     groups.sort_by(|a, b| {
         b.cohesion
             .total_cmp(&a.cohesion)
@@ -511,6 +730,7 @@ pub fn group_section<S: std::hash::BuildHasher>(
         without_vectors,
         left_out,
         groups,
+        fits,
     }
 }
 
@@ -596,6 +816,46 @@ mod tests {
         assert_eq!(grouping.groups.len(), 2, "{:?}", grouping.groups);
         let birds: Vec<Id> = (1..=6).map(id).collect();
         assert!(grouping.groups.iter().any(|g| g.members == birds));
+    }
+
+    #[test]
+    fn likeness_is_measured_against_how_alike_nearest_neighbours_are() {
+        let (graph, _) = sample();
+        // As a real embedding model does, put related texts not much closer than unrelated
+        // ones: each vector is mostly a direction they all share and one of its own, with only
+        // a little of its subject. Two birds come out at a cosine of about 0.68, a bird and a
+        // star at 0.5: from the baseline alone, no two would be alike enough to group.
+        let faint: HashMap<Id, Vec<f32>> = (1..=12_u128)
+            .map(|n| {
+                let mut v = vec![0.0_f32; 15];
+                v[usize::from(n > 6)] = 0.6;
+                v[2 + usize::try_from(n).unwrap()] = 0.8;
+                v[14] = 1.0;
+                (id(n), v)
+            })
+            .collect();
+        let grouping = group_section(&graph, "Reading", &faint, &GroupingOptions::default());
+        assert_eq!(grouping.groups.len(), 2, "{:?}", grouping.groups);
+        let birds: Vec<Id> = (1..=6).map(id).collect();
+        assert!(grouping.groups.iter().any(|g| g.members == birds));
+    }
+
+    #[test]
+    fn each_item_says_how_well_it_fits_where_it_is() {
+        let (graph, vectors) = sample();
+        let grouping = group_section(&graph, "", &vectors, &GroupingOptions::default());
+        let fit = |n: u128| grouping.fits.iter().find(|f| f.id == id(n)).unwrap();
+        // A bird note is about as like Reading's other items as half of them are birds.
+        assert_eq!(fit(1).collection, "Reading");
+        let own = fit(1).own.unwrap();
+        assert!((0.3..0.7).contains(&own), "{own}");
+        // Holding's items aren't anywhere they're meant to fit.
+        assert_eq!(fit(23).own, None);
+        assert!(
+            fit(20).to("Holding").is_none(),
+            "Holding isn't a place to fit"
+        );
+        assert!(fit(20).others.windows(2).all(|w| w[0].1 >= w[1].1));
     }
 
     #[test]
