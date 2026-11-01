@@ -33,6 +33,7 @@ mod progress;
 mod providers;
 mod questions;
 mod related;
+mod reminders;
 mod restructure;
 mod restructure_sections;
 mod review;
@@ -310,6 +311,10 @@ enum Command {
         #[command(subcommand)]
         action: RestructureAction,
     },
+    /// The reminders due now: work sessions whose entries wait, checkouts due back, and the
+    /// weekly sum of what's waiting, as the `reminders` setting turns them on. `carrel agent`
+    /// shows them as notifications; `carrel status` lists them too.
+    Reminders,
     /// The crawler, which rechecks where items are filed when the device is idle: how far it
     /// has got (`status`, the default), a pass now (`run`), or undoing its changes (`undo`).
     /// Its findings wait in `carrel review`.
@@ -1160,6 +1165,7 @@ fn main() -> ExitCode {
         Command::Discover { action } => discover_command(cli.archive.as_deref(), action, cli.json),
         Command::Restructure { action } => restructure_command(cli.archive.as_deref(), action),
         Command::Crawl { action } => crawl::command(cli.archive.as_deref(), action),
+        Command::Reminders => reminders::list(cli.archive.as_deref()),
         Command::Bench(args) => bench::bench(&args, cli.json),
         Command::Models { action } => models_command(
             action.unwrap_or(ModelsAction::List),
