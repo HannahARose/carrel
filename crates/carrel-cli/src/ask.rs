@@ -59,16 +59,52 @@ pub fn memory_gb() -> Option<u64> {
 ///
 /// # Errors
 ///
-/// [`Failure`] if the preference names a model that isn't available, or there's none.
+/// [`Failure`] if the preference names a model that isn't available, or there's none, saying
+/// what to do about it ([`what_to_do`]).
 pub fn the_model(registry: &Registry) -> Result<AvailableModel, Failure> {
+    explain_the_model(registry)?.map_err(|missing| Failure::new(what_to_do(&missing)))
+}
+
+/// The model the librarian runs on here, as [`the_model`] chooses it, or why there's none.
+///
+/// # Errors
+///
+/// [`Failure`] if the preferences can't be read.
+pub fn explain_the_model(
+    registry: &Registry,
+) -> Result<Result<AvailableModel, model::NoModel>, Failure> {
     let prefs = Prefs::load()?;
-    model::choose(registry, prefs.librarian_model.as_deref(), memory_gb())
-        .map_err(|e| Failure::new(format!("librarian.model: {e}")))?
-        .ok_or_else(|| {
-            Failure::new(
-                "the librarian needs a text model, and this device has none; see `carrel models`",
-            )
-        })
+    Ok(model::choose_or_explain(
+        registry,
+        prefs.librarian_model.as_deref(),
+        memory_gb(),
+        carrel_core::local::models_dir().as_deref(),
+    ))
+}
+
+/// Why the librarian has no model, then the commands that act on it: clearing or changing
+/// `librarian.model`, or downloading the model that suits this device, which asks first.
+#[must_use]
+pub fn what_to_do(missing: &model::NoModel) -> String {
+    let mut text = missing.to_string();
+    if let Some(instead) = &missing.instead {
+        write!(
+            text,
+            " Clear the setting with `carrel settings set librarian.model default`, or choose \
+             one with `carrel settings set librarian.model {}`.",
+            instead.name()
+        )
+        .unwrap();
+    }
+    if let Some(download) = missing.download {
+        write!(
+            text,
+            " Download it with `carrel models download {}`, which asks first.",
+            download.name
+        )
+        .unwrap();
+    }
+    text
 }
 
 /// `carrel ask`.

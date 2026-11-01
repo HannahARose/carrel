@@ -3758,8 +3758,19 @@ fn librarian_settings_are_shown_and_checked() {
     sandbox.ok(&root, &["settings", "set", "librarian.confidence", "0.8"]);
     let wrong = sandbox.run_in(&root, &["settings", "set", "librarian.model", "nope/none"]);
     assert_eq!(wrong.status.code(), Some(1));
-    let none = sandbox.run_in(&root, &["ask", "Anything?"]);
+    // With no providers on the path, there's no text model, whatever this machine has.
+    let empty = sandbox.path("no-providers");
+    std::fs::create_dir_all(&empty).unwrap();
+    sandbox.ok(&root, &["settings", "set", "librarian.model", "default"]);
+    let none = run_with_providers(&sandbox, &root, &empty, &["ask", "Anything?"]);
     assert_eq!(none.status.code(), Some(1), "no text model here");
+    // It says what to do: the model that suits this device, and how to download it.
+    let why = String::from_utf8_lossy(&none.stderr);
+    assert!(why.contains("The librarian needs a text model"), "{why}");
+    assert!(
+        why.contains("Download it with `carrel models download "),
+        "{why}"
+    );
 }
 
 const PARTS_LIST: &str = "Projects/Hardware/parts-list.csv.md";

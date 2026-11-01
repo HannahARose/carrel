@@ -138,7 +138,7 @@ impl ArchiveHandle {
     }
 }
 
-fn catalog_model(model: &Model, dir: Option<&std::path::Path>) -> CatalogModel {
+pub(crate) fn catalog_model(model: &Model, dir: Option<&std::path::Path>) -> CatalogModel {
     let found = dir
         .map(|dir| {
             let mut found = installed(dir).unwrap_or_default();
