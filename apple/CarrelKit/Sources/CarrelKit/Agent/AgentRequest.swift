@@ -7,7 +7,8 @@
 import Foundation
 
 /// A request to the agent. `archive` is the archive's root folder; when it's `nil` the request
-/// goes to the first archive the agent follows, the one the share sheet names.
+/// goes to the first archive the agent follows, the one the share sheet names. An `item` is its
+/// identifier, or an absolute path to its contents, its card or its working copy.
 public enum AgentRequest: Codable, Sendable, Equatable {
     /// Adds files and folders to the intake queue, as `carrel ingest` does. A folder is one
     /// item when `whole`, entry by entry when `each`, and as detection decides otherwise.
@@ -26,8 +27,9 @@ public enum AgentRequest: Codable, Sendable, Equatable {
     case returnItem(archive: String?, item: String, from: String?)
     /// Cancels a checkout, as `carrel return --discard` does.
     case cancelCheckout(archive: String?, item: String)
-    /// Shows the archive, with `item` chosen if given, in Carrel's window.
-    case open(archive: String?, item: String?)
+    /// Shows the archive, with `item` chosen if given, in Carrel's window, starting `action`
+    /// on it in the app's sheet for it if given.
+    case open(archive: String?, item: String?, action: AgentLink.Action? = nil)
     /// Searches, as `carrel search` does.
     case search(archive: String?, query: String, limit: UInt32)
     /// Asks the librarian, as `carrel ask` does.
@@ -41,7 +43,7 @@ public enum AgentRequest: Codable, Sendable, Equatable {
         case .addFiles(let archive, _, _, _), .addText(let archive, _, _),
             .addData(let archive, _, _), .checkOut(let archive, _, _, _),
             .returnItem(let archive, _, _), .cancelCheckout(let archive, _),
-            .open(let archive, _), .search(let archive, _, _), .ask(let archive, _),
+            .open(let archive, _, _), .search(let archive, _, _), .ask(let archive, _),
             .snapshot(let archive):
             archive
         }

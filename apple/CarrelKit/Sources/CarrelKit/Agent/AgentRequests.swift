@@ -60,6 +60,17 @@ public final class AgentRequestHandler {
         }
     }
 
+    /// The item `item` names: an identifier as it is, or an absolute path resolved, as the
+    /// CLI takes either.
+    private func resolve(_ item: String, in root: URL) async throws -> String {
+        guard item.hasPrefix("/") else { return item }
+        guard let id = await agent.item(at: item, in: root) else {
+            throw CarrelError.Invalid(
+                message: "\(URL(filePath: item).lastPathComponent) isn’t an item in the archive.")
+        }
+        return id
+    }
+
     private func run(_ request: AgentRequest, on handle: ArchiveHandle, root: URL) async throws
         -> AgentReply
     {
@@ -74,6 +85,7 @@ public final class AgentRequestHandler {
             let file = try keep(data, as: Self.fileName(name, extension: nil))
             return try await addFiles([file], each: false, whole: true, on: handle)
         case .checkOut(_, let item, let folder, let due):
+            let item = try await resolve(item, in: root)
             let out = try await Task.detached {
                 try handle.checkOut(item: item, to: folder, due: due)
             }.value
@@ -81,15 +93,19 @@ public final class AgentRequestHandler {
                 .done, "Checked out “\(out.title)”.",
                 items: [AgentFoundItem(id: out.item, title: out.title)], working: out.working)
         case .returnItem(_, let item, let from):
+            let item = try await resolve(item, in: root)
             let returned = try await Task.detached {
                 try handle.returnItem(item: item, from: from, trimSnapshots: false)
             }.value
             return AgentReply(.done, "Returned the working copy from \(returned.working).")
         case .cancelCheckout(_, let item):
+            let item = try await resolve(item, in: root)
             _ = try await Task.detached { try handle.cancelCheckout(item: item) }.value
             return AgentReply(.done, "Cancelled the checkout; the archive copy is as it was.")
-        case .open(_, let item):
-            opener(AgentLink(archive: root, item: item))
+        case .open(_, let item, let action):
+            var chosen: String?
+            if let item { chosen = try await resolve(item, in: root) }
+            opener(AgentLink(archive: root, item: chosen, action: chosen == nil ? nil : action))
             return AgentReply(.done, "Opened in Carrel.")
         case .search(_, let query, let limit):
             return try await search(query, limit: limit, on: handle)

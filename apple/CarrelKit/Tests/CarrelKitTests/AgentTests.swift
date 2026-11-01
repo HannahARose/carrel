@@ -347,6 +347,9 @@ func realPath(_ path: String) -> String {
         #expect(AgentLink(url) == link)
         #expect(AgentLink(AgentLink(archive: link.archive).url)?.item == nil)
         #expect(AgentLink(URL(string: "carrel://open")!) == nil)
+        let action = AgentLink(archive: link.archive, item: "0193abcd", action: .returnItem)
+        #expect(AgentLink(action.url) == action)
+        #expect(action.url.absoluteString.contains("action=return"))
         #expect(AgentLink(URL(string: "https://open?archive=/a")!) == nil)
     }
 }
