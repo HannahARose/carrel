@@ -408,6 +408,21 @@ public final class Agent {
         return (root, followed.handle)
     }
 
+    /// The item at `path` in the archive at `root`: its contents or its card, a checkout's
+    /// working copy or a desk item, or anything inside one of those. `nil` if it's none.
+    func item(at path: String, in root: URL) async -> String? {
+        let path = Self.realPath(path)
+        if followed[root]?.items == nil { await refresh(root) }
+        guard let followed = followed[root] else { return nil }
+        func inside(_ folder: String) -> Bool { path == folder || path.hasPrefix(folder + "/") }
+        let active = archives.first { $0.root == root }?.active ?? []
+        if let item = active.first(where: { inside(Self.realPath($0.working)) }) { return item.id }
+        let base = followed.plan.root + "/"
+        return followed.items?.first { item in
+            path == base + item.card || item.item.map { inside(base + $0) } == true
+        }?.id
+    }
+
     /// Reads `root` again after a request changed it, and wakes the loop for what's now due.
     func requestChanged(_ root: URL) async {
         followed[root]?.items = nil

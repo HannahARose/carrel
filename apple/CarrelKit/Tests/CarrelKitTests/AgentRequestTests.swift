@@ -138,6 +138,34 @@ struct RequestSample {
         #expect(try test.handle.history(limit: 1).first?.operation == "return")
     }
 
+    @Test func anItemCanBeNamedByItsPathAsFinderKnowsIt() async throws {
+        let test = try await RequestSample()
+        let item = try test.sample.item(titled: "Desk lamp parts list")
+        let summary = try #require(try test.handle.items().first { $0.id == item })
+        let contents = test.root + "/" + (try #require(summary.item))
+        let desktop = try test.folder("Desktop")
+        let out = await test.handler.handle(
+            .checkOut(
+                archive: test.root, item: contents, folder: desktop.path(percentEncoded: false),
+                due: nil))
+        #expect(out.outcome == .done, "\(out.message)")
+        let working = try #require(out.working)
+
+        let shown = await test.handler.handle(.open(archive: test.root, item: working))
+        #expect(shown.outcome == .done)
+        #expect(test.opened.links.last?.item == item, "a working copy names its item")
+
+        let cancelled = await test.handler.handle(
+            .cancelCheckout(archive: test.root, item: test.root + "/" + summary.card))
+        #expect(cancelled.outcome == .done, "\(cancelled.message)")
+
+        let stray = await test.handler.handle(
+            .checkOut(
+                archive: test.root, item: test.root + "/Nowhere/file.txt", folder: nil, due: nil))
+        #expect(stray.outcome == .failed)
+        #expect(stray.message.contains("isn’t an item"))
+    }
+
     @Test func cancellingACheckoutLeavesTheArchiveCopyAsItWas() async throws {
         let test = try await RequestSample()
         let item = try test.sample.item(titled: "Desk lamp parts list")
@@ -195,6 +223,11 @@ struct RequestSample {
         let reply = await test.handler.handle(.open(archive: test.root, item: item))
         #expect(reply.outcome == .done)
         #expect(test.opened.links == [AgentLink(archive: URL(filePath: test.root), item: item)])
+
+        _ = await test.handler.handle(.open(archive: test.root, item: item, action: .returnItem))
+        #expect(test.opened.links.last?.action == .returnItem, "Finder's Return… opens the sheet")
+        _ = await test.handler.handle(.open(archive: test.root, item: nil, action: .ask))
+        #expect(test.opened.links.last?.action == nil, "no item, nothing to start")
     }
 
     @Test func whatTheCoreCantDoSaysWhy() async throws {
