@@ -485,6 +485,8 @@ pub struct App {
     pub review_list: super::review_crawler::ReviewList,
     /// The crawler's findings waiting in Review.
     pub crawler: super::review_crawler::CrawlerReview,
+    /// The Gaps view on Status: what Carrel couldn't do on this device.
+    pub gaps: super::gaps::GapsView,
     /// Restructure proposals waiting in Review.
     pub restructure: super::review_restructure::RestructureReview,
     /// The chosen proposal.
@@ -656,6 +658,7 @@ impl App {
             queue: Vec::new(),
             review_list: super::review_crawler::ReviewList::default(),
             crawler: super::review_crawler::CrawlerReview::default(),
+            gaps: super::gaps::GapsView::default(),
             restructure: super::review_restructure::RestructureReview::default(),
             chosen: 0,
             marked: BTreeSet::new(),
@@ -758,6 +761,8 @@ impl App {
         self.status.extend(self.index_status());
         self.status
             .extend(crate::usage_report::status_lines(&self.archive));
+        self.load_gaps();
+        self.status.extend(self.gaps_status_lines());
         self.history = match History::open(&self.archive) {
             Ok(history) => history.log()?,
             Err(HistoryError::NotInitialized) => Vec::new(),
@@ -935,10 +940,14 @@ impl App {
                 keys.extend([("↑↓", "choose"), ("Enter", "answer"), ("d", "dismiss")]);
             }
             Tab::Browse => return self.browse_keys(),
+            Tab::Status if self.gaps.shown => keys.extend(self.gaps_keys()),
             Tab::Status if self.reminder_has_item() => {
                 keys.extend([("↑↓", "scroll"), ("Enter", "reminder's item")]);
             }
             _ => keys.push(("↑↓", "scroll")),
+        }
+        if self.tab == Tab::Status && !self.gaps.shown {
+            keys.push(("g", "gaps"));
         }
         keys.extend([("^R", "refresh"), ("?", "help"), ("q", "quit")]);
         keys
@@ -1037,7 +1046,7 @@ impl App {
             Tab::Backups => self.backups_key(key),
             Tab::Librarian => self.talk_key(key),
             Tab::Discover => self.discover_key(key),
-            Tab::Status => self.status_key(key),
+            Tab::Status => self.status_or_gaps_key(key),
             Tab::History => Handled::No,
         };
         if let Handled::Yes(effect) = handled {
