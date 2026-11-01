@@ -318,8 +318,7 @@ fn placement(collections: &[&str]) -> (String, Invasiveness) {
 }
 
 /// The candidate group of `members` (their places in `similarity`), which are `items`, or none
-/// if they're all of one collection's items and no others, or more than half of one other than
-/// Holding's.
+/// if they're exactly a collection's items already.
 /// `per_collection` counts each collection's items.
 #[allow(clippy::cast_precision_loss)] // item counts
 fn candidate(
@@ -332,13 +331,8 @@ fn candidate(
     for item in items {
         *sources.entry(item.collection.as_str()).or_default() += 1;
     }
-    // Most of one collection's items, and nothing else, is that collection as it is: the
-    // rest of it may be worth a subcollection, but this isn't. Holding is only waiting, so
-    // most of it is a group worth filing.
     if let [(only, count)] = sources.iter().collect::<Vec<_>>()[..]
-        && per_collection
-            .get(only)
-            .is_some_and(|all| count == all || (count * 2 > *all && !is_within(only, HOLDING)))
+        && per_collection.get(only) == Some(count)
     {
         return None;
     }
@@ -380,10 +374,45 @@ fn candidate(
     })
 }
 
+/// Drops the groups that are a collection as it is: more than half of one collection's items
+/// and no others, leaving at most one of its items out, or beside other groups that subdivide
+/// it, which are the parts worth a subcollection. Holding is only waiting, so most of it is
+/// still a group worth filing.
+fn drop_collections_as_they_are(
+    groups: &mut Vec<CandidateGroup>,
+    per_collection: &HashMap<&str, usize>,
+) {
+    let only = |g: &CandidateGroup| match g.sources.as_slice() {
+        [s] if !is_within(&s.collection, HOLDING) => Some((s.collection.clone(), s.items)),
+        _ => None,
+    };
+    let subdividing = |collection: &str| {
+        groups
+            .iter()
+            .filter(|g| only(g).is_some_and(|(c, _)| c == collection))
+            .count()
+    };
+    let dropped: Vec<bool> = groups
+        .iter()
+        .map(|g| {
+            only(g).is_some_and(|(collection, count)| {
+                let all = per_collection
+                    .get(collection.as_str())
+                    .copied()
+                    .unwrap_or(0);
+                count * 2 > all && (count + 1 >= all || subdividing(&collection) > 1)
+            })
+        })
+        .collect();
+    let mut kept = dropped.iter().map(|d| !d);
+    groups.retain(|_| kept.next().unwrap_or(true));
+}
+
 /// The candidate groups among the graph's items in `section` (a collection's path, or empty
 /// for the whole archive), from their card `vectors` (missing ones are grouped by the graph
 /// alone) and the graph's edges. Checked-out items are left out. A group that is a collection's
-/// items already, or most of them and no others, is no change, so isn't a candidate.
+/// items already, or that collection as it is (most of its items and no others, leaving at
+/// most one out or beside groups subdividing it), is no change, so isn't a candidate.
 #[must_use]
 pub fn group_section<S: std::hash::BuildHasher>(
     graph: &Graph,
@@ -440,6 +469,7 @@ pub fn group_section<S: std::hash::BuildHasher>(
             candidate(&members, &items, &similarity, &per_collection)
         })
         .collect();
+    drop_collections_as_they_are(&mut groups, &per_collection);
     groups.sort_by(|a, b| {
         b.cohesion
             .total_cmp(&a.cohesion)
@@ -550,24 +580,30 @@ mod tests {
     }
 
     #[test]
-    fn most_of_one_collection_is_no_candidate() {
+    fn most_of_a_collection_beside_its_other_parts_is_no_candidate() {
         let (graph, vectors) = sample();
         let mut lopsided = vectors.clone();
-        // Eight of Reading's twelve about birds: they're Reading as it is, the four left over
-        // too few for a subcollection.
+        // Eight of Reading's twelve about birds, four about stars.
         for n in 7..=8_u128 {
             lopsided.insert(id(n), vector(0, n));
         }
+        // With the stars a group too, the birds are Reading as it is: only the stars are
+        // worth a subcollection.
         let options = GroupingOptions {
             warrant: 4,
             ..GroupingOptions::default()
         };
         let grouping = group_section(&graph, "Reading", &lopsided, &options);
-        assert!(
-            grouping.groups.iter().all(|g| g.members.len() == 4),
-            "{:?}",
-            grouping.groups
-        );
+        let sizes: Vec<usize> = grouping.groups.iter().map(|g| g.members.len()).collect();
+        assert_eq!(sizes, [4], "{:?}", grouping.groups);
+        // Too few stars for a group, the birds are a subcollection worth proposing.
+        let options = GroupingOptions {
+            warrant: 5,
+            ..GroupingOptions::default()
+        };
+        let grouping = group_section(&graph, "Reading", &lopsided, &options);
+        let sizes: Vec<usize> = grouping.groups.iter().map(|g| g.members.len()).collect();
+        assert_eq!(sizes, [8], "{:?}", grouping.groups);
     }
 
     #[test]
