@@ -282,6 +282,10 @@ const HELP_ROWS: &[(&str, &str)] = &[
         "move, edit, correct in words, or reject (Review)",
     ),
     (
+        "p",
+        "pick another reading of what the item is, when the model gave several (Review)",
+    ),
+    (
         "v  b  s  [ ]",
         "a duplicate: file as a version, keep both, skip; other matches (Review)",
     ),
@@ -598,6 +602,7 @@ fn draw_review(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
         if carrel_core::ingest::redraft::wants_redraft(entry) {
             flags.push("draft again?".into());
         }
+        flags.extend(carrel_core::ingest::readings::flag(entry));
         if entry.duplicate_of.is_some() {
             flags.push("duplicate".into());
         } else if !entry.likely_duplicates.is_empty() {

@@ -15837,6 +15837,19 @@ public struct Proposal: Equatable, Hashable {
      * reached, so Draft Again is offered first.
      */
     public var draftAgain: Bool
+    /**
+     * When the drafting model wasn't sure what the item is, its readings to pick from.
+     */
+    public var readings: [ProposalReading]
+    /**
+     * Whether the item's name, folder or text doesn't fit one of the readings, so what it is
+     * isn't settled.
+     */
+    public var readingsDoubted: Bool
+    /**
+     * How a list notes its readings, such as `what is it?`, if it has any.
+     */
+    public var readingsFlag: String?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -15895,7 +15908,17 @@ public struct Proposal: Equatable, Hashable {
         /**
          * Whether its card or collection couldn't be settled, as when no text model could be
          * reached, so Draft Again is offered first.
-         */draftAgain: Bool) {
+         */draftAgain: Bool, 
+        /**
+         * When the drafting model wasn't sure what the item is, its readings to pick from.
+         */readings: [ProposalReading], 
+        /**
+         * Whether the item's name, folder or text doesn't fit one of the readings, so what it is
+         * isn't settled.
+         */readingsDoubted: Bool, 
+        /**
+         * How a list notes its readings, such as `what is it?`, if it has any.
+         */readingsFlag: String?) {
         self.id = id
         self.shortId = shortId
         self.batch = batch
@@ -15914,6 +15937,9 @@ public struct Proposal: Equatable, Hashable {
         self.compressed = compressed
         self.high = high
         self.draftAgain = draftAgain
+        self.readings = readings
+        self.readingsDoubted = readingsDoubted
+        self.readingsFlag = readingsFlag
     }
 
     
@@ -15949,7 +15975,10 @@ public struct FfiConverterTypeProposal: FfiConverterRustBuffer {
                 duplicates: FfiConverterSequenceTypeDuplicate.read(from: &buf), 
                 compressed: FfiConverterOptionTypeCompressedChoice.read(from: &buf), 
                 high: FfiConverterBool.read(from: &buf), 
-                draftAgain: FfiConverterBool.read(from: &buf)
+                draftAgain: FfiConverterBool.read(from: &buf), 
+                readings: FfiConverterSequenceTypeProposalReading.read(from: &buf), 
+                readingsDoubted: FfiConverterBool.read(from: &buf), 
+                readingsFlag: FfiConverterOptionString.read(from: &buf)
         )
     }
 
@@ -15972,6 +16001,9 @@ public struct FfiConverterTypeProposal: FfiConverterRustBuffer {
         FfiConverterOptionTypeCompressedChoice.write(value.compressed, into: &buf)
         FfiConverterBool.write(value.high, into: &buf)
         FfiConverterBool.write(value.draftAgain, into: &buf)
+        FfiConverterSequenceTypeProposalReading.write(value.readings, into: &buf)
+        FfiConverterBool.write(value.readingsDoubted, into: &buf)
+        FfiConverterOptionString.write(value.readingsFlag, into: &buf)
     }
 }
 
@@ -16077,6 +16109,125 @@ public func FfiConverterTypeProposalItem_lift(_ buf: RustBuffer) throws -> Propo
 #endif
 public func FfiConverterTypeProposalItem_lower(_ value: ProposalItem) -> RustBuffer {
     return FfiConverterTypeProposalItem.lower(value)
+}
+
+
+/**
+ * One reading of what a proposal's item is.
+ */
+public struct ProposalReading: Equatable, Hashable {
+    /**
+     * Its number, counting from 1, as picking it names it.
+     */
+    public var number: UInt32
+    /**
+     * The title it gives the card.
+     */
+    public var title: String
+    /**
+     * The summary it gives the card.
+     */
+    public var summary: String
+    /**
+     * The tags it gives the card.
+     */
+    public var tags: [String]
+    /**
+     * Why the model read the item this way.
+     */
+    public var reason: String
+    /**
+     * What about the item doesn't fit it, such as its file name.
+     */
+    public var against: [String]
+    /**
+     * Whether the card shows it now.
+     */
+    public var onCard: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Its number, counting from 1, as picking it names it.
+         */number: UInt32, 
+        /**
+         * The title it gives the card.
+         */title: String, 
+        /**
+         * The summary it gives the card.
+         */summary: String, 
+        /**
+         * The tags it gives the card.
+         */tags: [String], 
+        /**
+         * Why the model read the item this way.
+         */reason: String, 
+        /**
+         * What about the item doesn't fit it, such as its file name.
+         */against: [String], 
+        /**
+         * Whether the card shows it now.
+         */onCard: Bool) {
+        self.number = number
+        self.title = title
+        self.summary = summary
+        self.tags = tags
+        self.reason = reason
+        self.against = against
+        self.onCard = onCard
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension ProposalReading: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeProposalReading: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ProposalReading {
+        return
+            try ProposalReading(
+                number: FfiConverterUInt32.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                summary: FfiConverterString.read(from: &buf), 
+                tags: FfiConverterSequenceString.read(from: &buf), 
+                reason: FfiConverterString.read(from: &buf), 
+                against: FfiConverterSequenceString.read(from: &buf), 
+                onCard: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ProposalReading, into buf: inout [UInt8]) {
+        FfiConverterUInt32.write(value.number, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterString.write(value.summary, into: &buf)
+        FfiConverterSequenceString.write(value.tags, into: &buf)
+        FfiConverterString.write(value.reason, into: &buf)
+        FfiConverterSequenceString.write(value.against, into: &buf)
+        FfiConverterBool.write(value.onCard, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeProposalReading_lift(_ buf: RustBuffer) throws -> ProposalReading {
+    return try FfiConverterTypeProposalReading.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeProposalReading_lower(_ value: ProposalReading) -> RustBuffer {
+    return FfiConverterTypeProposalReading.lower(value)
 }
 
 
@@ -25208,6 +25359,31 @@ fileprivate struct FfiConverterSequenceTypeProposalItem: FfiConverterRustBuffer 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeProposalReading: FfiConverterRustBuffer {
+    typealias SwiftType = [ProposalReading]
+
+    public static func write(_ value: [ProposalReading], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeProposalReading.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ProposalReading] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [ProposalReading]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeProposalReading.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeProviderInfo: FfiConverterRustBuffer {
     typealias SwiftType = [ProviderInfo]
 
@@ -25912,6 +26088,19 @@ public func quickLookDrawing(store: String, path: String) -> String?  {
 })
 }
 /**
+ * The words that pick reading `number` of a proposal, for
+ * [`crate::ArchiveHandle::prepare_proposal_correction`]: it rewrites the card's title,
+ * summary and tags as one correction, without a model.
+ */
+public func readingPickWords(number: UInt32) -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_func_reading_pick_words(
+        FfiConverterUInt32.lower(number),uniffiCallStatus
+    )
+})
+}
+/**
  * This device's decision log preferences.
  *
  * # Errors
@@ -25992,6 +26181,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_func_quick_look_drawing() != 11005) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_func_reading_pick_words() != 63957) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_func_decision_log_settings() != 63067) {

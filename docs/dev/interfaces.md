@@ -23,6 +23,7 @@ The command line and the interactive mode run on macOS, Linux and Windows. The M
 | Review: edit and correct a proposal | `review edit`, `review correct` | ✓ | ✓ (#234) |
 | Review: expand or keep compressed files | `review expand`, `keep-compressed` | ✓ | ✓ (#234) |
 | Review: duplicates (keep both, file as a version) | `review` | ✓ | ✓ (#234) |
+| Review: pick another reading of what the item is, when the model wasn't sure | `review show`, `review pick` | ✓ `p` and its number | ✓ Use This Reading in the inspector (#449) |
 | Review: draft a proposal again with the models here now, keeping what you set | `review redraft`, `--all-failed` | ✓ `d`, offered first when the card or collection failed | ✓ Draft Again (`d`, context menu, inspector) (#445) |
 | Questions: answer and dismiss | `questions` | ✓ Questions | ✓ (#234) |
 | Questions: ranked, with suggested answers, skip | `questions`, `questions skip` | ✓ Questions (`1`–`9`, `s`) | ✓ Questions (`s`, Show Skipped) |

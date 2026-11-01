@@ -63,6 +63,7 @@ pub fn list(archive: Option<&Path>, all: bool) -> Result<Report, Failure> {
             if carrel_core::ingest::redraft::wants_redraft(entry) {
                 flags.push("draft again?".into());
             }
+            flags.extend(carrel_core::ingest::readings::flag(entry));
             if entry.duplicate_of.is_some() {
                 flags.push("duplicate".into());
             } else if !entry.likely_duplicates.is_empty() {
@@ -220,6 +221,7 @@ pub(crate) fn detail(archive: Option<&Path>, id: &str, compare: bool) -> Result<
     if let Some(summary) = &entry.card.summary {
         writeln!(text, "\n{}", summary.trim_end()).unwrap();
     }
+    write_readings(&mut text, &entry);
     let comparisons = actions::compare(&archive, &entry)?;
     if compare {
         write_comparisons(&mut text, &entry, &comparisons);
@@ -256,6 +258,52 @@ pub(crate) fn detail(archive: Option<&Path>, id: &str, compare: bool) -> Result<
         map.insert("comparisons".into(), json!(comparisons));
     }
     Ok(Report::new(text, json))
+}
+
+/// What else the item might be, when the drafting model wasn't sure, and how to pick one.
+fn write_readings(text: &mut String, entry: &ReviewEntry) {
+    use carrel_core::ingest::readings;
+    if entry.readings.is_empty() {
+        return;
+    }
+    let shown = readings::on_card(entry);
+    writeln!(
+        text,
+        "\n{} (pick one with `carrel review pick {} N`):",
+        if readings::doubted(&entry.readings) {
+            "What it is isn't clear. Readings"
+        } else {
+            "Readings"
+        },
+        short_id(entry.id)
+    )
+    .unwrap();
+    for (i, reading) in entry.readings.iter().enumerate() {
+        let current = if shown == Some(i) { "  (the card)" } else { "" };
+        writeln!(text, "  {}. {}{current}", i + 1, reading.title).unwrap();
+        writeln!(text, "     {}", reading.summary).unwrap();
+        if !reading.tags.is_empty() {
+            let tags: Vec<&str> = reading.tags.iter().map(|t| t.0.as_str()).collect();
+            writeln!(text, "     tags: {}", tags.join(", ")).unwrap();
+        }
+        if !reading.reason.is_empty() {
+            writeln!(text, "     why: {}", reading.reason).unwrap();
+        }
+        if !reading.against.is_empty() {
+            writeln!(text, "     doesn't fit: {}", reading.against.join("; ")).unwrap();
+        }
+    }
+}
+
+/// `carrel review pick ID N`: rewrites the proposal's title, summary and tags from its reading
+/// `n`, as one correction, shown before it's saved.
+///
+/// # Errors
+///
+/// [`Failure`] if the proposal or the reading isn't found, or it can't be saved.
+pub fn pick(archive: Option<&Path>, id: &str, n: usize, yes: bool) -> Result<Report, Failure> {
+    let words = carrel_core::ingest::readings::pick_words(n);
+    crate::correct::review(archive, id, &[words], yes, false)
 }
 
 /// The models that declined the proposal, a safety refusal, and whether another stepped in.

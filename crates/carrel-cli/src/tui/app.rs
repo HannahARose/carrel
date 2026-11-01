@@ -853,6 +853,13 @@ impl App {
         {
             keys.push(("d", "draft again"));
         }
+        if self
+            .queue
+            .get(self.chosen)
+            .is_some_and(|e| !e.readings.is_empty())
+        {
+            keys.push(("p", "pick a reading"));
+        }
         keys.extend([
             ("a", "approve"),
             ("h", "hold"),

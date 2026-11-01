@@ -29,6 +29,7 @@ Each run goes through the real ingest stages (`ingest::run` with the chosen mode
 | Sensitivity | share rated exactly; **under-rating** is counted separately, because it's the error that matters |
 | Date | share with the expected date (or none when there isn't one) |
 | Tags | must-have tags found, and tags outside the must and may lists |
+| Readings | share of items given other readings, and for items whose answer says `what` they are, how many the card misread with the right reading among the others offered (#449) |
 | Speed | seconds per item and peak memory |
 
 Titles and summaries can't be scored well automatically, so each run writes every card beside the expected answers in a side-by-side report for the owner to read.

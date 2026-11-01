@@ -549,6 +549,7 @@ fn results_json(measured: &[Measured], answers: &Answers) -> Value {
                     "sensitivity": a.sensitivity,
                     "date": a.date,
                     "tags": a.tags,
+                    "what": a.what,
                 })),
             })).collect::<Vec<_>>(),
         })).collect::<Vec<_>>(),
@@ -558,14 +559,14 @@ fn results_json(measured: &[Measured], answers: &Answers) -> Value {
 /// The summary: one row per model, and whether it meets the bar.
 fn summary_table(measured: &[Measured]) -> String {
     let mut text = String::from(
-        "| Model | Valid | First try | Declined | Routing | Sensitivity exact | Under-rated | Restricted under | Dates | Tags found | Extra tags | s/item | Meets the bar |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n",
+        "| Model | Valid | First try | Declined | Routing | Sensitivity exact | Under-rated | Restricted under | Dates | Tags found | Extra tags | Readings offered | Misread, right one offered | s/item | Meets the bar |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n",
     );
     for m in measured {
         let s = &m.score;
         let short = s.shortfalls(&BAR);
         writeln!(
             text,
-            "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {:.1} | {} |",
+            "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} of {} | {:.1} | {} |",
             m.model.label,
             percent(s.valid),
             percent(s.first_try),
@@ -577,6 +578,9 @@ fn summary_table(measured: &[Measured]) -> String {
             percent(s.date),
             percent(s.tags_found),
             s.tags_outside,
+            percent(s.readings_offered),
+            s.misread_offered,
+            s.misread,
             s.seconds_per_item,
             if short.is_empty() {
                 "yes".to_owned()
@@ -676,6 +680,9 @@ mod tests {
                 date: 1.0,
                 tags_found: 1.0,
                 tags_outside: 0,
+                readings_offered: 0.0,
+                misread: 0,
+                misread_offered: 0,
                 seconds_per_item: 10.0,
             },
             items: Vec::new(),

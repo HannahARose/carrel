@@ -50,6 +50,10 @@ pub struct Answer {
     /// Other tags that are also right.
     #[serde(default)]
     pub may: Vec<String>,
+    /// For an item that's easily mistaken for something else, words that say what it is: a
+    /// reading is right when its title or summary has one of them, as a word or its plural.
+    #[serde(default)]
+    pub what: Vec<String>,
 }
 
 /// Every item's expected answer, by file name.
@@ -184,6 +188,10 @@ pub struct Outcome {
     pub title: String,
     /// The summary drafted.
     pub summary: Option<String>,
+    /// When the model wasn't sure what the item is, each reading as `title: summary`, the
+    /// card's first.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub readings: Vec<String>,
     /// Whether every stage ended with model output that passed validation, retries allowed.
     pub valid: bool,
     /// Whether every model output passed validation the first time.
@@ -245,6 +253,11 @@ pub fn outcomes(run: &Run) -> Vec<Outcome> {
                 tags,
                 title: draft.map(|d| d.title.clone()).unwrap_or_default(),
                 summary: draft.and_then(|d| d.summary.clone()),
+                readings: draft
+                    .into_iter()
+                    .flat_map(|d| &d.readings)
+                    .map(|r| format!("{}: {}", r.title, r.summary))
+                    .collect(),
                 valid: draft.is_some()
                     && !last.is_empty()
                     && last.values().all(|r| *r == "ok")
@@ -272,6 +285,39 @@ pub enum Rating {
     Missing,
 }
 
+/// Whether a run read an item right, for an item whose answer says what it is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ReadingRating {
+    /// The card's reading is right.
+    Right,
+    /// The card's is wrong, but another reading offered is right.
+    Offered,
+    /// No reading offered is right.
+    Wrong,
+}
+
+/// How `outcome` read an item that `what` describes.
+fn reading_rating(what: &[String], outcome: &Outcome) -> ReadingRating {
+    let patterns: Vec<regex::Regex> = what
+        .iter()
+        .filter_map(|w| regex::Regex::new(&format!(r"(?i)\b{}s?\b", regex::escape(w))).ok())
+        .collect();
+    let right = |text: &str| patterns.iter().any(|p| p.is_match(text));
+    let card = format!(
+        "{} {}",
+        outcome.title,
+        outcome.summary.as_deref().unwrap_or_default()
+    );
+    if right(&card) {
+        ReadingRating::Right
+    } else if outcome.readings.iter().skip(1).any(|r| right(r)) {
+        ReadingRating::Offered
+    } else {
+        ReadingRating::Wrong
+    }
+}
+
 /// One item's scores.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[allow(clippy::struct_excessive_bools)] // independent yes-or-no scores, reported as they are
@@ -296,6 +342,10 @@ pub struct ItemScore {
     pub first_try: bool,
     /// Whether a model declined it.
     pub declined: bool,
+    /// Whether it was read right, when the answer says what it is.
+    pub reading: Option<ReadingRating>,
+    /// Whether the model offered other readings of it.
+    pub readings_offered: bool,
 }
 
 /// A run's scores over every item.
@@ -323,6 +373,12 @@ pub struct Score {
     pub tags_found: f64,
     /// How many tags were outside the expected ones.
     pub tags_outside: usize,
+    /// The share of items the model offered other readings of.
+    pub readings_offered: f64,
+    /// How many items whose answer says what they are had a wrong card.
+    pub misread: usize,
+    /// How many of those had the right reading among the others offered.
+    pub misread_offered: usize,
     /// Seconds per item.
     pub seconds_per_item: f64,
 }
@@ -436,6 +492,8 @@ pub fn score(answers: &Answers, outcomes: &[Outcome], seconds: f64) -> (Score, V
                 valid: outcome.valid,
                 first_try: outcome.first_try,
                 declined: outcome.declined,
+                reading: (!answer.what.is_empty()).then(|| reading_rating(&answer.what, outcome)),
+                readings_offered: !outcome.readings.is_empty(),
             },
         ));
     }
@@ -464,6 +522,20 @@ pub fn score(answers: &Answers, outcomes: &[Outcome], seconds: f64) -> (Score, V
             found as f64 / expected as f64
         },
         tags_outside: items.iter().map(|(_, s)| s.tags_outside.len()).sum(),
+        readings_offered: share(&|s| s.readings_offered),
+        misread: items
+            .iter()
+            .filter(|(_, s)| {
+                matches!(
+                    s.reading,
+                    Some(ReadingRating::Offered | ReadingRating::Wrong)
+                )
+            })
+            .count(),
+        misread_offered: items
+            .iter()
+            .filter(|(_, s)| s.reading == Some(ReadingRating::Offered))
+            .count(),
         seconds_per_item: seconds / n,
     };
     (summary, items.into_iter().map(|(_, s)| s).collect())
@@ -505,6 +577,7 @@ items:
             tags: tags.iter().map(|t| (*t).to_owned()).collect(),
             title: "t".into(),
             summary: None,
+            readings: Vec::new(),
             valid: true,
             first_try: true,
             declined: false,
@@ -547,6 +620,31 @@ items:
         );
         assert!(short.iter().any(|s| s.contains("restricted")), "{short:?}");
         assert!(short.iter().any(|s| s.contains("s an item")), "{short:?}");
+    }
+
+    #[test]
+    fn a_misread_item_counts_whether_the_right_reading_was_offered() {
+        let mut answers = answers();
+        answers.items.get_mut("b.txt").unwrap().what = vec!["keychain".into()];
+        answers.items.get_mut("a.txt").unwrap().what = vec!["statement".into()];
+        let mut a = outcome("a.txt", "Finances", Sensitivity::Restricted, &["bank"]);
+        a.title = "Bank statement".into();
+        let mut b = outcome("b.txt", "Manuals", Sensitivity::Personal, &[]);
+        b.title = "Fish model".into();
+        b.readings = vec![
+            "Fish model: a fish".into(),
+            "Keychain plate: a plate for a keychain".into(),
+        ];
+        let (both, items) = score(&answers, &[a, b.clone()], 1.0);
+        assert_eq!(items[0].reading, Some(ReadingRating::Right));
+        assert_eq!(items[1].reading, Some(ReadingRating::Offered));
+        assert_eq!((both.misread, both.misread_offered), (1, 1));
+        assert!((both.readings_offered - 0.5).abs() < f64::EPSILON);
+
+        b.readings.pop();
+        let (alone, items) = score(&answers, &[b], 1.0);
+        assert_eq!(items[0].reading, Some(ReadingRating::Wrong));
+        assert_eq!((alone.misread, alone.misread_offered), (1, 0));
     }
 
     #[test]

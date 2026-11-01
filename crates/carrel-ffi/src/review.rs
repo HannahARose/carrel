@@ -130,6 +130,13 @@ pub struct Proposal {
     /// Whether its card or collection couldn't be settled, as when no text model could be
     /// reached, so Draft Again is offered first.
     pub draft_again: bool,
+    /// When the drafting model wasn't sure what the item is, its readings to pick from.
+    pub readings: Vec<crate::readings::ProposalReading>,
+    /// Whether the item's name, folder or text doesn't fit one of the readings, so what it is
+    /// isn't settled.
+    pub readings_doubted: bool,
+    /// How a list notes its readings, such as `what is it?`, if it has any.
+    pub readings_flag: Option<String>,
 }
 
 impl From<&ReviewEntry> for Proposal {
@@ -171,6 +178,9 @@ impl From<&ReviewEntry> for Proposal {
             }),
             high: actions::is_high(entry),
             draft_again: carrel_core::ingest::redraft::wants_redraft(entry),
+            readings: crate::readings::of(entry),
+            readings_doubted: carrel_core::ingest::readings::doubted(&entry.readings),
+            readings_flag: carrel_core::ingest::readings::flag(entry),
         }
     }
 }

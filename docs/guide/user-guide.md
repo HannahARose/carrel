@@ -118,6 +118,12 @@ A model's file name often says little (`part_v3_final.stl`), so Carrel looks at 
 - **Dates:** when the model gives none, the date the file was exported becomes the card's **created** date.
 - **Thumbnails:** a 3MF's thumbnail is described like an image on a Mac. The drawings and thumbnails aren't kept.
 
+### When Carrel isn't sure what an item is
+
+Sometimes an item could be one of several things: `cognitogram_keychain_plate copy.stl` might look like a fish to a model, though its name says it's a keychain plate. The model then offers two or three readings, each with why it read the item that way, and the most likely one fills the card. When the item's file name, folder or text fits one reading and not another, the one that fits goes first, the proposal's confidence drops, and a question asks what the item is, with the readings to pick from.
+
+To use another reading, press `p` and its number in Review, choose Use This Reading in the app's inspector, or run `carrel review pick ID N`. Its title, summary and tags replace the card's, as one correction you see before it's saved.
+
 ### Correcting a card
 
 When a card is wrong, say what's wrong: `c` on a proposal in Review or on an item in Browse, or `carrel review correct ID "…"` and `carrel correct ITEM "…"`.

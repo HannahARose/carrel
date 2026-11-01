@@ -230,7 +230,22 @@ pub fn redraft(
         .first()
         .and_then(Option::as_ref)
         .and_then(|t| t.created.clone());
-    let (entry, kept) = merge(archive, &old, drafted, created.as_ref())?;
+    let drafted_id = drafted.id;
+    let (mut entry, kept) = merge(archive, &old, drafted, created.as_ref())?;
+    // The old draft's readings are gone, and so is the question offering them; one the new
+    // draft raises names the proposal by its old identifier.
+    let questions = crate::questions::QuestionQueue::of(archive);
+    for stale in crate::ingest::readings::questions_about(archive, old.id)? {
+        crate::questions::clear_waiting(&mut entry, &stale);
+        questions.remove(stale.id)?;
+    }
+    for question in &mut run.questions {
+        for item in &mut question.items {
+            if *item == drafted_id {
+                *item = entry.id;
+            }
+        }
+    }
     run.entries = vec![Some(entry.clone())];
     // Questions the old draft raised that name it stay in their queue, so it still waits on them.
     run.save(archive)?;
