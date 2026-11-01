@@ -44,19 +44,18 @@ pub fn replay(words: &[Lookup], meaning: &[Lookup], items: usize, weights: Merge
             };
             let partial = whole && near.len() < DEPTH;
             let by_words = |key: &String| others.contains(key) || partial;
+            // Search returns its first DEPTH hits, collections and glossary facts among
+            // them, and only then are the items picked out.
             let found: Vec<String> = merge(&worded, Some(&near), &by_words, weights)
                 .into_iter()
+                .take(DEPTH)
                 .map(|(key, _)| key)
                 .filter(|key| !others.contains(key))
                 .collect();
             Some(Lookup {
                 item: w.item.clone(),
                 description: w.description.clone(),
-                rank: found
-                    .iter()
-                    .take(DEPTH)
-                    .position(|f| *f == w.item)
-                    .map(|p| p + 1),
+                rank: found.iter().position(|f| *f == w.item).map(|p| p + 1),
                 top: found.into_iter().take(TOP).collect(),
                 places: Vec::new(),
             })

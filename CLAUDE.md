@@ -16,7 +16,7 @@ The board moves itself from pull requests (`.github/scripts/project-status.sh`):
 
 Many sessions work at once, and macOS runners are few, so:
 
-- **Stay a draft while you work.** A draft PR runs only CI's Linux jobs; macOS and Windows run once you mark it ready. Run the checks below locally before marking it ready, so the full run passes the first time.
+- **Stay a draft while you work.** A PR into `dev` runs only CI's Linux jobs, and its macOS and Windows jobs run once, in the merge queue, so run the checks below locally (the Mac app's too, when you change it) before marking it ready. A failure in the queue drops the PR out and rebuilds the PRs behind it.
 - **One PR for issues that share files.** When you're given several issues that touch the same files, build them on one branch, with every issue in the body ("Closes #1, closes #2").
 - **After merging `origin/dev` in, rerun the checks before pushing,** not just the conflict markers: two branches can each pass and still clash, as two `archive_work` functions once did.
 - **Name things specifically.** A new function, type or test helper gets a name that says what it's for (`index_or_switch_work`, not `archive_work`), so it can't collide with another branch's.

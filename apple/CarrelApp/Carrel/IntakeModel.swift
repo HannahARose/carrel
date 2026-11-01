@@ -36,15 +36,61 @@ final class IntakeModel {
         return "Drafting \(worker.item ?? "…")\(stage), \(worker.waiting) waiting"
     }
 
-    /// Adds the files and folders at `urls` to the intake queue.
+    /// Folders being added, while the owner chooses how: entry by entry or whole.
+    var choosingHow: [URL]?
+
+    /// Adds the files and folders at `urls` to the intake queue, asking first how a folder
+    /// among them goes in.
     func add(_ urls: [URL]) async {
         guard !urls.isEmpty else { return }
+        if urls.contains(where: Self.isFolder) {
+            choosingHow = urls
+            return
+        }
+        await add(urls, as: .decide)
+    }
+
+    /// Adds the files and folders at `urls` to the intake queue, folders as `how` says, as
+    /// `carrel ingest --each` and `--whole` do.
+    func add(_ urls: [URL], as how: FolderIntake) async {
+        choosingHow = nil
+        guard !urls.isEmpty else { return }
         do {
-            report = AddReport(try await archive.add(urls))
+            report = AddReport(
+                try await archive.add(urls, each: how == .each, whole: how == .whole))
         } catch {
             report = AddReport(problem: message(for: error))
         }
         await refresh()
+    }
+
+    private static func isFolder(_ url: URL) -> Bool {
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(
+            atPath: url.path(percentEncoded: false), isDirectory: &isDirectory)
+            && isDirectory.boolValue
+    }
+
+    // MARK: - The queue
+
+    /// Takes `entry` out of the queue.
+    func remove(_ entry: Queued) async {
+        await change { try await $0.unqueue(entry.id) }
+    }
+
+    /// Moves `entry` to the front of the queue, to be drafted next.
+    func moveToFront(_ entry: Queued) async {
+        await change { try await $0.queueFirst(entry.id) }
+    }
+
+    /// Lets the failed `entry` be tried again.
+    func tryAgain(_ entry: Queued) async {
+        await change { try await $0.retryQueued(entry.id) }
+    }
+
+    /// Runs `work`; a failure shows in the window's alert, with the core's message.
+    private func change(_ work: (ArchiveModel) async throws -> Void) async {
+        try? await work(archive)
     }
 
     /// Reads the queue and the worker's status again.
@@ -78,6 +124,16 @@ final class IntakeModel {
         let handle = archive.handle
         return await Task.detached { handle.workerStatus() }.value
     }
+}
+
+/// How a folder joins the intake queue.
+enum FolderIntake {
+    /// As Carrel decides: whole, unless its name suggests a pile, such as Downloads.
+    case decide
+    /// Each entry inside it as its own item (`carrel ingest --each`).
+    case each
+    /// As one item, whatever its name (`carrel ingest --whole`).
+    case whole
 }
 
 /// What adding to the intake queue did, as `carrel ingest` reports it.

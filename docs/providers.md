@@ -7,7 +7,9 @@
 A provider is an executable named `carrel-provider-<name>` (with `.exe` on Windows). Carrel looks in these places, in order, and uses the first one found for each name:
 
 1. the folder containing the `carrel` program
-2. each folder on `PATH`
+2. in the Mac app, its bundle's `Contents/Helpers`
+3. each folder on `PATH`
+4. in the Mac app, which doesn't have the shell's `PATH` when it's opened from the Finder, the folders programs are usually installed in: `~/.local/bin`, `~/.cargo/bin`, `/opt/homebrew/bin` and `/usr/local/bin`
 
 `<name>` identifies the provider in settings and in the provenance Carrel records on cards (FORMAT.md §5.6).
 
@@ -26,6 +28,8 @@ Carrel also has built-in providers, such as plain-text extraction, which need no
 1. Carrel sends `initialize`. The provider must answer within 10 seconds.
 2. Carrel sends requests for what the provider offered.
 3. Carrel sends `shutdown`, waits for the response, and closes standard input.
+
+Carrel starts every provider together the first time it needs them, and remembers what each one's `initialize` answer offered for as long as it runs, unless the program or the models folder changes. After that it starts a provider only when it has a request for it, so a provider's offers should depend only on the program and the models it finds. The interactive mode's Ctrl-R makes Carrel ask again.
 
 ### `initialize`
 

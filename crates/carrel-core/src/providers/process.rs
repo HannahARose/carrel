@@ -70,10 +70,14 @@ pub fn find_program(name: &str, folders: &[PathBuf]) -> Option<PathBuf> {
 }
 
 /// The folders Carrel looks in: the one holding the running program, an app bundle's
-/// `Contents/Helpers` when it runs from one, then `PATH`.
+/// `Contents/Helpers` when it runs from one, then `PATH`. An app opened from the Finder
+/// doesn't have the shell's `PATH`, so from a bundle the folders programs are usually
+/// installed in come last ([`INSTALL_FOLDERS`]): there the app finds the providers, the
+/// network helper and Kopia the command line uses.
 #[must_use]
 pub fn default_folders() -> Vec<PathBuf> {
     let mut folders = Vec::new();
+    let mut in_bundle = false;
     if let Ok(exe) = std::env::current_exe()
         && let Some(dir) = exe.parent()
     {
@@ -82,12 +86,41 @@ pub fn default_folders() -> Vec<PathBuf> {
             && let Some(contents) = dir.parent()
         {
             folders.push(contents.join("Helpers"));
+            in_bundle = true;
         }
     }
     if let Some(path) = std::env::var_os("PATH") {
         folders.extend(std::env::split_paths(&path));
     }
+    if in_bundle {
+        let home = crate::local::home_dir();
+        for folder in install_folders(home.as_deref()) {
+            if !folders.contains(&folder) {
+                folders.push(folder);
+            }
+        }
+    }
     folders
+}
+
+/// Where programs are usually installed on a Mac, `~` standing for the home folder:
+/// `carrel`'s own suggestion, Cargo's, then Homebrew's on Apple silicon and on Intel.
+pub const INSTALL_FOLDERS: [&str; 4] = [
+    "~/.local/bin",
+    "~/.cargo/bin",
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+];
+
+/// [`INSTALL_FOLDERS`] with `~` as `home`; those under it are left out when it's unknown.
+fn install_folders(home: Option<&Path>) -> Vec<PathBuf> {
+    INSTALL_FOLDERS
+        .iter()
+        .filter_map(|folder| match folder.strip_prefix("~/") {
+            Some(under) => home.map(|home| home.join(under)),
+            None => Some(PathBuf::from(folder)),
+        })
+        .collect()
 }
 
 fn provider_name(path: &Path) -> Option<String> {
@@ -132,23 +165,42 @@ fn is_executable(path: &Path) -> bool {
     path.is_file() && path.extension() == Some(std::ffi::OsStr::new("exe"))
 }
 
-/// A running provider program.
+/// A provider program: running, or, when made from what it offered before
+/// ([`ProcessProvider::introduced`]), started the first time it's asked to do something.
 pub struct ProcessProvider {
-    name: String,
-    path: PathBuf,
-    label: Option<String>,
-    version: Option<String>,
-    offers: Vec<Offer>,
+    found: Found,
+    introduced: Introduced,
     request_timeout: Duration,
-    connection: Mutex<Connection>,
+    connection: Mutex<Link>,
+}
+
+/// What a provider program says about itself when it starts: kept, so that a registry can
+/// list it later without starting it again (#333).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Introduced {
+    /// The name it gives itself, such as "Apple".
+    pub label: Option<String>,
+    /// Its version, if it reports one.
+    pub version: Option<String>,
+    /// What it offers.
+    pub offers: Vec<Offer>,
+}
+
+/// The conversation with a provider program, once there is one.
+enum Link {
+    /// Not started yet.
+    Waiting,
+    Running(Connection),
+    /// It couldn't be started, and why.
+    Failed(String),
 }
 
 impl std::fmt::Debug for ProcessProvider {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ProcessProvider")
-            .field("name", &self.name)
-            .field("version", &self.version)
-            .field("offers", &self.offers)
+            .field("name", &self.found.name)
+            .field("version", &self.introduced.version)
+            .field("offers", &self.introduced.offers)
             .finish_non_exhaustive()
     }
 }
@@ -183,82 +235,38 @@ impl ProcessProvider {
     /// [`ProviderError::Protocol`] if it can't be started, doesn't answer `initialize` within
     /// [`INITIALIZE_TIMEOUT`], or speaks another protocol version.
     pub fn start(found: &Found) -> Result<Self, ProviderError> {
-        let mut child = spawn(&found.path).map_err(|e| {
-            ProviderError::Protocol(format!("can't start {}: {e}", found.path.display()))
-        })?;
-        let stdin = child.stdin.take();
-        let (Some(stdout), Some(stderr)) = (child.stdout.take(), child.stderr.take()) else {
-            return Err(ProviderError::Protocol(format!(
-                "{}: no output streams",
-                found.name
-            )));
-        };
-
-        let (sender, lines) = channel();
-        std::thread::spawn(move || {
-            for line in BufReader::new(stdout).lines() {
-                let Ok(line) = line else { break };
-                if sender.send(line).is_err() {
-                    break;
-                }
-            }
-        });
-        let log = Arc::new(Mutex::new(VecDeque::new()));
-        let log_writer = Arc::clone(&log);
-        let (log_finished, log_done) = channel::<()>();
-        std::thread::spawn(move || {
-            // Dropped when the log ends, which tells `failure` the log is complete.
-            let _finished = log_finished;
-            for line in BufReader::new(stderr).lines() {
-                let Ok(line) = line else { break };
-                let mut log = log_writer
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                if log.len() == LOG_LINES {
-                    log.pop_front();
-                }
-                log.push_back(line);
-            }
-        });
-
-        let mut connection = Connection {
-            child,
-            stdin,
-            lines,
-            log,
-            log_done,
-            next_id: 1,
-            broken: None,
-        };
-        let params = json!({
-            "protocol": PROTOCOL_VERSION,
-            "client": format!("carrel {}", crate::CARREL_VERSION),
-        });
-        let result = connection.call("initialize", Some(params), INITIALIZE_TIMEOUT)?;
-        let initialized: Initialized = serde_json::from_value(result).map_err(|e| {
-            ProviderError::Protocol(format!("{}: unexpected initialize result: {e}", found.name))
-        })?;
-        if initialized.protocol != PROTOCOL_VERSION {
-            return Err(ProviderError::Protocol(format!(
-                "{} speaks provider protocol {}, but this Carrel speaks {PROTOCOL_VERSION}",
-                found.name, initialized.protocol
-            )));
-        }
+        let (connection, introduced) = open(found)?;
         Ok(Self {
-            name: found.name.clone(),
-            path: found.path.clone(),
-            label: initialized.name,
-            version: initialized.version,
-            offers: initialized.offers,
+            found: found.clone(),
+            introduced,
             request_timeout: REQUEST_TIMEOUT,
-            connection: Mutex::new(connection),
+            connection: Mutex::new(Link::Running(connection)),
         })
+    }
+
+    /// The provider program `found`, which offered `introduced` when it last started. It
+    /// isn't started until it's asked to do something, and then only once: if it can't
+    /// start then, that request and every later one fail with why.
+    #[must_use]
+    pub fn introduced(found: Found, introduced: Introduced) -> Self {
+        Self {
+            found,
+            introduced,
+            request_timeout: REQUEST_TIMEOUT,
+            connection: Mutex::new(Link::Waiting),
+        }
+    }
+
+    /// What the provider said about itself when it started.
+    #[must_use]
+    pub fn introduction(&self) -> &Introduced {
+        &self.introduced
     }
 
     /// The name the provider gives itself, such as "Apple".
     #[must_use]
     pub fn label(&self) -> Option<&str> {
-        self.label.as_deref()
+        self.introduced.label.as_deref()
     }
 
     /// Changes how long requests may take before the provider is given up on.
@@ -269,7 +277,7 @@ impl ProcessProvider {
     /// The provider's version, if it reports one.
     #[must_use]
     pub fn version(&self) -> Option<&str> {
-        self.version.as_deref()
+        self.introduced.version.as_deref()
     }
 
     fn request<T: serde::de::DeserializeOwned>(
@@ -277,32 +285,46 @@ impl ProcessProvider {
         method: &str,
         params: Value,
     ) -> Result<T, ProviderError> {
-        let mut connection = self
+        let mut link = self
             .connection
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if matches!(*link, Link::Waiting) {
+            *link = match open(&self.found) {
+                Ok((connection, _)) => Link::Running(connection),
+                Err(e) => Link::Failed(e.to_string()),
+            };
+        }
+        let connection = match &mut *link {
+            Link::Running(connection) => connection,
+            Link::Failed(why) => return Err(ProviderError::Protocol(why.clone())),
+            Link::Waiting => unreachable!("started above"),
+        };
         let result = connection.call(method, Some(params), self.request_timeout)?;
         serde_json::from_value(result).map_err(|e| {
-            ProviderError::Protocol(format!("{}: unexpected {method} result: {e}", self.name))
+            ProviderError::Protocol(format!(
+                "{}: unexpected {method} result: {e}",
+                self.found.name
+            ))
         })
     }
 }
 
 impl Provider for ProcessProvider {
     fn name(&self) -> &str {
-        &self.name
+        &self.found.name
     }
 
     fn program(&self) -> Option<super::Program> {
         Some(super::Program {
-            path: self.path.clone(),
-            label: self.label.clone(),
-            version: self.version.clone(),
+            path: self.found.path.clone(),
+            label: self.introduced.label.clone(),
+            version: self.introduced.version.clone(),
         })
     }
 
     fn offers(&self) -> &[Offer] {
-        &self.offers
+        &self.introduced.offers
     }
 
     fn complete(
@@ -344,10 +366,13 @@ impl Provider for ProcessProvider {
 
 impl Drop for ProcessProvider {
     fn drop(&mut self) {
-        let connection = self
+        let Link::Running(connection) = self
             .connection
             .get_mut()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+        else {
+            return;
+        };
         if connection.broken.is_none() {
             let _ = connection.call("shutdown", None, Duration::from_secs(2));
         }
@@ -362,6 +387,77 @@ impl Drop for ProcessProvider {
         let _ = connection.child.kill();
         let _ = connection.child.wait();
     }
+}
+
+/// Starts the provider program `found` and asks what it offers.
+fn open(found: &Found) -> Result<(Connection, Introduced), ProviderError> {
+    let mut child = spawn(&found.path).map_err(|e| {
+        ProviderError::Protocol(format!("can't start {}: {e}", found.path.display()))
+    })?;
+    let stdin = child.stdin.take();
+    let (Some(stdout), Some(stderr)) = (child.stdout.take(), child.stderr.take()) else {
+        return Err(ProviderError::Protocol(format!(
+            "{}: no output streams",
+            found.name
+        )));
+    };
+
+    let (sender, lines) = channel();
+    std::thread::spawn(move || {
+        for line in BufReader::new(stdout).lines() {
+            let Ok(line) = line else { break };
+            if sender.send(line).is_err() {
+                break;
+            }
+        }
+    });
+    let log = Arc::new(Mutex::new(VecDeque::new()));
+    let log_writer = Arc::clone(&log);
+    let (log_finished, log_done) = channel::<()>();
+    std::thread::spawn(move || {
+        // Dropped when the log ends, which tells `failure` the log is complete.
+        let _finished = log_finished;
+        for line in BufReader::new(stderr).lines() {
+            let Ok(line) = line else { break };
+            let mut log = log_writer
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if log.len() == LOG_LINES {
+                log.pop_front();
+            }
+            log.push_back(line);
+        }
+    });
+
+    let mut connection = Connection {
+        child,
+        stdin,
+        lines,
+        log,
+        log_done,
+        next_id: 1,
+        broken: None,
+    };
+    let params = json!({
+        "protocol": PROTOCOL_VERSION,
+        "client": format!("carrel {}", crate::CARREL_VERSION),
+    });
+    let result = connection.call("initialize", Some(params), INITIALIZE_TIMEOUT)?;
+    let initialized: Initialized = serde_json::from_value(result).map_err(|e| {
+        ProviderError::Protocol(format!("{}: unexpected initialize result: {e}", found.name))
+    })?;
+    if initialized.protocol != PROTOCOL_VERSION {
+        return Err(ProviderError::Protocol(format!(
+            "{} speaks provider protocol {}, but this Carrel speaks {PROTOCOL_VERSION}",
+            found.name, initialized.protocol
+        )));
+    }
+    let introduced = Introduced {
+        label: initialized.name,
+        version: initialized.version,
+        offers: initialized.offers,
+    };
+    Ok((connection, introduced))
 }
 
 impl Connection {
@@ -489,5 +585,26 @@ mod tests {
         if std::env::consts::EXE_SUFFIX == ".exe" {
             assert_eq!(name("carrel-provider-apple.exe").as_deref(), Some("apple"));
         }
+    }
+
+    #[test]
+    fn an_app_looks_where_programs_are_installed() {
+        let home = Path::new("/Users/someone");
+        assert_eq!(
+            install_folders(Some(home)),
+            [
+                home.join(".local/bin"),
+                home.join(".cargo/bin"),
+                PathBuf::from("/opt/homebrew/bin"),
+                PathBuf::from("/usr/local/bin"),
+            ]
+        );
+        assert_eq!(
+            install_folders(None),
+            [
+                PathBuf::from("/opt/homebrew/bin"),
+                PathBuf::from("/usr/local/bin")
+            ]
+        );
     }
 }

@@ -1,5 +1,5 @@
-// Status: what the archive holds. The worker's progress, Recent and suggestions join it when
-// the core's Status summary reaches CarrelKit (#233).
+// Status: what the archive holds, the intake queue and the worker's progress, Recent,
+// problems and suggestions, as `carrel status` shows them.
 
 import CarrelKit
 import SwiftUI
@@ -19,6 +19,22 @@ struct StatusView: View {
                 }
                 LabeledContent("Access", value: model.isReadOnly ? "Read only" : "Read and write")
                 LabeledContent("Version", value: versionSummary())
+                if let archive = model.archive, archive.status?.hasHistory == false {
+                    LabeledContent {
+                        Button("Start History") { Task { try? await archive.startHistory() } }
+                            .disabled(model.isReadOnly)
+                    } label: {
+                        Text("History")
+                        Text("This archive has no history yet, so its changes can’t be undone.")
+                    }
+                }
+                if let writer = model.archive?.status?.writer {
+                    LabeledContent(
+                        "Being changed by",
+                        value:
+                            "\(writer.purpose), \(writer.thisDevice ? "on this Mac" : "on \(writer.device)")"
+                            + (writer.expired ? " (stopped)" : ""))
+                }
             }
             Section("Contents") {
                 LabeledContent("Items", value: summary.itemCount, format: .number)
@@ -35,13 +51,8 @@ struct StatusView: View {
             if let intake = model.intake {
                 IntakeSection(intake: intake, isReadOnly: model.isReadOnly)
             }
+            StatusArchiveSections(model: model)
             StatusDiscoverySections(model: model)
-            Section("Activity") {
-                Text(
-                    "The worker’s progress, recent changes and suggestions appear here in a later build."
-                )
-                .foregroundStyle(.secondary)
-            }
         }
         .formStyle(.grouped)
         .overlay {

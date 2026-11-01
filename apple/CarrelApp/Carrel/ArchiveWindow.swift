@@ -20,10 +20,10 @@ struct ArchiveWindow: View {
     var body: some View {
         @Bindable var model = model
         NavigationSplitView {
-            Sidebar(model: model)
+            ArchiveSidebar(model: model)
                 .navigationSplitViewColumnWidth(min: 180, ideal: 220)
         } content: {
-            ScreenContent(model: model)
+            ArchiveScreenContent(model: model)
                 .navigationSplitViewColumnWidth(min: 260, ideal: 340)
         } detail: {
             Inspector(model: model)
@@ -76,17 +76,24 @@ extension ArchiveWindow {
     }
 }
 
-private struct Sidebar: View {
+struct ArchiveSidebar: View {
     @Bindable var model: ArchiveWindowModel
 
     var body: some View {
+        // A row's tag goes last, after its badge: a tag with a modifier after it isn't the
+        // row's, so the row can't be chosen (#334).
         List(selection: $model.screen) {
             Section {
                 Label("Status", systemImage: "gauge.with.dots.needle.33percent").tag(Screen.status)
-                Label("Review", systemImage: "tray.full").tag(Screen.review)
+                Label("Review", systemImage: "tray.full")
                     .badge(model.archive?.reviewCount ?? 0)
-                Label("Questions", systemImage: "questionmark.bubble").tag(Screen.questions)
+                    .tag(Screen.review)
+                Label("Questions", systemImage: "questionmark.bubble")
                     .badge(model.archive?.questions.count ?? 0)
+                    .tag(Screen.questions)
+                Label("Restructure", systemImage: "rectangle.3.group")
+                    .badge(model.archive?.restructureProposals.count ?? 0)
+                    .tag(Screen.restructure)
                 Label("Active", systemImage: "arrow.up.forward.square")
                     .badge(model.activeScreen?.pendingCount ?? 0)
                     .tag(Screen.active)
@@ -114,7 +121,7 @@ private struct Sidebar: View {
 }
 
 /// The content column for the chosen screen.
-private struct ScreenContent: View {
+struct ArchiveScreenContent: View {
     @Bindable var model: ArchiveWindowModel
 
     var body: some View {
@@ -161,6 +168,8 @@ private struct ScreenContent: View {
             }
         case .questions:
             if let questions = model.questions { QuestionsView(questions: questions) }
+        case .restructure:
+            if let restructure = model.restructure { RestructureView(restructure: restructure) }
         case .active:
             if let active = model.activeScreen { ActiveView(model: active) }
         case .history:
@@ -188,6 +197,10 @@ private struct Inspector: View {
             QuestionInspector(
                 question: question, questions: questions,
                 collections: model.collections.map(\.path))
+        } else if model.screen == .restructure, let restructure = model.restructure,
+            let proposal = restructure.selected
+        {
+            RestructureInspector(proposal: proposal, restructure: restructure)
         } else if model.screen == .active, let active = model.activeScreen {
             ActiveInspector(model: active)
         } else if model.screen == .history, let history = model.historyScreen {
@@ -204,7 +217,10 @@ private struct Inspector: View {
                     if let previews = model.previews {
                         ItemPreviewView(item: item, store: previews)
                     }
-                    ItemCardView(item: item, card: model.card(for: item), root: model.root) {
+                    ItemCardView(
+                        item: item, card: model.card(for: item), root: model.root,
+                        archive: model.archive, open: model.open(item:)
+                    ) {
                         ItemActions(model: model, item: item)
                     }
                 }

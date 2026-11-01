@@ -621,6 +621,76 @@ pub fn snapshots_since(
         .collect())
 }
 
+/// The session snapshots of the checked-out `item`'s working copy taken since it went out,
+/// oldest first: what returning it can offer to forget. None when it isn't checked out, or
+/// when they can't be listed.
+#[must_use]
+pub fn return_snapshots(
+    archive: &Archive,
+    item: &crate::archive::ItemRef,
+    backups: &dyn Backups,
+) -> Vec<Snapshot> {
+    let Some(out) = std::fs::read_to_string(archive.root().join(&item.card))
+        .ok()
+        .and_then(|t| CardFile::parse(&t).ok())
+        .and_then(|f| f.card().checked_out.clone())
+    else {
+        return Vec::new();
+    };
+    let since = out
+        .since
+        .0
+        .parse::<jiff::Timestamp>()
+        .map_or(SystemTime::UNIX_EPOCH, SystemTime::from);
+    snapshots_since(backups, Path::new(&out.to), item.id, since).unwrap_or_default()
+}
+
+/// What became of a checkout's session snapshots once it was returned.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReturnSnapshots {
+    /// The snapshot holding the returned version, unless it couldn't be taken.
+    pub returned: Result<Snapshot, String>,
+    /// How many session snapshots were forgotten.
+    pub forgotten: usize,
+    /// How many are kept.
+    pub kept: usize,
+    /// The snapshots that couldn't be forgotten, with why.
+    pub failures: Vec<(String, String)>,
+}
+
+/// After returning the item `id`, titled `title`, from `working`: snapshots the working copy,
+/// which is now the returned version, then forgets its session `snapshots` when `forget`
+/// says so. They're all kept if the returned version can't be snapshotted; deleting backups
+/// is the owner's call, so `forget` is only ever their answer.
+pub fn keep_returned_version(
+    backups: &dyn Backups,
+    working: &Path,
+    title: &str,
+    id: Id,
+    snapshots: &[Snapshot],
+    forget: bool,
+) -> ReturnSnapshots {
+    let returned = backups
+        .snapshot(working, &format!("Returned “{title}” ({id})"))
+        .map_err(|e| e.to_string());
+    let mut failures = Vec::new();
+    let mut forgotten = 0;
+    if returned.is_ok() && forget {
+        for snapshot in snapshots {
+            match backups.forget(&snapshot.id) {
+                Ok(()) => forgotten += 1,
+                Err(e) => failures.push((snapshot.id.clone(), e.to_string())),
+            }
+        }
+    }
+    ReturnSnapshots {
+        returned,
+        forgotten,
+        kept: snapshots.len() - forgotten,
+        failures,
+    }
+}
+
 /// Takes a snapshot of the working copy of each item [`record`] found sessions on, except
 /// those whose cards say `snapshots: return-only`: the state when Carrel noticed, which for
 /// most work is the state when the session ended. Each item's outcome, in order.
