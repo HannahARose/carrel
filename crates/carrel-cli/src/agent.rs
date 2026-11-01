@@ -250,7 +250,7 @@ pub fn run(
 
 /// The service manager, or one that only says what it would have run when
 /// `CARREL_SERVICE_MANAGER` is `off`.
-fn manager() -> (Box<dyn Manager>, bool) {
+pub(crate) fn manager() -> (Box<dyn Manager>, bool) {
     struct Off;
     impl Manager for Off {
         fn run(&mut self, _: &str, _: &[String]) -> Result<(), String> {
@@ -318,6 +318,20 @@ pub fn install(
     let platform = platform()?;
     let places = places()?;
     let roots = roots(archives, archive)?;
+    let (mut manager, ran) = manager();
+    install_in(platform, &places, &roots, poll, manager.as_mut(), ran)
+}
+
+/// Installs the agent as `platform`'s service in `places` for `roots`, through `manager`
+/// (which `ran` says runs commands for real), saying exactly what it wrote and ran.
+pub(crate) fn install_in(
+    platform: Platform,
+    places: &Places,
+    roots: &[PathBuf],
+    poll: bool,
+    manager: &mut dyn Manager,
+    ran: bool,
+) -> Result<Report, Failure> {
     let program =
         std::env::current_exe().map_err(|e| Failure::new(format!("can't find carrel: {e}")))?;
     // The agent finds Kopia and the providers, and uses this configuration folder, as here.
@@ -332,13 +346,12 @@ pub fn install(
         .collect();
     let definition = Definition {
         program,
-        archives: roots.clone(),
+        archives: roots.to_vec(),
         poll,
         environment,
         log: places.log(),
     };
-    let (mut manager, ran) = manager();
-    let done = service::install(platform, &places, &definition, manager.as_mut())?;
+    let done = service::install(platform, places, &definition, manager)?;
     let mut text = format!(
         "{} the Carrel agent as {} for {}, starting at log-in.\n",
         if done.was_installed {
@@ -347,7 +360,7 @@ pub fn install(
             "Installed"
         },
         platform.describe(),
-        names(&roots)
+        names(roots)
     );
     writeln!(text, "Wrote {}", done.file.display()).unwrap();
     commands_text(&done, ran, &mut text);
@@ -383,7 +396,18 @@ pub fn uninstall() -> Result<Report, Failure> {
     let platform = platform()?;
     let places = places()?;
     let (mut manager, ran) = manager();
-    let done = service::uninstall(platform, &places, manager.as_mut())?;
+    uninstall_in(platform, &places, manager.as_mut(), ran)
+}
+
+/// Uninstalls `platform`'s service from `places`, through `manager` (which `ran` says runs
+/// commands for real), saying exactly what it removed and ran.
+pub(crate) fn uninstall_in(
+    platform: Platform,
+    places: &Places,
+    manager: &mut dyn Manager,
+    ran: bool,
+) -> Result<Report, Failure> {
+    let done = service::uninstall(platform, places, manager)?;
     if !done.was_installed {
         return Ok(Report::new(
             format!(
@@ -420,19 +444,31 @@ pub fn status(archive: Option<&Path>) -> Result<Report, Failure> {
     let platform = platform()?;
     let places = places()?;
     let folder = crate::config::dir()?.join("workers");
-    let installed = service::installed(platform, &places);
+    let current = locate(archive).ok().map(|current| {
+        std::fs::canonicalize(current.root()).unwrap_or_else(|_| current.root().to_owned())
+    });
+    Ok(status_in(platform, &places, &folder, current))
+}
+
+/// Whether the agent is installed as `platform`'s service in `places` and for which archives,
+/// and whether an agent, whose files are in `folder`, looks after each and `current` now.
+pub(crate) fn status_in(
+    platform: Platform,
+    places: &Places,
+    folder: &Path,
+    current: Option<PathBuf>,
+) -> Report {
+    let installed = service::installed(platform, places);
     let mut roots: Vec<PathBuf> = installed
         .as_ref()
         .map(|(_, archives)| archives.clone())
         .unwrap_or_default();
-    if let Ok(current) = locate(archive) {
-        let current =
-            std::fs::canonicalize(current.root()).unwrap_or_else(|_| current.root().to_owned());
-        if !roots.contains(&current) {
-            roots.push(current);
-        }
+    if let Some(current) = current
+        && !roots.contains(&current)
+    {
+        roots.push(current);
     }
-    let looked_after = carrel_core::agent::looked_after(&folder, &roots);
+    let looked_after = carrel_core::agent::looked_after(folder, &roots);
     let mut text = match &installed {
         Some((file, archives)) => format!(
             "Installed as {}, for {}: {}\n",
@@ -455,7 +491,7 @@ pub fn status(archive: Option<&Path>) -> Result<Report, Failure> {
         )
         .unwrap();
     }
-    Ok(Report::new(
+    Report::new(
         text,
         json!({
             "installed": installed.is_some(),
@@ -470,5 +506,5 @@ pub fn status(archive: Option<&Path>) -> Result<Report, Failure> {
                 }))
                 .collect::<Vec<_>>(),
         }),
-    ))
+    )
 }

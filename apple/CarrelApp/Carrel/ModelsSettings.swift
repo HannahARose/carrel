@@ -101,6 +101,18 @@ private struct DraftingSection: View {
                     Text("Off").tag(String?.some("off"))
                     ForEach(choices.available, id: \.self) { Text($0).tag(String?.some($0)) }
                 }
+                Picker(
+                    "Librarian",
+                    selection: Binding(
+                        get: { model.device?.librarianModel },
+                        set: { chosen in
+                            Task { await model.setDevice("librarian.model", to: chosen ?? "") }
+                        })
+                ) {
+                    Text("The strongest that fits").tag(String?.none)
+                    ForEach(choices.available, id: \.self) { Text($0).tag(String?.some($0)) }
+                }
+                .help("The model the librarian answers with")
                 LabeledContent("Drafting now", value: choices.modelInUse ?? "No model available")
                 LabeledContent("Asked again now", value: choices.secondInUse ?? "None")
             } else {

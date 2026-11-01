@@ -23,6 +23,8 @@
 //! | [`intake`] | The intake queue |
 //! | [`backups`](mod@backups) | Backups: setting up a repository, the snapshots, taking one, verifying, restoring |
 //! | [`agent`] | The Mac app's agent: its claim on an archive, work sessions and scheduled snapshots |
+//! | [`librarian`] | The librarian: a conversation, saving it to the Journal, and its own changes |
+//! | [`discover`] | Discovery: on this day, wander, the timeline, the archive map, activity, resurfacing |
 //!
 //! [`TextModel`] and [`ModelProvider`](correct::ModelProvider) are implemented in Swift and called from Rust, as is
 //! [`ProgressListener`], which long operations report to.
@@ -50,10 +52,12 @@ pub mod agent;
 pub mod backups;
 pub mod browse;
 pub mod correct;
+pub mod discover;
 pub mod edit;
 pub mod history;
 pub mod index;
 pub mod intake;
+pub mod librarian;
 pub mod models;
 pub mod previews;
 pub mod records;

@@ -207,7 +207,7 @@ pub struct SavedCorrection {
 impl ArchiveHandle {
     /// The providers for a correction: the app's model when it gives one, otherwise the
     /// device's.
-    fn correction_registry(&self, model: Option<Arc<dyn ModelProvider>>) -> Registry {
+    pub(crate) fn correction_registry(&self, model: Option<Arc<dyn ModelProvider>>) -> Registry {
         match model {
             Some(model) => {
                 let mut registry = Registry::with_built_ins();

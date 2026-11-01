@@ -18,6 +18,8 @@ enum Screen: Hashable {
     case collection(String)
     case history
     case backups
+    /// A page of Discover.
+    case discover(DiscoverPage)
 }
 
 /// A collection and the collections nested inside it.
@@ -107,6 +109,10 @@ final class ArchiveWindowModel {
     // Browse's actions: new collections, renaming and expanding (#268).
     private(set) var browse: BrowseActionsModel?
 
+    // The librarian and Discover (#291).
+    private(set) var librarian: LibrarianModel?
+    private(set) var discover: DiscoverModel?
+
     // Previews and the grid (#256).
     private(set) var previews: PreviewStore?
     /// Browse's list or grid, kept for every window.
@@ -119,7 +125,12 @@ final class ArchiveWindowModel {
         didSet { if screen != oldValue { selectedItemID = nil } }
     }
     var selectedItemID: ItemSummary.ID? {
-        didSet { if selectedItemID != oldValue { editing = nil } }
+        didSet {
+            if selectedItemID != oldValue {
+                editing = nil
+                recordOpened()
+            }
+        }
     }
 
     init(url: URL, options: OpenOptions? = nil, defaults: UserDefaults = .standard) {
@@ -176,6 +187,9 @@ final class ArchiveWindowModel {
             }
             browse.created = { [weak self] path in self?.screen = .collection(path) }
             self.browse = browse
+            librarian = LibrarianModel(archive: archive)
+            librarian?.didChange = { [weak self] in await self?.refreshItems() }
+            discover = DiscoverModel(archive: archive)
             let previews = PreviewStore(handle: loaded.0)
             self.previews = previews
             await previews.reload()
@@ -235,6 +249,7 @@ final class ArchiveWindowModel {
         case .collection(let path): collections.first { $0.path == path }?.title ?? path
         case .history: "History"
         case .backups: "Backups"
+        case .discover(let page): page.title
         }
     }
 
