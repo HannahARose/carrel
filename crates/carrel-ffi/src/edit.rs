@@ -65,6 +65,41 @@ impl ArchiveHandle {
         )
     }
 
+    /// The filed item `item`'s card body, its Notes and Carrel's sections, to edit.
+    ///
+    /// # Errors
+    ///
+    /// As [`ArchiveHandle::editable_card`].
+    pub fn card_body(&self, item: String) -> Result<String, CarrelError> {
+        let archive = self.fresh()?;
+        let item = Self::item(&archive, &item)?;
+        let editing = carrel_core::edit::open(&archive, &self.registry(), &item)?;
+        Ok(editing.file.body().to_owned())
+    }
+
+    /// Saves `body` as the filed item `item`'s card body, as one change undone from History.
+    /// Carrel's own sections, such as the history, have to come back as they were.
+    ///
+    /// # Errors
+    ///
+    /// As [`ArchiveHandle::edit_card`]; a body that changes Carrel's sections comes back as
+    /// [`EditOutcome::Problems`].
+    pub fn edit_card_body(&self, item: String, body: String) -> Result<EditOutcome, CarrelError> {
+        let archive = self.fresh()?;
+        let item = Self::item(&archive, &item)?;
+        let editing = carrel_core::edit::open(&archive, &self.registry(), &item)?;
+        Ok(
+            match carrel_core::edit::save_body(&archive, editing, &body, self.holder()?)? {
+                carrel_core::edit::Saved::Unchanged => EditOutcome::Unchanged,
+                carrel_core::edit::Saved::Changed { fields, commit, .. } => EditOutcome::Saved {
+                    fields: fields.iter().map(|&f| f.to_owned()).collect(),
+                    commit,
+                },
+                carrel_core::edit::Saved::Problems(problems) => EditOutcome::Problems { problems },
+            },
+        )
+    }
+
     /// The proposal `id`'s card, to edit before it's filed.
     ///
     /// # Errors
@@ -127,4 +162,40 @@ fn changed_fields(before: &actions::CardFields, after: &actions::CardFields) -> 
     .filter(|&(_, differs)| differs)
     .map(|(field, _)| field.to_owned())
     .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::records::EditOutcome;
+    use crate::tests::Sample;
+
+    #[test]
+    fn a_card_body_is_edited_but_carrels_sections_are_kept() {
+        let sample = Sample::new();
+        let item = sample.item_titled("Desk lamp parts list");
+        let body = sample.handle.card_body(item.clone()).unwrap();
+        let edited = format!("A note of my own.\n\n{body}");
+        let saved = sample
+            .handle
+            .edit_card_body(item.clone(), edited.clone())
+            .unwrap();
+        assert!(
+            matches!(saved, EditOutcome::Saved { ref fields, commit: Some(_) } if fields == &["notes"])
+        );
+        assert_eq!(sample.handle.card_body(item.clone()).unwrap(), edited);
+        assert_eq!(
+            sample
+                .handle
+                .edit_card_body(item.clone(), edited.clone())
+                .unwrap(),
+            EditOutcome::Unchanged
+        );
+        if edited.contains("<!-- carrel:history -->") {
+            let broken = edited.replace("## History", "## Not the history");
+            assert!(matches!(
+                sample.handle.edit_card_body(item, broken).unwrap(),
+                EditOutcome::Problems { .. }
+            ));
+        }
+    }
 }

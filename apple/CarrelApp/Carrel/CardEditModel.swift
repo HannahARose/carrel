@@ -1,6 +1,6 @@
 // A card's fields edited in place in the inspector: a proposal's before it's filed, or a filed
-// item's after Edit (⌘E). Saving runs the checks `carrel edit` runs, in the core; problems come
-// back to show beside the fields.
+// item's after Edit (⌘E), whose body, Notes and all, is edited too. Saving runs the checks
+// `carrel edit` runs, in the core; problems come back to show beside the fields.
 
 import CarrelKit
 import Foundation
@@ -25,6 +25,10 @@ final class CardEditModel {
     private(set) var tags: [String] = []
     /// The lowest sensitivity it may be given.
     private(set) var floor: Sensitivity = .public
+    /// A filed card's body as saved: its Notes and Carrel's sections.
+    private(set) var originalBody: String?
+    /// The body as edited.
+    var body: String?
     /// Why the last save didn't check out.
     private(set) var problems: [String] = []
     /// Why the card can't be edited, when it can't be read.
@@ -47,8 +51,16 @@ final class CardEditModel {
                 case .item(let id): try handle.editableCard(item: id)
                 }
             }
+            let body: String? = try await archive.call { handle in
+                switch target {
+                case .proposal: nil
+                case .item(let id): try handle.cardBody(item: id)
+                }
+            }
             original = editable.fields
             fields = editable.fields
+            originalBody = body
+            self.body = body
             tags = editable.tags
             floor = editable.floor
             problems = []
@@ -59,7 +71,9 @@ final class CardEditModel {
         }
     }
 
-    var hasChanges: Bool { fields != nil && fields != original }
+    var hasChanges: Bool { (fields != nil && fields != original) || bodyChanged }
+
+    private var bodyChanged: Bool { body != nil && body != originalBody }
 
     /// The sensitivities it may be given, least first.
     var sensitivities: [Sensitivity] {
@@ -89,10 +103,16 @@ final class CardEditModel {
     @discardableResult
     func save() async -> Bool {
         guard let fields, hasChanges else { return true }
-        let outcome: EditOutcome?
+        var outcome: EditOutcome? = .unchanged
         switch target {
-        case .proposal(let id): outcome = try? await archive.edit(proposal: id, fields: fields)
-        case .item(let id): outcome = try? await archive.edit(item: id, fields: fields)
+        case .proposal(let id):
+            outcome = try? await archive.edit(proposal: id, fields: fields)
+        case .item(let id):
+            if fields != original { outcome = try? await archive.edit(item: id, fields: fields) }
+            if case .problems = outcome {
+            } else if outcome != nil, bodyChanged, let body {
+                outcome = try? await archive.edit(item: id, body: body)
+            }
         }
         switch outcome {
         case .problems(let problems):
@@ -111,6 +131,7 @@ final class CardEditModel {
     /// Puts the fields back as they're saved.
     func revert() {
         fields = original
+        body = originalBody
         problems = []
     }
 }

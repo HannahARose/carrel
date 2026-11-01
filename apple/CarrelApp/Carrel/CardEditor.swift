@@ -61,6 +61,25 @@ struct CardEditor: View {
                 TextField("Document", text: optional(\.dates.document), prompt: Text("YYYY-MM-DD"))
                 Problems(edit.problems(about: "date"))
             }
+            if edit.body != nil {
+                Section {
+                    TextEditor(
+                        text: Binding {
+                            edit.body ?? ""
+                        } set: {
+                            edit.body = $0
+                        }
+                    )
+                    .font(.body.monospaced())
+                    .frame(minHeight: 160)
+                } header: {
+                    Text("Notes and Body")
+                } footer: {
+                    Text(
+                        "Write anything outside Carrel’s sections, the parts between <!-- carrel:… --> markers, such as the history; they have to stay as they are."
+                    )
+                }
+            }
             Section {
                 HStack {
                     Spacer()
