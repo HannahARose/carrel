@@ -3942,7 +3942,7 @@ fn edit_body_adds_notes_keeps_carrels_sections_and_undo_reverses_it() {
     assert_eq!(report["changed"], serde_json::json!(["notes"]));
     let after = std::fs::read_to_string(&card).unwrap();
     assert!(after.contains("Bought the strip at the market."), "{after}");
-    let fields = |text: &str| text.splitn(3, "---").nth(1).unwrap().to_owned();
+    let fields = |text: &str| text.split("---").nth(1).unwrap().to_owned();
     assert_eq!(fields(&after), fields(&before), "the fields are kept");
 
     // Changing the history section is refused: the editor opens again saying so, and

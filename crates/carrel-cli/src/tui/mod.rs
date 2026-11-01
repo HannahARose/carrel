@@ -139,6 +139,15 @@ impl SessionLook {
     }
 }
 
+/// Edits the browsed item's card, its fields (`e`) or its body (`E`), in the owner's editor.
+fn edit_browsed(root: &Path, effect: &Effect) -> Result<Report, Failure> {
+    match effect {
+        Effect::EditItemBody(card) => crate::edit::edit_body(Some(root), card),
+        Effect::EditItem(card) => crate::edit::edit(Some(root), card),
+        _ => unreachable!("only the browsed item's two edits"),
+    }
+}
+
 /// Takes the terminal back after a program that needed it to itself, such as the editor,
 /// which leaves no picture behind.
 fn reenter(terminal: &mut ratatui::DefaultTerminal, painter: &mut preview::Painter) {
@@ -249,13 +258,7 @@ fn event_loop(
             Some(effect @ (Effect::EditItem(_) | Effect::EditItemBody(_))) => {
                 // The editor needs the terminal to itself.
                 leave();
-                let result = match effect {
-                    Effect::EditItemBody(card) => {
-                        crate::edit::edit_body(Some(app.archive.root()), &card)
-                    }
-                    Effect::EditItem(card) => crate::edit::edit(Some(app.archive.root()), &card),
-                    _ => unreachable!("only the two edits"),
-                };
+                let result = edit_browsed(app.archive.root(), &effect);
                 reenter(terminal, &mut painter);
                 changed(app.archive.root(), &result);
                 finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));

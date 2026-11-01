@@ -109,11 +109,11 @@ pub fn edit_body(archive: Option<&Path>, query: &str) -> Result<Report, Failure>
         match carrel_core::edit::save_body(&archive, editing, &body, holder(&identity))? {
             carrel_core::edit::Saved::Problems(problems) => {
                 // The owner's edits stay; the problems go on top, replacing earlier ones.
-                text = problems
-                    .iter()
-                    .map(|p| format!("{BODY_PROBLEM}{p} -->\n"))
-                    .collect::<String>()
-                    + &body;
+                text = String::new();
+                for problem in &problems {
+                    writeln!(text, "{BODY_PROBLEM}{problem} -->").unwrap();
+                }
+                text.push_str(&body);
             }
             outcome => break outcome,
         }
