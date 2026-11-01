@@ -1,0 +1,77 @@
+name: Performance
+
+# The performance benchmarks for the million-file scale target (crates/carrel-core/benches/scale,
+# docs/dev/development-setup.md, "Coverage and performance"). They run on each push to dev that
+# changes Rust, weekly and by hand, never for pull requests. Each run keeps its results as the
+# "scale-bench-results" artifact for 90 days and compares them with the last successful run's,
+# flagging in the job summary anything slower by more than the threshold. Report only: a
+# slower benchmark is a warning, not a failure. No external service.
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - "crates/**"
+      - Cargo.toml
+      - Cargo.lock
+      - rust-toolchain.toml
+      - .github/workflows/perf.yml
+  # Weekly, so slow drift between runs on dev also shows, on a runner image that has changed.
+  schedule:
+    - cron: "41 7 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read # check out the code
+
+concurrency:
+  # One run at a time, each to the end, so each compares with the one before.
+  group: perf
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  # A benchmark this much slower than last time is flagged, in percent. Shared runners vary
+  # by 10–20% from run to run.
+  CARREL_SCALE_THRESHOLD: "25"
+
+jobs:
+  bench:
+    name: Benchmarks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read # find and download the last run's results
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
+      - name: The last run's results
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/previous"
+          run=$(gh run list -R "$REPO" --workflow perf.yml --branch dev --status success \
+            --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+          if [ -z "$run" ]; then
+            echo "No earlier successful run on dev: nothing to compare with."
+          elif ! gh run download "$run" -R "$REPO" --name scale-bench-results \
+            --dir "$RUNNER_TEMP/previous"; then
+            echo "Run $run kept no results (or they expired): nothing to compare with."
+          fi
+      - name: Run the benchmarks
+        env:
+          CARREL_SCALE_OUT: ${{ github.workspace }}/target/scale-bench/results.json
+          CARREL_SCALE_BASELINE: ${{ runner.temp }}/previous/results.json
+        run: CARREL_SCALE_REPORT="$GITHUB_STEP_SUMMARY" cargo bench -p carrel-core --bench scale --locked
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: scale-bench-results
+          path: target/scale-bench/results.json
+          retention-days: 90
+          if-no-files-found: error

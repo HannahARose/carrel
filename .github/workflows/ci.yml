@@ -17,6 +17,8 @@ name: CI
 # - While a pull request is a draft, only the Linux jobs run: the macOS and Windows ones (and
 #   their matrix entries) wait until it's marked ready, so a session's pushes while it works
 #   don't queue for the few macOS runners. A draft can't merge, so nothing unchecked lands.
+# - Coverage, which reports and never fails on a number, waits for a ready pull request too.
+#   Performance benchmarks are their own workflow (perf.yml), on dev only.
 # - "CI passed" is the required check. It passes when every job passed or was skipped because
 #   its area didn't change, and fails if "Changes" itself failed.
 
@@ -174,6 +176,58 @@ jobs:
         with:
           save-if: ${{ needs.changes.outputs.save == 'true' }}
       - run: cargo doc --workspace --exclude carrel-provider-llama --no-deps --document-private-items --locked
+
+  coverage:
+    # Line coverage of the Rust workspace's tests on Linux, written to the job summary: the
+    # total, each crate, and the lines the change added. Report only: no number fails it, and
+    # failing tests don't either (Test reports those). It runs on ready pull requests that touch
+    # Rust, never on drafts, and on pushes to dev, which save its cache.
+    name: Coverage
+    needs: changes
+    if: >-
+      needs.changes.outputs.rust == 'true' && needs.changes.outputs.heavy == 'true'
+      && (github.event_name == 'pull_request' || needs.changes.outputs.save == 'true')
+    runs-on: ubuntu-latest
+    env:
+      # cargo-llvm-cov's release, checked against its checksum.
+      LLVM_COV_VERSION: "0.9.1"
+      LLVM_COV_SHA256: b3f68e625481fed9b16444174f3fa5ebcdbde4a1878803a35eabe2dcefcdc41a
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2 # a pull request's base, the merge's first parent
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        if: needs.changes.outputs.cache == 'true'
+        with:
+          save-if: ${{ needs.changes.outputs.save == 'true' }}
+      - run: rustup component add llvm-tools-preview
+      - name: Install cargo-llvm-cov
+        run: |
+          file="$RUNNER_TEMP/cargo-llvm-cov.tar.gz"
+          curl -sSfL -o "$file" "https://github.com/taiki-e/cargo-llvm-cov/releases/download/v$LLVM_COV_VERSION/cargo-llvm-cov-x86_64-unknown-linux-gnu.tar.gz"
+          echo "$LLVM_COV_SHA256  $file" | sha256sum -c -
+          tar -xzf "$file" -C "$HOME/.cargo/bin"
+          cargo llvm-cov --version
+      - name: Measure
+        # As the Test job runs them, without llama.cpp; the tests' own files aren't counted.
+        run: |
+          cargo llvm-cov --workspace --exclude carrel-provider-llama --locked --ignore-run-fail \
+            --ignore-filename-regex '/(tests|benches|examples)/' \
+            --lcov --output-path target/lcov.info
+      - name: Summary
+        env:
+          # A pull request's change against its base; a push reports only the totals.
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" = pull_request ]; then
+            range=(HEAD^1 HEAD)
+          else
+            range=()
+          fi
+          # The summary goes to the job summary; its ::notice line to the log, as an annotation.
+          python3 .github/scripts/coverage-summary.py target/lcov.info ${range[@]+"${range[@]}"} \
+            2>&1 >> "$GITHUB_STEP_SUMMARY"
 
   swift:
     # The Swift side: build the XCFramework and bindings, test them from Swift, check the
@@ -602,7 +656,7 @@ jobs:
     # area changed can only be skipped if "Changes" failed, which this catches.
     name: CI passed
     if: always()
-    needs: [changes, fmt, clippy, test, docs, swift, app, swift-format, mlx, llama, cad, extract, kopia, editors, deny, zizmor, hygiene]
+    needs: [changes, fmt, clippy, test, docs, coverage, swift, app, swift-format, mlx, llama, cad, extract, kopia, editors, deny, zizmor, hygiene]
     runs-on: ubuntu-latest
     steps:
       - name: Check job results

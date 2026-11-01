@@ -70,6 +70,23 @@ The costs above are paid for these:
 - **Anyone can add a provider** in any language by speaking the protocol, without building Carrel.
 - **The worker survives the terminal.** Drafting a large batch doesn't need a window to stay open, and a crash loses one item.
 
+## Work that grows with the archive
+
+The figures above don't depend on an archive's size. What does is measured by the performance benchmarks ([Development Setup](development-setup.md#coverage-and-performance)), which CI runs on each change to `dev` and compares with the last run. A first run, on 2026-11-01 on a 4-core Linux cloud machine (slower than the Mac above), with generated fixtures:
+
+| What | At the largest size | Per item |
+| --- | --- | --- |
+| Diffing two manifests of a million files | 0.82 s | 0.8 µs |
+| Parsing a million-file manifest | 0.47 s | 0.5 µs |
+| Searching the embedding index, a million 384-number vectors | 0.89 s | 0.9 µs |
+| Opening that index from disk | 0.83 s | 0.8 µs |
+| Searching the word index of a million items | 13 ms | |
+| Building that word index | 30 s | 30 µs |
+| Parsing 100,000 cards | 4.4 s | 44 µs |
+| Reading a history of 100,000 changes | 1.8 s | 18 µs |
+
+Every one grows in step with the archive, without a jump at any size. At a million items, searching by meaning by brute force takes about a second, and building the word index, done once per search process, about thirty: those are the two to watch, and the reason [`Neighbours`](https://hrose.me/carrel/carrel_core/index/trait.Neighbours.html) leaves room for an approximate index.
+
 ## Measuring it again
 
 The script below starts each installed provider ten times, times `initialize`, then sends requests to a running provider. Run it with the programs in `~/.cargo/bin` and any PDF:

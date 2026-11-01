@@ -107,7 +107,45 @@ cargo run --bin carrel -- --version
 
 ### Which CI jobs run when
 
-CI (`.github/workflows/ci.yml`) runs only what a change affects. Its first job, "Changes" (`.github/scripts/ci-changes.sh`), lists the files a pull request or push changes and says which areas they touch: Rust, the Swift package, the Mac app, the MLX provider, Swift formatting, each portable provider, Kopia backups, the editor plugins, dependencies and the workflows. Each job runs only for its own area, so a change to the docs runs Format and Docs hygiene, which always run, and nothing else. Everything runs when a workflow changes, for the weekly schedule and a manual run, and for a pull request into `main`, which also restores no caches so that a release is checked from a clean build. A push to `dev`, which is a merged pull request, runs the jobs for what that merge changed, to catch two pull requests that pass alone but not together, and it's the only run that saves caches. Once the merge queue is on ([#298](https://github.com/HannahARose/carrel/issues/298)), a queue group runs the jobs for what it changes against its base, and "CI passed" reports on it. "CI passed" is the required check: it passes when every job passed or was skipped because its area didn't change. While a pull request is a draft, only the Linux jobs run; its macOS and Windows jobs wait until it's marked ready, so pushes made while it's being worked on don't queue for the few macOS runners, and a draft can't merge. To see what a change would run, `EVENT=push BEFORE=origin/dev SHA=HEAD .github/scripts/ci-changes.sh`.
+CI (`.github/workflows/ci.yml`) runs only what a change affects. Its first job, "Changes" (`.github/scripts/ci-changes.sh`), lists the files a pull request or push changes and says which areas they touch: Rust, the Swift package, the Mac app, the MLX provider, Swift formatting, each portable provider, Kopia backups, the editor plugins, dependencies and the workflows. Each job runs only for its own area, so a change to the docs runs Format and Docs hygiene, which always run, and nothing else. Everything runs when a workflow changes, for the weekly schedule and a manual run, and for a pull request into `main`, which also restores no caches so that a release is checked from a clean build. A push to `dev`, which is a merged pull request, runs the jobs for what that merge changed, to catch two pull requests that pass alone but not together, and it's the only run that saves caches. Once the merge queue is on ([#298](https://github.com/HannahARose/carrel/issues/298)), a queue group runs the jobs for what it changes against its base, and "CI passed" reports on it. "CI passed" is the required check: it passes when every job passed or was skipped because its area didn't change. While a pull request is a draft, only the Linux jobs run; its macOS and Windows jobs wait until it's marked ready, so pushes made while it's being worked on don't queue for the few macOS runners, and a draft can't merge. Coverage, a Linux job, also waits until a pull request is ready. To see what a change would run, `EVENT=push BEFORE=origin/dev SHA=HEAD .github/scripts/ci-changes.sh`.
+
+### Coverage and performance
+
+**Coverage.** CI's "Coverage" job measures which lines of the Rust workspace its tests run, with [cargo-llvm-cov](https://github.com/taiki-e/cargo-llvm-cov), on ready pull requests that touch Rust and on pushes to `dev`. Its job summary gives the total, each crate's share, and how many of the lines the pull request added or changed are covered, listing those no test runs. It only reports: no number fails CI. To measure it locally, install `cargo-llvm-cov` (`brew install cargo-llvm-cov`, which also needs `rustup component add llvm-tools-preview`), then run it as CI does:
+
+```bash
+cargo llvm-cov --workspace --exclude carrel-provider-llama --ignore-filename-regex '/(tests|benches|examples)/' --html --open
+```
+
+For the same summary as CI, write LCOV and summarize it against `dev`:
+
+```bash
+cargo llvm-cov --workspace --exclude carrel-provider-llama --ignore-filename-regex '/(tests|benches|examples)/' --lcov --output-path target/lcov.info
+```
+
+```bash
+.github/scripts/coverage-summary.py target/lcov.info origin/dev HEAD
+```
+
+**Performance.** `crates/carrel-core/benches/scale` times the work that grows with an archive, for the scale target of a million files: card parsing (`card_parse`), manifest parsing and diffing (`manifest_parse`, `manifest_diff`), building and searching the word index (`word_index_build`, `word_search`), searching and opening the embedding index of 384-number vectors (`embedding_search`, `embedding_index_open`), and reading history (`history_log`). Each runs over generated fixtures at three sizes: up to a million items for the ones that are fast per item, and up to 100,000 for card parsing and history, whose time per item shows how they grow. It's a timing harness of its own, with no benchmarking crate: each measurement is the median of at least three runs. `cargo test` runs each once, at its smallest size, to check it still works. To run them all, which takes about ten minutes and 3 GB of memory:
+
+```bash
+cargo bench -p carrel-core --bench scale
+```
+
+Results go to `target/scale-bench/results.json`, and a table to standard output. A name after `--` runs only the benchmarks it's part of, and settings in the environment change the rest:
+
+| Setting | What it does |
+| --- | --- |
+| `cargo bench -p carrel-core --bench scale -- manifest` | Runs only benchmarks whose name contains `manifest` |
+| `CARREL_SCALE_MAX=100000` | Leaves out sizes above 100,000, for a quick run |
+| `CARREL_SCALE_SIZES=5000,50000` | Runs at these sizes instead |
+| `CARREL_SCALE_SECONDS=1` | Samples each measurement for about this long (3 by default) |
+| `CARREL_SCALE_BASELINE=old.json` | Compares with an earlier results file, flagging anything slower by more than the threshold |
+| `CARREL_SCALE_THRESHOLD=10` | The threshold, in percent (25 by default) |
+| `CARREL_SCALE_OUT`, `CARREL_SCALE_REPORT` | Where to write the results and to append the Markdown report |
+
+To check a change, copy `target/scale-bench/results.json` aside on `dev`, then run with `CARREL_SCALE_BASELINE` set to the copy on your branch. CI's "Performance" workflow (`.github/workflows/perf.yml`) runs them on each push to `dev` that changes Rust, weekly and by hand, keeps each run's results as an artifact for 90 days, and compares them with the last run's in its job summary, flagging what got slower by more than 25%, with a warning but no failure. Shared runners vary by 10–20% from run to run, so rerun before chasing a single flag. On the owner's Macs, don't run them while `carrel bench` is running.
 
 ### The Swift package
 
@@ -178,6 +216,7 @@ gh auth status
 | Tool | Install | Needed from |
 | --- | --- | --- |
 | `cargo-deny` (dependency checks: `cargo deny check`) | `brew install cargo-deny` | [#40](https://github.com/HannahARose/carrel/issues/40) |
+| `cargo-llvm-cov` (coverage: see [Coverage and performance](#coverage-and-performance)) | `brew install cargo-llvm-cov` and `rustup component add llvm-tools-preview` | [#48](https://github.com/HannahARose/carrel/issues/48) |
 | `zizmor` and `actionlint` (workflow checks: `zizmor .` and `actionlint`) | `brew install zizmor actionlint` | [#40](https://github.com/HannahARose/carrel/issues/40) |
 | `cmake` (builds llama.cpp for `carrel-provider-llama`; its tests take a model folder in `CARREL_TEST_LLAMA_MODELS`) | `brew install cmake` | [#87](https://github.com/HannahARose/carrel/issues/87) |
 | `typos`, `markdownlint-cli2` and `lychee` (docs checks: `typos`, `markdownlint-cli2`, `lychee --offline README.md FORMAT.md`) | `brew install typos-cli markdownlint-cli2 lychee` | [#41](https://github.com/HannahARose/carrel/issues/41) |
