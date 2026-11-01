@@ -193,6 +193,10 @@ pub struct Prefs {
     /// name, or `off`. Unset, a recommended model that's installed, if there is one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub second_model: Option<String>,
+    /// The text model the librarian runs on, as `provider/offer`. Unset, the strongest this
+    /// device has (`docs/design/librarian.md`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub librarian_model: Option<String>,
     /// How the interactive mode shows item previews in the terminal: `off`, a protocol
     /// (`kitty`, `iterm2` or `sixel`) for a terminal that isn't recognised, or unset (`auto`)
     /// to show them when the terminal is known to draw images.

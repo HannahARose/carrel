@@ -15,7 +15,14 @@ use crate::picker::{BUILT_IN, Choice, KNOWN, choose};
 use crate::{Failure, Report};
 
 /// This device's preferences that `carrel settings set` changes.
-pub const DEVICE_KEYS: [&str; 5] = ["picker", "editor", "model", "second_model", "previews"];
+pub const DEVICE_KEYS: [&str; 6] = [
+    "picker",
+    "editor",
+    "model",
+    "second_model",
+    "librarian.model",
+    "previews",
+];
 
 /// The values of the `previews` preference: `auto` shows previews where the terminal is known
 /// to draw images, `off` never does, and a protocol's name uses it whatever the terminal.
@@ -59,6 +66,19 @@ pub fn second_line(setting: Option<&str>) -> String {
     }
 }
 
+/// The model the librarian runs on, and why, for people.
+pub fn librarian_line(setting: Option<&str>) -> String {
+    let (registry, _) = crate::providers::registry();
+    let chosen = carrel_core::librarian::model::choose(&registry, setting, crate::ask::memory_gb());
+    match (setting, chosen) {
+        (_, Ok(None)) => "none available (see `carrel models`)".into(),
+        (Some(_), Ok(Some(m))) => format!("{} (your choice)", m.label),
+        (None, Ok(Some(m))) => format!("{} (the strongest on this device)", m.label),
+        (Some(chosen), Err(_)) => format!("none ({chosen} is chosen but isn't available)"),
+        (None, Err(e)) => e,
+    }
+}
+
 /// The file picker in use, and why, for people.
 #[must_use]
 pub fn picker_line(preference: Option<&str>) -> String {
@@ -93,6 +113,8 @@ pub fn list(archive: Option<&Path>) -> Result<Report, Failure> {
     writeln!(text, "  model   {model}").unwrap();
     let second = second_line(prefs.second_model.as_deref());
     writeln!(text, "  second  {second}").unwrap();
+    let librarian = librarian_line(prefs.librarian_model.as_deref());
+    writeln!(text, "  librarian.model  {librarian}").unwrap();
     let previews = previews_line(prefs.previews.as_deref());
     writeln!(text, "  previews {previews}").unwrap();
     let missing: Vec<String> = KNOWN
@@ -124,6 +146,8 @@ pub fn list(archive: Option<&Path>) -> Result<Report, Failure> {
                 "model_in_use": model,
                 "second_model": prefs.second_model,
                 "second_in_use": second,
+                "librarian.model": prefs.librarian_model,
+                "librarian_in_use": librarian,
                 "previews": prefs.previews,
             },
             "archive": Key::ALL.iter().map(|k| (k.as_str().to_owned(), json!(k.get(settings)))).collect::<serde_json::Map<_, _>>(),
@@ -170,6 +194,13 @@ pub fn set(archive: Option<&Path>, key: &str, value: &str) -> Result<Report, Fai
                     stored = Some(crate::providers::resolve_model(&registry, name)?.name());
                 }
                 prefs.second_model.clone_from(&stored);
+            }
+            "librarian.model" => {
+                if let Some(name) = &stored {
+                    let (registry, _) = crate::providers::registry();
+                    stored = Some(crate::providers::resolve_model(&registry, name)?.name());
+                }
+                prefs.librarian_model.clone_from(&stored);
             }
             _ => prefs.editor.clone_from(&stored),
         }
