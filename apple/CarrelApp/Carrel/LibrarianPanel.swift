@@ -172,7 +172,7 @@ private struct LibrarianNoModel: View {
                 if let instead = choice.instead {
                     Button("Use \(instead)") { Task { await librarian.useStrongest() } }
                 }
-                SettingsLink { Text("Models Settings…") }
+                OpenSettingsButton(title: "Models Settings…")
             }
             if librarian.archive.isWorking, let progress = librarian.archive.progress {
                 ProgressView(progress.title, value: progress.fraction)

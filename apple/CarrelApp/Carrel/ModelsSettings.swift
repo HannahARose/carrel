@@ -2,7 +2,6 @@
 // sizes, memory needs and licenses, downloading or deleting one after a confirmation, as
 // `carrel models` does.
 
-import AppKit
 import CarrelKit
 import SwiftUI
 
@@ -24,7 +23,7 @@ struct ModelsTab: View {
             if let folder {
                 Section {
                     Button("Show Models Folder", systemImage: "folder") {
-                        NSWorkspace.shared.activateFileViewerSelecting([folder])
+                        revealInFiles([folder])
                     }
                     .disabled(
                         !FileManager.default.fileExists(atPath: folder.path(percentEncoded: false)))

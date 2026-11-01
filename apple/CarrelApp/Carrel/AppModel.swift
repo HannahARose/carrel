@@ -1,9 +1,12 @@
 // What the app keeps between windows: recent archives, the archive last in front (for
 // Settings), and opening and creating archives.
 
-import AppKit
 import CarrelKit
 import Observation
+
+#if os(macOS)
+import AppKit
+#endif
 
 /// The archives opened most recently, newest first, kept in the app's defaults.
 @Observable
@@ -52,6 +55,9 @@ final class AppModel {
     var pendingLink: AgentLink?
     /// A screen for an archive's window to show, such as Backups from Settings.
     var pendingScreen: PendingScreen?
+    /// Why an archive couldn't be opened, until it's dismissed: on iPad and iPhone, which show
+    /// it in the window rather than in an alert of its own.
+    var openingProblem: String?
 
     init(recents: RecentArchives = RecentArchives()) {
         self.recents = recents
@@ -86,7 +92,7 @@ final class AppModel {
             if !FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) {
                 recents.remove(url)
             }
-            Self.report(error, opening: url)
+            report(error, opening: url)
         }
     }
 
@@ -125,6 +131,7 @@ final class AppModel {
         return link
     }
 
+    #if os(macOS)
     func chooseArchive(then show: (URL) -> Void) {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
@@ -149,18 +156,24 @@ final class AppModel {
         do {
             show(try create(at: url, embeddingModel: models.chosen))
         } catch {
-            Self.report(error, opening: url)
+            report(error, opening: url)
         }
     }
 
-    private static func report(_ error: any Error, opening url: URL) {
+    private func report(_ error: any Error, opening url: URL) {
         let alert = NSAlert()
         alert.messageText = "Carrel can’t open “\(url.lastPathComponent)”"
         alert.informativeText = message(for: error)
         alert.runModal()
     }
+    #else
+    private func report(_ error: any Error, opening url: URL) {
+        openingProblem = "Carrel can’t open “\(url.lastPathComponent)”: \(message(for: error))"
+    }
+    #endif
 }
 
+#if os(macOS)
 /// New Archive's choice of embedding model, as `carrel init --embedding-model` takes it, for
 /// the save panel's accessory view.
 @MainActor
@@ -182,6 +195,7 @@ final class EmbeddingModelPicker {
     /// The model chosen.
     var chosen: String? { popUp.titleOfSelectedItem }
 }
+#endif
 
 /// What went wrong, in the core's own words for the core's errors.
 func message(for error: any Error) -> String {

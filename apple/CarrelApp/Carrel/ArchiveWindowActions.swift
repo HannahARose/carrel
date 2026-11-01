@@ -2,7 +2,6 @@
 // by dropping them on the window or with File → Add to Archive… (⌘O), and watching the
 // worker draft them.
 
-import AppKit
 import CarrelKit
 import SwiftUI
 
@@ -88,15 +87,11 @@ struct ArchiveWindowCommands: Commands {
             Divider()
             Button("Add to Archive…") {
                 guard let intake = window?.intake else { return }
-                let panel = NSOpenPanel()
-                panel.canChooseFiles = true
-                panel.canChooseDirectories = true
-                panel.allowsMultipleSelection = true
-                panel.message = "Choose files and folders to add to the intake queue."
-                panel.prompt = "Add"
-                guard panel.runModal() == .OK else { return }
-                let urls = panel.urls
-                Task { await intake.add(urls) }
+                FileChoosing.shared.choose(
+                    .init(
+                        folders: true, files: true, multiple: true, prompt: "Add",
+                        message: "Choose files and folders to add to the intake queue."
+                    ) { urls in Task { await intake.add(urls) } })
             }
             .keyboardShortcut("o")
             .disabled(window?.intake == nil || window?.isReadOnly != false)

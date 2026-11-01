@@ -69,7 +69,10 @@ private struct IndexSection: View {
                 Button(index.rebuilding ? "Carry On Rebuilding" : "Rebuild Index") {
                     Task { await model.rebuildIndex() }
                 }
-                .disabled(model.isWorking)
+                .disabled(model.isWorking || PowerPolicy.heavyWorkWaits != nil)
+                if let waits = PowerPolicy.heavyWorkWaits {
+                    Text(waits).foregroundStyle(.secondary)
+                }
             }
         } header: {
             Text("Search by meaning in “\(model.archive?.name ?? "")”")

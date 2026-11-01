@@ -1,6 +1,7 @@
 // Settings → Backups: where the archive's backups stand on this Mac, with a button to the
 // Backups screen, which sets them up, takes snapshots, checks and restores them.
 
+#if os(macOS)
 import CarrelKit
 import SwiftUI
 
@@ -53,3 +54,4 @@ struct BackupsSettingsTab: View {
         return state.reachable ? "Set up" : "Set up; the drive isn’t connected"
     }
 }
+#endif

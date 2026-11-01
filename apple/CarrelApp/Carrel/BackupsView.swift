@@ -2,6 +2,7 @@
 // and Set Up, Snapshot Now and Verify in the toolbar. The inspector shows the chosen snapshot's
 // change, with Restore.
 
+#if os(macOS)
 import AppKit
 import CarrelKit
 import SwiftUI
@@ -301,3 +302,4 @@ private struct RestoreItemSheet: View {
         if panel.runModal() == .OK, let url = panel.url { place = url }
     }
 }
+#endif

@@ -1,9 +1,14 @@
 // The Mac app: one window per archive, a welcome window when none is open, and Settings. As the
 // host of the unit tests it's a bare app instead, with no windows, decision log or real defaults.
+// On iPad and iPhone it's one window, showing the archive that's open or the archives to choose
+// from (`MobileRoot`), with work in the background through `BackgroundWork`.
 
-import AppKit
 import CarrelKit
 import SwiftUI
+
+#if os(macOS)
+import AppKit
+#endif
 
 @main
 enum CarrelMain {
@@ -13,9 +18,13 @@ enum CarrelMain {
     }
 
     static func main() {
+        #if os(macOS)
         guard isHostingTests else { return CarrelApp.main() }
         NSApplication.shared.setActivationPolicy(.prohibited)
         NSApplication.shared.run()
+        #else
+        CarrelApp.main()
+        #endif
     }
 }
 
@@ -36,8 +45,26 @@ struct CarrelApp: App {
     init() {
         // This device's decision log for the usage report, unless `report.log` is off.
         startDecisionLog()
+        #if os(iOS)
+        // Background tasks are registered before the app finishes launching.
+        BackgroundWork.register()
+        #endif
     }
 
+    #if os(iOS)
+    var body: some Scene {
+        WindowGroup {
+            MobileRoot()
+                .environment(app)
+        }
+        .commands {
+            ReviewCommands()
+            ActiveCommands()
+            BrowseCommands()
+            LibrarianCommands()
+        }
+    }
+    #else
     var body: some Scene {
         Window("Welcome to Carrel", id: WelcomeView.windowID) {
             WelcomeView()
@@ -68,8 +95,10 @@ struct CarrelApp: App {
                 .environment(app)
         }
     }
+    #endif
 }
 
+#if os(macOS)
 /// File menu commands for opening and creating archives.
 struct ArchiveCommands: Commands {
     let app: AppModel
@@ -96,3 +125,4 @@ struct ArchiveCommands: Commands {
         openWindow(id: ArchiveWindow.windowID, value: root)
     }
 }
+#endif

@@ -33,7 +33,7 @@ struct SearchResultsView: View {
                     Label(notice, systemImage: "info.circle")
                         .foregroundStyle(.secondary)
                     if search.results?.missingModel != nil {
-                        SettingsLink { Text("Download It in Settings…") }
+                        OpenSettingsButton(title: "Download It in Settings…")
                     }
                 }
             }

@@ -3,7 +3,6 @@
 // work on every system, with the name to rename them to; signs the structure needs a
 // restructure; and the desk's suggestions, folders to put on it and items to archive.
 
-import AppKit
 import CarrelKit
 import SwiftUI
 

@@ -10,8 +10,12 @@ struct ArchiveWindow: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismissWindow) private var dismissWindow
     @Environment(\.openWindow) private var openWindow
+    #if os(macOS)
     @Environment(\.openSettings) private var openSettings
     @Environment(\.controlActiveState) private var activeState
+    #else
+    @Environment(MobileLibrary.self) private var library
+    #endif
     @State private var model: ArchiveWindowModel
 
     init(url: URL) {
@@ -23,6 +27,9 @@ struct ArchiveWindow: View {
         NavigationSplitView {
             ArchiveSidebar(model: model)
                 .navigationSplitViewColumnWidth(min: 180, ideal: 220)
+                #if os(iOS)
+                .mobileArchiveToolbar(model)
+                #endif
         } content: {
             ArchiveScreenContent(model: model)
                 .navigationSplitViewColumnWidth(min: 260, ideal: 340)
@@ -34,9 +41,11 @@ struct ArchiveWindow: View {
         .browseSheets(model.browse)
         .librarianPanel(model)
         .navigationTitle(model.name)
+        #if os(macOS)
         .navigationSubtitle(
             model.isReadOnly ? "\(model.screenTitle) · Read only" : model.screenTitle
         )
+        #endif
         .overlay {
             if let problem = model.problem {
                 ContentUnavailableView {
@@ -54,7 +63,9 @@ struct ArchiveWindow: View {
         .archiveErrorAlert(model.archive)
         .focusedSceneValue(model)
         .task {
+            #if os(macOS)
             dismissWindow(id: WelcomeView.windowID)
+            #endif
             await model.load()
             choosePendingItem()
         }
@@ -62,6 +73,7 @@ struct ArchiveWindow: View {
         .onChange(of: app.pendingScreen, initial: true) {
             if let screen = app.takePendingScreen(for: model.root) { model.screen = screen }
         }
+        #if os(macOS)
         .handlesExternalEvents(preferring: [AgentLink.scheme], allowing: [AgentLink.scheme])
         .onOpenURL { url in
             app.open(link: url) { openWindow(id: Self.windowID, value: $0) }
@@ -69,6 +81,9 @@ struct ArchiveWindow: View {
         .onChange(of: activeState, initial: true) {
             if activeState == .key { app.activeArchive = model.root }
         }
+        #else
+        .onAppear { app.activeArchive = model.root }
+        #endif
     }
 }
 
@@ -81,7 +96,11 @@ extension ArchiveWindow {
         guard model.handle != nil, let link = app.takePendingLink(for: model.root) else { return }
         if let screen = link.screen {
             model.show(linked: screen)
+            #if os(macOS)
             if screen == .settings { openSettings() }
+            #else
+            if screen == .settings { library.showingSettings = true }
+            #endif
         }
         guard let item = link.item else { return }
         if link.action == nil, model.archive?.active.contains(where: { $0.id == item }) == false {
@@ -228,7 +247,15 @@ struct ArchiveScreenContent: View {
         case .history:
             if let history = model.historyScreen { HistoryView(model: history) }
         case .backups:
+            #if os(macOS)
             if let backups = model.backups { BackupsView(backups: backups) }
+            #else
+            ContentUnavailableView(
+                "Backups Are Made on a Mac", systemImage: "externaldrive.badge.timemachine",
+                description: Text(
+                    "Kopia, which takes the archive’s snapshots, runs only on a Mac. What’s replaced here is kept in the archive’s holding folder until a Mac snapshots it."
+                ))
+            #endif
         case .discover(let page):
             if let discover = model.discover {
                 DiscoverView(page: page, discover: discover, window: model)
@@ -267,10 +294,12 @@ private struct Inspector: View {
             ActiveInspector(model: active)
         } else if model.screen == .history, let history = model.historyScreen {
             ChangeInspector(model: history) { id in model.items.first { $0.id == id }?.title }
-        } else if model.screen == .backups, let backups = model.backups,
+        } else if isMac, model.screen == .backups, let backups = model.backups,
             let change = backups.selected
         {
+            #if os(macOS)
             BackupInspector(change: change, backups: backups, items: model.items)
+            #endif
         } else if let item = model.selectedItem {
             if let edit = model.editing, edit.target == .item(item.id) {
                 ItemEditor(item: item, edit: edit, items: model.items) { model.editing = nil }

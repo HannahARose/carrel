@@ -3,7 +3,6 @@
 // browser to edit and submit there; Carrel never sends it. The issue's address, once given
 // back, marks the gap as reported. Report a Missing Feature… records one in the owner's words.
 
-import AppKit
 import CarrelKit
 import SwiftUI
 
@@ -154,7 +153,7 @@ struct GapReportSheet: View {
             guard let draft = try await window.archive?.gapIssueDraft(gap.number, added: added),
                 let url = URL(string: draft.url)
             else { return }
-            NSWorkspace.shared.open(url)
+            openExternally(url)
         } catch {
             problem = error.localizedDescription
         }
