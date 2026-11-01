@@ -417,7 +417,31 @@ Each change says why and which items it changes. **Tags you wrote yourself stay 
 
 Approve it all with `carrel restructure tags approve`, part of it with `--only 1,3` (the changes' numbers), or none with `carrel restructure tags reject`. Approving rewrites the cards and the vocabularies in `ARCHIVE.md` and each `_collection.md` (noting it in the collection's changelog) as **one change in History**, so `carrel undo` puts everything back at once. A vocabulary keeps a tag that items left alone still use. Changes are applied to the archive as it is when you approve: a card you've changed since is left alone and reported.
 
-The proposal waits in `_System/queue/proposals/` until you decide, and proposing again replaces it. Restructuring whole sections, moving items and collections, comes next in v0.7, as do tag proposals in the interactive mode (#326) and the Mac app (#327).
+The proposal waits in `_System/queue/proposals/` until you decide, and proposing again replaces it. Tag proposals in the interactive mode (#326) and the Mac app (#327) come later in v0.7.
+
+### Reorganizing a section
+
+Filing puts each item where it fits best today, but an archive's shape drifts: a collection fills up with dozens of loose items, Holding gathers what didn't fit, a collection is left with two items that belong elsewhere. `carrel restructure propose Reading` proposes a better shape for Reading and everything in it; leave out the collection for the whole archive. Nothing changes until you approve.
+
+- **What it can propose:** a new subcollection for items that belong together (subdividing), a new collection gathering items from Holding or from several branches, merging a small collection into the one its items belong with, renaming a collection whose name no longer fits, and rewriting the design documents that name the new collections.
+- **What it never does:** it never enters a sealed bundle (bundles move whole), never moves a checked-out item or a collection holding one, never deletes anything, and leaves the fields you wrote alone.
+- **How it decides:** items are grouped by meaning (the meaning index) and by the tags, links and work sessions they share. A group becomes a change only when its benefit (how alike its items are, items leaving Holding or an uncertain place, relief for a crowded collection) beats its cost (each move weighted by how invasive it is, more for a section restructured recently) by the margin your eagerness asks for. With a text model on the device, the model names the new collections and writes the rationale, and the **findability test** checks the new shape: held-out cards are looked for by walking the tree from their summaries alone, and the proposal goes forward only if they're found more often than now. Without one, the names are plain ones from the groups' tags and the proposal says it's untested.
+- **Reading it:** each change says why, and the changes are grouped by how invasive they are, from rewriting design documents through subdividing and renaming to moving items between branches and moving top-level collections. The proposal gives its rationale, cost, benefit and findability result, and lists what it held back and why.
+
+Approve it all with `carrel restructure approve`, or part of it with `--only 1,2`: a change that needs one you left out (moving items into a collection you didn't create, say) is dropped too, and Carrel says so. Approving takes a backup snapshot first when backups are set up, applies the changes to the archive as it is then (an item checked out or moved since is left alone and reported), rewrites links to the moved cards and rebuilds the listings, and records it all as **one change in History**, so `carrel undo` puts every item, folder, design document and link back.
+
+### How eager Carrel is to rearrange
+
+Some people want the organization refined even when that means moving a lot; others have learned where things are and would rather it stayed put. `restructure.eagerness` says which:
+
+| | Settled | Balanced (default) | Eager |
+| --- | --- | --- | --- |
+| Gain needed to move items between branches | large (0.3) | clear (0.15) | any real gain |
+| Gain needed to subdivide | modest (0.15) | small (0.075) | any real gain |
+| Extra cost in a section restructured recently | heavy (0.5), for a year | moderate (0.2), for 90 days | light (0.05), for 30 days |
+| Items moved between branches per proposal | at most 10 | as many as the gain justifies | as many as the gain justifies |
+
+Set it for the archive with `carrel settings set restructure.eagerness settled`, or for one collection and everything in it with `carrel restructure eagerness Reading settled` (stored in its `_collection.md`, so a collection you know by heart can stay still while a messy one gets tidied; `default` clears it). The numbers behind the levels are settings too (`restructure.margin`, `restructure.stability_penalty`, `restructure.stability_days`, `restructure.move_budget`; `default` puts one back to its level's). Eagerness changes how readily Carrel proposes, never whether it asks: every restructure waits for your approval, and even Eager won't propose a shape the findability test finds harder to navigate.
 
 ### The crawler
 

@@ -12,6 +12,7 @@
 //! in `librarian.yaml`, and [`question_value`] measures which questions, once answered, improve
 //! routing most, and how well the question queue's ranking predicts it.
 
+pub mod crawl;
 pub mod findability;
 pub mod librarian;
 pub mod question_value;

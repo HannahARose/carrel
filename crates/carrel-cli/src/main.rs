@@ -9,6 +9,7 @@ mod ask;
 mod asking;
 mod backup;
 mod bench;
+mod bench_crawl;
 mod bench_librarian;
 mod bench_questions;
 mod checkout;
@@ -32,6 +33,7 @@ mod providers;
 mod questions;
 mod related;
 mod restructure;
+mod restructure_sections;
 mod review;
 mod search;
 mod sessions;
@@ -292,8 +294,9 @@ enum Command {
         action: Option<QuestionsAction>,
     },
     /// Restructure proposals: changes to how the archive is organized, reviewed and approved
-    /// all, in part or not at all, and undone as one change. `tags` merges synonym tags,
-    /// splits overloaded ones and retires rare ones, with no files moved.
+    /// all, in part or not at all, and undone as one change. `propose` suggests a better shape
+    /// for a collection or the whole archive; `tags` merges synonym tags, splits overloaded
+    /// ones and retires rare ones, with no files moved.
     Restructure {
         #[command(subcommand)]
         action: RestructureAction,
@@ -319,6 +322,50 @@ enum Command {
 
 #[derive(Debug, Clone, Subcommand)]
 enum RestructureAction {
+    /// Propose a better shape for a collection and everything in it, or the whole archive:
+    /// new subcollections, items moved to where they belong, small collections merged, and
+    /// design documents rewritten. Sealed bundles move whole and are never entered;
+    /// checked-out items stay put. How readily it proposes follows `restructure.eagerness`.
+    Propose {
+        /// The collection, such as Reading or Projects/Hardware; the whole archive if left out.
+        collection: Option<String>,
+        /// Build it from the numbers alone, without a text model: plain names, and the
+        /// findability test left for a device with a model.
+        #[arg(long)]
+        no_model: bool,
+    },
+    /// List the restructure proposals waiting, tag proposals too.
+    List,
+    /// Show a proposal: its rationale, cost, benefit and findability result, and each change,
+    /// grouped by how invasive it is, with why.
+    Show {
+        /// The proposal, if more than one is waiting: its identifier, or its start or end.
+        id: Option<String>,
+    },
+    /// Apply the proposal, or only some of its changes, as one change undo reverses, after a
+    /// backup snapshot when it moves files.
+    Approve {
+        /// The proposal, if more than one is waiting.
+        id: Option<String>,
+        /// Only these changes, by number, such as 1,3. Changes that need one left out are
+        /// dropped too, and said so.
+        #[arg(long, value_name = "N,…", value_delimiter = ',')]
+        only: Vec<String>,
+    },
+    /// Drop the proposal, changing nothing.
+    Reject {
+        /// The proposal, if more than one is waiting.
+        id: Option<String>,
+    },
+    /// How eager Carrel is to rearrange, archive-wide or at a collection, and the numbers that
+    /// stand for it. With a level, sets a collection's own in its design document; `default`
+    /// clears it so the archive's applies.
+    Eagerness {
+        /// The collection; the archive if left out.
+        collection: Option<String>,
+        /// settled, balanced, eager or default.
+        level: Option<String>,
+    },
     /// Tag proposals: merge tags that mean the same thing, split a tag spread over items that
     /// don't belong together, and retire tags hardly used. Tags you wrote yourself stay.
     /// Without a subcommand, makes a proposal.
@@ -1249,7 +1296,30 @@ fn restructure_command(
     archive: Option<&std::path::Path>,
     action: RestructureAction,
 ) -> Result<Report, Failure> {
-    let RestructureAction::Tags { action } = action;
+    let action = match action {
+        RestructureAction::Propose {
+            collection,
+            no_model,
+        } => return restructure_sections::propose(archive, collection.as_deref(), no_model),
+        RestructureAction::List => return restructure_sections::list(archive),
+        RestructureAction::Show { id } => {
+            return restructure_sections::show(archive, id.as_deref());
+        }
+        RestructureAction::Approve { id, only } => {
+            return restructure_sections::approve(archive, id.as_deref(), &only);
+        }
+        RestructureAction::Reject { id } => {
+            return restructure_sections::reject(archive, id.as_deref());
+        }
+        RestructureAction::Eagerness { collection, level } => {
+            return restructure_sections::eagerness(
+                archive,
+                collection.as_deref(),
+                level.as_deref(),
+            );
+        }
+        RestructureAction::Tags { action } => action,
+    };
     match action.unwrap_or(RestructureTagsAction::Propose) {
         RestructureTagsAction::Propose => restructure::propose_tags(archive),
         RestructureTagsAction::Show { id } => restructure::show_tags(archive, id.as_deref()),
@@ -1288,9 +1358,14 @@ fn changes_archive(command: &Command) -> bool {
         | Command::Return { .. }
         | Command::Collection { .. } => true,
         Command::Settings { action } => matches!(action, Some(SettingsAction::Set { .. })),
-        Command::Restructure {
-            action: RestructureAction::Tags { action },
-        } => matches!(action, Some(RestructureTagsAction::Approve { .. })),
+        Command::Restructure { action } => matches!(
+            action,
+            RestructureAction::Approve { .. }
+                | RestructureAction::Eagerness { level: Some(_), .. }
+                | RestructureAction::Tags {
+                    action: Some(RestructureTagsAction::Approve { .. })
+                }
+        ),
         Command::Review { action, .. } => !matches!(
             action,
             None | Some(ReviewAction::List { .. } | ReviewAction::Show { .. })

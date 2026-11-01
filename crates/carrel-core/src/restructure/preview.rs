@@ -60,8 +60,8 @@ pub fn preview(graph: &Graph, proposal: &Proposal, approved: &[String]) -> Previ
     let touched_tags = mentioned_tags(proposal);
     let collections: BTreeSet<String> = graph.collections.iter().map(|c| c.path.clone()).collect();
     let tags_before = count_tags(&tags, &touched_tags);
-    let after_placements = placements.clone();
-    let after_collections = collections.clone();
+    let mut after_placements = placements.clone();
+    let mut after_collections = collections.clone();
     for change in proposal.changes.iter().filter(|c| approved.contains(&c.id)) {
         let items: Vec<Id> = change.items.iter().map(|t| t.id).collect();
         match &change.change {
@@ -92,6 +92,24 @@ pub fn preview(graph: &Graph, proposal: &Proposal, approved: &[String]) -> Previ
                     }
                 }
             }
+            Edit::CreateCollection { path, .. } => {
+                after_collections.insert(path.clone());
+            }
+            Edit::MoveItems { to } => {
+                for id in &items {
+                    if let Some(place) = after_placements.get_mut(id) {
+                        place.clone_from(to);
+                    }
+                }
+            }
+            Edit::RenameCollection { from, to } => {
+                rehome(&mut after_collections, &mut after_placements, from, to);
+            }
+            Edit::MergeCollection { from, into } => {
+                rehome(&mut after_collections, &mut after_placements, from, into);
+                after_collections.insert(into.clone());
+            }
+            Edit::RewriteDesign { .. } => {}
         }
     }
     Preview {
@@ -99,6 +117,34 @@ pub fn preview(graph: &Graph, proposal: &Proposal, approved: &[String]) -> Previ
         after: sides(&after_collections, &after_placements, &collections),
         tags_before,
         tags_after: count_tags(&tags, &touched_tags),
+    }
+}
+
+/// Moves the collection at `from`, everything under it and its items, to `to`, in `collections`
+/// and `placements`.
+fn rehome(
+    collections: &mut BTreeSet<String>,
+    placements: &mut BTreeMap<Id, String>,
+    from: &str,
+    to: &str,
+) {
+    let moved = |path: &str| {
+        if path == from {
+            Some(to.to_owned())
+        } else {
+            path.strip_prefix(from)
+                .and_then(|rest| rest.strip_prefix('/'))
+                .map(|rest| format!("{to}/{rest}"))
+        }
+    };
+    *collections = collections
+        .iter()
+        .map(|path| moved(path).unwrap_or_else(|| path.clone()))
+        .collect();
+    for place in placements.values_mut() {
+        if let Some(new) = moved(place) {
+            *place = new;
+        }
     }
 }
 
@@ -135,6 +181,11 @@ fn mentioned_tags(proposal: &Proposal) -> BTreeSet<String> {
             Edit::RetireTag { tag } => {
                 found.insert(tag.0.clone());
             }
+            Edit::CreateCollection { .. }
+            | Edit::MoveItems { .. }
+            | Edit::RenameCollection { .. }
+            | Edit::MergeCollection { .. }
+            | Edit::RewriteDesign { .. } => {}
         }
     }
     found
@@ -251,5 +302,67 @@ mod tests {
         assert_eq!(both.before, both.after, "tags move no files");
         assert_eq!(both.before[0].items, 2);
         assert!(!both.before[0].changed);
+    }
+
+    #[test]
+    fn section_changes_move_items_and_collections_after() {
+        let (a, b, c) = (Id::new_v7(), Id::new_v7(), Id::new_v7());
+        let collection = |path: &str, items| CollectionNode {
+            path: path.into(),
+            title: path.into(),
+            description: None,
+            items,
+        };
+        let graph = Graph {
+            items: vec![
+                item(a, "Finances", &[]),
+                item(b, "Finances", &[]),
+                item(c, "Old/Notes", &[]),
+            ],
+            collections: vec![
+                collection("Finances", 2),
+                collection("Old", 0),
+                collection("Old/Notes", 1),
+            ],
+            edges: Vec::new(),
+        };
+        let mut proposal = Proposal::new(ProposalKind::Tags, "");
+        proposal.changes = vec![
+            change(
+                "1",
+                Edit::CreateCollection {
+                    path: "Finances/Receipts".into(),
+                    description: "Receipts".into(),
+                },
+                &[],
+            ),
+            change(
+                "2",
+                Edit::MoveItems {
+                    to: "Finances/Receipts".into(),
+                },
+                &[a],
+            ),
+            change(
+                "3",
+                Edit::RenameCollection {
+                    from: "Old".into(),
+                    to: "Archive".into(),
+                },
+                &[],
+            ),
+        ];
+        let all: Vec<String> = ["1", "2", "3"].map(String::from).to_vec();
+        let shown = preview(&graph, &proposal, &all);
+        let after: BTreeMap<&str, (usize, bool)> = shown
+            .after
+            .iter()
+            .map(|c| (c.path.as_str(), (c.items, c.changed)))
+            .collect();
+        assert_eq!(after.get("Finances"), Some(&(1, false)));
+        assert_eq!(after.get("Finances/Receipts"), Some(&(1, true)));
+        assert_eq!(after.get("Archive/Notes"), Some(&(1, true)));
+        assert!(!after.contains_key("Old"));
+        assert!(shown.before.iter().any(|c| c.path == "Old" && c.changed));
     }
 }
