@@ -2,6 +2,8 @@
 //! model, run by the core ([`carrel_core::librarian`]), as `carrel ask` runs it. The app keeps
 //! a [`LibrarianConversation`] while its panel is open, asks with
 //! [`ArchiveHandle::ask_librarian`], and saves it to the Journal only when the owner says so.
+//! Each question may say what the owner is looking at ([`LibrarianAbout`]), the selection
+//! the panel's "About:" chip follows, so "this" and "here" mean it.
 //!
 //! Also here: the librarian's own changes, when `librarian.changes` lets it make them, listed
 //! and undone together as `carrel log --librarian` and `carrel undo --librarian` do.
@@ -50,6 +52,47 @@ impl From<&ItemLink> for LibrarianItem {
             collection: link.collection.clone(),
             sensitivity: link.sensitivity.into(),
         }
+    }
+}
+
+/// What the owner is looking at as they ask, so "this" and "here" mean it
+/// ([`core::About`]).
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
+pub enum LibrarianAbout {
+    /// An item.
+    Item {
+        /// Its identifier, or its card's path.
+        id: String,
+    },
+    /// A collection.
+    Collection {
+        /// Its path.
+        path: String,
+    },
+    /// What a search found.
+    Search {
+        /// Its words and filters.
+        query: String,
+    },
+    /// A Discover view.
+    Discover {
+        /// Its name, such as "on this day".
+        view: String,
+    },
+}
+
+impl LibrarianAbout {
+    /// As the core has it, the item found by its identifier or card.
+    fn in_core(&self, archive: &carrel_core::archive::Archive) -> Result<core::About, CarrelError> {
+        Ok(match self {
+            Self::Item { id } => match core::About::find(archive, id) {
+                Ok(about @ core::About::Item(_)) => about,
+                _ => return Err(CarrelError::invalid(format!("there's no item {id}"))),
+            },
+            Self::Collection { path } => core::About::Collection(path.clone()),
+            Self::Search { query } => core::About::Search(query.clone()),
+            Self::Discover { view } => core::About::Discover(view.clone()),
+        })
     }
 }
 
@@ -196,6 +239,8 @@ pub struct LibrarianSuggestion {
 pub struct LibrarianAnswer {
     /// The question.
     pub question: String,
+    /// What the owner was looking at when they asked, in words, if the question said.
+    pub about: Option<String>,
     /// The answer, then anything it suggests looking at.
     pub text: String,
     /// The items it's about.
@@ -222,6 +267,7 @@ impl From<&core::Answer> for LibrarianAnswer {
     fn from(answer: &core::Answer) -> Self {
         Self {
             question: answer.question.clone(),
+            about: answer.about.clone(),
             text: answer.text.clone(),
             items: answer.items.iter().map(Into::into).collect(),
             passages: answer
@@ -455,16 +501,18 @@ impl ArchiveHandle {
     /// `memory_gb` is this device's memory, which the strongest model has to fit in.
     /// `progress` is told as each step starts: the step, of the most it may take, and what
     /// the last one did. With `librarian.changes` on, the librarian makes the changes it's
-    /// sure of, as this device's owner; the rest are left in the answer to confirm.
+    /// sure of, as this device's owner; the rest are left in the answer to confirm. `about`
+    /// is what the owner is looking at, loaded up front so "this" means it.
     ///
     /// # Errors
     ///
-    /// [`CarrelError::Invalid`] if there's no model, or [`CarrelError::Failed`] if the
-    /// archive can't be read or the model fails.
+    /// [`CarrelError::Invalid`] if there's no model or `about` names no item, or
+    /// [`CarrelError::Failed`] if the archive can't be read or the model fails.
     pub fn ask_librarian(
         &self,
         conversation: Arc<LibrarianConversation>,
         question: String,
+        about: Option<LibrarianAbout>,
         model: Option<Arc<dyn ModelProvider>>,
         memory_gb: Option<u64>,
         progress: Option<Arc<dyn ProgressListener>>,
@@ -473,6 +521,7 @@ impl ArchiveHandle {
             return Err(CarrelError::invalid("ask the librarian something"));
         }
         let archive = self.fresh()?;
+        let about = about.map(|a| a.in_core(&archive)).transpose()?;
         let (registry, chosen) = self.librarian_model(model, memory_gb)?;
         let providers = || self.registry();
         let report = |p: core::Progress<'_>| {
@@ -490,7 +539,7 @@ impl ArchiveHandle {
             .conversation
             .lock()
             .map_err(|_| CarrelError::failed("the conversation was poisoned"))?;
-        let answer = librarian.ask(&mut conversation, &question)?;
+        let answer = librarian.ask_about(&mut conversation, &question, about.as_ref())?;
         let mut answered: LibrarianAnswer = answer.into();
         let items: Vec<carrel_core::card::Id> = answer.items.iter().map(|i| i.id).collect();
         if let Ok(mut conversing) = conversation_state.conversing.lock() {
@@ -623,10 +672,63 @@ mod tests {
             LibrarianConversation::new(),
             "Anything?".into(),
             None,
+            None,
             Some(8),
             None,
         );
         assert!(matches!(asked, Err(CarrelError::Invalid { message }) if message == problem));
+    }
+
+    /// A model the app gives that answers once, keeping the prompts it's given.
+    struct Prompts(Mutex<Vec<String>>);
+
+    impl ModelProvider for Prompts {
+        fn complete(&self, request: ModelRequest) -> Result<ModelAnswer, CarrelError> {
+            self.0.lock().unwrap().push(request.prompt);
+            Ok(ModelAnswer {
+                text: r#"{"action": "answer", "input": "", "answer": "Yes.", "items": [], "passages": [], "suggestions": []}"#.into(),
+                model: "swift/answers".into(),
+            })
+        }
+    }
+
+    #[test]
+    fn a_question_about_the_selection_says_what_it_is() {
+        let sample = Sample::new();
+        let model = Arc::new(Prompts(Mutex::new(Vec::new())));
+        let conversation = LibrarianConversation::new();
+        let answer = sample
+            .handle
+            .ask_librarian(
+                conversation.clone(),
+                "Is this in the right place?".into(),
+                Some(LibrarianAbout::Item {
+                    id: "Projects/Hardware/parts-list.csv.md".into(),
+                }),
+                Some(model.clone()),
+                Some(16),
+                None,
+            )
+            .unwrap();
+        assert_eq!(
+            answer.about.as_deref(),
+            Some("the item “Desk lamp parts list” (Projects/Hardware/parts-list.csv.md)")
+        );
+        let prompt = model.0.lock().unwrap()[0].clone();
+        assert!(prompt.contains("The owner is looking at the item “Desk lamp parts list”"));
+        assert!(prompt.contains("summary: Bill of materials"), "{prompt}");
+
+        let about = sample.handle.ask_librarian(
+            conversation,
+            "And this?".into(),
+            Some(LibrarianAbout::Item {
+                id: "Projects/nowhere.md".into(),
+            }),
+            Some(model),
+            Some(16),
+            None,
+        );
+        assert!(matches!(about, Err(CarrelError::Invalid { .. })));
     }
 
     #[test]

@@ -207,6 +207,28 @@ fn asking_about_a_collection_a_search_or_a_discover_view_says_so() {
 }
 
 #[test]
+fn a_note_on_what_its_about_is_told_with_it() {
+    let (_dir, archive) = sample();
+    let (registry, asked) = scripted(vec![reply("answer", "", "Its title is fine.", &[])]);
+    let providers = Registry::with_built_ins;
+    let librarian = Librarian::new(&archive, &registry, the_model(), &providers).unwrap();
+    let mut conversation = Conversation::default();
+    librarian
+        .ask_about_with_note(
+            &mut conversation,
+            "What needs doing?",
+            Some(&parts()),
+            Some(" wrong title "),
+        )
+        .unwrap();
+    let prompt = &asked.lock().unwrap()[0].prompt;
+    assert!(
+        prompt.contains("The owner's note on it: “wrong title”."),
+        "{prompt}"
+    );
+}
+
+#[test]
 fn every_interface_finds_what_its_about_the_same_way() {
     let (_dir, archive) = sample();
     assert_eq!(About::find(&archive, PARTS).unwrap(), parts());

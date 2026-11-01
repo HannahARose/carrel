@@ -1,6 +1,7 @@
 // The Librarian panel's conversation (docs/design/librarian.md): the owner asks about the
 // archive, the core's librarian answers on a local model with the items it found, the
-// passages it read and what it suggests, as `carrel ask` does. The conversation is kept only
+// passages it read and what it suggests, as `carrel ask` does. Each question is about what's
+// in view, when there's something (LibrarianAbout.swift). The conversation is kept only
 // in memory until it's saved to the Journal. With `librarian.changes` on, the changes it made
 // itself are listed here and undone one at a time or all together, as
 // `carrel undo --librarian` does.
@@ -35,6 +36,8 @@ final class LibrarianModel {
     var isShown = false
     /// The question being written.
     var draft = ""
+    /// What the questions are about, shown as a chip, while there's something.
+    var about: LibrarianSubject?
     /// Asked each time the panel is to put the cursor in the question.
     private(set) var focusRequests = 0
     /// The answers so far, oldest first.
@@ -87,12 +90,6 @@ final class LibrarianModel {
     func show() {
         isShown = true
         focusRequests += 1
-    }
-
-    /// Opens the panel with `item` in the question, for the owner to finish and ask.
-    func ask(about item: ItemSummary) {
-        draft = "Tell me about “\(item.title)” (\(item.card)). "
-        show()
     }
 
     /// Reads which model answers, whether the librarian makes changes, and what it changed
@@ -170,13 +167,14 @@ final class LibrarianModel {
             }
         }
         let conversation = conversation
+        let about = about?.about
         let provider = provider
         let memory = memoryGB
         do {
             let answer = try await archive.call {
                 try $0.askLibrarian(
-                    conversation: conversation, question: question, model: provider,
-                    memoryGb: memory, progress: relay)
+                    conversation: conversation, question: question, about: about,
+                    model: provider, memoryGb: memory, progress: relay)
             }
             guard askToken == token else { return }
             answers.append(answer)

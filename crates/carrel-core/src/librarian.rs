@@ -316,6 +316,22 @@ impl<'a> Librarian<'a> {
         question: &str,
         about: Option<&About>,
     ) -> Result<&'c Answer, LibrarianError> {
+        self.ask_about_with_note(conversation, question, about, None)
+    }
+
+    /// As [`Self::ask_about`], with the owner's short `note` on what they're looking at, such
+    /// as a flag's ("wrong title"), told to the model with it.
+    ///
+    /// # Errors
+    ///
+    /// [`LibrarianError`] if the archive can't be read or the model fails.
+    pub fn ask_about_with_note<'c>(
+        &self,
+        conversation: &'c mut Conversation,
+        question: &str,
+        about: Option<&About>,
+        note: Option<&str>,
+    ) -> Result<&'c Answer, LibrarianError> {
         let stacks = Shelf {
             archive: self.archive,
             items: self.archive.items()?,
@@ -330,6 +346,10 @@ impl<'a> Librarian<'a> {
             }
             setting.about = Some(loaded.described);
             setting.loaded = loaded.text;
+            setting.note = note
+                .map(str::trim)
+                .filter(|n| !n.is_empty())
+                .map(str::to_owned);
         }
         let earlier: Vec<(String, String)> = conversation
             .answers

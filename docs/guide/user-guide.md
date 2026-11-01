@@ -308,6 +308,7 @@ Search is for you alone, so sensitive and restricted items come back like any ot
 The **librarian** answers questions about what's in your archive, in plain words: "what do I have about the lamp build?", "what did I work on last spring?", "what does the lease say about notice?". It runs on a text model on this device and reads the archive through the same search, cards, related items and history you use, so nothing leaves the device.
 
 - `carrel ask "…"` gives one answer. `carrel ask` alone starts a conversation: type a question per line, and an empty line ends it. Each question can build on the ones before.
+- **About something in particular:** `carrel ask --about "Receipts 2023" "is anything missing here?"` asks about a collection, and `--about` with an item's identifier, card or title about the item, so "this" and "here" mean it. The librarian starts with its card and its collection's design document, or the collection's. The Librarian screen and the Mac app's panel take what's in view, as below.
 - Each answer comes with the **items** it's about, as card paths you can open, and the **passages** it used, quoted word for word from the items. It ends with the model that gave it and how many steps it took.
 - It answers first, then often offers something you didn't ask for: a related item, a collection you haven't opened in a while, or a gap ("you have the 2023 and 2025 statements but not 2024").
 - **Restricted items are found by their card only,** as search finds them: the librarian can tell you a restricted bank statement exists, but it never reads or quotes what's in it. Sensitive items are read like any other, since everything stays on this device.
@@ -334,12 +335,13 @@ Along the way the librarian notices things that could be better: a receipt in th
 
 In the interactive mode, `L` opens the **Librarian** screen: the conversation on the left, and on the right the item it's discussing, with its preview where the terminal draws one.
 
+- `L` from Browse, Questions or Discover brings what's in view there: the chosen item, the collection while you're choosing among them, the item a question is about, or the Discover view. It's shown above the conversation ("About: Hardware"), and your questions are about it; `x` asks about the whole archive again.
 - `Enter` asks a question. While the librarian works, the help line shows its steps. Each answer shows the passages it read and the model that gave it; under it are the items it found and the changes it suggests, to choose with `↑↓`. The chosen item's card is on the right, and `o` opens it in Browse.
 - With `librarian.changes` off, `y` makes the chosen suggestion through the usual steps: a refile or a correction is shown before and after and saved only on your yes, and a rename or a new collection asks first. Each is your own change.
 - With it on, the changes it made are listed under **The librarian's changes this week**: `u` undoes the chosen one and `U` all of them, after asking.
 - `s` saves the conversation to the Journal, and `n` starts a new one; an unsaved conversation is gone when you leave.
 
-In the Mac app, the **Librarian** panel sits beside the window (⌥⌘L), and **Ask About This** (⇧⌘L) asks about the chosen item; each suggestion opens the sheet that makes it, and the librarian's own changes can be undone there, on Status and in History (see [The Mac app](mac-app.md#the-librarian)).
+In the Mac app, the **Librarian** panel sits beside the window (⌥⌘L), and a chip says what your questions are about, following what you choose, and **Ask About This** (⇧⌘L) asks about an item or a collection; each suggestion opens the sheet that makes it, and the librarian's own changes can be undone there, on Status and in History (see [The Mac app](mac-app.md#the-librarian)).
 
 ## Discovering the archive
 
