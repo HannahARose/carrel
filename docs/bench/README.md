@@ -139,6 +139,58 @@ After #251 changed the merge (exact names and numbers first, then words weighted
 
 The merge now beats meaning alone with EmbeddingGemma, and with Apple's weak embedding it no longer falls below words alone (91%, up from 84%).
 
+## Librarian
+
+How well the librarian answers (`docs/design/librarian.md`, "Measuring it"). [`fixtures/bench/librarian.yaml`](../../fixtures/bench/librarian.yaml) holds 42 questions about the test set, written by hand the way the owner would ask ("which receipts are from 2025?", "what does the boiler note say to check weekly?"). Each lists the items that should come back and the facts the answer must state, each fact a phrase or a few phrases any one of which counts. It also lists, for each restricted item, text that must never show, such as the IBAN and the wifi password.
+
+`carrel bench --librarian` files the test set into a copy of its archive, as `--search` does, then asks each text model every question in a conversation of its own. Each answer is scored by:
+
+- **recall:** the share of the items that should come back that did, over every question;
+- **precision:** the share of the items that came back that should have;
+- **facts:** the share of facts the answers state, ignoring case and spacing;
+- **restricted text shown:** answers whose text or passages contain a restricted item's listed text, or six words in a row from its text. It must be none;
+- **steps, tokens and time:** the tools used, the tokens taken and the seconds per question, and the questions it stopped or failed on before answering.
+
+```bash
+carrel bench --librarian --out bench-results
+```
+
+It writes `bench-results/librarian/results.json` and `report.md`, with every answer beside what was expected. Each answer is saved to `librarian/runs/` as it's given, so a stopped run carries on; `--fresh` starts over, and `--model NAME` measures one model.
+
+### The bar and the default model
+
+A model is recommended for the librarian when it shows no restricted text, finds at least 80% of the items, at least 60% of what it returns is right, it states at least 80% of the facts, and it takes under 60 seconds a question on the reference machine. This is a starting point, as the filing bar was; the first runs may show it needs adjusting.
+
+The catalog's `librarian` flag records the recommendation, as `recommended` does for filing. Once a model has it, the librarian runs by default on the largest recommended model installed that fits the device's memory, and otherwise, as now, on the largest installed open model that fits, then Apple's model. The `librarian.model` setting still overrides both. No model has the flag yet.
+
+### Librarian: not run yet
+
+No real model has been measured. The runs happen on the reference machine, one model at a time with nothing else compiling, and set the `librarian` flags from what they show.
+
+## Question value
+
+Whether the question queue asks the questions that help most (`docs/design/librarian.md`, "Measuring it"). `carrel bench --questions` ingests the test set with each text model in one batch, as ingest would, and ranks the questions the batch raises as the queue does (`questions::rank`). It then answers each question alone with the answer the test set implies, and re-routes:
+
+- **a collection, group or sender question** is answered with the collection most of its items are expected in, and its items go there, as answering does;
+- **a term question** is answered with a glossary fact saying where items named for it belong, and its items are ingested again with that fact, so the model reads it as it would after a real answer;
+- **an item question** doesn't change where anything goes, so it wins nothing.
+
+Each answer's **gain** is the routing points it wins, scored as filing's routing is. The run reports:
+
+- **routing before and after** answering every question;
+- **top k:** the routing after answering the k highest-ranked questions, beside the best any k questions give;
+- **rank correlation:** Spearman's, between what the ranking said each answer is worth and what it won. Near 1 means the ranking asks the most useful questions first.
+
+```bash
+carrel bench --questions --out bench-results
+```
+
+It writes `bench-results/questions/results.json` and `report.md`, with every question, its known answer, what moved and what it won. Each model's run is saved to `questions/runs/` and reused; `--fresh` starts over.
+
+### Question value: not run yet
+
+No real model has been measured. The test set's file names were written for filing, so they raise few questions; if the first run shows too few to rank, the next step is a handful of items whose names share a term or a sender.
+
 ## Running it again
 
 ```bash
