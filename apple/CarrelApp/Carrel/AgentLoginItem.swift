@@ -1,6 +1,7 @@
 // The agent as a login item: Settings' switch registers Carrel Agent, bundled in the app at
 // Contents/Library/LoginItems, with SMAppService, or unregisters it.
 
+import CarrelKit
 import Observation
 import ServiceManagement
 
@@ -15,7 +16,9 @@ extension SMAppService: LoginService {}
 
 @Observable
 final class AgentLoginItem {
-    static let identifier = "io.github.hannaharose.Carrel.Agent"
+    /// The bundled agent's identifier, which is also its Mach service: the Debug app's agent
+    /// is its own, never the installed app's.
+    static let identifier = AgentService.machServiceName
 
     private let service: LoginService
     private(set) var status: SMAppService.Status

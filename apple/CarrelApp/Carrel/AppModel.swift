@@ -14,7 +14,7 @@ final class RecentArchives {
     private let defaults: UserDefaults
     private(set) var urls: [URL]
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = .app) {
         self.defaults = defaults
         urls = (defaults.stringArray(forKey: Self.key) ?? []).map { URL(filePath: $0) }
     }

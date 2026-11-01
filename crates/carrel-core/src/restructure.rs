@@ -29,6 +29,7 @@ pub mod eagerness;
 pub mod findability;
 pub mod grouping;
 pub mod preview;
+pub mod rehoming;
 pub mod section;
 pub mod tags;
 

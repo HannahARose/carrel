@@ -6,6 +6,12 @@
 //! takes and its findability gain. It writes `results.json` and `report.md` to `restructure/`
 //! in the output folder. The scoring is in the core ([`carrel_core::bench::restructure`]).
 //!
+//! With a text model, the archive first has the crawler verdicts the device's crawler model
+//! ([`carrel_core::crawl::model::choose`]) gave in the crawler benchmark (`crawl/runs/` in the
+//! same output folder), as a device that had crawled it would: restructuring uses them as
+//! signals. Run `--crawl` first; without its run, models propose from the numbers alone too.
+//! Numbers alone never have them, so they show what the numbers find by themselves.
+//!
 //! Each proposal's score is saved to `restructure/runs/` as soon as it's made, so a stopped run
 //! carries on where it stopped; `--fresh` starts over.
 
@@ -16,7 +22,9 @@ use std::time::Instant;
 
 use carrel_core::archive::Archive;
 use carrel_core::bench::crawl::{Muddle, build};
-use carrel_core::bench::restructure::{RestructureScore, at_eagerness, score};
+use carrel_core::bench::restructure::{
+    RestructureScore, at_eagerness, score, use_crawler_verdicts,
+};
 use carrel_core::bench::{Answers, check, percent};
 use carrel_core::card::Id;
 use carrel_core::discover::Catalog;
@@ -75,6 +83,7 @@ pub fn restructure_bench(args: &BenchArgs, json: bool) -> Result<Report, Failure
     let runs = dir.join("runs");
     std::fs::create_dir_all(&runs).map_err(|e| Failure::io(&runs, &e))?;
 
+    let crawled = crawler_verdicts(&registry, &args.out, &mut notes);
     let mut rows = Vec::new();
     let wordings: Vec<Option<Model>> = std::iter::once(None)
         .chain(models.into_iter().map(Some))
@@ -88,6 +97,14 @@ pub fn restructure_bench(args: &BenchArgs, json: bool) -> Result<Report, Failure
         if let Some(m) = &model {
             registry.pin(Capability::TextModel, &m.provider, &m.offer);
         }
+        let verdicts = crawled.as_ref().filter(|_| model.is_some());
+        use_crawler_verdicts(
+            &archive,
+            &files,
+            &places,
+            verdicts.map(|(l, j)| (l.as_str(), j)),
+        )
+        .map_err(Failure::new)?;
         for eagerness in Eagerness::ALL {
             let key = eagerness.as_str();
             if !saved.contains_key(key) {
@@ -119,16 +136,22 @@ pub fn restructure_bench(args: &BenchArgs, json: bool) -> Result<Report, Failure
         }
     }
     at_eagerness(&archive, Eagerness::default()).map_err(Failure::new)?;
+    use_crawler_verdicts(&archive, &files, &places, None).map_err(Failure::new)?;
 
-    let results = results_json(&rows, &notes);
+    write_results(&dir, &rows, &notes)
+}
+
+/// Writes `results.json` and `report.md` for `rows` to `dir`, and says so.
+fn write_results(dir: &Path, rows: &[Row], notes: &[String]) -> Result<Report, Failure> {
+    let results = results_json(rows, notes);
     let results_path = dir.join("results.json");
     std::fs::write(&results_path, format!("{results:#}\n"))
         .map_err(|e| Failure::io(&results_path, &e))?;
     let report_path = dir.join("report.md");
-    std::fs::write(&report_path, report_markdown(&rows, &notes))
+    std::fs::write(&report_path, report_markdown(rows, notes))
         .map_err(|e| Failure::io(&report_path, &e))?;
-    let mut text = summary_table(&rows);
-    for note in &notes {
+    let mut text = summary_table(rows);
+    for note in notes {
         writeln!(text, "\n{note}").unwrap();
     }
     writeln!(
@@ -192,6 +215,41 @@ fn vectors(
         &Graph::build(&Catalog::read(archive)?),
         "",
     ))
+}
+
+/// The device's crawler model and the judgments it gave in the crawler benchmark's run in
+/// `out`, by file name, if there is one; `notes` says which, or why there are none.
+fn crawler_verdicts(
+    registry: &Registry,
+    out: &Path,
+    notes: &mut Vec<String>,
+) -> Option<(String, BTreeMap<String, carrel_core::bench::crawl::Judged>)> {
+    let Some(crawler) = carrel_core::crawl::model::choose(registry, crate::ask::memory_gb()) else {
+        notes.push(
+            "No text model is at hand to crawl with, so no proposal had crawler verdicts.".into(),
+        );
+        return None;
+    };
+    let run = out.join("crawl/runs").join(format!(
+        "{}--{}.jsonl",
+        file_safe(&crawler.provider),
+        file_safe(&crawler.offer)
+    ));
+    let judged = crate::bench_crawl::load_saved(&run);
+    if judged.is_empty() {
+        notes.push(format!(
+            "The crawler's model here, {}, has no run in the crawler benchmark ({}), so proposals had no crawler verdicts.",
+            crawler.label,
+            run.display()
+        ));
+        return None;
+    }
+    notes.push(format!(
+        "With a text model, the archive had the {} crawler verdicts {} gave in the crawler benchmark, the crawler's model here; numbers alone had none.",
+        judged.len(),
+        crawler.label
+    ));
+    Some((crawler.label, judged))
 }
 
 /// The scores saved by an earlier run for one model, by eagerness.

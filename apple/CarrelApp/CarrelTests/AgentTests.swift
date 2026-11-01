@@ -60,6 +60,22 @@ final class AgentLoginItemTests: XCTestCase {
     }
 }
 
+/// Debug builds and test runs keep clear of the installed app (#443).
+@MainActor
+final class DebugIdentityTests: XCTestCase {
+    func testTheTestHostHasItsOwnIdentityGroupAndAgent() {
+        XCTAssertEqual(Bundle.main.bundleIdentifier, "io.github.hannaharose.Carrel.dev")
+        XCTAssertEqual(AgentService.appGroup, "io.github.hannaharose.Carrel.dev")
+        XCTAssertEqual(AgentLoginItem.identifier, "io.github.hannaharose.Carrel.dev.Agent")
+    }
+
+    func testTheTestHostIsBareAndKeepsItsOwnDefaults() {
+        XCTAssertTrue(CarrelMain.isHostingTests)
+        XCTAssertTrue(NSApp.windows.filter(\.isVisible).isEmpty, "no windows on the screen")
+        XCTAssertFalse(UserDefaults.app === UserDefaults.standard)
+    }
+}
+
 @MainActor
 final class AgentLinkTests: XCTestCase {
     func testALinkOpensItsArchiveAndLeavesTheItemForItsWindow() throws {

@@ -5,24 +5,32 @@ name: CI
 # - The "Changes" job (.github/scripts/ci-changes.sh) lists the files a pull request or push
 #   changes and says which areas they touch. Each job below runs only for its area: a docs-only
 #   change runs Format, Docs hygiene and nothing else. Format and Docs hygiene always run.
-# - Everything runs for a change to any workflow, the weekly schedule, a manual run and a pull
+# - Everything runs for a change to any workflow, a scheduled run, a manual run and a pull
 #   request into main (or a merge queue's group into main).
-# - A merge queue's group (merge_group, #298) runs the jobs for what the group changes against
-#   its base, and "CI passed" reports on it, since the queue waits for that check.
-# - A push to dev (a merged pull request) runs the Linux jobs for what that merge changed,
-#   which keeps their caches warm. Its macOS and Windows jobs run only when the dependencies
-#   changed, to refresh those caches: the merge queue has already tested that exact commit on
-#   every platform. Each push gets its own run, so a later merge can't cancel an earlier one.
+# - Until the first stable release, macOS and Windows run only in the hourly scheduled run on
+#   dev and in a pull request into main (#39): the org has five macOS runners, and waiting for
+#   them doubled a merge queue group's time. Everything else runs only the Linux jobs:
+#   - A pull request into dev, so a session's pushes and merges of dev don't queue for runners.
+#   - A merge queue's group into dev (merge_group, #298), for what the group changes against
+#     its base. "CI passed" reports on it, since the queue waits for that check.
+#   - A push to dev (a merged pull request), for what that merge changed, which keeps the Linux
+#     caches warm. Each push gets its own run, so a later merge can't cancel an earlier one.
+# - The hourly scheduled run checks dev on every platform, and does nothing when dev hasn't
+#   moved since the last scheduled run that passed. What breaks on macOS or Windows shows up
+#   there and is fixed after the fact; it also keeps their caches warm. The weekly run also
+#   checks every link in the docs.
+# - A pull request into main runs everything, on every platform, from a clean build: it's the
+#   gate a release passes.
 # - Caches are restored everywhere and saved only on dev, so pull requests don't evict them.
-#   Pull requests into main restore none: a release is checked from a clean build.
-# - A pull request into dev runs only the Linux jobs: the macOS and Windows ones (and their
-#   matrix entries) run once, in the merge queue's group, so a session's pushes and merges of
-#   dev don't queue for the few macOS runners. Nothing reaches dev without the queue, so
-#   nothing unchecked lands. A pull request into main still runs everything.
+#   Pull requests into main restore none.
+# - A run takes at most three macOS runners (#39): "Rust on macOS" (Clippy, the tests,
+#   llama.cpp, CAD and Kopia), "Swift package and Mac app" (with Swift format) and "MLX
+#   provider". Their steps run by area, as separate jobs did.
 # - Coverage, which reports and never fails on a number, waits for a ready pull request.
 #   Performance benchmarks are their own workflow (perf.yml), on dev only.
-# - "CI passed" is the required check. It passes when every job passed or was skipped because
-#   its area didn't change, and fails if "Changes" itself failed.
+# - "CI passed" is the required check, reported by pull requests and merge queue groups; dev's
+#   runs report "Dev check". It passes when every job passed or was skipped because its area
+#   didn't change, and fails if "Changes" itself failed.
 
 on:
   pull_request:
@@ -35,9 +43,14 @@ on:
   # The merge queue's combined commits, once the queue is on (#298).
   merge_group:
   workflow_dispatch:
-  # Weekly, so new security advisories against existing dependencies show up even when
-  # nothing changes.
   schedule:
+    # Hourly, dev's check on every platform: until the first stable release, only this run and
+    # a pull request into main run macOS and Windows, so this finds what breaks there after the
+    # fact. It does nothing when dev hasn't moved since the last one that passed.
+    - cron: "7 * * * *"
+    # Weekly, so new security advisories against existing dependencies show up even when
+    # nothing changes, and every link in the docs is checked, not only those within the
+    # repository.
     - cron: "17 6 * * 1"
 
 permissions:
@@ -57,7 +70,13 @@ jobs:
   changes:
     name: Changes
     runs-on: ubuntu-latest
+    permissions:
+      contents: read # check out the code
+      actions: read # the hourly run looks up the last one that passed
     outputs:
+      # "true" for an hourly run on the commit the last passing scheduled run checked: every
+      # other output is then empty, so every job is skipped.
+      skip: ${{ steps.skip.outputs.skip }}
       rust: ${{ steps.areas.outputs.rust }}
       swift: ${{ steps.areas.outputs.swift }}
       app: ${{ steps.areas.outputs.app }}
@@ -72,19 +91,36 @@ jobs:
       workflows: ${{ steps.areas.outputs.workflows }}
       cache: ${{ steps.areas.outputs.cache }}
       save: ${{ steps.areas.outputs.save }}
-      # "false" for a pull request into dev, whose macOS and Windows jobs run in the merge queue,
-      # and for a push to dev that leaves the dependencies as they were.
+      # Whether the macOS jobs run: "false" for a pull request into dev, a merge queue group into
+      # dev and a push to dev.
       heavy: ${{ steps.weight.outputs.heavy }}
-      # Matrix entries to leave out for a pull request into dev: macOS and Windows.
+      # Matrix entries to leave out for those: macOS and Windows.
       light-exclude: ${{ steps.weight.outputs.exclude }}
-      # The platforms for jobs that run on all three: only Linux for a pull request into dev.
+      # The platforms for jobs that run on all three: only Linux for those.
       oses: ${{ steps.weight.outputs.oses }}
     steps:
+      - id: skip
+        if: github.event_name == 'schedule' && github.event.schedule == '7 * * * *'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          last=$(gh run list --repo "$REPO" --workflow ci.yml --event schedule --branch dev \
+            --status success --limit 1 --json headSha --jq '.[0].headSha // ""')
+          if [ "$last" = "$SHA" ]; then
+            echo "The last scheduled run that passed checked $SHA already: nothing to do."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Checking $SHA (the last scheduled run that passed checked ${last:-nothing})."
+          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.skip.outputs.skip != 'true'
         with:
           persist-credentials: false
           fetch-depth: 0 # a push's earlier commit, and a pull request's base
       - id: areas
+        if: steps.skip.outputs.skip != 'true'
         env:
           EVENT: ${{ github.event_name }}
           # A pull request's base branch, or a merge queue group's (refs/heads/...).
@@ -95,26 +131,21 @@ jobs:
           SHA: ${{ github.sha }}
         run: .github/scripts/ci-changes.sh
       - id: weight
+        if: steps.skip.outputs.skip != 'true'
         env:
-          INTO_DEV: ${{ github.event_name == 'pull_request' && github.base_ref == 'dev' }}
-          PUSH: ${{ github.event_name == 'push' }}
-          BEFORE: ${{ github.event.before }}
-          SHA: ${{ github.sha }}
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref }}
         run: |
-          # A push to dev is a merge the queue has just tested exactly, so its macOS and Windows
-          # jobs would only repeat that run and take the few macOS runners from pull requests.
-          # They run on a push only when the dependencies change, to refresh those caches (the
-          # weekly run refreshes them too).
-          light_push=false
-          if [ "$PUSH" = true ]; then
-            light_push=true
-            if ! git cat-file -e "$BEFORE^{commit}" 2> /dev/null \
-              || git diff --name-only "$BEFORE" "$SHA" \
-              | grep -qE '(^|/)(Cargo\.lock|Package\.resolved|rust-toolchain\.toml)$'; then
-              light_push=false
-            fi
-          fi
-          if [ "$INTO_DEV" = true ] || [ "$light_push" = true ]; then
+          # Until the first stable release, macOS and Windows run only in the hourly scheduled
+          # run and in a pull request into main (#39): a pull request into dev, a merge queue
+          # group into dev and a push to dev run Linux only.
+          base=${BASE_REF#refs/heads/}
+          light=false
+          case "$EVENT" in
+            pull_request | merge_group) [ "$base" != main ] && light=true ;;
+            push) light=true ;;
+          esac
+          if [ "$light" = true ]; then
             {
               echo "heavy=false"
               echo 'exclude=[{"os":"macos-latest"},{"os":"windows-latest"}]'
@@ -130,28 +161,14 @@ jobs:
 
   fmt:
     name: Format
+    needs: changes
+    if: needs.changes.outputs.skip != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - run: cargo fmt --all --check
-
-  clippy:
-    name: Clippy
-    needs: changes
-    if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.heavy == 'true'
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-        if: needs.changes.outputs.cache == 'true'
-        with:
-          save-if: ${{ needs.changes.outputs.save == 'true' }}
-      # The llama.cpp provider has its own job: building llama.cpp takes minutes.
-      - run: cargo clippy --workspace --exclude carrel-provider-llama --all-targets --locked -- -D warnings
 
   test:
     name: Test (${{ matrix.os }})
@@ -161,8 +178,9 @@ jobs:
       fail-fast: false
       matrix:
         exclude: ${{ fromJSON(needs.changes.outputs.light-exclude) }}
-        # macOS is the main platform; Linux and Windows keep the core and CLI portable.
-        os: [macos-latest, ubuntu-latest, windows-latest]
+        # Linux and Windows keep the core and CLI portable. macOS, the main platform, runs the
+        # same tests in "Rust on macOS".
+        os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -176,6 +194,91 @@ jobs:
       - run: cargo test --workspace --exclude carrel-provider-llama --doc --locked
       - name: CLI reports its version
         run: cargo run --locked --bin carrel -- --version
+
+  macos:
+    # Everything Rust that runs on macOS, in one job, so that a merge queue group takes one of
+    # the org's five macOS runners for it rather than five (#39): Clippy, the tests, and the
+    # llama.cpp, CAD and Kopia checks whose Linux (and Windows) entries are their own jobs
+    # below. Each part runs only for its area. A part runs even when one before it failed
+    # (!cancelled()), so that one run reports every failure, as separate jobs did.
+    name: Rust on macOS
+    needs: changes
+    if: >-
+      needs.changes.outputs.heavy == 'true'
+      && (needs.changes.outputs.rust == 'true' || needs.changes.outputs.llama == 'true'
+        || needs.changes.outputs.cad == 'true' || needs.changes.outputs.kopia == 'true')
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        if: needs.changes.outputs.cache == 'true'
+        with:
+          save-if: ${{ needs.changes.outputs.save == 'true' }}
+      # The llama.cpp provider has its own part: building llama.cpp takes minutes.
+      - name: Clippy
+        if: ${{ !cancelled() && needs.changes.outputs.rust == 'true' }}
+        run: cargo clippy --workspace --exclude carrel-provider-llama --all-targets --locked -- -D warnings
+      - name: Tests
+        if: ${{ !cancelled() && needs.changes.outputs.rust == 'true' }}
+        run: cargo test --workspace --exclude carrel-provider-llama --all-targets --locked --no-fail-fast
+      - name: Doc tests
+        if: ${{ !cancelled() && needs.changes.outputs.rust == 'true' }}
+        run: cargo test --workspace --exclude carrel-provider-llama --doc --locked
+      - name: CLI reports its version
+        if: ${{ !cancelled() && needs.changes.outputs.rust == 'true' }}
+        run: cargo run --locked --bin carrel -- --version
+      # As the llama.cpp provider job runs it on Linux.
+      - name: "llama.cpp: Clippy"
+        if: ${{ !cancelled() && needs.changes.outputs.llama == 'true' }}
+        run: cargo clippy -p carrel-provider-llama --all-targets --locked -- -D warnings
+      - name: "llama.cpp: tests and carrel providers"
+        if: ${{ !cancelled() && needs.changes.outputs.llama == 'true' }}
+        env:
+          # The llama.cpp provider job's test model.
+          MODEL_URL: https://huggingface.co/ggml-org/models/resolve/main/tinyllamas/stories260K.gguf
+          MODEL_SHA256: 270cba1bd5109f42d03350f60406024560464db173c0e387d91f0426d3bd256d
+        run: |
+          models="$RUNNER_TEMP/models"
+          mkdir -p "$models"
+          curl -sSfL -o "$models/stories260K.gguf" "$MODEL_URL"
+          echo "$MODEL_SHA256  $models/stories260K.gguf" | shasum -a 256 -c -
+          CARREL_TEST_LLAMA_MODELS="$models" cargo test -p carrel-provider-llama --locked
+          cargo build -p carrel-provider-llama -p carrel-cli --locked
+          CARREL_MODELS_DIR="$models" PATH="$PWD/target/debug:$PATH" cargo run --locked --bin carrel -- providers
+      # As the CAD provider job runs it on Linux. OpenCascade is installed after the tests
+      # above, which run without it, as they do on the other platforms.
+      - name: "CAD: install OpenCascade"
+        if: ${{ !cancelled() && needs.changes.outputs.cad == 'true' }}
+        run: brew install opencascade
+      - name: "CAD: Clippy and tests"
+        if: ${{ !cancelled() && needs.changes.outputs.cad == 'true' }}
+        env:
+          CARREL_REQUIRE_OPENCASCADE: "1"
+        run: |
+          cargo clippy -p carrel-provider-cad --all-targets --locked -- -D warnings
+          cargo test -p carrel-provider-cad --locked
+      # As the Kopia backups job runs it on Linux and Windows, with the same release.
+      - name: "Kopia: install"
+        if: ${{ !cancelled() && needs.changes.outputs.kopia == 'true' }}
+        env:
+          ASSET: kopia-0.23.1-macOS-arm64
+          SHA256: 19e6ed637221f4dfd46a46e978ec4c509c386b522d746db2cd6762b217478111
+        run: |
+          file="$RUNNER_TEMP/kopia.tar.gz"
+          curl -sSfL -o "$file" "https://github.com/kopia/kopia/releases/download/v0.23.1/$ASSET.tar.gz"
+          echo "$SHA256  $file" | shasum -a 256 -c -
+          tar -xzf "$file" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/$ASSET" >> "$GITHUB_PATH"
+      - name: "Kopia: tests"
+        if: ${{ !cancelled() && needs.changes.outputs.kopia == 'true' }}
+        env:
+          KOPIA_CHECK_FOR_UPDATES: "false"
+          CARREL_REQUIRE_KOPIA: "1"
+        run: |
+          kopia --version
+          cargo test -p carrel-core --test backup_kopia --locked
 
   docs:
     name: Docs
@@ -249,31 +352,46 @@ jobs:
           python3 .github/scripts/coverage-summary.py target/lcov.info ${range[@]+"${range[@]}"} \
             >> "$GITHUB_STEP_SUMMARY"
 
-  swift:
-    # The Swift side: build the XCFramework and bindings, test them from Swift, check the
-    # package also builds for iOS, and test the Apple provider on its own and through Carrel.
-    name: Swift package
+  apple:
+    # The Swift side and the Mac app, in one job (#39): both need the XCFramework, so it's
+    # built once, and a merge queue group takes one macOS runner for them rather than three.
+    # - The Swift package: the bindings are current, CarrelKit's tests, an iOS Simulator
+    #   build, and the Apple provider on its own and through Carrel.
+    # - The Mac app (apple/CarrelApp): its tests, then a development build, signed ad hoc and
+    #   kept as the "Carrel" artifact for 30 days. Developer ID signing and notarization wait
+    #   for v1.0 (#47), so there are no signing secrets here.
+    # - Swift style, as set in .swift-format. swift-format comes with Xcode.
+    # Each part runs only for its area, and even when one before it failed (!cancelled()), so
+    # that one run reports every failure.
+    name: Swift package and Mac app
     needs: changes
-    if: needs.changes.outputs.swift == 'true' && needs.changes.outputs.heavy == 'true'
+    if: >-
+      needs.changes.outputs.heavy == 'true'
+      && (needs.changes.outputs.swift == 'true' || needs.changes.outputs.app == 'true'
+        || needs.changes.outputs.swift-format == 'true')
     runs-on: macos-latest
+    env:
+      SWIFT: ${{ needs.changes.outputs.swift }}
+      APP: ${{ needs.changes.outputs.app }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       # Caches target/, including each Apple target's build under target/<triple>.
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-        if: needs.changes.outputs.cache == 'true'
+        if: needs.changes.outputs.cache == 'true' && (env.SWIFT == 'true' || env.APP == 'true')
         with:
           save-if: ${{ needs.changes.outputs.save == 'true' }}
-      # SwiftPM and Xcode build products of both packages. Restored from dev's latest, saved only on dev. The key names the Xcode
-      # version, since a build from another Xcode can't be reused.
+      # The Swift packages' and the app's Xcode build products, each its own cache. Restored
+      # from dev's latest, saved only on dev. The keys name the Xcode version, since a build
+      # from another Xcode can't be reused.
       - name: Xcode version
         id: xcode
-        if: needs.changes.outputs.cache == 'true'
+        if: needs.changes.outputs.cache == 'true' && (env.SWIFT == 'true' || env.APP == 'true')
         run: echo "version=$(xcodebuild -version | tr -s ' \n' '-')" >> "$GITHUB_OUTPUT"
-      - name: Restore the Swift build
+      - name: Restore the Swift packages' build
         id: swift-cache
-        if: needs.changes.outputs.cache == 'true'
+        if: needs.changes.outputs.cache == 'true' && env.SWIFT == 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -282,10 +400,27 @@ jobs:
             !apple/*/.build/xcode/Logs
           key: swift-${{ steps.xcode.outputs.version }}-${{ hashFiles('apple/CarrelKit/Package.swift', 'apple/CarrelProviders/Package.swift') }}-${{ hashFiles('apple/CarrelKit/Sources/**', 'apple/CarrelKit/Tests/**', 'apple/CarrelProviders/Sources/**', 'apple/CarrelProviders/Tests/**') }}
           restore-keys: swift-${{ steps.xcode.outputs.version }}-${{ hashFiles('apple/CarrelKit/Package.swift', 'apple/CarrelProviders/Package.swift') }}-
-      - run: rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+      - name: Restore the app's build
+        id: app-cache
+        if: needs.changes.outputs.cache == 'true' && env.APP == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            apple/CarrelApp/.build/xcode
+            !apple/CarrelApp/.build/xcode/Logs
+          key: app-${{ steps.xcode.outputs.version }}-${{ hashFiles('apple/CarrelApp/CarrelApp.xcodeproj/project.pbxproj', 'apple/CarrelKit/Package.swift') }}-${{ hashFiles('apple/CarrelApp/**', 'apple/CarrelKit/Sources/**') }}
+          restore-keys: app-${{ steps.xcode.outputs.version }}-${{ hashFiles('apple/CarrelApp/CarrelApp.xcodeproj/project.pbxproj', 'apple/CarrelKit/Package.swift') }}-
+      - if: env.SWIFT == 'true' || env.APP == 'true'
+        run: rustup target add aarch64-apple-ios aarch64-apple-ios-sim
       - name: Build the XCFramework and Swift bindings
-        run: PROFILE=dev scripts/build-xcframework.sh
+        if: env.SWIFT == 'true' || env.APP == 'true'
+        # A release build when the app is built, as it ships in the artifact; otherwise the
+        # faster debug build is enough for the Swift package's tests.
+        env:
+          PROFILE: ${{ env.APP == 'true' && 'release' || 'dev' }}
+        run: scripts/build-xcframework.sh
       - name: Generated bindings are up to date
+        if: ${{ !cancelled() && env.SWIFT == 'true' }}
         # The build regenerated the committed bindings; any difference means they're stale.
         run: |
           generated=apple/CarrelKit/Sources/CarrelKit/Generated
@@ -296,22 +431,26 @@ jobs:
             exit 1
           fi
       - name: Swift tests
+        if: ${{ !cancelled() && env.SWIFT == 'true' }}
         working-directory: apple/CarrelKit
         run: swift test
       - name: Build for the iOS Simulator
+        if: ${{ !cancelled() && env.SWIFT == 'true' }}
         working-directory: apple/CarrelKit
         run: xcodebuild -scheme CarrelKit -destination 'generic/platform=iOS Simulator' -derivedDataPath .build/xcode build
       - name: Apple provider tests
+        if: ${{ !cancelled() && env.SWIFT == 'true' }}
         working-directory: apple/CarrelProviders
         run: swift test
       - name: Apple provider through the provider protocol
+        if: ${{ !cancelled() && env.SWIFT == 'true' }}
         run: |
           bin="$(swift build --package-path apple/CarrelProviders --show-bin-path)"
           swift build --package-path apple/CarrelProviders --product carrel-provider-apple
           CARREL_TEST_APPLE_PROVIDER="$bin/carrel-provider-apple" cargo test --locked -p carrel-core --test apple_provider
           PATH="$bin:$PATH" cargo run --locked --bin carrel -- providers
-      - name: Save the Swift build
-        if: needs.changes.outputs.save == 'true' && steps.swift-cache.outputs.cache-hit != 'true'
+      - name: Save the Swift packages' build
+        if: needs.changes.outputs.save == 'true' && env.SWIFT == 'true' && steps.swift-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -319,79 +458,42 @@ jobs:
             apple/CarrelProviders/.build
             !apple/*/.build/xcode/Logs
           key: ${{ steps.swift-cache.outputs.cache-primary-key }}
-
-  app:
-    # The Mac app (apple/CarrelApp): its tests, then a development build, signed ad hoc and
-    # kept as the "Carrel" artifact for 30 days. Developer ID signing and notarization wait
-    # for v1.0 (#47), so there are no signing secrets here.
-    name: Mac app
-    needs: changes
-    if: needs.changes.outputs.app == 'true' && needs.changes.outputs.heavy == 'true'
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-        if: needs.changes.outputs.cache == 'true'
-        with:
-          save-if: ${{ needs.changes.outputs.save == 'true' }}
-      # The app's Xcode build products. Restored from dev's latest, saved only on dev. The key names the Xcode
-      # version, since a build from another Xcode can't be reused.
-      - name: Xcode version
-        id: xcode
-        if: needs.changes.outputs.cache == 'true'
-        run: echo "version=$(xcodebuild -version | tr -s ' \n' '-')" >> "$GITHUB_OUTPUT"
-      - name: Restore the Swift build
-        id: swift-cache
-        if: needs.changes.outputs.cache == 'true'
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            apple/CarrelApp/.build/xcode
-            !apple/CarrelApp/.build/xcode/Logs
-          key: app-${{ steps.xcode.outputs.version }}-${{ hashFiles('apple/CarrelApp/CarrelApp.xcodeproj/project.pbxproj', 'apple/CarrelKit/Package.swift') }}-${{ hashFiles('apple/CarrelApp/**', 'apple/CarrelKit/Sources/**') }}
-          restore-keys: app-${{ steps.xcode.outputs.version }}-${{ hashFiles('apple/CarrelApp/CarrelApp.xcodeproj/project.pbxproj', 'apple/CarrelKit/Package.swift') }}-
-      - run: rustup target add aarch64-apple-ios aarch64-apple-ios-sim
-      - name: Build the XCFramework
-        run: scripts/build-xcframework.sh
       - name: App tests
+        id: app-tests
+        if: ${{ !cancelled() && env.APP == 'true' }}
         run: |
           xcodebuild -project apple/CarrelApp/CarrelApp.xcodeproj -scheme Carrel \
             -derivedDataPath apple/CarrelApp/.build/xcode test
       - name: Build the app
+        id: app-build
+        if: ${{ !cancelled() && env.APP == 'true' }}
         run: |
           xcodebuild -project apple/CarrelApp/CarrelApp.xcodeproj -scheme Carrel \
             -configuration Release -derivedDataPath apple/CarrelApp/.build/xcode build
           app=apple/CarrelApp/.build/xcode/Build/Products/Release/Carrel.app
           codesign --verify --strict --verbose=2 "$app"
           ditto -c -k --keepParent "$app" target/Carrel.zip
-      - name: Save the Swift build
-        if: needs.changes.outputs.save == 'true' && steps.swift-cache.outputs.cache-hit != 'true'
+      # Saved and uploaded when the app's own steps passed, whatever the Swift package's did.
+      - name: Save the app's build
+        if: >-
+          !cancelled() && needs.changes.outputs.save == 'true'
+          && steps.app-tests.outcome == 'success' && steps.app-build.outcome == 'success'
+          && steps.app-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             apple/CarrelApp/.build/xcode
             !apple/CarrelApp/.build/xcode/Logs
-          key: ${{ steps.swift-cache.outputs.cache-primary-key }}
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+          key: ${{ steps.app-cache.outputs.cache-primary-key }}
+      - if: ${{ !cancelled() && steps.app-tests.outcome == 'success' && steps.app-build.outcome == 'success' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: Carrel
           path: target/Carrel.zip
           retention-days: 30
           if-no-files-found: error
-
-  swift-format:
-    # Swift style, as set in .swift-format. swift-format comes with Xcode.
-    name: Swift format
-    needs: changes
-    if: needs.changes.outputs.swift-format == 'true' && needs.changes.outputs.heavy == 'true'
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Check formatting
+      - name: Swift format
+        if: ${{ !cancelled() && needs.changes.outputs.swift-format == 'true' }}
         run: |
           if ! scripts/swift-format.sh --check; then
             echo "::error::Swift under apple/ isn't formatted. Run scripts/swift-format.sh and commit the result."
@@ -496,6 +598,8 @@ jobs:
     # Spelling (_typos.toml), Markdown style (.markdownlint-cli2.yaml) and links in the
     # project's documents.
     name: Docs hygiene
+    needs: changes
+    if: needs.changes.outputs.skip != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -506,11 +610,11 @@ jobs:
       - name: Check links
         uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
-          # Pull requests check links within the repository only, so another site being
-          # down can't fail them; the weekly run checks every link.
+          # Other runs check links within the repository only, so another site being down
+          # can't fail them; the weekly run checks every link.
           args: >-
             --no-progress --include-fragments
-            ${{ github.event_name != 'schedule' && '--offline' || '' }}
+            ${{ github.event.schedule != '17 6 * * 1' && '--offline' || '' }}
             README.md CONTRIBUTING.md FORMAT.md fixtures/README.md 'docs/**/*.md' 'apple/**/*.md'
           jobSummary: false
         env:
@@ -524,8 +628,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        exclude: ${{ fromJSON(needs.changes.outputs.light-exclude) }}
-        os: [macos-latest, ubuntu-latest]
+        # macOS runs the same steps in "Rust on macOS".
+        os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
     env:
       # A 1 MB model whose answers are nonsense: enough to test loading, generation and
@@ -554,16 +658,16 @@ jobs:
           CARREL_MODELS_DIR="$RUNNER_TEMP/models" PATH="$PWD/target/debug:$PATH" cargo run --locked --bin carrel -- providers
 
   cad:
-    # The CAD provider with OpenCascade from each platform's package manager, so STEP and IGES
-    # drawing is tested rather than skipped.
+    # The CAD provider with OpenCascade from Ubuntu's packages (Homebrew's in "Rust on macOS"),
+    # so STEP and IGES drawing is tested rather than skipped.
     name: CAD provider (${{ matrix.os }})
     needs: changes
     if: needs.changes.outputs.cad == 'true'
     strategy:
       fail-fast: false
       matrix:
-        exclude: ${{ fromJSON(needs.changes.outputs.light-exclude) }}
-        os: [macos-latest, ubuntu-latest]
+        # macOS runs the same steps in "Rust on macOS".
+        os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
     env:
       CARREL_REQUIRE_OPENCASCADE: "1"
@@ -577,12 +681,8 @@ jobs:
           save-if: ${{ needs.changes.outputs.save == 'true' }}
       - name: Install OpenCascade
         run: |
-          if [ "$RUNNER_OS" = macOS ]; then
-            brew install opencascade
-          else
-            sudo apt-get update -q
-            sudo apt-get install -yq libocct-data-exchange-dev libocct-modeling-algorithms-dev
-          fi
+          sudo apt-get update -q
+          sudo apt-get install -yq libocct-data-exchange-dev libocct-modeling-algorithms-dev
       - run: cargo clippy -p carrel-provider-cad --all-targets --locked -- -D warnings
       - run: cargo test -p carrel-provider-cad --locked
 
@@ -634,14 +734,17 @@ jobs:
       fail-fast: false
       matrix:
         os: ${{ fromJSON(needs.changes.outputs.oses) }}
+        # macOS runs the same tests in "Rust on macOS".
+        exclude:
+          - os: macos-latest
     runs-on: ${{ matrix.os }}
     defaults:
       run:
         shell: bash
     env:
       # Kopia's release for each platform, looked up by matrix.os (a draft runs only Linux).
-      ASSET: ${{ fromJSON('{"macos-latest":"kopia-0.23.1-macOS-arm64","ubuntu-latest":"kopia-0.23.1-linux-x64","windows-latest":"kopia-0.23.1-windows-x64"}')[matrix.os] }}
-      SHA256: ${{ fromJSON('{"macos-latest":"19e6ed637221f4dfd46a46e978ec4c509c386b522d746db2cd6762b217478111","ubuntu-latest":"416d0f84a3dbb321a8b2d8f0997b1a0a6e915babe79ee76fa6e4d2bd1e1c5178","windows-latest":"f0369d9657dbe47a1b8b6ff4e308c5958a4813b405d4e32ae9d81b3f2b3d8251"}')[matrix.os] }}
+      ASSET: ${{ fromJSON('{"ubuntu-latest":"kopia-0.23.1-linux-x64","windows-latest":"kopia-0.23.1-windows-x64"}')[matrix.os] }}
+      SHA256: ${{ fromJSON('{"ubuntu-latest":"416d0f84a3dbb321a8b2d8f0997b1a0a6e915babe79ee76fa6e4d2bd1e1c5178","windows-latest":"f0369d9657dbe47a1b8b6ff4e308c5958a4813b405d4e32ae9d81b3f2b3d8251"}')[matrix.os] }}
       ARCHIVE: ${{ matrix.os == 'windows-latest' && 'zip' || 'tar.gz' }}
       KOPIA_CHECK_FOR_UPDATES: "false"
       CARREL_REQUIRE_KOPIA: "1"
@@ -657,11 +760,7 @@ jobs:
         run: |
           file="$RUNNER_TEMP/kopia.$ARCHIVE"
           curl -sSfL -o "$file" "https://github.com/kopia/kopia/releases/download/v0.23.1/$ASSET.$ARCHIVE"
-          if command -v sha256sum > /dev/null; then
-            echo "$SHA256  $file" | sha256sum -c -
-          else
-            echo "$SHA256  $file" | shasum -a 256 -c -
-          fi
+          echo "$SHA256  $file" | sha256sum -c -
           if [ "$ARCHIVE" = zip ]; then
             unzip -q "$file" -d "$RUNNER_TEMP"
           else
@@ -676,13 +775,15 @@ jobs:
     # The single required check for branch protection. It passes only if "Changes" passed and
     # every other job above passed or was skipped because its area didn't change. A job whose
     # area changed can only be skipped if "Changes" failed, which this catches.
-    # A push to dev reports under another name: it runs on the same commit a release pull
-    # request into main is opened from, and its result must not stand in for that pull
-    # request's own clean run of every job. Pull requests and merge queue groups report as
-    # "CI passed", the required check.
-    name: ${{ github.event_name == 'push' && 'Dev check' || 'CI passed' }}
+    # A push to dev, a scheduled run and a manual one report under another name: they run on
+    # the same commit a release pull request into main is opened from, and their result must
+    # not stand in for that pull request's own clean run of every job. Pull requests and merge
+    # queue groups report as "CI passed", the required check.
+    name: >-
+      ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group')
+      && 'CI passed' || 'Dev check' }}
     if: always()
-    needs: [changes, fmt, clippy, test, docs, coverage, swift, app, swift-format, mlx, llama, cad, extract, kopia, editors, deny, zizmor, hygiene]
+    needs: [changes, fmt, test, macos, docs, coverage, apple, mlx, llama, cad, extract, kopia, editors, deny, zizmor, hygiene]
     runs-on: ubuntu-latest
     steps:
       - name: Check job results

@@ -270,6 +270,12 @@ The command line has its own agent, [`carrel agent`](user-guide.md#keeping-work-
 
 While either agent runs, `carrel ingest` and the interactive mode start no worker of their own: the agent drafts what they add.
 
+## Quick Look
+
+Press Space on a card in Finder to see it as the app's inspector shows it: its title, summary, collection and tags, fields, notes and history. A restricted item's card shows its title only, with "Restricted: open in Carrel to see it". A Markdown file that isn't a card shows as its text.
+
+Carrel's own drawings of STEP, IGES and 3MF models show in Quick Look and Finder's previews too. The agent keeps them, so they appear for items in the archives it looks after, once it has drawn them, and never for restricted items. Drawing STEP and IGES needs the CAD provider ([3D models](../design/models-3d.md)).
+
 ## Spotlight
 
 While the agent runs, Spotlight finds what's in the archives it looks after: each item's card (its title, summary, tags, collection, dates and kind), the collections and the glossary's facts. Choosing a result opens the item, or the archive, in Carrel. Spotlight already finds the files themselves where macOS can read them.

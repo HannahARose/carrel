@@ -107,7 +107,15 @@ cargo run --bin carrel -- --version
 
 ### Which CI jobs run when
 
-CI (`.github/workflows/ci.yml`) runs only what a change affects. Its first job, "Changes" (`.github/scripts/ci-changes.sh`), lists the files a pull request or push changes and says which areas they touch: Rust, the Swift package, the Mac app, the MLX provider, Swift formatting, each portable provider, Kopia backups, the editor plugins, dependencies and the workflows. Each job runs only for its own area, so a change to the docs runs Format and Docs hygiene, which always run, and nothing else. Everything runs when a workflow changes, for the weekly schedule and a manual run, and for a pull request into `main`, which also restores no caches so that a release is checked from a clean build. A push to `dev`, which is a merged pull request, runs the Linux jobs for what that merge changed, and it's the only run that saves caches. Its macOS and Windows jobs run only when the dependencies changed, to refresh their caches, since the merge queue has already tested that commit on every platform. Pull requests reach `dev` only through the merge queue ([#298](https://github.com/Horizon-Labs/carrel/issues/298)): a queue group runs the jobs for what it changes against its base, on every platform, and "CI passed" reports on it. A pull request into `dev` runs only the Linux jobs, so pushes made while it's being worked on, and merges of `dev` into it, don't queue for the few macOS runners. Its macOS and Windows jobs run once, in the queue. "CI passed" is the required check: it passes when every job passed or was skipped because its area didn't change. Coverage, a Linux job, waits until a pull request is ready. A push to `dev` reports its result as "Dev check", not "CI passed", so that it can't stand in for a release pull request's own clean run, which shares its commit. To see what a change would run, `EVENT=push BEFORE=origin/dev SHA=HEAD .github/scripts/ci-changes.sh`.
+CI (`.github/workflows/ci.yml`) runs only what a change affects. Its first job, "Changes" (`.github/scripts/ci-changes.sh`), lists the files a pull request or push changes and says which areas they touch: Rust, the Swift package, the Mac app, the MLX provider, Swift formatting, each portable provider, Kopia backups, the editor plugins, dependencies and the workflows. Each job runs only for its own area, so a change to the docs runs Format and Docs hygiene, which always run, and nothing else. Everything runs when a workflow changes, for scheduled and manual runs, and for a pull request into `main`, which also restores no caches so that a release is checked from a clean build on every platform: that's the gate a release passes.
+
+Pull requests reach `dev` only through the merge queue ([#298](https://github.com/Horizon-Labs/carrel/issues/298)). Until the first stable release, macOS and Windows run only in an hourly scheduled run on `dev` and in a pull request into `main` ([#39](https://github.com/Horizon-Labs/carrel/issues/39)): the organization has five macOS runners, and waiting for them doubled a queue group's time. Everything else runs only the Linux jobs. A pull request into `dev` runs them for what it changes, so pushes made while it's being worked on, and merges of `dev` into it, don't queue for runners. The queue's group runs them for what it changes against its base, and "CI passed" reports on it. A push to `dev`, which is a merged pull request, runs them for what that merge changed, which keeps the Linux caches warm.
+
+The hourly run checks `dev` on every platform and does nothing when `dev` hasn't moved since the last scheduled run that passed. What breaks on macOS or Windows shows up there and is fixed after the fact, so when you change Swift, the Mac app or what they build on, run their tests on your Mac before marking a pull request ready. The scheduled runs and pushes to `dev` are the only runs that save caches. The weekly scheduled run also checks every link in the docs, not only those within the repository.
+
+A run takes at most three macOS runners: "Rust on macOS" runs Clippy, the tests and the llama.cpp, CAD and Kopia checks, "Swift package and Mac app" builds the XCFramework once for both and checks Swift formatting, and "MLX provider" stays on its own. Within each, a step runs only for its own area, and a failure doesn't stop the other areas' steps.
+
+"CI passed" is the required check: it passes when every job passed or was skipped because its area didn't change. Coverage, a Linux job, waits until a pull request is ready. Runs on `dev` (pushes, scheduled and manual runs) report their result as "Dev check", not "CI passed", so that they can't stand in for a release pull request's own clean run, which shares its commit. To see what a change would run, `EVENT=push BEFORE=origin/dev SHA=HEAD .github/scripts/ci-changes.sh`.
 
 ### Coverage and performance
 
@@ -191,6 +199,31 @@ scripts/swift-format.sh --check
 
 ```bash
 xcodebuild -project apple/CarrelApp/CarrelApp.xcodeproj -scheme Carrel test
+```
+
+#### Debug builds keep clear of the installed app
+
+A Debug build, from Xcode or a test run, is a different app from the one installed in `/Applications`, so it can't take over the installed app's extensions, settings or agent ([#443](https://github.com/Horizon-Labs/carrel/issues/443)):
+
+| | Release (installed) | Debug |
+| --- | --- | --- |
+| App and its defaults | `io.github.hannaharose.Carrel` | `io.github.hannaharose.Carrel.dev` |
+| Agent and its Mach service | `io.github.hannaharose.Carrel.Agent` | `io.github.hannaharose.Carrel.dev.Agent` |
+| Finder, Send to Archive | `io.github.hannaharose.Carrel.Finder`, `.SendToArchive` | `io.github.hannaharose.Carrel.dev.Finder`, `.SendToArchive` |
+| App group | `io.github.hannaharose.Carrel` | `io.github.hannaharose.Carrel.dev` |
+
+The project sets `CARREL_BUNDLE_IDENTIFIER` once per configuration, and each target's identifier, `CARREL_APP_GROUP`, the extensions' entitlements and the `CarrelAppGroup` key in each Info.plist come from it. CarrelKit's `AgentService.appGroup` reads that key, and the agent reads the app's domain from `CarrelAppIdentifier`, so a Debug agent follows the Debug app's archives. A new target or extension takes its identifier as `$(CARREL_BUNDLE_IDENTIFIER).Name`, never a literal one.
+
+As the host of the unit tests, the app (`CarrelMain`) starts bare: no windows, no Dock icon, no decision log, and no login item or agent registered. `UserDefaults.app` is then a suite of the tests' own (`io.github.hannaharose.Carrel.test-host`), emptied at each run, so tests never read or write the Debug app's settings or recents either. Debug and Release still both answer `carrel://` links; with both registered, macOS may open either, so quit a Debug build you aren't using and keep it out of `/Applications`.
+
+To check that a run left the installed app alone, compare these before and after:
+
+```bash
+defaults read io.github.hannaharose.Carrel
+```
+
+```bash
+pluginkit -mAvvv -i io.github.hannaharose.Carrel.Finder
 ```
 
 `apple/CarrelProviders` is the Apple provider (`carrel-provider-apple`), a separate Swift package that needs no Rust build: run `swift test` there. `CARREL_TEST_APPLE_PROVIDER=<path to the built program> cargo test -p carrel-core --test apple_provider` tests it through the provider protocol, as CI does.
