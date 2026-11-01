@@ -25,7 +25,9 @@ struct ProposalInspector: View {
                 }
                 .textSelection(.enabled)
             }
-            if !proposal.problems.isEmpty {
+            if proposal.draftAgain {
+                DraftAgainSection(proposal: proposal, review: review)
+            } else if !proposal.problems.isEmpty {
                 Section("Needs Settling") {
                     ForEach(proposal.problems, id: \.self) { problem in
                         Label(problem, systemImage: "exclamationmark.circle")
@@ -149,5 +151,32 @@ private struct CompressedSection: View {
     private func choose(expand: Bool) {
         let id = proposal.id
         Task { await review.chooseCompressed([id], expand: expand) }
+    }
+}
+
+/// A proposal whose card or collection couldn't be settled, as when no text model could be
+/// reached: what went wrong, with Draft Again first, before writing the card by hand.
+private struct DraftAgainSection: View {
+    let proposal: Proposal
+    let review: ReviewModel
+
+    var body: some View {
+        Section("Needs Settling") {
+            ForEach(proposal.problems, id: \.self) { problem in
+                Label(problem, systemImage: "exclamationmark.circle")
+                    .foregroundStyle(.orange)
+            }
+            HStack {
+                Text("Carrel can draft it again with the models this Mac has now.")
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Draft Again") {
+                    let id = proposal.id
+                    Task { await review.redraft([id]) }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(review.archive.progress != nil)
+            }
+        }
     }
 }

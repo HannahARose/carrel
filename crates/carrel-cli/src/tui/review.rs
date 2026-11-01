@@ -90,7 +90,18 @@ impl App {
             Some(entry) => {
                 match crate::review::detail(Some(self.archive.root()), &entry.id.to_string(), false)
                 {
-                    Ok(report) => report.text.lines().map(str::to_owned).collect(),
+                    // The command's hint names the command; here it's a key.
+                    Ok(report) => report
+                        .text
+                        .lines()
+                        .map(|l| {
+                            if l.contains("`carrel review redraft") {
+                                "Press d to draft it again with the models here now".to_owned()
+                            } else {
+                                l.to_owned()
+                            }
+                        })
+                        .collect(),
                     Err(crate::Failure(e)) => vec![e],
                 }
             }
@@ -177,7 +188,9 @@ impl App {
         }
         let decision = matches!(
             key.code,
-            KeyCode::Char('a' | 'h' | 'm' | 'x' | 'e' | 'c' | 'A' | ' ' | 'v' | 'b' | 's' | 'z')
+            KeyCode::Char(
+                'a' | 'h' | 'm' | 'x' | 'e' | 'c' | 'd' | 'A' | ' ' | 'v' | 'b' | 's' | 'z'
+            )
         );
         if !decision {
             return Handled::No;
@@ -240,6 +253,7 @@ impl App {
                 None
             }
             KeyCode::Char('z') => self.compressed_choice(targets),
+            KeyCode::Char('d') => Some(Effect::Redraft(targets)),
             KeyCode::Char('e') => self.queue.get(self.chosen).map(|e| Effect::Edit(e.id)),
             KeyCode::Char('c') => self.start_correction(),
             KeyCode::Char('m') => {
@@ -315,5 +329,70 @@ impl App {
     /// What a decision applies to, for the help line: a count when several are marked.
     pub fn marked_note(&self) -> Option<String> {
         (!self.marked.is_empty()).then(|| format!("{} marked", self.marked.len()))
+    }
+}
+
+/// `d`: drafts `chosen` again with the models here now, in the background, as
+/// `carrel review redraft` does.
+pub(super) fn redraft_work(root: std::path::PathBuf, chosen: &[Id]) -> (String, super::Work) {
+    let ids: Vec<String> = chosen.iter().map(ToString::to_string).collect();
+    let busy = format!(
+        "Drafting {} again…",
+        if ids.len() == 1 {
+            "the proposal".to_owned()
+        } else {
+            format!("{} proposals", ids.len())
+        }
+    );
+    (
+        busy,
+        Box::new(move || crate::redraft::redraft_proposals(Some(&root), &ids, false, &mut |_| {})),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use carrel_core::card::Id;
+    use carrel_core::review::{Problem, ReviewQueue, State};
+    use ratatui::crossterm::event::KeyCode;
+
+    use super::super::app::{App, Effect};
+    use super::super::tests::{key, sample, screen};
+
+    #[test]
+    fn a_proposal_drafted_without_a_model_offers_d_to_draft_it_again() {
+        let (_dir, app) = sample(false);
+        let queue = ReviewQueue::of(&app.archive);
+        let (entries, _) = queue.list().unwrap();
+        let mut failed = entries[0].clone();
+        failed.id = Id::new_v7();
+        failed.card.title = "Unread scan".into();
+        failed.state = State::NeedsOwner;
+        failed.problems = vec![Problem {
+            stage: "card".into(),
+            message: "no text model on this device; write the card by hand".into(),
+        }];
+        queue.save(&failed).unwrap();
+        let mut app = App::new(app.archive.clone()).unwrap();
+        app.key(key(KeyCode::Char('2')));
+        app.chosen = app.queue.iter().position(|e| e.id == failed.id).unwrap();
+        app.load_detail();
+
+        assert_eq!(app.keys().first(), Some(&("d", "draft again")));
+        let text = screen(&app, 140, 40);
+        assert!(text.contains("draft again?"), "{text}");
+        assert!(
+            text.contains("Press d to draft it again"),
+            "the hint names the key, not the command: {text}"
+        );
+        assert_eq!(
+            app.key(key(KeyCode::Char('d'))),
+            Some(Effect::Redraft(vec![failed.id]))
+        );
+
+        // A proposal whose card is settled doesn't put it first, though d still works.
+        app.chosen = app.queue.iter().position(|e| e.id != failed.id).unwrap();
+        app.load_detail();
+        assert_ne!(app.keys().first(), Some(&("d", "draft again")));
     }
 }

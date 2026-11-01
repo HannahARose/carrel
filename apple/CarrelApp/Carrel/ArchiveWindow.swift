@@ -256,8 +256,8 @@ private struct Inspector: View {
         {
             QuestionInspector(
                 question: question, questions: questions,
-                collections: model.collections.map(\.path)
-            ) { id in model.items.first { $0.id == id }?.title }
+                collections: model.collections.map(\.path), previews: model.previews
+            ) { id in model.items.first { $0.id == id } }
         } else if model.screen == .restructure, let restructure = model.restructure,
             let proposal = restructure.selected
         {

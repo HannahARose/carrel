@@ -85,6 +85,7 @@ While another device is the writer (its lease in `_System/writer.lock`), `carrel
 | `carrel review edit ID` | Opens the card in your editor, checks it when you save, and reopens it with the problems listed until it checks out. |
 | `carrel review correct ID [WORDS…] [--yes] [--learn]` | Corrects a proposal in plain words ("it's from 2019", "it's a picture of Annecy, not Geneva") or `field: value` lines. Shows each change before and after, and saves only when you agree (`--yes` saves without asking). A broad correction can route it again. `--learn` adds a lasting fact it states to the glossary without asking. |
 | `carrel review reject ID...` | Rejects proposals; the items stay where they are. |
+| `carrel review redraft ID...` | Drafts proposals again with the models here now: card, collection and sensitivity. Each keeps its identifier and batch, and the fields you edited or corrected and a collection you chose. `--all-failed` drafts again every waiting proposal whose card or collection couldn't be settled. Without a text model, it says which to download. |
 
 Identifiers can be shortened to their last eight characters, as the list shows them.
 
@@ -127,7 +128,7 @@ It runs by itself in `carrel agent` and after the background worker, only when t
 
 | Command | What it does |
 | --- | --- |
-| `carrel questions [list] [--all]` | Lists the questions waiting for an answer, the most worth answering first, each with the answers it suggests, numbered. Questions the glossary or a rule already answers are dropped, and questions that ask the same are merged. `--all` lists the skipped ones resting too. |
+| `carrel questions [list] [--all]` | Lists the questions waiting for an answer, the most worth answering first, each with the answers it suggests, numbered. Questions the glossary or a rule already answers are dropped, and questions that ask the same are merged. `--all` lists the skipped ones resting too. Each names what it's about, with where its file is, so it can be opened. |
 | `carrel questions answer ID [ANSWER...] [--yes] [--learn] [--create]` | Answers a question with a suggestion's number or your own words; without an answer, it's asked on the terminal. A term's answer is saved to the glossary and its items are drafted again. A collection's, group's or sender's answer is a collection, where its items go, filed ones as undoable moves; a picked new collection is created, and `--create` creates one you name. A sender's yes then asks whether to add a routing rule for future items (`--learn` adds it). An item's answer is a correction of its card, shown before and after and saved on your yes (`--yes` saves it without asking, `--learn` adds a fact it states to the glossary). |
 | `carrel questions skip ID` | Skips a question: it rests for `questions.skip_days` (14 unless changed), then comes back. |
 | `carrel questions dismiss ID` | Dismisses a question; its items stop waiting on it. |

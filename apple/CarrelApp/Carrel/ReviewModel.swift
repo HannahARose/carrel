@@ -26,6 +26,8 @@ final class ReviewModel {
     @ObservationIgnored var filed: () async -> Void = {}
     /// Switches Review to the crawler's findings (`f`).
     @ObservationIgnored var showCrawler: () -> Void = {}
+    /// A model to draft with besides this Mac's, as tests give one.
+    @ObservationIgnored var redraftModel: ModelProvider?
 
     init(archive: ArchiveModel) {
         self.archive = archive
@@ -131,6 +133,33 @@ final class ReviewModel {
             let compressed = first.compressed
         else { return }
         await chooseCompressed(ids, expand: !compressed.expand || compressed.asking)
+    }
+
+    /// Drafts the proposals `ids` again with the models this Mac has now, keeping what the
+    /// owner set, and says what it did.
+    func redraft(_ ids: [Proposal.ID]) async {
+        guard !ids.isEmpty else { return }
+        report = nil
+        guard
+            let outcome = try? await archive.redraft(
+                ids, model: redraftModel, memoryGB: LibrarianModel.thisMac)
+        else { return }
+        report = Self.describe(outcome)
+    }
+
+    /// What drafting again did, in a sentence or two.
+    static func describe(_ outcome: RedraftOutcome) -> String {
+        var lines: [String] = []
+        let count = outcome.redrafted.count
+        if count == 1, let one = outcome.redrafted.first {
+            lines.append("Drafted “\(one.proposal.fields.title)” again")
+        } else if count > 1 {
+            lines.append("Drafted \(count) proposals again")
+        }
+        let kept = Set(outcome.redrafted.flatMap(\.kept)).sorted()
+        if !kept.isEmpty { lines.append("Kept what you set: \(kept.joined(separator: ", "))") }
+        lines += outcome.failures
+        return lines.joined(separator: "\n")
     }
 
     /// The archived items the proposal `id` duplicates, side by side with it.

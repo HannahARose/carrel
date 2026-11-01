@@ -90,6 +90,7 @@ Proposals waiting for your decision, grouped by the collection each would go to.
 | `h` | Hold | Files them in Holding, for later |
 | `m` | Move To… | Points them at another collection, chosen from a list you can filter by typing |
 | `r` | Reject | Leaves their files where they are and drops the proposals |
+| `d` | Draft Again | Drafts them again with the models this Mac has now, keeping what you edited, corrected or chose; offered first in the inspector when a card or collection couldn't be settled |
 | `z` | Expand When Filed, Keep Compressed | For a zip or other compressed file, whether it's expanded on approval |
 | `v` | File as Version | For a duplicate, files it as a new version of the item it duplicates |
 | `b` | Keep Both | For a duplicate, files it beside the item it duplicates |
@@ -100,7 +101,7 @@ A duplicate shows the archived item beside it in the inspector, so you can compa
 
 ### Questions
 
-Carrel asks here instead of guessing, most useful first: what a term means, where items go (alone or as a group), whether a sender or project should have its own collection, and things about a single item. Choose a question to see what it's about and the items it holds up, then:
+Carrel asks here instead of guessing, most useful first: what a term means, where items go (alone or as a group), whether a sender or project should have its own collection, and things about a single item. Choose a question to see what it's about: the item's preview, as in Browse, or a strip of thumbnails for a group, each with **Open**, and the items it holds up. A restricted item's preview waits for **Show Preview**. Then:
 
 - **Pick a suggested answer:** the likely answers come first, with why each is likely; a click answers with it. One marked "a new collection" creates it.
 - **Answer it yourself:** type what a term means, choose where items go, or say **Yes** or **No** to a sender's collection. After a sender's answer, Carrel asks before adding a routing rule for future items. An item question's answer opens the correction sheet: you see what it changes on the card, and it's saved, and the question answered, only when you confirm (**Mark Answered** when it changes nothing).
