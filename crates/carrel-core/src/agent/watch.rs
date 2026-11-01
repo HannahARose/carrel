@@ -34,6 +34,10 @@ pub enum Watcher {
         archive: PathBuf,
         /// The working copies outside the archive being watched.
         outside: Vec<PathBuf>,
+        /// Working copies no longer watched, as given and as the system resolves them. Some
+        /// systems (Windows) still deliver events queued before a watch was removed, so these
+        /// are dropped here rather than trusted to stop.
+        unwatched: Vec<PathBuf>,
     },
     /// By looking.
     Polling(Poller),
@@ -85,6 +89,7 @@ impl Watcher {
             paths,
             archive: archive.to_owned(),
             outside: Vec::new(),
+            unwatched: Vec::new(),
         };
         watcher.watch(working_copies);
         Some(watcher)
@@ -106,6 +111,7 @@ impl Watcher {
                 watcher,
                 archive,
                 outside,
+                unwatched,
                 ..
             } => {
                 let wanted: Vec<PathBuf> = working_copies
@@ -115,7 +121,12 @@ impl Watcher {
                     .collect();
                 for gone in outside.iter().filter(|o| !wanted.contains(o)) {
                     let _ = watcher.unwatch(gone);
+                    unwatched.push(gone.clone());
+                    if let Ok(resolved) = gone.canonicalize() {
+                        unwatched.push(resolved);
+                    }
                 }
+                unwatched.retain(|u| !wanted.iter().any(|w| u.starts_with(w) || w.starts_with(u)));
                 let mut watched = Vec::new();
                 for folder in wanted {
                     // A working copy that isn't there yet, or can't be watched, is left out;
@@ -144,7 +155,12 @@ impl Watcher {
     /// The paths changed since last asked.
     pub fn changes(&mut self) -> Vec<PathBuf> {
         match self {
-            Self::Events { paths, .. } => paths.try_iter().collect(),
+            Self::Events {
+                paths, unwatched, ..
+            } => paths
+                .try_iter()
+                .filter(|p| !unwatched.iter().any(|u| p.starts_with(u)))
+                .collect(),
             Self::Polling(poller) => poller.changes(),
         }
     }
