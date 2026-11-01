@@ -51,7 +51,9 @@ final class ActiveScreenModelTests: XCTestCase {
     override func setUp() async throws {
         sample = try SampleCopy()
         changes = 0
-        model = ActiveScreenModel(archive: sample.archive) { [weak self] in self?.changes += 1 }
+        model = ActiveScreenModel(
+            archive: sample.archive, checkoutFolder: sample.folder.appending(path: "Desktop")
+        ) { [weak self] in self?.changes += 1 }
         await model.refresh()
     }
 
@@ -103,7 +105,8 @@ final class ActiveScreenModelTests: XCTestCase {
         let id = try sample.item(titled: "Desk lamp parts list")
         model.startCheckout(of: id, titled: "Desk lamp parts list")
         var draft = try XCTUnwrap(model.checkingOut)
-        XCTAssertEqual(draft.folder.lastPathComponent, "Desktop", "the Desktop unless changed")
+        XCTAssertEqual(
+            draft.folder, sample.folder.appending(path: "Desktop"), "the Desktop unless changed")
         draft.folder = try sample.makeFolder("Work")
         draft.due = try XCTUnwrap(
             Calendar.current.date(from: DateComponents(year: 2026, month: 12, day: 1)))

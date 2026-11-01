@@ -162,7 +162,8 @@ final class ArchiveWindowModel {
             review?.filed = { [weak self] in await self?.refreshItems() }
             questions = QuestionsModel(archive: archive)
             backups = BackupsModel(archive: archive)
-            activeScreen = ActiveScreenModel(archive: archive) { [weak self] in
+            activeScreen = ActiveScreenModel(archive: archive, checkoutFolder: checkoutFolder) {
+                [weak self] in
                 await self?.refreshItems()
             }
             historyScreen = HistoryScreenModel(archive: archive) { [weak self] in
@@ -182,6 +183,13 @@ final class ArchiveWindowModel {
         } catch {
             problem = message(for: error)
         }
+    }
+
+    /// Where a checkout goes unless changed: the Desktop of the home the archive was opened
+    /// with, as the core checks out by default.
+    private var checkoutFolder: URL {
+        options?.home.map { URL(filePath: $0).appending(path: "Desktop") }
+            ?? FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask)[0]
     }
 
     /// Reads the collections and items again, after a change that files or refiles items.
