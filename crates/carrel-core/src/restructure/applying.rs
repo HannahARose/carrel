@@ -108,8 +108,17 @@ fn is_free(folder: &Path, name: &str) -> bool {
     })
 }
 
+/// Adds a line to the collection's changelog, if it keeps one. A changelog made here inside a
+/// collection the same change renames would move back with the folder on undo, untracked, and
+/// stay behind.
 fn changelog(archive: &Archive, collection: &str, entry: &str) -> Result<(), String> {
-    if collection.is_empty() {
+    if collection.is_empty()
+        || !archive
+            .root()
+            .join(collection)
+            .join("CHANGELOG.md")
+            .is_file()
+    {
         return Ok(());
     }
     crate::listing::add_to_changelog(archive, collection, &format!("{entry} (restructure)"))
@@ -485,10 +494,15 @@ fn with_organization(body: &str, text: &str) -> String {
     let addition = format!("{}\n\n", text.trim());
     if let Some(start) = body.find("\n## Organization") {
         let after = start + "\n## Organization".len();
-        let end = body[after..]
-            .find("\n## ")
-            .or_else(|| body[after..].find("\n<!-- carrel:listing -->"))
-            .map_or(body.len(), |e| after + e + 1);
+        // The section ends at the next heading or the managed listing, whichever comes first.
+        let end = [
+            body[after..].find("\n## "),
+            body[after..].find("\n<!-- carrel:listing -->"),
+        ]
+        .into_iter()
+        .flatten()
+        .min()
+        .map_or(body.len(), |e| after + e + 1);
         let mut out = body[..end].trim_end().to_owned();
         out.push_str("\n\n");
         out.push_str(&addition);
@@ -583,6 +597,11 @@ mod tests {
             "# R\n\n## Organization\n\nFlat.\n\n- **Birds**: birds\n\n## Examples\n\nx\n"
         );
         assert_eq!(with_organization(&out, "- **Birds**: birds"), out);
+        let listed = "# R\n\n## Organization\n\nFlat.\n\n<!-- carrel:listing -->\n## Contents\n";
+        assert_eq!(
+            with_organization(listed, "- **A**: a"),
+            "# R\n\n## Organization\n\nFlat.\n\n- **A**: a\n\n<!-- carrel:listing -->\n## Contents\n"
+        );
         let bare = "# R\n\n<!-- carrel:listing -->\nlist\n";
         assert_eq!(
             with_organization(bare, "- **A**: a"),

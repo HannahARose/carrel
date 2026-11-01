@@ -327,7 +327,8 @@ fn in_holding(collection: &str) -> bool {
 /// collection's items and some of one other's; otherwise a new collection.
 fn shape_of(survey: &Survey, group: &CandidateGroup, warrant: usize) -> (Shape, Invasiveness) {
     if let [a, b] = group.sources.as_slice() {
-        for (small, other) in [(a, b), (b, a)] {
+        // The smaller joins the larger: sources come most items first.
+        for (small, other) in [(b, a), (a, b)] {
             let whole = survey.items_in(&small.collection) == small.items;
             if whole
                 && small.items < warrant
