@@ -4075,3 +4075,53 @@ awk 'BEGIN {{ done = 0 }} {{ if (!done) {{ print "My note."; done = 1 }} print }
     }
     assert!(!after.contains("To fix"), "{after}");
 }
+
+#[cfg(unix)]
+#[test]
+fn edit_card_fields_saved_another_way_meanwhile_reopens_saying_so() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(&root, &["init"]);
+    let card = root.join("Projects/Hardware/parts-list.csv.md");
+    // The first time the editor opens, the title is saved into the card another way, and the
+    // owner gives it another and asks for snapshots only on return. The second time, a line
+    // above says what the title is now; the owner deletes it and saves, keeping theirs.
+    let editor = sandbox.path("editor.sh");
+    let script = format!(
+        r#"#!/bin/sh
+if grep -q "To fix" "$1"; then
+  grep -q 'title is now "Their title"' "$1" || exit 1
+  grep -v "^# To fix" "$1" > "$1.new" && mv "$1.new" "$1"
+  exit 0
+fi
+sed 's/^title: .*/title: Their title/' "{card}" > "{card}.new" && mv "{card}.new" "{card}"
+sed 's/^title: .*/title: My title/' "$1" > "$1.new" && mv "$1.new" "$1"
+echo "snapshots: return-only" >> "$1"
+"#,
+        card = card.display()
+    );
+    std::fs::write(&editor, script).unwrap();
+    std::fs::set_permissions(&editor, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_carrel"))
+        .args(["edit", "Projects/Hardware/parts-list.csv", "--json"])
+        .current_dir(&root)
+        .env("CARREL_CONFIG_DIR", sandbox.path("config"))
+        .env("CARREL_WORKER", "off")
+        .env_remove("VISUAL")
+        .env("EDITOR", &editor)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(report["changed"], serde_json::json!(["title", "snapshots"]));
+    let after = std::fs::read_to_string(&card).unwrap();
+    assert!(
+        after.contains("title: My title") && after.contains("snapshots: return-only"),
+        "{after}"
+    );
+}
