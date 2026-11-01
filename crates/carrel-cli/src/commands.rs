@@ -359,6 +359,7 @@ pub fn status_on(
     let history = summary.history.as_deref();
 
     let mut text = archive_header(&archive);
+    let (reminders_text, reminders) = crate::reminders::status_section(&archive);
     let kinds: Vec<String> = summary
         .by_kind
         .iter()
@@ -376,6 +377,7 @@ pub fn status_on(
         }
     )
     .unwrap();
+    text.push_str(&reminders_text);
     text.push_str(&history_line(history));
     text.push_str(&crate::backup::status_line(&archive, history));
     text.push_str(&writer_line(summary.writer.as_ref(), this_device));
@@ -429,6 +431,7 @@ pub fn status_on(
         "signals": summary.signals,
         "librarian": librarian,
         "crawler": crawler,
+        "reminders": reminders,
         "desk": desk,
         "resurfaced": resurfaced,
         "questions_today": daily,

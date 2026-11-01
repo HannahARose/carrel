@@ -107,6 +107,9 @@ impl Jobs for CliJobs {
             Job::Sessions => self.sessions(archive),
             Job::Backup => self.backup(archive),
             Job::Crawl => Self::crawl(archive),
+            Job::Remind => {
+                crate::reminders::remind_for_agent(archive, self.device()).map_err(JobError::Failed)
+            }
         }
     }
 
@@ -194,6 +197,7 @@ fn job_name(job: Job) -> &'static str {
         Job::Sessions => "sessions",
         Job::Backup => "backup",
         Job::Crawl => "crawl",
+        Job::Remind => "remind",
     }
 }
 

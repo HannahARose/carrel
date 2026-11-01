@@ -39,9 +39,17 @@ fi
 CARREL_TEST_LLAMA_MODELS="$models" cargo test --release --locked -p carrel-provider-llama
 
 echo "== MLX provider"
-# xcodebuild passes TEST_RUNNER_X to the tests as X.
-(cd apple/CarrelMLX && TEST_RUNNER_CARREL_TEST_MLX_MODELS="$models" xcodebuild -scheme CarrelMLX-Package \
-    -destination 'platform=macOS' -derivedDataPath .build/xcode -skipMacroValidation -quiet test)
+# `xcodebuild test` needs a logged-in session to reach the test runner. The self-hosted runner
+# runs as a LaunchDaemon, outside any session (FileVault rules out logging carrel-ci in
+# automatically), so there the MLX tests with real models are skipped, with a warning. They run
+# when this script is run by hand; CI's MLX provider job tests the provider without models.
+if [ "$(launchctl managername 2>/dev/null)" = Aqua ]; then
+    # xcodebuild passes TEST_RUNNER_X to the tests as X.
+    (cd apple/CarrelMLX && TEST_RUNNER_CARREL_TEST_MLX_MODELS="$models" xcodebuild -scheme CarrelMLX-Package \
+        -destination 'platform=macOS' -derivedDataPath .build/xcode -skipMacroValidation -quiet test)
+else
+    echo "::warning::Skipped the MLX provider's tests with real models: xcodebuild test needs a logged-in session. Run scripts/on-device-tests.sh by hand to include them."
+fi
 
 echo "== Drafting with every installed model"
 out="$(mktemp -d)"

@@ -73,7 +73,7 @@ fn it_claims_the_archive_catches_up_and_the_clis_worker_steps_aside() {
     );
     assert_eq!(
         jobs.ran,
-        [Job::Work, Job::Sessions],
+        [Job::Work, Job::Sessions, Job::Remind],
         "it catches up at once"
     );
     assert!(
@@ -122,7 +122,7 @@ fn it_steps_aside_while_another_agent_has_the_archive_and_takes_over_once_it_goe
             ..
         }
     ));
-    assert_eq!(jobs.ran, [Job::Work, Job::Sessions]);
+    assert_eq!(jobs.ran, [Job::Work, Job::Sessions, Job::Remind]);
 
     // A second agent now steps aside for this one.
     let mut second = Agent::new(&s.workers, std::slice::from_ref(&root), true);
@@ -193,7 +193,10 @@ fn scheduled_snapshots_are_remembered_between_runs() {
     };
     let mut agent = Agent::new(&s.workers, std::slice::from_ref(&root), true);
     tick(&mut agent, &mut jobs, at(0));
-    assert_eq!(jobs.ran, [Job::Work, Job::Sessions, Job::Backup]);
+    assert_eq!(
+        jobs.ran,
+        [Job::Work, Job::Sessions, Job::Backup, Job::Remind]
+    );
     agent.release();
     let state = State::load(&State::path(&s.workers, &s.archive));
     assert!(state.last_backup.is_some() && !state.backup_failed);
@@ -201,7 +204,11 @@ fn scheduled_snapshots_are_remembered_between_runs() {
     jobs.ran.clear();
     let mut again = Agent::new(&s.workers, std::slice::from_ref(&root), true);
     tick(&mut again, &mut jobs, at(3600));
-    assert_eq!(jobs.ran, [Job::Work, Job::Sessions], "not due for a day");
+    assert_eq!(
+        jobs.ran,
+        [Job::Work, Job::Sessions, Job::Remind],
+        "not due for a day"
+    );
     assert_eq!(
         again.plan(&root).unwrap().backup_due(),
         Some(at(0) + plan::BACKUP_EVERY)

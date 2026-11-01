@@ -17,6 +17,8 @@ pub enum Job {
     /// Recheck where a few items are filed, when the crawler's pace and the device allow
     /// (`docs/design/restructure.md`, "Crawlers").
     Crawl,
+    /// Show the reminders due that this device hasn't shown yet (`docs/design/reminders.md`).
+    Remind,
 }
 
 impl Job {
@@ -28,6 +30,7 @@ impl Job {
             Self::Sessions => "looking for work sessions",
             Self::Backup => "taking a scheduled snapshot",
             Self::Crawl => "rechecking where items are filed",
+            Self::Remind => "looking for reminders",
         }
     }
 }
@@ -60,6 +63,8 @@ pub const CRAWL_LOOK: Duration = Duration::from_mins(5);
 /// How long after the owner changes anything the crawler waits, so it never works while they
 /// do.
 pub const CRAWL_QUIET: Duration = Duration::from_mins(5);
+/// How often the agent looks for reminders due, besides just after recording work sessions.
+pub const REMIND_EVERY: Duration = Duration::from_mins(15);
 
 /// One archive's schedule.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -79,6 +84,7 @@ pub struct Plan {
     work_due: Option<SystemTime>,
     sessions_due: Option<SystemTime>,
     crawl_due: Option<SystemTime>,
+    remind_due: Option<SystemTime>,
 }
 
 impl Plan {
@@ -96,6 +102,7 @@ impl Plan {
             work_due: None,
             sessions_due: None,
             crawl_due: None,
+            remind_due: None,
         }
     }
 
@@ -167,6 +174,7 @@ impl Plan {
         self.work_due = Some(now);
         self.sessions_due = Some(now);
         self.crawl_due = Some(now + CRAWL_LOOK);
+        self.remind_due = Some(now);
     }
 
     /// When the next scheduled snapshot is due, if backups are set up.
@@ -205,6 +213,12 @@ impl Plan {
         self.crawl_due
     }
 
+    /// When the agent next looks for reminders.
+    #[must_use]
+    pub fn remind_due(&self) -> Option<SystemTime> {
+        self.remind_due
+    }
+
     /// The jobs due at `now`, in the order to run them. The crawler only runs when nothing
     /// else is due.
     #[must_use]
@@ -213,6 +227,7 @@ impl Plan {
             (self.work_due, Job::Work),
             (self.sessions_due, Job::Sessions),
             (self.backup_due(), Job::Backup),
+            (self.remind_due, Job::Remind),
         ]
         .into_iter()
         .filter(|(due, _)| due.is_some_and(|due| due <= now))
@@ -237,6 +252,8 @@ impl Plan {
                 if self.sessions_due.is_some_and(|due| due <= started) {
                     self.sessions_due = None;
                 }
+                // A session just recorded may have an entry to remind about.
+                self.remind_due = Some(started);
             }
             Job::Backup => {
                 self.last_backup = Some(started);
@@ -245,6 +262,11 @@ impl Plan {
             Job::Crawl => {
                 if self.crawl_due.is_some_and(|due| due <= started) {
                     self.crawl_due = Some(started + CRAWL_LOOK);
+                }
+            }
+            Job::Remind => {
+                if self.remind_due.is_some_and(|due| due <= started) {
+                    self.remind_due = Some(started + REMIND_EVERY);
                 }
             }
         }
@@ -256,6 +278,7 @@ impl Plan {
             Job::Work => self.work_due = Some(later),
             Job::Sessions => self.sessions_due = Some(later),
             Job::Crawl => self.crawl_due = Some(later),
+            Job::Remind => self.remind_due = Some(later),
             Job::Backup => {}
         }
     }
@@ -268,6 +291,7 @@ impl Plan {
             self.sessions_due,
             self.backup_due(),
             self.crawl_due,
+            self.remind_due,
         ]
         .into_iter()
         .flatten()
@@ -296,9 +320,10 @@ mod tests {
     fn the_crawler_runs_only_when_nothing_else_is_due_and_waits_after_changes() {
         let mut plan = plan();
         plan.start(at(0));
-        assert_eq!(plan.due(at(0)), [Job::Work, Job::Sessions]);
+        assert_eq!(plan.due(at(0)), [Job::Work, Job::Sessions, Job::Remind]);
         plan.ran(Job::Work, at(0), true);
         plan.ran(Job::Sessions, at(0), true);
+        plan.ran(Job::Remind, at(0), true);
         let look = CRAWL_LOOK.as_secs();
         assert_eq!(plan.due(at(look - 1)), []);
         assert_eq!(plan.due(at(look)), [Job::Crawl]);
@@ -311,6 +336,21 @@ mod tests {
         assert_eq!(plan.due(at(quiet)), [Job::Crawl]);
         plan.ran(Job::Crawl, at(quiet), true);
         assert_eq!(plan.crawl_due(), Some(at(quiet + look)));
+    }
+
+    #[test]
+    fn reminders_are_looked_for_on_starting_after_sessions_and_every_quarter_hour() {
+        let mut plan = plan();
+        plan.start(at(0));
+        plan.ran(Job::Work, at(0), true);
+        plan.ran(Job::Remind, at(0), true);
+        let every = REMIND_EVERY.as_secs();
+        assert_eq!(plan.remind_due(), Some(at(every)));
+        // Recording sessions may leave an entry to remind about: look at once.
+        plan.ran(Job::Sessions, at(10), true);
+        assert_eq!(plan.due(at(10)), [Job::Remind]);
+        plan.ran(Job::Remind, at(10), true);
+        assert_eq!(plan.remind_due(), Some(at(10 + every)));
     }
 
     #[test]
@@ -347,9 +387,10 @@ mod tests {
         let mut plan = plan();
         assert_eq!(plan.due(at(0)), [], "nothing is due before starting");
         plan.start(at(0));
-        assert_eq!(plan.due(at(0)), [Job::Work, Job::Sessions]);
+        assert_eq!(plan.due(at(0)), [Job::Work, Job::Sessions, Job::Remind]);
         plan.ran(Job::Work, at(0), true);
         plan.ran(Job::Sessions, at(0), true);
+        plan.ran(Job::Remind, at(0), true);
         assert_eq!(plan.next_due(), plan.crawl_due(), "only the crawler's look");
 
         let queued = Path::new("/a/Archive/_System/queue/intake/x.json");
@@ -420,8 +461,9 @@ mod tests {
         plan.start(at(0));
         plan.postpone(Job::Work, at(30));
         plan.postpone(Job::Sessions, at(30));
+        plan.postpone(Job::Remind, at(30));
         assert_eq!(plan.due(at(10)), []);
-        assert_eq!(plan.due(at(30)), [Job::Work, Job::Sessions]);
+        assert_eq!(plan.due(at(30)), [Job::Work, Job::Sessions, Job::Remind]);
         plan.backups_set_up = true;
         plan.last_backup = Some(at(0));
         plan.postpone(Job::Backup, at(30));

@@ -7,6 +7,14 @@
 import Foundation
 import Observation
 
+/// Shows the agent's reminders to the owner (docs/design/reminders.md): the agent app posts
+/// them as notifications; tests remember them.
+public protocol ReminderPoster: Sendable {
+    /// Shows `reminder`, from the archive `name` at `archive`, and says whether it did; one it
+    /// didn't is tried again later.
+    func post(_ reminder: Reminder, archive: URL, name: String) async -> Bool
+}
+
 /// What the menu bar list shows for one archive.
 public struct AgentArchive: Identifiable, Sendable, Equatable {
     /// The archive's root folder.
@@ -22,6 +30,8 @@ public struct AgentArchive: Identifiable, Sendable, Equatable {
     public var crawled: String?
     /// What went wrong last, if the last job failed.
     public var problem: String?
+    /// Whether the archive's `reminders` setting has the menu bar list on.
+    public var showsMenuBar = true
 
     public var id: URL { root }
 
@@ -56,20 +66,30 @@ public final class Agent {
     private let now: @Sendable () -> Date
     private let badges: URL?
     private var badgesWritten: BadgeState?
+    private let reminders: (any ReminderPoster)?
     private var sleeper: Task<Void, Never>?
 
     /// An agent opening archives with `options` (the device's own when `nil`), keeping when
-    /// it last backed each up in `state`, and the badge state file at `badges` if given. It
-    /// watches files only when `watching` says so; tests tell it what changed instead.
+    /// it last backed each up in `state`, the badge state file at `badges` if given, and
+    /// showing reminders through `reminders`, if given. It watches files only when `watching`
+    /// says so; tests tell it what changed instead.
     public init(
         options: OpenOptions? = nil, state: UserDefaults = .standard, watching: Bool = true,
-        badges: URL? = nil, now: @escaping @Sendable () -> Date = { Date() }
+        badges: URL? = nil, reminders: (any ReminderPoster)? = nil,
+        now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.options = options
         self.state = state
         self.watching = watching
         self.badges = badges
+        self.reminders = reminders
         self.now = now
+    }
+
+    /// Whether the menu bar list is shown: when no archive is followed yet, or any followed
+    /// has the `menu-bar` reminder on.
+    public var showsMenuBar: Bool {
+        archives.isEmpty || archives.contains(where: \.showsMenuBar)
     }
 
     // MARK: - Which archives
@@ -298,6 +318,8 @@ public final class Agent {
                     .value
             case .crawl:
                 try await crawl(handle, in: root, name: name)
+            case .remind:
+                try await remind(handle, in: root, name: name)
             }
         } catch CarrelError.Busy {
             // Another writer has the archive; try again shortly.
@@ -343,6 +365,19 @@ public final class Agent {
         }
     }
 
+    /// Posts the reminders due that this Mac hasn't shown yet, and marks those posted shown.
+    private func remind(_ handle: ArchiveHandle, in root: URL, name: String) async throws {
+        guard let reminders else { return }
+        let due = try await Task.detached { try handle.remindersToShow() }.value
+        var shown: [String] = []
+        for reminder in due where await reminders.post(reminder, archive: root, name: name) {
+            shown.append(reminder.key)
+        }
+        if !shown.isEmpty {
+            try await Task.detached { try handle.markRemindersShown(keys: shown) }.value
+        }
+    }
+
     // MARK: - What the menu bar shows
 
     /// Reads what's active and queued in `root` again, and the working copies to watch.
@@ -353,7 +388,8 @@ public final class Agent {
             (
                 try? handle.active(), (try? handle.intake())?.waiting.count ?? 0,
                 handle.idleMinutes(), handle.backupsSetUp(),
-                (try? handle.crawlerFindings())?.count ?? 0, known ?? (try? handle.items())
+                (try? handle.crawlerFindings())?.count ?? 0, known ?? (try? handle.items()),
+                handle.showsMenuBar()
             )
         }.value
         guard followed[root] != nil else { return }
@@ -368,6 +404,7 @@ public final class Agent {
             archives[index].active = active
             archives[index].queued = read.1
             archives[index].findings = read.4
+            archives[index].showsMenuBar = read.6
         }
         if moved, followed[root]?.claim != nil { watch(root) }
         writeBadges()
