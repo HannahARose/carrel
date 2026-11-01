@@ -8,9 +8,9 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 #if os(macOS)
-    import AppKit
+import AppKit
 #else
-    import UIKit
+import UIKit
 #endif
 
 /// A request to choose files or folders, which the Mac answers with an open panel at once and
@@ -38,18 +38,18 @@ final class FileChoosing {
     /// Asks for files or folders, and calls `chosen` with them unless it's cancelled.
     func choose(_ request: Request) {
         #if os(macOS)
-            let panel = NSOpenPanel()
-            panel.canChooseDirectories = request.folders
-            panel.canChooseFiles = request.files
-            panel.canCreateDirectories = request.folders
-            panel.allowsMultipleSelection = request.multiple
-            panel.prompt = request.prompt
-            if let message = request.message { panel.message = message }
-            if let start = request.start { panel.directoryURL = start }
-            guard panel.runModal() == .OK, !panel.urls.isEmpty else { return }
-            request.chosen(panel.urls)
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = request.folders
+        panel.canChooseFiles = request.files
+        panel.canCreateDirectories = request.folders
+        panel.allowsMultipleSelection = request.multiple
+        panel.prompt = request.prompt
+        if let message = request.message { panel.message = message }
+        if let start = request.start { panel.directoryURL = start }
+        guard panel.runModal() == .OK, !panel.urls.isEmpty else { return }
+        request.chosen(panel.urls)
         #else
-            pending = request
+        pending = request
         #endif
     }
 
@@ -98,15 +98,15 @@ private struct FileChoosingPicker: ViewModifier {
 
     func body(content: Content) -> some View {
         #if os(macOS)
-            content
+        content
         #else
-            content.fileImporter(
-                isPresented: Binding(
-                    get: { choosing.pending != nil },
-                    set: { if !$0, choosing.pending != nil { choosing.finish(.success([])) } }),
-                allowedContentTypes: allowedTypes,
-                allowsMultipleSelection: choosing.pending?.multiple ?? false
-            ) { choosing.finish($0.map { $0 }) }
+        content.fileImporter(
+            isPresented: Binding(
+                get: { choosing.pending != nil },
+                set: { if !$0, choosing.pending != nil { choosing.finish(.success([])) } }),
+            allowedContentTypes: allowedTypes,
+            allowsMultipleSelection: choosing.pending?.multiple ?? false
+        ) { choosing.finish($0.map { $0 }) }
         #endif
     }
 
@@ -125,13 +125,13 @@ private struct FileChoosingPicker: ViewModifier {
 @MainActor
 func revealInFiles(_ urls: [URL]) {
     #if os(macOS)
-        NSWorkspace.shared.activateFileViewerSelecting(urls)
+    NSWorkspace.shared.activateFileViewerSelecting(urls)
     #else
-        guard let url = urls.first else { return }
-        // Files opens a folder at a `shareddocuments` address; it shows the folder a file is in.
-        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
-        components?.scheme = "shareddocuments"
-        if let address = components?.url { UIApplication.shared.open(address) }
+    guard let url = urls.first else { return }
+    // Files opens a folder at a `shareddocuments` address; it shows the folder a file is in.
+    var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+    components?.scheme = "shareddocuments"
+    if let address = components?.url { UIApplication.shared.open(address) }
     #endif
 }
 
@@ -139,9 +139,9 @@ func revealInFiles(_ urls: [URL]) {
 @MainActor
 func openExternally(_ url: URL) {
     #if os(macOS)
-        NSWorkspace.shared.open(url)
+    NSWorkspace.shared.open(url)
     #else
-        UIApplication.shared.open(url)
+    UIApplication.shared.open(url)
     #endif
 }
 
@@ -149,9 +149,9 @@ func openExternally(_ url: URL) {
 extension View {
     func sheetWidth(_ width: CGFloat, height: CGFloat? = nil) -> some View {
         #if os(macOS)
-            frame(width: width, height: height)
+        frame(width: width, height: height)
         #else
-            self
+        self
         #endif
     }
 }
@@ -160,9 +160,9 @@ extension View {
 /// Spotlight extensions; iPad and iPhone don't.
 let isMac: Bool = {
     #if os(macOS)
-        true
+    true
     #else
-        false
+    false
     #endif
 }()
 

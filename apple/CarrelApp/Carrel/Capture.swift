@@ -39,8 +39,10 @@ final class CaptureModel {
     func keep(_ data: Data, named name: String, extension ext: String) throws -> URL {
         let folder = Self.folder
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let stamp = Date.now.formatted(.iso8601.year().month().day().time(includingFractionalSeconds: false))
-            .replacingOccurrences(of: ":", with: "-")
+        let stamp = Date.now.formatted(
+            .iso8601.year().month().day().time(includingFractionalSeconds: false)
+        )
+        .replacingOccurrences(of: ":", with: "-")
         var url = folder.appending(path: "\(name) \(stamp).\(ext)")
         var number = 2
         while FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) {
@@ -86,8 +88,12 @@ final class CaptureModel {
             return "Sent to this device’s inbox, for the device that’s writing to file."
         }
         let added = shared.added.added.count
-        let leftOut = shared.added.leftOut.map { "\(URL(filePath: $0.path).lastPathComponent): \($0.reason)" }
-        var words = added == 1 ? "Added 1 item to the intake queue." : "Added \(added) items to the intake queue."
+        let leftOut = shared.added.leftOut.map {
+            "\(URL(filePath: $0.path).lastPathComponent): \($0.reason)"
+        }
+        var words =
+            added == 1
+            ? "Added 1 item to the intake queue." : "Added \(added) items to the intake queue."
         if !leftOut.isEmpty { words += "\n" + leftOut.joined(separator: "\n") }
         return words
     }
@@ -109,7 +115,8 @@ final class CaptureModel {
     /// A photo from the camera.
     func add(_ image: UIImage) async {
         guard let data = image.heicData() ?? image.jpegData(compressionQuality: 0.9),
-            let url = try? keep(data, named: "Photo", extension: image.heicData() == nil ? "jpeg" : "heic")
+            let url = try? keep(
+                data, named: "Photo", extension: image.heicData() == nil ? "jpeg" : "heic")
         else { return }
         await send([url])
     }
@@ -134,7 +141,8 @@ final class CaptureModel {
     /// into the app's own folder first, since the queue reads it from where it is.
     func addShared() async {
         guard let shared = Self.sharedFolder,
-            let names = try? FileManager.default.contentsOfDirectory(atPath: shared.path(percentEncoded: false)),
+            let names = try? FileManager.default.contentsOfDirectory(
+                atPath: shared.path(percentEncoded: false)),
             !names.isEmpty
         else { return }
         try? FileManager.default.createDirectory(at: Self.folder, withIntermediateDirectories: true)
@@ -143,7 +151,9 @@ final class CaptureModel {
             let url = shared.appending(path: name)
             if name.hasSuffix(".url.txt") {
                 if let address = try? String(contentsOf: url, encoding: .utf8) {
-                    await send(address: address.trimmingCharacters(in: .whitespacesAndNewlines), title: nil)
+                    await send(
+                        address: address.trimmingCharacters(in: .whitespacesAndNewlines), title: nil
+                    )
                 }
                 try? FileManager.default.removeItem(at: url)
                 continue
@@ -177,7 +187,10 @@ struct CaptureMenu: View {
                     })
             }
         }
-        .photosPicker(isPresented: $choosingPhotos, selection: $photos, matching: .any(of: [.images, .videos]))
+        .photosPicker(
+            isPresented: $choosingPhotos, selection: $photos,
+            matching: .any(of: [.images, .videos])
+        )
         .onChange(of: photos) {
             let chosen = photos
             photos = []
@@ -193,7 +206,8 @@ struct CaptureMenu: View {
         }
         .alert(
             "Added to the Archive",
-            isPresented: Binding(get: { capture.report != nil }, set: { if !$0 { capture.report = nil } })
+            isPresented: Binding(
+                get: { capture.report != nil }, set: { if !$0 { capture.report = nil } })
         ) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -218,7 +232,9 @@ private struct CameraView: UIViewControllerRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
-    final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+    final class Coordinator: NSObject, UIImagePickerControllerDelegate,
+        UINavigationControllerDelegate
+    {
         let parent: CameraView
         init(_ parent: CameraView) { self.parent = parent }
 

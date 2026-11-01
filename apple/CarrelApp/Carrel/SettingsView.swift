@@ -6,7 +6,7 @@
 import SwiftUI
 
 #if os(macOS)
-    import ServiceManagement
+import ServiceManagement
 #endif
 
 struct SettingsView: View {
@@ -17,72 +17,72 @@ struct SettingsView: View {
     var body: some View {
         pages
             .task(id: app.activeArchive) {
-            let archive = app.activeArchive
-            settings = await Task.detached { LocalSettings.read(archive: archive) }.value
-            model = archive.map { SettingsModel(url: $0) }
-            await model?.load()
-        }
+                let archive = app.activeArchive
+                settings = await Task.detached { LocalSettings.read(archive: archive) }.value
+                model = archive.map { SettingsModel(url: $0) }
+                await model?.load()
+            }
     }
 
     #if os(macOS)
-        private var pages: some View {
-            TabView {
-                Tab("General", systemImage: "gearshape") { GeneralTab(model: model) }
-                Tab("Models", systemImage: "cpu") {
-                    ModelsTab(model: model, folder: settings?.modelsFolder)
-                }
-                Tab("Search", systemImage: "magnifyingglass") { SearchTab(model: model) }
-                Tab("Providers", systemImage: "puzzlepiece.extension") {
-                    ProvidersTab(model: model)
-                }
-                Tab("Backups", systemImage: "externaldrive.badge.timemachine") {
-                    BackupsSettingsTab(model: model)
-                }
-                Tab("Agent", systemImage: "person.badge.clock") { AgentTab() }
+    private var pages: some View {
+        TabView {
+            Tab("General", systemImage: "gearshape") { GeneralTab(model: model) }
+            Tab("Models", systemImage: "cpu") {
+                ModelsTab(model: model, folder: settings?.modelsFolder)
             }
-            .frame(width: 640, height: 540)
+            Tab("Search", systemImage: "magnifyingglass") { SearchTab(model: model) }
+            Tab("Providers", systemImage: "puzzlepiece.extension") {
+                ProvidersTab(model: model)
+            }
+            Tab("Backups", systemImage: "externaldrive.badge.timemachine") {
+                BackupsSettingsTab(model: model)
+            }
+            Tab("Agent", systemImage: "person.badge.clock") { AgentTab() }
         }
+        .frame(width: 640, height: 540)
+    }
     #else
-        @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismiss) private var dismiss
 
-        private var pages: some View {
-            NavigationStack {
-                List {
-                    NavigationLink {
-                        GeneralTab(model: model).navigationTitle("General")
-                    } label: {
-                        Label("General", systemImage: "gearshape")
-                    }
-                    NavigationLink {
-                        ModelsTab(model: model, folder: settings?.modelsFolder)
-                            .navigationTitle("Models")
-                    } label: {
-                        Label("Models", systemImage: "cpu")
-                    }
-                    NavigationLink {
-                        SearchTab(model: model).navigationTitle("Search")
-                    } label: {
-                        Label("Search", systemImage: "magnifyingglass")
-                    }
-                    NavigationLink {
-                        ProvidersTab(model: model).navigationTitle("Providers")
-                    } label: {
-                        Label("Providers", systemImage: "puzzlepiece.extension")
-                    }
-                    NavigationLink {
-                        DeviceSettingsPage().navigationTitle("This Device")
-                    } label: {
-                        Label("This Device", systemImage: "battery.100percent.bolt")
-                    }
+    private var pages: some View {
+        NavigationStack {
+            List {
+                NavigationLink {
+                    GeneralTab(model: model).navigationTitle("General")
+                } label: {
+                    Label("General", systemImage: "gearshape")
                 }
-                .navigationTitle("Settings")
-                .toolbar {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Done") { dismiss() }
-                    }
+                NavigationLink {
+                    ModelsTab(model: model, folder: settings?.modelsFolder)
+                        .navigationTitle("Models")
+                } label: {
+                    Label("Models", systemImage: "cpu")
+                }
+                NavigationLink {
+                    SearchTab(model: model).navigationTitle("Search")
+                } label: {
+                    Label("Search", systemImage: "magnifyingglass")
+                }
+                NavigationLink {
+                    ProvidersTab(model: model).navigationTitle("Providers")
+                } label: {
+                    Label("Providers", systemImage: "puzzlepiece.extension")
+                }
+                NavigationLink {
+                    DeviceSettingsPage().navigationTitle("This Device")
+                } label: {
+                    Label("This Device", systemImage: "battery.100percent.bolt")
+                }
+            }
+            .navigationTitle("Settings")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
                 }
             }
         }
+    }
     #endif
 }
 

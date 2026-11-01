@@ -88,7 +88,8 @@ final class MobileLibrary {
     /// Keeps a bookmark to `root` when it's outside the app's container, so it can be reached
     /// again after the app restarts.
     private func remember(_ root: URL) {
-        guard !root.path(percentEncoded: false).hasPrefix(Self.documents.path(percentEncoded: false)),
+        guard
+            !root.path(percentEncoded: false).hasPrefix(Self.documents.path(percentEncoded: false)),
             let data = try? root.bookmarkData()
         else { return }
         var bookmarks = defaults.dictionary(forKey: Self.bookmarksKey) ?? [:]
@@ -200,7 +201,9 @@ struct MobileWelcomeView: View {
                             }
                         }
                         .onDelete { offsets in
-                            for index in offsets { library.app.recents.remove(library.app.recents.urls[index]) }
+                            for index in offsets {
+                                library.app.recents.remove(library.app.recents.urls[index])
+                            }
                         }
                     }
                 }
@@ -218,7 +221,8 @@ struct MobileWelcomeView: View {
                     Button("New Archive in Another Place…", systemImage: "folder.badge.plus") {
                         pickFolder(
                             prompt: "Create Here",
-                            message: "Choose where the new archive’s folder goes, such as iCloud Drive."
+                            message:
+                                "Choose where the new archive’s folder goes, such as iCloud Drive."
                         ) { parent in
                             library.access(parent)
                             newParent = parent
@@ -236,7 +240,8 @@ struct MobileWelcomeView: View {
             .sheet(isPresented: $naming) {
                 NewArchiveSheet { name, model in
                     library.create(
-                        named: name, in: newParent ?? MobileLibrary.documents, embeddingModel: model)
+                        named: name, in: newParent ?? MobileLibrary.documents, embeddingModel: model
+                    )
                 }
             }
             .alert(

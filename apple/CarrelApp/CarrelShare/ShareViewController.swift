@@ -66,11 +66,13 @@ final class SharedForCarrel {
     private func keep(_ provider: NSItemProvider, in folder: URL) async -> String? {
         if provider.hasItemConformingToTypeIdentifier(UTType.url.identifier),
             !provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier),
-            let url = try? await provider.loadItem(forTypeIdentifier: UTType.url.identifier) as? URL,
+            let url = try? await provider.loadItem(forTypeIdentifier: UTType.url.identifier)
+                as? URL,
             url.scheme == "http" || url.scheme == "https"
         {
             let file = unique(in: folder, name: "Link", ext: "url.txt")
-            guard (try? url.absoluteString.write(to: file, atomically: true, encoding: .utf8)) != nil
+            guard
+                (try? url.absoluteString.write(to: file, atomically: true, encoding: .utf8)) != nil
             else { return nil }
             return url.host() ?? url.absoluteString
         }
@@ -89,10 +91,11 @@ final class SharedForCarrel {
         return await withCheckedContinuation { continuation in
             _ = provider.loadFileRepresentation(forTypeIdentifier: type) { url, _ in
                 guard let url else { return continuation.resume(returning: nil) }
-                let name = provider.suggestedName.map {
-                    URL(filePath: $0).pathExtension.isEmpty
-                        ? "\($0).\(url.pathExtension)" : $0
-                } ?? url.lastPathComponent
+                let name =
+                    provider.suggestedName.map {
+                        URL(filePath: $0).pathExtension.isEmpty
+                            ? "\($0).\(url.pathExtension)" : $0
+                    } ?? url.lastPathComponent
                 let base = URL(filePath: name).deletingPathExtension().lastPathComponent
                 let destination = self.unique(
                     in: folder, name: base, ext: URL(filePath: name).pathExtension)
@@ -133,7 +136,9 @@ struct SharedForCarrelView: View {
                     }
                     if !model.leftOut.isEmpty {
                         Section {
-                            ForEach(model.leftOut, id: \.self) { Text($0).foregroundStyle(.secondary) }
+                            ForEach(model.leftOut, id: \.self) {
+                                Text($0).foregroundStyle(.secondary)
+                            }
                         }
                     }
                 }

@@ -37,7 +37,9 @@ enum PowerPolicy {
         if ProcessInfo.processInfo.isLowPowerModeEnabled, !charging {
             return "Drafting and rebuilding the index wait while Low Power Mode is on."
         }
-        if ProcessInfo.processInfo.thermalState.rawValue >= ProcessInfo.ThermalState.serious.rawValue {
+        if ProcessInfo.processInfo.thermalState.rawValue
+            >= ProcessInfo.ThermalState.serious.rawValue
+        {
             return "Drafting and rebuilding the index wait until this device cools down."
         }
         return nil

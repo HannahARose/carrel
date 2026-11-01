@@ -13,7 +13,8 @@ struct DeviceSettingsPage: View {
         Form {
             Section {
                 LabeledContent("Background App Refresh", value: refreshWords)
-                LabeledContent("Drafting and the index", value: heavyWork == nil ? "Run now" : "Waiting")
+                LabeledContent(
+                    "Drafting and the index", value: heavyWork == nil ? "Run now" : "Waiting")
                 if let heavyWork { Text(heavyWork).foregroundStyle(.secondary) }
             } header: {
                 Text("In the Background")
@@ -47,7 +48,9 @@ struct DeviceSettingsPage: View {
                 Text("Done on a Mac")
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: UIDevice.batteryStateDidChangeNotification)) { _ in
+        .onReceive(
+            NotificationCenter.default.publisher(for: UIDevice.batteryStateDidChangeNotification)
+        ) { _ in
             heavyWork = PowerPolicy.heavyWorkWaits
         }
         .onAppear {

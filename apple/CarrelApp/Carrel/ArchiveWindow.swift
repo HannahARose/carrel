@@ -28,7 +28,7 @@ struct ArchiveWindow: View {
             ArchiveSidebar(model: model)
                 .navigationSplitViewColumnWidth(min: 180, ideal: 220)
                 #if os(iOS)
-                .mobileArchiveToolbar(model)
+            .mobileArchiveToolbar(model)
                 #endif
         } content: {
             ArchiveScreenContent(model: model)
