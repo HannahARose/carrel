@@ -1,6 +1,6 @@
 # Design: restructure proposals (v0.7)
 
-Status: accepted 2026-11-01, with the five recommendations below and the owner's amendment to decision 2 (a setting for how eager Carrel is to rearrange). Issue #34, with #154 (crawlers); built in #322, #323, #324, #325, #154, #326, #327 and #328.
+Status: accepted 2026-11-01, with the five recommendations below and the owner's amendments: a setting for how eager Carrel is to rearrange, scaled by how invasive each change is (decision 2), and crawlers that keep their pace at every eagerness level and refine cards too (decision 4). Issue #34, with #154 (crawlers); built in #322, #323, #324, #325, #154, #326, #327 and #328.
 
 ## What this adds
 
@@ -24,11 +24,25 @@ The spec sets the shape. Restructuring "proposes a reorganization of one section
 - **Approve all, part or none.** A partial approval drops the changes that depend on the ones you rejected (a split without its new collection, say) and says so before running.
 - **One change in history,** with one snapshot first, so undoing it puts every item, folder, design document and link back.
 
+## How invasive a change is
+
+Not every change disturbs what you know equally. Grouping a crowded collection's loose items into a few subcollections leaves everything where you'd look for it, one level deeper. Moving items to another branch, or renaming, merging or moving whole collections, changes where things are. Carrel treats them differently, from least to most invasive:
+
+1. **Rewriting** design documents and tags: nothing moves.
+2. **Subdividing:** grouping a collection's items into new subcollections inside it, or tidying the inside of an open folder. Every item stays under the same collection.
+3. **Renaming a collection:** everything stays together, under a new name. Links follow, and each collection's permanent ID doesn't change.
+4. **Moving items between branches,** and merging or splitting collections across them.
+5. **Moving or merging top-level collections:** the archive's main shape changes.
+
+- **The cost counts invasiveness, not just moves:** a move into a new subcollection of the same collection costs far less than a move across the archive.
+- **Each proposal says how invasive it is,** and the change list groups changes by kind, so you can approve the subdividing and leave the bigger moves.
+- **Eagerness scales with it** (below): even at Settled, subdividing a crowded collection needs only a modest gain, while moving top-level collections needs a large one.
+
 ## When one is proposed
 
 - **From the signals** v0.2 records (Holding, low-confidence placements, crowded and single-item collections, tags spread across collections), plus the two v0.2 left for now: items in different branches that are often linked or worked on together, and sibling collections at very different levels of detail.
 - **Only when the benefit clearly beats the cost:**
-  - **Costs:** moves to check (and possibly undo); data moved between drives; links rewritten; a section restructured recently (a stability penalty, so the archive doesn't churn).
+  - **Costs:** moves to check (and possibly undo), weighted by how invasive each is (above); data moved between drives; links rewritten; a section restructured recently (a stability penalty, so the archive doesn't churn).
   - **Benefits:** similar items closer together (measured with the embedding index); Holding and low-confidence placements resolved; collections of a sensible size; and above all, a findability gain.
   - **How eager Carrel is** is yours to set (below).
 - **The findability test:** a sample of cards is held out, and a model tries to find each one by walking the proposed tree from its summary alone, then the current tree. The proposal goes forward only if the new tree is found more often. It's the same idea as v0.4's findability benchmark, used on your own archive.
@@ -40,12 +54,13 @@ People feel differently about an archive that moves. Some want Carrel to keep re
 
 | | Settled | Balanced (default) | Eager |
 | --- | --- | --- | --- |
-| How much better a proposal must be | a large, clear gain | a clear gain | any real gain |
+| How much better a proposal must be, for moves between branches and top-level collections | a large, clear gain | a clear gain | any real gain |
+| How much better, for subdividing a collection or renaming | a modest gain | a small gain | any real gain |
 | The stability penalty on recently changed sections | heavy, for a year | moderate, for a few months | light |
-| Moves a proposal may make | few; prefers renaming and design-document edits | as many as the gain justifies | many, including splitting and merging freely |
+| Moves a proposal may make | few between branches; subdividing, renaming and rewriting freely | as many as the gain justifies | many, including splitting and merging freely |
 | How often Status offers a restructure | rarely, only for strong signals | when signals cross the bar | whenever a better shape is found |
-| Crawler pace | Holding and low-confidence items only | the full order, slowly | the full order, steadily |
 
+- **It doesn't slow the crawlers.** Eagerness governs what Carrel does with the evidence, not how much it gathers: a settled archive still needs plenty of evidence before any reorganization is worth proposing, and the crawlers refine cards too, which moves nothing.
 - **It changes how readily Carrel proposes, never whether it asks.** Every restructure still waits for your approval, at every setting.
 - **It doesn't override the findability test:** even Eager won't propose a shape that's harder to navigate.
 - **The numbers behind it** (the margin, the penalty, the move budget) are settings too, for anyone who wants to tune them directly; the three levels are presets.
@@ -64,12 +79,13 @@ People feel differently about an archive that moves. Some want Carrel to keep re
   2. then low-confidence placements;
   3. then crowded collections;
   4. then a slow sweep of everything.
-- **The strongest model judges whether each still fits** its collection's design document, and where it would go instead.
+- **The strongest model judges whether each still fits** its collection's design document, and where it would go instead, and **reads its card again:** a summary a small model wrote, missing tags, a vague title, a date it can now find in the text.
 - **What it finds:**
   - a misplaced item becomes a move proposal in Review;
+  - a card that could be better becomes a correction, through the corrections path, leaving fields you dictated alone;
   - its verdicts feed the signals, so a collection whose items keep failing makes a restructure worth proposing.
-- **Optional, undoable moves:** a setting like the librarian's (`crawler.changes`, off by default) lets it refile the items it's sure of itself, each an ordinary change marked as the crawler's, listed on Status and in History, and undone one at a time or together. Whole-section restructures always wait for you, whatever the setting, as the spec's autonomy limit requires.
-- **Quiet and slow by design:** it runs only when the device is idle and on power, a few items at a time, and stops for anything you're doing.
+- **Optional, undoable changes:** a setting like the librarian's (`crawler.changes`, off by default) lets it refile the items it's sure of, and make the card corrections it's sure of, itself, each an ordinary change marked as the crawler's, listed on Status and in History, and undone one at a time or together. Whole-section restructures always wait for you, whatever the setting, as the spec's autonomy limit requires.
+- **Its pace is its own,** not set by eagerness: it keeps working through the archive at every eagerness level, since it gathers the evidence any reorganization needs and improves cards along the way. It's limited only by the device: it runs when the device is idle and on power, a few items at a time, stops for anything you're doing, and has its own setting (`crawler.pace`) for how much of the idle time it may use.
 
 ## The tag and link graph
 
@@ -106,7 +122,7 @@ v0.6 left the tag and link graph for now, since it needs the same data as restru
 ## Decisions (accepted 2026-11-01)
 
 1. **A restructure proposal covers one section, is a reviewable list of changes approved all, in part or not at all, never enters sealed bundles or touches checked-out items, and runs as one change with one snapshot, undone as a unit.** Recommended: it's the spec's design, and it keeps even large reorganizations safe to try.
-2. **Proposals are offered only when the benefit beats the cost by the margin your eagerness setting asks for (Settled, Balanced or Eager, archive-wide or per collection), judged by a findability test on your own archive, and never built or applied without your asking.** Accepted with the owner's amendment adding the eagerness setting: some people want the organization refined even if it means moving a lot, others want a familiar archive left alone. At every level the findability test still applies and every restructure still asks.
+2. **Proposals are offered only when the benefit beats the cost by the margin your eagerness setting asks for (Settled, Balanced or Eager, archive-wide or per collection), judged by a findability test on your own archive, and never built or applied without your asking.** Accepted with the owner's amendment adding the eagerness setting: some people want the organization refined even if it means moving a lot, others want a familiar archive left alone. At every level the findability test still applies and every restructure still asks. Further amended the same day: the required gain also scales with how invasive a change is, so subdividing a collection or renaming it needs less than moving items between branches or moving top-level collections.
 3. **Grouping is numerical, from the embedding index and tag co-occurrence, and the strongest model on the device names groups and writes the design documents and reasons, validated like filing's output.** Recommended: numbers decide what belongs together, so the result doesn't hinge on one model's whim, and the model does what it's good at.
-4. **Crawlers reassess placements in the background, item by item, as move proposals in Review, with an option (off by default) to make the moves they're sure of themselves, each undoable. Whole-section restructures always wait for you.** Recommended: it follows your amendment to the librarian (autonomy only where it can be undone) and the spec's limit on restructuring.
+4. **Crawlers reassess placements in the background, item by item, as move proposals in Review, with an option (off by default) to make the moves they're sure of themselves, each undoable. Whole-section restructures always wait for you.** Recommended: it follows your amendment to the librarian (autonomy only where it can be undone) and the spec's limit on restructuring. Amended 2026-11-01: crawlers also refine cards through the corrections path, and their pace doesn't depend on eagerness, since they gather the evidence reorganizing needs at every level; only the device's idle time and `crawler.pace` limit them.
 5. **The tag and link graph is built once, in the core, for restructuring and as a discovery view, and everything is in every interface.** Recommended: one implementation serves both, and it completes what v0.6 left for now.
