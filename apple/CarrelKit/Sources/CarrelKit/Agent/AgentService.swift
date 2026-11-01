@@ -4,8 +4,12 @@
 import Foundation
 
 public enum AgentService {
-    /// The app group the app, the agent and the extensions share.
-    public static let appGroup = "io.github.hannaharose.Carrel"
+    /// The app group the app, the agent and the extensions share: the bundle's `CarrelAppGroup`,
+    /// which Debug builds set to their own group so they never reach the installed app's.
+    public static let appGroup =
+        Bundle.main.object(forInfoDictionaryKey: "CarrelAppGroup") as? String ?? releaseAppGroup
+    /// The installed app's group, for a process whose bundle doesn't name one.
+    public static let releaseAppGroup = "io.github.hannaharose.Carrel"
     /// The agent's Mach service: its bundle identifier, inside the app group.
     public static let machServiceName = appGroup + ".Agent"
 
