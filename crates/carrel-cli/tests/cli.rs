@@ -2905,6 +2905,7 @@ fn librarian_tool(action: &str, input: &str) -> Value {
     json!({"action": action, "input": input, "answer": "", "items": [], "passages": [], "suggestions": []})
 }
 
+#[allow(clippy::needless_pass_by_value)] // written in place, as `json!` gives it
 fn librarian_answer(text: &str, items: &[&str], suggestions: Value) -> Value {
     json!({"action": "answer", "input": "", "answer": text, "items": items, "passages": [], "suggestions": suggestions})
 }
