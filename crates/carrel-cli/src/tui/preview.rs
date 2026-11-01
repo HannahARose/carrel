@@ -8,7 +8,8 @@
 //! terminal that isn't recognised.
 //!
 //! What to show comes from [`carrel_core::previews::preview`], in a background thread so the
-//! card always draws first: a cached thumbnail (the Mac app's, or one made here from a PNG), a
+//! card always draws first: a cached thumbnail (the Mac app's, or one made here from a PNG,
+//! JPEG or TIFF), a
 //! drawing of a 3D model, an image as it is, or a folder's listing as text. A restricted item
 //! shows none. The picture itself is written to the terminal after each frame by [`Painter`],
 //! into the cells the frame left empty for it.
@@ -703,5 +704,49 @@ mod tests {
             panic!("iTerm2 reads JPEGs");
         };
         assert_eq!(read.size, None);
+    }
+
+    /// A JPEG or TIFF item shows on Kitty and Sixel terminals from a thumbnail made here, with
+    /// none cached by the Mac app (#414).
+    #[test]
+    fn jpeg_and_tiff_items_show_on_kitty_and_sixel_without_a_cached_thumbnail() {
+        let fixtures =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/pictures");
+        for protocol in [Protocol::Kitty, Protocol::Sixel] {
+            for name in ["photo.jpg", "scan.tiff"] {
+                let (dir, mut app) = super::super::tests::sample(false);
+                let root = dir.path().join("archive");
+                app.previews = Previews::with(Some(protocol));
+                // The file's contents say what it is, whatever its name.
+                std::fs::copy(
+                    fixtures.join(name),
+                    root.join("Projects/Hardware/parts-list.csv"),
+                )
+                .unwrap();
+                browse_to(&mut app, "Projects/Hardware/parts-list.csv.md");
+                let _ = super::super::tests::screen(&app, 140, 30);
+                let Some(Ready::Picture(shown)) = app.previews.shown(app.item.card.as_deref())
+                else {
+                    panic!("{name} shows nothing on {protocol:?}");
+                };
+                assert!(
+                    shown
+                        .path
+                        .starts_with(root.join(carrel_core::previews::PREVIEWS)),
+                    "{name} on {protocol:?}: {}",
+                    shown.path.display()
+                );
+                assert_eq!(shown.size, Some((96, 64)), "{name} on {protocol:?}");
+                let cells = Room {
+                    cols: 40,
+                    rows: 20,
+                    cell: (10, 20),
+                };
+                assert!(
+                    escape(protocol, shown, cells).is_some(),
+                    "{name} on {protocol:?}"
+                );
+            }
+        }
     }
 }
