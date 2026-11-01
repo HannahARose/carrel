@@ -3985,3 +3985,57 @@ fn edit_body_adds_notes_keeps_carrels_sections_and_undo_reverses_it() {
         "undo restores the card"
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn edit_body_saved_another_way_meanwhile_reopens_with_both_versions() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(&root, &["init"]);
+    let card = root.join("Projects/Hardware/parts-list.csv.md");
+    // The first time the editor opens, a note is saved into the card another way, at the top
+    // of its body, and the owner writes theirs in the same place. The second time, both are
+    // there under a problem line; the owner tidies and saves.
+    let editor = sandbox.path("editor.sh");
+    let script = format!(
+        r#"#!/bin/sh
+if grep -q "To fix" "$1"; then
+  grep -q "Their note." "$1" && grep -q "My note." "$1" || exit 1
+  echo "Tidied." >> "$1"
+  exit 0
+fi
+awk 'BEGIN {{ n = 0 }} {{ print }} /^---$/ {{ n++; if (n == 2) print "Their note." }}' "{card}" > "{card}.new" && mv "{card}.new" "{card}"
+awk 'BEGIN {{ done = 0 }} {{ if (!done) {{ print "My note."; done = 1 }} print }}' "$1" > "$1.new" && mv "$1.new" "$1"
+"#,
+        card = card.display()
+    );
+    std::fs::write(&editor, script).unwrap();
+    std::fs::set_permissions(&editor, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_carrel"))
+        .args([
+            "edit",
+            "Projects/Hardware/parts-list.csv",
+            "--body",
+            "--json",
+        ])
+        .current_dir(&root)
+        .env("CARREL_CONFIG_DIR", sandbox.path("config"))
+        .env("CARREL_WORKER", "off")
+        .env_remove("VISUAL")
+        .env("EDITOR", &editor)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(report["changed"], serde_json::json!(["notes"]));
+    let after = std::fs::read_to_string(&card).unwrap();
+    for kept in ["Their note.", "My note.", "Tidied."] {
+        assert!(after.contains(kept), "{kept} is kept:\n{after}");
+    }
+    assert!(!after.contains("To fix"), "{after}");
+}

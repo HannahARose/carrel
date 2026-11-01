@@ -60,6 +60,8 @@ public final class ArchiveModel {
     public private(set) var skippedQuestions: [Question] = []
     /// The restructure proposals waiting, oldest first.
     public private(set) var restructureProposals: [RestructureProposal] = []
+    /// The crawler's findings waiting in Review, oldest first.
+    public private(set) var crawlerFindings: [CrawlerFinding] = []
     /// What's checked out and on this device's desk.
     public private(set) var active: [ActiveItem] = []
     /// The history, newest first.
@@ -166,6 +168,11 @@ public final class ArchiveModel {
         skippedQuestions = try await call { try $0.skippedQuestions() }
     }
 
+    /// Reads the crawler's findings waiting in Review again.
+    public func refreshCrawler() async throws {
+        crawlerFindings = try await call { try $0.crawlerFindings() }
+    }
+
     /// Reads the restructure proposals waiting again.
     public func refreshRestructure() async throws {
         restructureProposals = try await call { try $0.restructureProposals() }
@@ -201,6 +208,7 @@ public final class ArchiveModel {
         try await refreshReview()
         try await refreshQuestions()
         try await refreshRestructure()
+        try await refreshCrawler()
         try await refreshActive()
         try await refreshIntake()
         try await refreshSettings()
@@ -349,11 +357,13 @@ public final class ArchiveModel {
         return outcome
     }
 
-    /// Saves an edited body, Notes and all, to a filed card; Carrel's sections must be as
-    /// they were.
+    /// Saves `body`, an edit of `base`, the body the editor opened, Notes and all, to a filed
+    /// card; Carrel's sections must be as `base` had them. What was saved another way
+    /// meanwhile is kept beside the edit, or comes back as `.bodyChanged` when the two
+    /// changed the same lines.
     @discardableResult
-    public func edit(item id: String, body: String) async throws -> EditOutcome {
-        let outcome = try await call { try $0.editCardBody(item: id, body: body) }
+    public func edit(item id: String, base: String, body: String) async throws -> EditOutcome {
+        let outcome = try await call { try $0.editCardBody(item: id, base: base, body: body) }
         if case .saved = outcome { try await changed { _ in } }
         return outcome
     }
@@ -551,6 +561,22 @@ public final class ArchiveModel {
     @discardableResult
     public func remove(model name: String) async throws -> [String] {
         try await call { try $0.removeModel(name: name) }
+    }
+
+    /// Downloads the catalog model `name` in `format`: a GGUF file, or a folder for MLX.
+    /// Only once the owner has confirmed, having seen its size.
+    @discardableResult
+    public func download(model name: String, in format: ModelFormat) async throws -> String {
+        try await call(reporting: "Downloading \(name)") { handle, relay in
+            try handle.downloadModelIn(name: name, format: format, progress: relay)
+        }
+    }
+
+    /// Deletes the downloaded model `name` in `format`, leaving the other. Only once the
+    /// owner has confirmed.
+    @discardableResult
+    public func remove(model name: String, in format: ModelFormat) async throws -> String {
+        try await call { try $0.removeModelIn(name: name, format: format) }
     }
 
     // MARK: - The embedding index

@@ -75,6 +75,7 @@ pub mod discover;
 pub mod documents;
 pub mod edit;
 pub mod entries;
+pub mod file_pickers;
 pub mod finder;
 pub mod formats;
 pub mod frontmatter;

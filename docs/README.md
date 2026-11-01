@@ -27,6 +27,7 @@
 | [The v0.4 gate](v0.4-gate.md) | The checklist for finding twenty remembered items by browsing and searching |
 | [The v0.5 gate](v0.5-gate.md) | The checklist for using the Mac app as the everyday interface for a week |
 | [The v0.6 gate](v0.6-gate.md) | The checklist for an hour with the librarian and the discovery views, in every interface |
+| [The v0.7 gate](v0.7-gate.md) | The checklist for the first whole-archive restructure, approved, tested for findability and undone, in every interface |
 
 The archive format is specified in [FORMAT.md](../FORMAT.md), and how to contribute is in [CONTRIBUTING.md](../CONTRIBUTING.md).
 

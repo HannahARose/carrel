@@ -106,6 +106,8 @@ final class ArchiveWindowModel {
 
     // Restructure proposals (#327).
     private(set) var restructure: RestructureModel?
+    /// The crawler's findings in Review, and its changes on Status.
+    private(set) var crawler: CrawlerModel?
 
     // Active and History (#235).
     private(set) var activeScreen: ActiveScreenModel?
@@ -181,6 +183,10 @@ final class ArchiveWindowModel {
                 self?.answerItemQuestion(question, with: answer)
             }
             backups = BackupsModel(archive: archive)
+            let crawler = CrawlerModel(archive: archive)
+            crawler.didChange = { [weak self] in await self?.refreshItems() }
+            self.crawler = crawler
+            review?.showCrawler = { [weak crawler] in crawler?.toggle() }
             restructure = RestructureModel(archive: archive)
             restructure?.didChange = { [weak self] in await self?.refreshItems() }
             activeScreen = ActiveScreenModel(archive: archive, checkoutFolder: checkoutFolder) {

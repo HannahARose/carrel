@@ -12,6 +12,7 @@ use carrel_core::search::{Found, Hit};
 
 use super::app::{App, Confirm, Input, Picker, Tab};
 use super::item::{Pane, Relation, Row};
+use super::model_changes::{download_confirm, model_change_confirm};
 use super::screens::InputPurpose;
 
 /// The smallest terminal the interactive mode lays out in.
@@ -152,10 +153,13 @@ fn waiting_line(app: &App) -> String {
     let (proposals, questions) = app.waiting;
     match (proposals, questions) {
         (0, 0) => "Nothing is waiting for you.".into(),
+        // Each tab's key is its place in the row of tabs.
         _ => format!(
-            "Waiting for you: {proposals} proposal{} (2 to review), {questions} question{} (3 to answer).",
+            "Waiting for you: {proposals} proposal{} ({} to review), {questions} question{} ({} to answer).",
             if proposals == 1 { "" } else { "s" },
-            if questions == 1 { "" } else { "s" }
+            Tab::Review.index() + 1,
+            if questions == 1 { "" } else { "s" },
+            Tab::Questions.index() + 1,
         ),
     }
 }
@@ -450,12 +454,8 @@ fn draw_confirm(frame: &mut Frame, confirm: &Confirm, theme: Theme, area: Rect) 
             };
             (" Agent ", question, about, yes)
         }
-        Confirm::Download { name, about } => (
-            " Download ",
-            format!("Download {name}?"),
-            about.clone(),
-            " download   ",
-        ),
+        Confirm::Download { name, about } => download_confirm(name, about),
+        Confirm::ModelChange { change, about } => model_change_confirm(change, about),
         Confirm::Learn { about, fact } => (
             " Glossary ",
             format!("Add “{about}” to the glossary?"),
@@ -707,7 +707,7 @@ fn draw_picker(frame: &mut Frame, picker: &Picker, theme: Theme, area: Rect) {
         super::review::Purpose::Move(_) => "Move to",
         super::review::Purpose::Answer(_) => "They belong in",
         super::review::Purpose::Setting(_) => "Set it to",
-        super::review::Purpose::Download => "Download",
+        super::review::Purpose::Models(_) => "Models",
         super::review::Purpose::Index(_) => "Search index",
         super::review::Purpose::Eagerness(_) => "How eager to rearrange",
         super::review::Purpose::Archive(_) => "Archives",

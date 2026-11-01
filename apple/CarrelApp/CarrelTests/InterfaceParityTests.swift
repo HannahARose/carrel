@@ -100,6 +100,28 @@ final class WindowParityTests: XCTestCase {
         XCTAssertTrue(text.contains("Bought the strip at the market."))
     }
 
+    func testABodySavedAnotherWayMeanwhileIsKeptOrChosen() async throws {
+        let item = try XCTUnwrap(sample.model.items.first { $0.title == "Desk lamp parts list" })
+        let edit = CardEditModel(archive: sample.archive, target: .item(item.id))
+        await edit.load()
+        let opened = try XCTUnwrap(edit.body)
+        // Saved another way while the editor is open, on the same line as the owner's edit.
+        let theirs = "Their note.\n\n" + opened
+        _ = try await sample.archive.edit(item: item.id, base: opened, body: theirs)
+        edit.body = "My note.\n\n" + opened
+        let saved = await edit.save()
+        XCTAssertFalse(saved, "nothing is overwritten")
+        let clash = try XCTUnwrap(edit.bodyClash)
+        XCTAssertEqual(clash.current, theirs)
+        edit.keepBothBodies()
+        XCTAssertTrue(edit.body?.contains("Their note.") == true)
+        XCTAssertTrue(edit.body?.contains("My note.") == true)
+        let savedBoth = await edit.save()
+        XCTAssertTrue(savedBoth)
+        let text = try String(contentsOf: sample.root.appending(path: item.card), encoding: .utf8)
+        XCTAssertTrue(text.contains("Their note.") && text.contains("My note."))
+    }
+
     func testAProposalHasNoBodyToEdit() async throws {
         let edit = CardEditModel(archive: sample.archive, target: .proposal(sampleProposal))
         await edit.load()

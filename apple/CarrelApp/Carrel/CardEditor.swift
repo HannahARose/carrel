@@ -63,6 +63,9 @@ struct CardEditor: View {
             }
             if edit.body != nil {
                 Section {
+                    if edit.bodyClash != nil {
+                        BodyClashNotice(edit: edit)
+                    }
                     TextEditor(
                         text: Binding {
                             edit.body ?? ""
@@ -117,6 +120,28 @@ struct CardEditor: View {
             edit.fields?[keyPath: path] ?? ""
         } set: {
             edit.fields?[keyPath: path] = $0.isEmpty ? nil : $0
+        }
+    }
+}
+
+/// Says the body was saved another way while it was edited, on the same lines, and offers
+/// both versions together or the body as it is now.
+private struct BodyClashNotice: View {
+    let edit: CardEditModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label(
+                "These notes were saved another way while you edited them, on the same lines, so nothing was saved.",
+                systemImage: "exclamationmark.triangle"
+            )
+            .foregroundStyle(.orange)
+            HStack {
+                Button("Keep Both") { edit.keepBothBodies() }
+                    .help("Edit both versions together, then save")
+                Button("Reload") { edit.reloadBody() }
+                    .help("Drop your changes to the notes, and edit the card as it is now")
+            }
         }
     }
 }
