@@ -165,7 +165,7 @@ Backups need [Kopia](https://kopia.io), beside `carrel` or on `PATH`.
 | `8` | **Settings**: `Enter` to change the chosen setting. **Search index** rebuilds it with a progress bar (`carrel index rebuild`), switches the archive's model or carries on or stops a switch (`carrel index model NAME`), and downloads an embedding model after asking. **Providers** and **File types** show `carrel providers` and `carrel formats`; **Archive** switches archives |
 | `9` | **Backups**: the snapshots, each with its change; `n` snapshot now, `v` verify, `r` restore an item as of the chosen snapshot, `s` set up or connect a repository, choosing its folder with the file picker |
 | `L` | **Librarian**: the conversation, and the item it's discussing; `Enter` ask, `↑↓` choose an item, suggestion or change, `y` make the chosen suggestion, `u` undo the librarian's chosen change, `U` all of this week's, `a` answer its question, `o` open the item in Browse, `s` save to the Journal, `n` a new conversation |
-| `D` | **Discover**: `d` on this day, `w` wander (`Space` next step, `a` answer its question, `n` new walk), `t` the timeline (`p` periods), `m` the archive map, `h` activity |
+| `D` | **Discover**: `d` on this day, `w` wander (`Space` next step, `a` answer its question, `n` new walk), `t` the timeline (`p` periods), `m` the archive map, `h` activity, `g` the graph's strongest connections (`c` between collections or items) |
 
 `i` on any screen chooses files to ingest. `Ctrl-O` on any screen switches to another archive: one opened lately, one by its path, as `carrel open` does (commands outside an archive then use it too), or a new one, as `carrel init` does. `Ctrl-R` reads everything again, and finds the providers again, and `q` quits; the worker keeps going.
 

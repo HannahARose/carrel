@@ -33,7 +33,7 @@ The command line and the interactive mode run on macOS, Linux and Windows. The M
 | Discovery: wander from an item | `discover wander ITEM` | ✓ `w` in Browse | #343 |
 | Discovery: the archive map, activity | `discover map`, `discover activity` | ✓ a sized tree and a block heatmap | ✓ a treemap and a heatmap |
 | Discovery: activity over chosen days | `discover activity --from --to` | ✓ `r` on activity | #343 |
-| Discovery: the tag and link graph | `discover graph [--items]` | #326, a text view of the strongest connections | #327, a drawn graph |
+| Discovery: the tag and link graph | `discover graph [--items]` | ✓ Discover's graph (`g`), the strongest connections as text (#326) | #327, a drawn graph |
 | Resurfacing forgotten collections | `status` | ✓ Status | ✓ Status |
 | The embedding index: status, rebuild, switch models | `index` | ✓ Status, Settings | ✓ Settings → Search (#267) |
 | Correct a filed item | `correct` | ✓ `c` | ✓ ⌘K (#234) |
