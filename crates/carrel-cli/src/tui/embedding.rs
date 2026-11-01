@@ -369,7 +369,7 @@ fn how_to_get_here(model: &str) -> Option<String> {
             "{}; Enter, then download it",
             crate::ingest::human_size(found.size)
         ),
-        comes_with => comes_with.to_string(),
+        comes_with @ carrel_core::search::run::ModelSource::ComesWith(_) => comes_with.to_string(),
     })
 }
 
