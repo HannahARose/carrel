@@ -314,6 +314,7 @@ pub fn process(
     backups: Option<&dyn Backups>,
     progress: &mut dyn FnMut(Progress<'_>),
 ) -> Result<Processed, ActionError> {
+    let started = std::time::Instant::now();
     let queue = IntakeQueue::of(archive);
     let one = IntakeOptions {
         each: false,
@@ -353,6 +354,7 @@ pub fn process(
         }
     }
     run.save(archive)?;
+    crate::decisions::drafted(archive, Some(&entry.added), &run, started);
     let new: Vec<Id> = run.entries.iter().flatten().map(|e| e.id).collect();
     let questions = ask_with_waiting(archive, &new)?;
     let chosen = run.filed_by_rule();

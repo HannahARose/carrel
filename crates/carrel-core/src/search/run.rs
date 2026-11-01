@@ -122,8 +122,10 @@ pub fn search(
             Err(why) => words_only = Some(why),
         }
     }
+    let results = search.search(query, limit);
+    crate::decisions::search(archive, query, &results);
     Ok(Searched {
-        results: search.search(query, limit),
+        results,
         words_only,
     })
 }

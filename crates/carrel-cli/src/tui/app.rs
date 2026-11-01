@@ -667,6 +667,8 @@ impl App {
         self.archive = Archive::open(self.archive.root())?;
         self.status = lines(&crate::commands::status_on(&self.archive, &mut self.records)?.text);
         self.status.extend(self.index_status());
+        self.status
+            .extend(crate::usage_report::status_lines(&self.archive));
         self.history = match History::open(&self.archive) {
             Ok(history) => history.log()?,
             Err(HistoryError::NotInitialized) => Vec::new(),
