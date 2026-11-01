@@ -122,6 +122,72 @@ final class WindowParityTests: XCTestCase {
         XCTAssertTrue(text.contains("Their note.") && text.contains("My note."))
     }
 
+    func testEveryFieldTheOwnerSetsIsEdited() async throws {
+        let book = try XCTUnwrap(
+            sample.model.items.first { $0.title.hasPrefix("On the Origin of Species") })
+        let lamp = try XCTUnwrap(sample.model.items.first { $0.title == "Desk lamp parts list" })
+        let edit = CardEditModel(archive: sample.archive, target: .item(lamp.id))
+        await edit.load()
+        XCTAssertTrue(edit.takesSnapshots)
+        XCTAssertFalse(edit.needsLocation)
+        XCTAssertTrue(edit.linkTypes.contains("supersedes"))
+        edit.fields?.links.append(CardLink(linkType: "nonsense", item: book.id, note: nil))
+        let refused = await edit.save()
+        XCTAssertFalse(refused)
+        XCTAssertFalse(edit.problems(about: "link").isEmpty)
+        edit.fields?.links[1].linkType = "related"
+        edit.fields?.snapshotOnReturnOnly = true
+        let saved = await edit.save()
+        XCTAssertTrue(saved)
+        XCTAssertEqual(edit.fields?.links.last?.item, book.id)
+        XCTAssertEqual(edit.fields?.snapshotOnReturnOnly, true)
+
+        let place = CardEditModel(archive: sample.archive, target: .item(book.id))
+        await place.load()
+        XCTAssertTrue(place.needsLocation)
+        place.fields?.location = nil
+        let empty = await place.save()
+        XCTAssertFalse(empty)
+        XCTAssertFalse(place.problems(about: "location").isEmpty)
+        place.fields?.location = "Study, top shelf"
+        let moved = await place.save()
+        XCTAssertTrue(moved)
+        let text = try String(contentsOf: sample.root.appending(path: book.card), encoding: .utf8)
+        XCTAssertTrue(text.contains("Study, top shelf"))
+    }
+
+    func testAFieldSavedAnotherWayMeanwhileIsKeptOrChosen() async throws {
+        let item = try XCTUnwrap(sample.model.items.first { $0.title == "Desk lamp parts list" })
+        let edit = CardEditModel(archive: sample.archive, target: .item(item.id))
+        await edit.load()
+        let opened = try XCTUnwrap(edit.original)
+        // Saved another way while the editor is open: a new title.
+        var theirs = opened
+        theirs.title = "Lamp parts"
+        _ = try await sample.archive.edit(item: item.id, base: opened, fields: theirs)
+        // A summary of the owner's is saved beside it.
+        edit.fields?.summary = "Every part, with where it came from."
+        let savedSummary = await edit.save()
+        XCTAssertTrue(savedSummary)
+        XCTAssertEqual(edit.fields?.title, "Lamp parts")
+        // A title of the owner's, against the card as it was opened, is theirs to choose.
+        let other = CardEditModel(archive: sample.archive, target: .item(item.id))
+        await other.load()
+        let reopened = try XCTUnwrap(other.original)
+        var parts = reopened
+        parts.title = "Parts"
+        _ = try await sample.archive.edit(item: item.id, base: reopened, fields: parts)
+        other.fields?.title = "Desk lamp bill of materials"
+        let clashed = await other.save()
+        XCTAssertFalse(clashed, "nothing is overwritten")
+        XCTAssertEqual(other.fieldsClash?.fields, ["title"])
+        XCTAssertEqual(other.fieldsClash?.current.title, "Parts")
+        other.keepMyFields()
+        let kept = await other.save()
+        XCTAssertTrue(kept)
+        XCTAssertEqual(other.fields?.title, "Desk lamp bill of materials")
+    }
+
     func testAProposalHasNoBodyToEdit() async throws {
         let edit = CardEditModel(archive: sample.archive, target: .proposal(sampleProposal))
         await edit.load()

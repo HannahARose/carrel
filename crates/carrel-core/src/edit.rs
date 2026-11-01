@@ -35,7 +35,7 @@ impl Editing {
 }
 
 /// What saving an edit did.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Saved {
     /// Nothing changed, so nothing was written.
     Unchanged,
@@ -58,6 +58,14 @@ pub enum Saved {
         /// Both versions together, each changed line from each kept, to tidy and save again
         /// against `current`.
         both: String,
+    },
+    /// These fields were saved another way while they were being edited, to other values
+    /// than the edit's; nothing was written. Saving again against `current` keeps the edit's.
+    FieldsChanged {
+        /// The fields, by name.
+        fields: Vec<&'static str>,
+        /// The card's fields as they are now.
+        current: Box<CardFields>,
     },
 }
 
@@ -121,8 +129,12 @@ pub fn floor(archive: &Archive, registry: &Registry, item: &ItemRef) -> Sensitiv
     }
 }
 
-/// Checks `fields` and, when they change the card, writes it and records one history change
-/// as `holder`, holding the writer lease.
+/// Checks `fields`, the owner's edit of `base`, the fields their editor opened, and, when
+/// they change the card, writes it and records one history change as `holder`, holding the
+/// writer lease. The card as `editing` read it is merged with the edit field by field, so a
+/// field saved another way meanwhile isn't overwritten: the fields the owner changed are
+/// theirs, the rest the card's as it is now. When a field the owner changed was changed
+/// meanwhile too, to something else, nothing is written: [`Saved::FieldsChanged`] names it.
 ///
 /// # Errors
 ///
@@ -131,9 +143,20 @@ pub fn floor(archive: &Archive, registry: &Registry, item: &ItemRef) -> Sensitiv
 pub fn save(
     archive: &Archive,
     editing: Editing,
+    base: &CardFields,
     fields: CardFields,
     holder: Holder,
 ) -> Result<Saved, ActionError> {
+    let current = editing.fields();
+    let fields = match merge_fields(base, &current, fields) {
+        Ok(fields) => fields,
+        Err(clashes) => {
+            return Ok(Saved::FieldsChanged {
+                fields: clashes,
+                current: Box::new(current),
+            });
+        }
+    };
     let Editing {
         item,
         mut file,
@@ -155,6 +178,47 @@ pub fn save(
         summary,
         commit,
     })
+}
+
+/// `mine`, an edit of `base`, merged with `current`, the fields as they are now: each field
+/// `mine` changed from `base` is `mine`'s, the rest `current`'s.
+///
+/// # Errors
+///
+/// The fields `mine` changed that `current` changed too, to something else.
+fn merge_fields(
+    base: &CardFields,
+    current: &CardFields,
+    mine: CardFields,
+) -> Result<CardFields, Vec<&'static str>> {
+    let mut merged = current.clone();
+    let mut clashes = Vec::new();
+    macro_rules! take_mine {
+        ($($field:ident),*) => {$(
+            if mine.$field != base.$field {
+                if current.$field != base.$field && current.$field != mine.$field {
+                    clashes.push(stringify!($field));
+                }
+                merged.$field = mine.$field;
+            }
+        )*};
+    }
+    take_mine!(
+        title,
+        summary,
+        tags,
+        dates,
+        sensitivity,
+        links,
+        location,
+        url,
+        snapshots
+    );
+    if clashes.is_empty() {
+        Ok(merged)
+    } else {
+        Err(clashes)
+    }
 }
 
 /// Writes the edited card `file` for `item` and records it as one change, holding the

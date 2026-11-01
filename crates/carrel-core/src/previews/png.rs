@@ -12,7 +12,7 @@ use std::io::{Read as _, Write as _};
 const SIGNATURE: [u8; 8] = [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
 
 /// The largest picture read, in pixels, so a huge or hostile file can't take all the memory.
-const MOST_PIXELS: u64 = 64 * 1024 * 1024;
+pub(crate) const MOST_PIXELS: u64 = 64 * 1024 * 1024;
 
 /// A picture as 8-bit RGBA pixels, row by row from the top left.
 #[derive(Debug, Clone, PartialEq, Eq)]

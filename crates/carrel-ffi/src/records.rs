@@ -68,6 +68,26 @@ pub struct CardFields {
     pub dates: CardDates,
     /// How sensitive it is.
     pub sensitivity: Sensitivity,
+    /// Typed links to other items. A proposal has none until it's filed.
+    pub links: Vec<CardLink>,
+    /// Where it is, for a physical object or an external reference.
+    pub location: Option<String>,
+    /// Its address, for a URL item.
+    pub url: Option<String>,
+    /// Whether its working copy is snapshotted only at checkout and return, not after every
+    /// work session, as for large data.
+    pub snapshot_on_return_only: bool,
+}
+
+/// A link from a card to another item (FORMAT.md §5.4).
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct CardLink {
+    /// Its type, such as `version-of` or `related`.
+    pub link_type: String,
+    /// The item linked to: its identifier.
+    pub item: String,
+    /// A short explanation.
+    pub note: Option<String>,
 }
 
 fn date(value: Option<&DateOrTime>) -> Option<String> {
@@ -92,6 +112,18 @@ impl From<&CoreFields> for CardFields {
             tags: fields.tags.clone(),
             dates,
             sensitivity: fields.sensitivity.into(),
+            links: fields
+                .links
+                .iter()
+                .map(|l| CardLink {
+                    link_type: l.link_type.clone(),
+                    item: l.id.clone(),
+                    note: l.note.clone(),
+                })
+                .collect(),
+            location: fields.location.clone(),
+            url: fields.url.clone(),
+            snapshot_on_return_only: fields.snapshots.is_some(),
         }
     }
 }
@@ -104,6 +136,10 @@ impl From<&carrel_core::correct::Fields> for CardFields {
             tags: fields.tags.iter().map(|t| t.0.clone()).collect(),
             dates: fields.dates.clone(),
             sensitivity: fields.sensitivity,
+            links: Vec::new(),
+            location: None,
+            url: None,
+            snapshots: None,
         })
             .into()
     }
@@ -127,18 +163,37 @@ impl CardFields {
             tags: self.tags,
             dates: (!empty).then_some(dates),
             sensitivity: self.sensitivity.into(),
+            links: self
+                .links
+                .into_iter()
+                .map(|l| carrel_core::actions::LinkField {
+                    link_type: l.link_type,
+                    id: l.item,
+                    note: l.note.filter(|n| !n.trim().is_empty()),
+                })
+                .collect(),
+            location: self.location,
+            url: self.url,
+            snapshots: self
+                .snapshot_on_return_only
+                .then_some(carrel_core::card::Snapshots::ReturnOnly),
         }
     }
 }
 
 /// What an edit of a card's fields did.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "uniffi records can't be boxed; an outcome is made once per save"
+)]
 pub enum EditOutcome {
     /// Nothing changed, so nothing was written.
     Unchanged,
     /// These fields changed and were saved; for a filed card, in this history commit.
     Saved {
-        /// The fields, by name: `title`, `summary`, `tags`, `dates`, `sensitivity`.
+        /// The fields, by name: `title`, `summary`, `tags`, `dates`, `sensitivity`, `links`,
+        /// `location`, `url` or `snapshots`.
         fields: Vec<String>,
         /// The history commit, for a filed card.
         commit: Option<String>,
@@ -157,6 +212,15 @@ pub enum EditOutcome {
         current: String,
         /// Both versions together, each changed line from each.
         both: String,
+    },
+    /// These fields were saved another way while they were being edited, to other values
+    /// than the edit's; nothing was written. The app offers to reload `current`, or to keep
+    /// the edit, saved again against `current`.
+    FieldsChanged {
+        /// The fields, by name, as in [`EditOutcome::Saved`].
+        fields: Vec<String>,
+        /// The card's fields as they are now.
+        current: CardFields,
     },
 }
 
