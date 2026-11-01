@@ -282,7 +282,11 @@ impl App {
                 let to = to?;
                 return match purpose {
                     Purpose::Move(ids) => Some(Effect::Move { ids, to }),
-                    Purpose::Answer(id) => Some(Effect::Answer { id, answer: to }),
+                    Purpose::Answer(id) => Some(Effect::Answer {
+                        id,
+                        answer: to,
+                        learn: false,
+                    }),
                     Purpose::Setting(key) => Some(super::settings::set(&key, &to)),
                     Purpose::Download => {
                         self.confirm_download(&to);

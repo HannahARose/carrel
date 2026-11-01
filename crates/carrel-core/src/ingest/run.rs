@@ -15,7 +15,8 @@ use crate::ingest::sensitivity::{Assessment, assess};
 use crate::ingest::text::{ItemText, read};
 use crate::ingest::{Batch, Candidate, IngestError, IntakeOptions, Skipped, plan_with_index};
 use crate::providers::Registry;
-use crate::questions::{QuestionEntry, QuestionQueue, mark_waiting};
+use crate::questions::rank::{merge, same};
+use crate::questions::{QuestionEntry, QuestionQueue, clear_waiting, mark_waiting};
 use crate::review::{ReviewEntry, ReviewError, ReviewQueue};
 
 /// What an ingest run found and proposed. The lists of per-item results line up with
@@ -279,21 +280,50 @@ fn propose_all(
 }
 
 impl Run {
-    /// Saves the run's proposals and questions to their queues.
+    /// Saves the run's proposals and questions to their queues. A question that says the same
+    /// as one already asked merges into it, and its proposals wait on that one instead; one the
+    /// owner declined isn't asked again.
     ///
     /// # Errors
     ///
-    /// [`ReviewError`] if a queue can't be written.
+    /// [`ReviewError`] if a queue can't be read or written.
     pub fn save(&self, archive: &Archive) -> Result<(), ReviewError> {
+        let asked = QuestionQueue::of(archive);
+        let (mut existing, _) = asked.list()?;
+        let mut entries: Vec<ReviewEntry> = self.entries.iter().flatten().cloned().collect();
+        for question in &self.questions {
+            let kept = match existing.iter_mut().find(|e| same(e, question)) {
+                Some(earlier) if earlier.declined.is_some() => None,
+                Some(earlier) => {
+                    merge(earlier, question);
+                    Some(earlier.clone())
+                }
+                None => {
+                    existing.push(question.clone());
+                    Some(question.clone())
+                }
+            };
+            if let Some(kept) = &kept {
+                asked.save(kept)?;
+            }
+            if kept.as_ref().is_some_and(|k| k.id == question.id) {
+                continue;
+            }
+            for entry in entries
+                .iter_mut()
+                .filter(|e| question.items.contains(&e.id))
+            {
+                clear_waiting(entry, question);
+                if let Some(kept) = &kept {
+                    mark_waiting(entry, std::slice::from_ref(kept));
+                }
+            }
+        }
         let queue = ReviewQueue::of(archive);
-        for entry in self.entries.iter().flatten() {
+        for entry in &entries {
             queue.save(entry)?;
         }
         self.keep_texts(archive);
-        let asked = QuestionQueue::of(archive);
-        for question in &self.questions {
-            asked.save(question)?;
-        }
         Ok(())
     }
 

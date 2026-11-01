@@ -241,7 +241,8 @@ enum Command {
         #[command(subcommand)]
         action: BackupAction,
     },
-    /// Questions ingest needs you to answer, most items first.
+    /// Questions Carrel needs you to answer, the most worth answering first: what a term
+    /// means, where items go, what an item is, and whether a sender deserves a collection.
     Questions {
         #[command(subcommand)]
         action: Option<QuestionsAction>,
@@ -537,21 +538,50 @@ enum BackupAction {
 
 #[derive(Debug, Subcommand)]
 enum QuestionsAction {
-    /// List the questions waiting for an answer.
-    List,
-    /// Answer a question: what a term means, or which collection its items belong in. Items
-    /// waiting on a term are drafted again with the answer.
+    /// List the questions waiting for an answer, the most worth answering first, each with
+    /// the answers it suggests. Questions the glossary or a rule already answers are dropped,
+    /// and questions that ask the same are merged.
+    List {
+        /// Show the questions resting after a skip too.
+        #[arg(long)]
+        all: bool,
+    },
+    /// Answer a question: pick a suggestion by its number, or answer in your own words. A
+    /// term's answer goes in the glossary and its items are drafted again; a collection's,
+    /// group's or sender's answer is a collection, where its items go; an item's answer is a
+    /// correction of its card, shown before it's saved. Without an answer, it's asked here.
     Answer {
         /// The question's identifier, or its start or end.
         id: String,
-        /// The answer: a sentence for a term, or a collection's path.
-        #[arg(required = true, num_args = 1..)]
+        /// A suggestion's number, or your answer.
         answer: Vec<String>,
+        /// Save an item answer's correction without asking.
+        #[arg(long)]
+        yes: bool,
+        /// Add what the answer teaches without asking: a glossary fact from an item answer,
+        /// or a routing rule for a sender.
+        #[arg(long)]
+        learn: bool,
+        /// Create the collection you name, if it doesn't exist.
+        #[arg(long)]
+        create: bool,
+    },
+    /// Skip a question for now; it's asked again after the archive's
+    /// `questions.skip_days` (14 unless changed).
+    Skip {
+        /// The question's identifier, or its start or end.
+        id: String,
     },
     /// Dismiss a question; its items stop waiting on it.
     Dismiss {
         /// The question's identifier, or its start or end.
         id: String,
+    },
+    /// Ask Carrel's questions about a filed item (what a photo shows, who someone is, what a
+    /// project was for, whether it still matters), adding them to the queue.
+    About {
+        /// The item: its identifier, or its card's or its own path.
+        item: String,
     },
 }
 
@@ -647,10 +677,28 @@ fn questions_command(
     archive: Option<&Path>,
     action: Option<QuestionsAction>,
 ) -> Result<Report, Failure> {
-    match action.unwrap_or(QuestionsAction::List) {
-        QuestionsAction::List => questions::list(archive),
-        QuestionsAction::Answer { id, answer } => questions::answer(archive, &id, &answer),
+    match action.unwrap_or(QuestionsAction::List { all: false }) {
+        QuestionsAction::List { all } => questions::list(archive, all),
+        QuestionsAction::Answer {
+            id,
+            answer,
+            yes,
+            learn,
+            create,
+        } => questions::answer(
+            archive,
+            &id,
+            &answer,
+            questions::Options {
+                yes,
+                learn,
+                create,
+                ask: std::io::IsTerminal::is_terminal(&std::io::stdin()),
+            },
+        ),
+        QuestionsAction::Skip { id } => questions::skip(archive, &id),
         QuestionsAction::Dismiss { id } => questions::dismiss(archive, &id),
+        QuestionsAction::About { item } => questions::about(archive, &item),
     }
 }
 
@@ -979,7 +1027,9 @@ fn changes_archive(command: &Command) -> bool {
         Command::Backup { action } => {
             matches!(action, BackupAction::Setup { .. } | BackupAction::Now)
         }
-        Command::Questions { action } => !matches!(action, None | Some(QuestionsAction::List)),
+        Command::Questions { action } => {
+            !matches!(action, None | Some(QuestionsAction::List { .. }))
+        }
         _ => false,
     }
 }

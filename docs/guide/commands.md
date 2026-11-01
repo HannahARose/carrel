@@ -82,9 +82,11 @@ Identifiers can be shortened to their last eight characters, as the list shows t
 
 | Command | What it does |
 | --- | --- |
-| `carrel questions` | Lists the questions waiting for an answer, most items first. |
-| `carrel questions answer ID ANSWER...` | Answers a question: a sentence for what a term means, or a collection's path. Items waiting on a term are drafted again with the answer, which is saved to the glossary. |
+| `carrel questions [list] [--all]` | Lists the questions waiting for an answer, the most worth answering first, each with the answers it suggests, numbered. Questions the glossary or a rule already answers are dropped, and questions that ask the same are merged. `--all` lists the skipped ones resting too. |
+| `carrel questions answer ID [ANSWER...] [--yes] [--learn] [--create]` | Answers a question with a suggestion's number or your own words; without an answer, it's asked on the terminal. A term's answer is saved to the glossary and its items are drafted again. A collection's, group's or sender's answer is a collection, where its items go, filed ones as undoable moves; a picked new collection is created, and `--create` creates one you name. A sender's yes then asks whether to add a routing rule for future items (`--learn` adds it). An item's answer is a correction of its card, shown before and after and saved on your yes (`--yes` saves it without asking, `--learn` adds a fact it states to the glossary). |
+| `carrel questions skip ID` | Skips a question: it rests for `questions.skip_days` (14 unless changed), then comes back. |
 | `carrel questions dismiss ID` | Dismisses a question; its items stop waiting on it. |
+| `carrel questions about ITEM` | Asks Carrel's questions about a filed item (what a photo shows, who someone named in it is, what a project was for, whether it still matters), adding them to the queue with likely answers from a text model when there is one. |
 
 ## Backups
 
@@ -114,7 +116,7 @@ Backups need [Kopia](https://kopia.io), beside `carrel` or on `PATH`.
 | Command | What it does |
 | --- | --- |
 | `carrel settings` | Lists this device's preferences and the archive's shared settings. |
-| `carrel settings set KEY VALUE` | Changes one. `picker`, `editor`, `model` and `second_model` are this device's (an empty value, or `default`, clears them); `model` takes `provider/offer`, the offer alone, or a provider such as `apple`, and must be one that's available; `second_model` also takes `off`. `ingest.originals`, `compressed_files`, `signals.crowded_items`, `outside_edits` and `embedding.model` are shared by every device, and each change can be undone from History. `embedding.model` can only be chosen once here; switch models with `carrel index model NAME`, which re-embeds the archive first. |
+| `carrel settings set KEY VALUE` | Changes one. `picker`, `editor`, `model` and `second_model` are this device's (an empty value, or `default`, clears them); `model` takes `provider/offer`, the offer alone, or a provider such as `apple`, and must be one that's available; `second_model` also takes `off`. `ingest.originals`, `compressed_files`, `signals.crowded_items`, `questions.skip_days`, `outside_edits` and `embedding.model` are shared by every device, and each change can be undone from History. `embedding.model` can only be chosen once here; switch models with `carrel index model NAME`, which re-embeds the archive first. |
 
 ## The interactive mode
 
@@ -125,7 +127,7 @@ Backups need [Kopia](https://kopia.io), beside `carrel` or on `PATH`.
 | `1` | **Status**: what `carrel status` shows, including Recent, what's waiting for you, and the search index, as `carrel index status` shows it |
 | `2` | **Review**: `a` approve, `h` hold, `m` move, `e` edit, `x` reject, `z` unpack a zip or keep it compressed, `Space` mark, `A` approve all high-confidence |
 | `3` | **Active**: what's checked out and on this device's desk, with their pending history entries; `r` return the chosen checkout, `x` cancel it, `o` open the working copy, `a` approve, `c` combine, `d` drop pending entries (all, or those marked with `Space`); `n` put a file or folder on the desk, and on a desk item `x` take it off, `f` archive it |
-| `4` | **Questions**: `Enter` to answer, `d` to dismiss |
+| `4` | **Questions**: `Enter` to answer, `1`–`9` to pick a suggestion, `s` to skip, `d` to dismiss |
 | `5` | **Browse**: collections and items; `/` to search, as `carrel search` does; `Enter` on an item for its changes and links, then `u` to undo the chosen change, `Enter` to go to a linked item; on an item, `o` check it out, `r` rename it, `z` expand a compressed file; `n` new collection |
 | `6` | **History**: `u` to undo the chosen change |
 | `7` | **Ingest**: the queue; `x` remove, `t` to the front, `r` retry |
