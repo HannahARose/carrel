@@ -709,3 +709,174 @@ fn the_model_is_the_chosen_one_else_the_largest_that_fits_else_apples() {
     };
     assert_eq!(collection.item(), None);
 }
+
+/// A registry with a scripted model whose context is `context` tokens.
+fn scripted_with_context(
+    context: u64,
+    answers: Vec<Result<Value, carrel_core::providers::ProviderError>>,
+) -> (
+    Registry,
+    std::sync::Arc<std::sync::Mutex<Vec<carrel_core::providers::CompletionRequest>>>,
+) {
+    let model = Scripted::new("scripted", 10, context, answers);
+    let asked = model.asked.clone();
+    let mut registry = Registry::with_built_ins();
+    registry.add(Box::new(model));
+    (registry, asked)
+}
+
+/// The final answer gets more room than a step naming a tool, and a step whose reply was cut
+/// off is asked again once with that room, rather than failing the question (#356).
+#[test]
+fn a_cut_off_reply_is_asked_again_with_room_for_a_whole_answer() {
+    use carrel_core::providers::ProviderError;
+    let (_dir, archive, _) = sample();
+    let (registry, asked) = scripted(vec![
+        tool("search", "lamp"),
+        Err(ProviderError::Failed(
+            "m's answer was cut off at 900 tokens before the JSON ended".into(),
+        )),
+        answer("The parts list.", &[PARTS], json!([]), json!([])),
+    ]);
+    let librarian = Librarian::new(&archive, &registry, the_model(), &providers).unwrap();
+    let mut conversation = Conversation::default();
+    let answer = librarian
+        .ask(&mut conversation, "What's the lamp made of?")
+        .unwrap();
+    assert_eq!(answer.text, "The parts list.");
+    let asked = asked.lock().unwrap();
+    let room: Vec<_> = asked.iter().map(|r| r.max_tokens).collect();
+    assert_eq!(room, [Some(900), Some(900), Some(2_400)]);
+    assert_eq!(
+        asked[1].prompt, asked[2].prompt,
+        "the same step, asked again"
+    );
+
+    let (registry, asked) = scripted(vec![tool("search", "lamp"), tool("show", PARTS)]);
+    let librarian = Librarian::new(&archive, &registry, the_model(), &providers)
+        .unwrap()
+        .with_limits(Limits {
+            steps: 2,
+            ..Limits::default()
+        });
+    librarian
+        .ask(&mut Conversation::default(), "What's the lamp made of?")
+        .unwrap();
+    assert_eq!(
+        asked.lock().unwrap()[1].max_tokens,
+        Some(2_400),
+        "the last step, which must answer, has room for it"
+    );
+}
+
+/// The same tool call again isn't run or counted as a step: the model is told it's already
+/// done, with the earlier result (#356).
+#[test]
+fn a_repeated_call_is_answered_from_before_without_a_step() {
+    let (_dir, archive, _) = sample();
+    let (registry, asked) = scripted(vec![
+        tool("search", "lamp parts"),
+        tool("search", "  Lamp   PARTS "),
+        tool("search", "lamp parts"),
+        answer("The parts list.", &[PARTS], json!([]), json!([])),
+    ]);
+    let librarian = Librarian::new(&archive, &registry, the_model(), &providers)
+        .unwrap()
+        .with_limits(Limits {
+            steps: 2,
+            ..Limits::default()
+        });
+    let mut conversation = Conversation::default();
+    let answer = librarian
+        .ask(&mut conversation, "What's the lamp made of?")
+        .unwrap();
+    assert_eq!(answer.text, "The parts list.", "two repeats cost no steps");
+    assert_eq!(answer.steps.len(), 1, "the search ran once");
+    let asked = asked.lock().unwrap();
+    assert_eq!(asked.len(), 4);
+    assert!(
+        asked[2].prompt.contains("Already done"),
+        "{}",
+        asked[2].prompt
+    );
+    let again = asked[2].prompt.split("Already done").nth(1).unwrap();
+    assert!(
+        again.contains("Desk lamp parts list"),
+        "with the earlier result: {again}"
+    );
+
+    // Repeats past as many as it has steps cost a step each, so it can't go round for ever.
+    let (registry, asked) = scripted(vec![tool("search", "lamp"); 10]);
+    let librarian = Librarian::new(&archive, &registry, the_model(), &providers)
+        .unwrap()
+        .with_limits(Limits {
+            steps: 2,
+            ..Limits::default()
+        });
+    let mut conversation = Conversation::default();
+    let answer = librarian.ask(&mut conversation, "Lamp?").unwrap();
+    assert_eq!(answer.stopped, Some(Stopped::Steps));
+    assert_eq!(asked.lock().unwrap().len(), 4);
+}
+
+/// Each step's prompt fits the model's context: older results are left out, then the newest
+/// is cut short (#356). A model whose context overflows anyway is asked again once with what
+/// was done shortened further.
+#[test]
+fn tool_results_are_trimmed_to_fit_the_models_context() {
+    use carrel_core::providers::{ProviderError, estimate_tokens};
+    let (_dir, archive, _) = sample();
+    let context = 2_600;
+    let (registry, asked) = scripted_with_context(
+        context,
+        vec![
+            tool("collection", "Reading"),
+            tool("collection", "Projects/Hardware"),
+            tool("search", "oscillators"),
+            tool("collection", "Projects"),
+            answer("Two collections.", &[], json!([]), json!([])),
+        ],
+    );
+    let librarian = Librarian::new(&archive, &registry, the_model(), &providers).unwrap();
+    librarian
+        .ask(
+            &mut Conversation::default(),
+            "What's in Reading and Projects?",
+        )
+        .unwrap();
+    let asked = asked.lock().unwrap();
+    assert_eq!(asked.len(), 5);
+    for request in asked.iter() {
+        let used = estimate_tokens(request.system.as_deref().unwrap())
+            + estimate_tokens(&request.prompt)
+            + u64::from(request.max_tokens.unwrap());
+        assert!(used <= context, "{used} tokens: {}", request.prompt);
+    }
+    assert!(
+        asked[4].prompt.contains("left out, to fit"),
+        "{}",
+        asked[4].prompt
+    );
+
+    let (registry, asked) = scripted_with_context(
+        context,
+        vec![
+            tool("collection", "Projects"),
+            Err(ProviderError::Unsupported(
+                "too long for Apple's on-device model: Exceeded model context window size".into(),
+            )),
+            answer("Reading holds papers.", &[], json!([]), json!([])),
+        ],
+    );
+    let librarian = Librarian::new(&archive, &registry, the_model(), &providers).unwrap();
+    let mut conversation = Conversation::default();
+    let answer = librarian
+        .ask(&mut conversation, "What's in Reading?")
+        .unwrap();
+    assert_eq!(answer.text, "Reading holds papers.");
+    let asked = asked.lock().unwrap();
+    assert!(
+        asked[2].prompt.len() < asked[1].prompt.len(),
+        "shortened further"
+    );
+}

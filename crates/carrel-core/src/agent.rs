@@ -484,10 +484,14 @@ fn run_due(
         let name = followed.name.clone();
         let result = match Archive::open(&followed.root) {
             Ok(archive) => {
-                events(Event::Started {
-                    name: name.clone(),
-                    job,
-                });
+                // The crawler looks every few minutes and usually finds nothing due, so it's
+                // reported only when it did something.
+                if job != Job::Crawl {
+                    events(Event::Started {
+                        name: name.clone(),
+                        job,
+                    });
+                }
                 let result = jobs.run(&archive, job);
                 if job == Job::Backup {
                     let state = State {
@@ -509,7 +513,9 @@ fn run_due(
         match result {
             Ok(summary) => {
                 plan.ran(job, now, true);
-                events(Event::Finished { name, job, summary });
+                if job != Job::Crawl || summary.is_some() {
+                    events(Event::Finished { name, job, summary });
+                }
             }
             Err(JobError::Busy) if job != Job::Backup => {
                 plan.postpone(job, now + BUSY_RETRY);

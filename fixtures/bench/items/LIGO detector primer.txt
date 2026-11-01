@@ -1,0 +1,3 @@
+A primer on interferometric detectors
+
+Two arms four kilometres long, at right angles. A passing gravitational wave stretches one arm and squeezes the other by less than a proton's width. Mirrors hang from pendulums to isolate them from the ground; the laser light bounces hundreds of times before it recombines.

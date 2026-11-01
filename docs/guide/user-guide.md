@@ -402,7 +402,7 @@ Every change Carrel makes to the archive is recorded: filing a batch, renaming, 
 
 - **History** (`6`) or `carrel log` lists changes, newest first.
 - `u` on a change, or `carrel undo CHANGE`, reverses it with a new change: files it moved go back, and cards and documents return to how they were. The change that created the history can't be undone.
-- Changes the librarian made on its own are marked **by the librarian**; `carrel undo --librarian SINCE` undoes them all together (see [What the librarian may change](#what-the-librarian-may-change)).
+- Changes the librarian made on its own are marked **by the librarian**; `carrel undo --librarian SINCE` undoes them all together (see [What the librarian may change](#what-the-librarian-may-change)). The crawler's are marked **by the crawler**, and `carrel crawl undo SINCE` undoes them (see [The crawler](#the-crawler)).
 - Rejecting a proposal isn't a change to the archive, so it isn't undone this way; ingest the file again instead.
 
 ### Tidying tags
@@ -418,6 +418,18 @@ Each change says why and which items it changes. **Tags you wrote yourself stay 
 Approve it all with `carrel restructure tags approve`, part of it with `--only 1,3` (the changes' numbers), or none with `carrel restructure tags reject`. Approving rewrites the cards and the vocabularies in `ARCHIVE.md` and each `_collection.md` (noting it in the collection's changelog) as **one change in History**, so `carrel undo` puts everything back at once. A vocabulary keeps a tag that items left alone still use. Changes are applied to the archive as it is when you approve: a card you've changed since is left alone and reported.
 
 The proposal waits in `_System/queue/proposals/` until you decide, and proposing again replaces it. Restructuring whole sections, moving items and collections, comes next in v0.7, as do tag proposals in the interactive mode (#326) and the Mac app (#327).
+
+### The crawler
+
+Filing puts each item where it fits best on the day, with whatever model the device had then. The **crawler** keeps checking in the background, a few items at a time, with the strongest model the device has: whether each still fits its collection's design document, where it would go instead, and whether its card could be better (a summary a small model wrote, a vague title, missing tags, a date the text gives).
+
+- **Its order:** Holding first, then items filed with low confidence, then the items of crowded collections, then a slow sweep of everything. An item it checked waits a week in Holding, a month otherwise, and half a year in the sweep before it's checked again. Restricted and checked-out items are left alone.
+- **What it finds waits in Review,** under "From the crawler" in `carrel review`: a move, or a correction. Approve it to make the change as yours, or reject it, and it won't be suggested again. **Fields you wrote yourself are never corrected.**
+- **Its changes, if you let it:** with `carrel settings set crawler.changes on`, it makes the refiles and corrections it's at least 90% sure of itself. Each is an ordinary change marked **by the crawler** in History and listed on Status for a week; `carrel undo` takes back one, and `carrel crawl undo 7d` all of them. Whole-section restructures always wait for you, whatever the setting.
+- **Its pace** (`crawler.pace`: `off`, `gentle`, `steady` by default, or `brisk`) is how much of the device's idle time it uses. It runs in `carrel agent` and after the background worker, only when the device has been idle a while and is on power, and stops as soon as you use it or add something to the queue. `restructure.eagerness` doesn't slow it: it gathers the evidence any reorganization needs.
+- **What it learns feeds the structure signals:** a collection whose items keep not fitting shows on Status, as a sign it may want restructuring.
+
+`carrel crawl` shows how far it has got, and `carrel crawl run` checks a few items now. The crawler in the interactive mode (#326) and the Mac app (#327) comes later in v0.7.
 
 ### Writing safely
 
