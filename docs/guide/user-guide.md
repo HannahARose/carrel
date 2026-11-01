@@ -2,6 +2,8 @@
 
 How Carrel works, and how to use each part of it. If you haven't used Carrel yet, start with [Getting started](getting-started.md); every command and key is in [Commands](commands.md). The Mac app, its screens and its agent are in [The Mac app](mac-app.md).
 
+`carrel tui` opens the interactive mode in the terminal (so does `carrel` alone), and `carrel gui` opens the Mac app on the same archive. Both take a screen to start on, by the same names: `carrel tui questions`, `carrel gui discover:wander` ([Commands](commands.md#the-interactive-mode)).
+
 ## The archive
 
 An archive is an ordinary folder. Everything in it is readable without Carrel: in Finder, in a text editor, or as an [Obsidian](https://obsidian.md) vault. Carrel's own data lives in `_System/`.

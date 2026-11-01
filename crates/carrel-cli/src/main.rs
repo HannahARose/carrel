@@ -25,6 +25,7 @@ mod expand;
 mod findability;
 mod flag;
 mod formats;
+mod gui;
 mod index;
 mod ingest;
 mod models;
@@ -41,6 +42,7 @@ mod review;
 mod search;
 mod sessions;
 mod settings;
+mod start_screen;
 mod tui;
 mod usage_report;
 mod worker;
@@ -178,7 +180,19 @@ enum Command {
     },
     /// Open the interactive mode: status, review, questions, browsing and history in one
     /// screen. `carrel` with no command opens it too, when run in a terminal.
-    Tui,
+    Tui {
+        /// The screen to start on, rather than Status.
+        screen: Option<start_screen::StartScreen>,
+    },
+    /// Open the Mac app on the archive, at a screen and with an item chosen if asked; with
+    /// no archive found, on its Welcome window. On other systems, use `carrel tui`.
+    Gui {
+        /// The screen to show.
+        screen: Option<start_screen::StartScreen>,
+        /// The item to choose: its identifier, or its card's or contents' path.
+        #[arg(long)]
+        item: Option<String>,
+    },
     /// Undo a recorded change with a new change that reverses it; see `carrel log`.
     Undo {
         /// The change's identifier, or its start.
@@ -1092,7 +1106,7 @@ impl<E: std::error::Error> From<E> for Failure {
 fn without_command(archive: Option<&std::path::Path>, json: bool) -> ExitCode {
     use std::io::IsTerminal as _;
     if std::io::stdin().is_terminal() && std::io::stdout().is_terminal() && !json {
-        return finish(tui::run(archive), false);
+        return finish(tui::run(archive, None), false);
     }
     <Cli as clap::CommandFactory>::command()
         .error(
@@ -1115,7 +1129,10 @@ fn main() -> ExitCode {
         sessions::record_before_command(cli.archive.as_deref(), cli.json);
     }
     let result = match command {
-        Command::Tui => tui::run(cli.archive.as_deref()),
+        Command::Tui { screen } => tui::run(cli.archive.as_deref(), screen),
+        Command::Gui { screen, item } => {
+            gui::open_app(cli.archive.as_deref(), screen, item.as_deref())
+        }
         Command::Undo { change, librarian } => {
             undo_command(cli.archive.as_deref(), change, librarian)
         }
