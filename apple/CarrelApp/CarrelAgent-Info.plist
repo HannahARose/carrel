@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSServices</key>
+	<array>
+		<dict>
+			<key>NSMenuItem</key>
+			<dict>
+				<key>default</key>
+				<string>Add to Archive</string>
+			</dict>
+			<key>NSMessage</key>
+			<string>addToArchive</string>
+			<key>NSRequiredContext</key>
+			<dict/>
+			<key>NSSendFileTypes</key>
+			<array>
+				<string>public.item</string>
+			</array>
+			<key>NSIconName</key>
+			<string>NSActionTemplate</string>
+		</dict>
+		<dict>
+			<key>NSMenuItem</key>
+			<dict>
+				<key>default</key>
+				<string>Add to Archive Entry by Entry</string>
+			</dict>
+			<key>NSMessage</key>
+			<string>addToArchiveEntryByEntry</string>
+			<key>NSRequiredContext</key>
+			<dict/>
+			<key>NSSendFileTypes</key>
+			<array>
+				<string>public.folder</string>
+			</array>
+			<key>NSIconName</key>
+			<string>NSActionTemplate</string>
+		</dict>
+	</array>
+</dict>
+</plist>

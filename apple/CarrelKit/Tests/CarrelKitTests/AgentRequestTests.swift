@@ -29,7 +29,9 @@ struct RequestSample {
             watching: false, badges: badges)
         let opened = Opened()
         self.opened = opened
-        handler = AgentRequestHandler(agent: agent) { opened.links.append($0) }
+        handler = AgentRequestHandler(agent: agent, sent: sample.folder.appending(path: "Sent")) {
+            opened.links.append($0)
+        }
         await agent.follow([sample.root])
     }
 
@@ -81,6 +83,28 @@ struct RequestSample {
                 whole: false))
         #expect(again.outcome == .failed, "already queued")
         #expect(again.message.contains("a note.txt"))
+    }
+
+    @Test func sharedTextAndDataAreKeptAndQueuedAsFiles() async throws {
+        let test = try await RequestSample()
+        let text = await test.handler.handle(
+            .addText(archive: nil, text: "Ideas for the lamp: a frosted diffuser.", title: nil))
+        #expect(text.outcome == .done, "\(text.message)")
+        let note = try #require(text.items.first?.path)
+        #expect(note.hasPrefix(realPath(test.sample.folder.path(percentEncoded: false)) + "/Sent/"))
+        #expect(
+            URL(filePath: note).lastPathComponent == "Ideas for the lamp- a frosted diffuser.md")
+        #expect(try String(contentsOfFile: note, encoding: .utf8).contains("frosted"))
+
+        let image = await test.handler.handle(
+            .addData(archive: nil, name: "sketch.png", data: Data([0x89, 0x50, 0x4e, 0x47])))
+        #expect(image.outcome == .done, "\(image.message)")
+        #expect(image.items.first?.title == "sketch.png")
+        #expect(try test.handle.intake().waiting.count == 2)
+
+        let titled = await test.handler.handle(
+            .addText(archive: nil, text: "x", title: "Lamp/ideas"))
+        #expect(titled.items.first?.title == "Lamp-ideas.md")
     }
 
     @Test func checkingOutAndReturningFollowTheBadgeState() async throws {
@@ -225,7 +249,9 @@ struct RequestSample {
             options: .isolated(config: test.sample.folder.appending(path: "config")),
             state: state, watching: false)
         await other.follow([test.sample.root])
-        let handler = AgentRequestHandler(agent: other) { _ in }
+        let handler = AgentRequestHandler(
+            agent: other, sent: test.sample.folder.appending(path: "Sent")
+        ) { _ in }
         let item = try test.sample.item(titled: "Desk lamp parts list")
         let write = await handler.handle(
             .checkOut(archive: nil, item: item, folder: nil, due: nil))
