@@ -13,7 +13,7 @@ use crate::history::{Change, History, HistoryError, Move, Operation};
 use crate::manifest::{Manifest, ManifestError};
 
 /// What expanding a filed item did.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ExpandedItem {
     /// The compressed file's path before, relative to the archive root.
     pub from: String,
@@ -30,6 +30,9 @@ pub struct ExpandedItem {
     /// Why the compressed file couldn't go to the Trash, when it couldn't; it's then left
     /// beside the item.
     pub trash_problem: Option<String>,
+    /// The compressed file, kept in the holding folder instead of the Trash on a device
+    /// without Kopia, until a snapshot has it ([`crate::holding`]).
+    pub held: Option<crate::holding::Held>,
     /// The history commit.
     pub commit: Option<String>,
 }
@@ -225,8 +228,27 @@ pub fn expand_item(
         crate::listing::add_to_changelog(archive, folder_path, &entry)
             .map_err(io(&root.join(folder_path).join("CHANGELOG.md")))?;
     }
-    // Only now, with the item and card in place, does the compressed file leave.
-    let trash_problem = crate::trash::put(&source).err().map(|e| e.to_string());
+    // Only now, with the item and card in place, does the compressed file leave: to the
+    // holding folder on a device without Kopia, otherwise to the Trash.
+    let holder = crate::coordinator::Holder {
+        person: lease.info().person,
+        device: lease.info().device,
+    };
+    let keeping = crate::holding::Keeping {
+        item: Some(item.id),
+        title: &file.card().title,
+        why: crate::holding::Why::Expand,
+        name: None,
+    };
+    let mut trash_problem = None;
+    let held = crate::holding::keep_or(archive, &source, &keeping, holder, |source| {
+        trash_problem = crate::trash::put(source).err().map(|e| e.to_string());
+        Ok::<(), std::io::Error>(())
+    })
+    .unwrap_or_else(|e| {
+        trash_problem = Some(e.to_string());
+        None
+    });
     crate::listing::refresh(archive)?;
 
     let mut change = Change::new(
@@ -250,6 +272,7 @@ pub fn expand_item(
         files: expanded.files,
         size: expanded.size,
         trash_problem,
+        held,
         commit,
     })
 }

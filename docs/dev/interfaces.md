@@ -17,6 +17,10 @@ The command line and the interactive mode run on macOS, Linux and Windows. The M
 | Add items to the intake queue | `ingest` | ✓ Ingest | ✓ drag, ⌘O (#236), a folder entry by entry or whole |
 | Add a web address as a `url` item, and a note for the cards | `ingest --url`, `--title`, `--note` | ✓ a web address on the Ingest line, `n` for a note | ✓ Send to Archive and Add to Archive in Shortcuts; the window: #439 |
 | Add while another device is the writer, through this device's inbox | `ingest` | ✓ Ingest | ✓ Send to Archive, the Quick Action, Shortcuts |
+| Every other change while another device is the writer, through this device's inbox: approvals, holds, rejections, answers, corrections and edits, checkouts and returns, desk changes, flags, expanding, undo (#467; the rest, #484) | each command, automatically, saying so | ✓ automatically, saying so | ✓ automatically, saying so |
+| This device's inbox: what waits for the writer, and what it skipped and why (#467) | `status` | ✓ Status | ✓ Status |
+| The holding folder, on a device without Kopia: how much waits for a snapshot, with warnings (#470) | `status` | ✓ Status | ✓ Status |
+| Restore a version from the holding folder (#470) | `backup restore --held` | #483 | ✓ Status's holding folder |
 | The intake queue: list, remove, move to the front, try again | `ingest --status`, `--remove`, `--first`, `--retry` | ✓ Ingest | ✓ Status, with each failure's reason |
 | The worker's progress | `ingest --status` | ✓ | ✓ (#236) |
 | Review: approve, hold, move, reject | `review` | ✓ Review | ✓ (#234) |
@@ -109,4 +113,6 @@ These stay in one interface, for the reason given:
 - **Quick Look** is how macOS previews files in Finder, so only the Mac has it. `carrel show` and Browse show the same card (`docs/design/macos-integration.md`).
 - **Spotlight** is how macOS searches everything at once, so only the Mac has it. `carrel search` and `/` find the same cards. `spotlight.index` is an archive setting in every interface, since it decides what the archive shows anyone at a Mac.
 - **Grid views, dragging and the menu bar** are ways of working in a graphical app. The command line and the interactive mode reach the same capabilities through their own commands and screens, as the table shows.
+- **The command line on Linux and Windows with a synced archive** can't reach the CloudKit writer lock, so it never writes the history there: it reads freely, acts through its inbox, and says so (`docs/design/sync-and-mobile.md`, decision 2). Changes the inbox doesn't carry (backups, restructuring, settings) need an archive that isn't synced.
+- **Kopia snapshots** run only where Kopia does. Elsewhere, such as on an iPad or iPhone, the holding folder keeps replaced content until a Mac with Kopia snapshots and clears it.
 - **Platform-only models and readers,** such as Apple's model or Vision's OCR, are available in every interface on the platforms that have them. Elsewhere, the open models and the extraction provider stand in.

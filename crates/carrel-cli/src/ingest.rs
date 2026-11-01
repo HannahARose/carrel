@@ -95,15 +95,15 @@ pub fn ingest(
             "Nothing has been queued (--dry-run).",
         ));
     }
-    if let Some(writer) = inbox::writer_elsewhere(&archive, identity.device) {
+    if let Some(through) = crate::through_inbox::check(&archive)? {
         let sent = inbox::send_paths(
             &archive,
-            crate::commands::holder(&identity),
+            through.holder,
             paths,
             options.intake.each,
             options.note.as_deref(),
         )?;
-        return Ok(inbox_report(&sent, &writer, paths.len()));
+        return Ok(inbox_report(&through, &sent, paths.len()));
     }
     let queued = intake::add_with_note(
         &archive,
@@ -161,15 +161,9 @@ pub fn ingest_url(
     let archive = locate(archive)?;
     let identity = crate::config::Identity::load_or_create()?;
     let note = options.note.as_deref();
-    if let Some(writer) = inbox::writer_elsewhere(&archive, identity.device) {
-        let sent = inbox::send_url(
-            &archive,
-            crate::commands::holder(&identity),
-            url,
-            title,
-            note,
-        )?;
-        return Ok(inbox_report(&sent, &writer, 1));
+    if let Some(through) = crate::through_inbox::check(&archive)? {
+        let sent = inbox::send_url(&archive, through.holder, url, title, note)?;
+        return Ok(inbox_report(&through, &sent, 1));
     }
     let Some(entry) = intake::add_url(&archive, url, title, note, identity.device)? else {
         return Ok(Report::new(
@@ -199,16 +193,18 @@ pub fn ingest_url(
     ))
 }
 
-/// Says that `count` items went into this device's inbox at `sent`, for `writer` to add.
-fn inbox_report(sent: &Path, writer: &carrel_core::coordinator::LockInfo, count: usize) -> Report {
-    Report::new(
-        format!(
-            "Another device ({}) is the writer now, so {} went into this device's inbox, for it to add to its queue and draft.\n",
-            writer.device,
-            if count == 1 { "it" } else { "they" },
+/// Says that `count` items went into this device's inbox at `sent`, for the writer to add.
+fn inbox_report(through: &crate::through_inbox::ThroughInbox, sent: &Path, count: usize) -> Report {
+    let mut report = through.report(
+        sent,
+        &format!(
+            "{}, for the writer to add to its queue and draft",
+            plural(count, "item")
         ),
-        json!({"saved": false, "queued": [], "inbox": sent, "writer": writer.device}),
-    )
+    );
+    report.json["saved"] = json!(false);
+    report.json["queued"] = json!([]);
+    report
 }
 
 /// Drafts the queued items in the foreground, or follows the worker already drafting them,

@@ -147,6 +147,10 @@ impl ArchiveHandle {
         let archive = self.fresh()?;
         let device = self.identity()?.device;
         let paths: Vec<PathBuf> = paths.into_iter().map(PathBuf::from).collect();
+        if let Some((holder, sending)) = self.sending(&archive)? {
+            carrel_core::inbox::send_paths(&archive, holder, &paths, each, None)?;
+            return Err(CarrelError::sent(&sending));
+        }
         let queued =
             carrel_core::intake::add(&archive, &paths, IntakeOptions { each, whole }, device)?;
         Ok(Added {

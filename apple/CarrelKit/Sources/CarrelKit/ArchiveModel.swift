@@ -125,6 +125,10 @@ public final class ArchiveModel {
             return try await Task.detached(priority: .userInitiated) { try work(handle) }.value
         } catch let error as CarrelError {
             lastError = error
+            if error.isSentToInbox {
+                // Status counts what waits in this device's inbox.
+                Task { try? await self.refreshStatus() }
+            }
             throw error
         }
     }

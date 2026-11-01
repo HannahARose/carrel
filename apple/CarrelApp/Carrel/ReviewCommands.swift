@@ -95,7 +95,7 @@ extension View {
     /// Shows the core's error from the last call that failed.
     func archiveErrorAlert(_ archive: ArchiveModel?) -> some View {
         alert(
-            "Something Went Wrong",
+            problemTitle("Something Went Wrong", archive),
             isPresented: Binding {
                 archive?.lastError != nil
             } set: {

@@ -88,6 +88,9 @@ final class ActiveScreenModel {
     var checkingOut: CheckoutDraft?
     /// What went wrong with the last action, for an alert.
     var problem: String?
+    /// News to show after a change that worked, such as a checkout made here while another
+    /// device is the writer, which the writer records later.
+    var notice: String?
 
     /// Where a checkout goes unless changed: the Desktop, or the folder tests give.
     let checkoutFolder: URL
@@ -266,6 +269,7 @@ final class ActiveScreenModel {
         let out = await perform { try await $0.checkOut(draft.item, to: draft.folder, due: due) }
         if let out {
             selection = [.item(out.item)]
+            notice = out.inbox.map { "The copy is at \(out.working). \($0)" }
             await didChange()
         }
     }

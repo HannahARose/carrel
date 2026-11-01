@@ -316,7 +316,9 @@ pub fn file_batch(
             format!("File {count} items")
         },
         lease.info().person,
-        device,
+        // The lease holder's: the device that approved them, which may have sent the approval
+        // through its inbox (`crate::inbox`), not necessarily the one they're filed on.
+        lease.info().device,
     );
     let mut body = String::new();
     for filed in &outcome.filed {

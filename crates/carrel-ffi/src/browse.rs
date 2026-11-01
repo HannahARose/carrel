@@ -92,6 +92,9 @@ pub struct ExpandedItem {
     pub trash_problem: Option<String>,
     /// The history commit.
     pub commit: Option<String>,
+    /// The compressed file, kept in the holding folder instead of the Trash on a device
+    /// without Kopia, until a snapshot has it.
+    pub held: Option<crate::inbox::HeldVersion>,
 }
 
 impl From<CollectionError> for CarrelError {
@@ -260,6 +263,20 @@ impl ArchiveHandle {
     pub fn expand_item(&self, item: String, anyway: bool) -> Result<ExpandedItem, CarrelError> {
         let archive = self.fresh()?;
         let item = Self::item(&archive, &item)?;
+        self.through_inbox(&archive, || {
+            // What won't expand is said here, rather than sent for the writer to skip.
+            match examine(&archive, &item) {
+                Err(e @ (ExpandError::NotCompressed(_) | ExpandError::CheckedOut)) => {
+                    return Err(e.into());
+                }
+                Err(e @ ExpandError::Kept { .. }) if !anyway => return Err(e.into()),
+                _ => {}
+            }
+            Ok(carrel_core::inbox::Request::Expand {
+                item: item.id,
+                anyway,
+            })
+        })?;
         let expanded = self.with_lease(&archive, "expand", |lease| {
             Ok(expand_item(&archive, &item, anyway, lease)?)
         })?;
@@ -272,6 +289,7 @@ impl ArchiveHandle {
             size: expanded.size,
             trash_problem: expanded.trash_problem,
             commit: expanded.commit,
+            held: expanded.held.as_ref().map(Into::into),
         })
     }
 }

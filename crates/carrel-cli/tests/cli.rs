@@ -2282,7 +2282,16 @@ fn expand_opens_a_filed_zip_in_one_change_that_undo_reverses() {
     assert_eq!(expanded["kind"], "folder");
     assert!(root.join(to).join("run2.csv").is_file());
     assert!(!root.join(&zip_path).exists());
-    assert!(sandbox.path("Trash/Spectra.zip").is_file());
+    // Without backups, the compressed file waits in the holding folder for a snapshot.
+    let held = expanded["held"]
+        .as_str()
+        .expect("kept in the holding folder");
+    assert!(
+        root.join("_System/holding")
+            .join(held)
+            .join("Spectra.zip")
+            .is_file()
+    );
     let card = std::fs::read_to_string(root.join(expanded["card"].as_str().unwrap())).unwrap();
     assert!(
         card.contains("kind: folder") && card.contains("name: Spectra.zip"),

@@ -15,21 +15,25 @@ use crate::{ArchiveHandle, CarrelError, text};
 pub struct Shared {
     /// What joined this device's intake queue, and what was left out.
     pub added: Added,
-    /// The inbox entry it went into instead, while another device is the writer.
+    /// The inbox entry it went into instead, while another device is the writer, or this
+    /// device acts through its inbox.
     pub inbox: Option<String>,
-    /// That device, when it did.
+    /// The writer device, when another device is the writer.
     pub writer: Option<String>,
+    /// Why it went into the inbox, in words, when it did.
+    pub sent: Option<String>,
 }
 
 impl Shared {
-    fn sent(path: &std::path::Path, writer: carrel_core::card::Id) -> Self {
+    fn sent(path: &std::path::Path, sending: &inbox::Sending) -> Self {
         Self {
             added: Added {
                 added: Vec::new(),
                 left_out: Vec::new(),
             },
             inbox: Some(text(path)),
-            writer: Some(writer.to_string()),
+            writer: sending.writer().map(|w| w.to_string()),
+            sent: Some(sending.describe()),
         }
     }
 }
@@ -53,9 +57,9 @@ impl ArchiveHandle {
         let archive = self.fresh()?;
         let holder = self.holder()?;
         let paths: Vec<PathBuf> = paths.into_iter().map(PathBuf::from).collect();
-        if let Some(writer) = inbox::writer_elsewhere(&archive, holder.device) {
+        if let Some(sending) = inbox::sending(&archive, holder.device) {
             let sent = inbox::send_paths(&archive, holder, &paths, each, note.as_deref())?;
-            return Ok(Shared::sent(&sent, writer.device));
+            return Ok(Shared::sent(&sent, &sending));
         }
         let queued = intake::add_with_note(
             &archive,
@@ -78,6 +82,7 @@ impl ArchiveHandle {
             },
             inbox: None,
             writer: None,
+            sent: None,
         })
     }
 
@@ -97,9 +102,9 @@ impl ArchiveHandle {
     ) -> Result<Shared, CarrelError> {
         let archive = self.fresh()?;
         let holder = self.holder()?;
-        if let Some(writer) = inbox::writer_elsewhere(&archive, holder.device) {
+        if let Some(sending) = inbox::sending(&archive, holder.device) {
             let sent = inbox::send_url(&archive, holder, &url, title.as_deref(), note.as_deref())?;
-            return Ok(Shared::sent(&sent, writer.device));
+            return Ok(Shared::sent(&sent, &sending));
         }
         let added = intake::add_url(
             &archive,
@@ -119,6 +124,7 @@ impl ArchiveHandle {
             },
             inbox: None,
             writer: None,
+            sent: None,
         })
     }
 }
@@ -178,6 +184,7 @@ mod tests {
             Some("01928f3a-0000-7000-8000-00000000d002")
         );
         assert!(std::path::Path::new(sent.inbox.as_deref().unwrap()).is_file());
+        assert!(sent.sent.unwrap().contains("inbox"));
         assert_eq!(sent.added.added.len(), 0);
     }
 }

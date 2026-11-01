@@ -8,7 +8,7 @@ use std::path::PathBuf;
 
 use crate::archive::{Archive, ArchiveError, Collection};
 use crate::backup::Backups;
-use crate::card::Sensitivity;
+use crate::card::{Id, Sensitivity};
 use crate::coordinator::{Coordinator, CoordinatorError, DEFAULT_LEASE, DiskLock, Holder};
 use crate::history::{Change, History, HistoryError, Operation};
 use crate::ingest::filing::{BatchError, Outcome, Placement, file_batch};
@@ -419,6 +419,28 @@ pub fn decide(
     holder: Holder,
     backups: Option<&dyn Backups>,
 ) -> Result<Outcome, ActionError> {
+    decide_on(
+        archive,
+        entries,
+        placement,
+        (holder, holder.device),
+        backups,
+    )
+}
+
+/// As [`decide`], recorded as `holder`'s, filing the items on `device`, where they are: how
+/// the writer files what another device approved through its inbox ([`crate::inbox`]).
+///
+/// # Errors
+///
+/// As [`decide`].
+pub fn decide_on(
+    archive: &Archive,
+    entries: Vec<ReviewEntry>,
+    placement: Placement,
+    (holder, device): (Holder, Id),
+    backups: Option<&dyn Backups>,
+) -> Result<Outcome, ActionError> {
     if entries.is_empty() {
         return Ok(Outcome::default());
     }
@@ -431,7 +453,7 @@ pub fn decide(
             (e, placement)
         })
         .collect();
-    let outcome = file_batch(archive, decided, &mut lease, holder.device, backups);
+    let outcome = file_batch(archive, decided, &mut lease, device, backups);
     noted.filed(archive, outcome.as_ref().ok());
     lease.release()?;
     Ok(outcome?)

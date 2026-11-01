@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex};
 
 use carrel_core::actions;
 use carrel_core::correct::prepare::{self, Prepared};
+use carrel_core::inbox::Request;
 use carrel_core::providers::{
     Capability, Completion, CompletionRequest, Offer, Provider, ProviderError, Registry, priority,
 };
@@ -292,6 +293,24 @@ impl ArchiveHandle {
             .take()
             .ok_or_else(|| CarrelError::invalid("this correction was saved already"))?;
         let archive = self.fresh()?;
+        if let Some((holder, sending)) = self.sending(&archive)? {
+            let request = Request::Correct {
+                corrects: prepared.corrects(),
+                words: prepared.words.clone(),
+                changes: Box::new(prepared.worked.changes.clone()),
+                model: prepared.worked.model.clone(),
+                by: Some(prepared.by().to_owned()).filter(|by| !by.is_empty()),
+                answering: correction.answering,
+            };
+            if let Err(e) = carrel_core::inbox::send(&archive, holder, request) {
+                // Not sent, so it can be saved again.
+                if let Ok(mut kept) = correction.prepared.lock() {
+                    *kept = Some(prepared);
+                }
+                return Err(e.into());
+            }
+            return Err(CarrelError::sent(&sending));
+        }
         let saved = prepare::save(&archive, prepared, || self.holder())?;
         if let Some(id) = correction.answering
             && let Ok(question) =
@@ -316,6 +335,12 @@ impl ArchiveHandle {
     /// [`CarrelError::Failed`].
     pub fn learn(&self, fact: GlossaryFact) -> Result<Option<String>, CarrelError> {
         let archive = self.fresh()?;
+        self.through_inbox(&archive, || {
+            Ok(Request::Learn {
+                about: fact.about.clone(),
+                fact: fact.fact.clone(),
+            })
+        })?;
         Ok(actions::learn(
             &archive,
             &fact.about,

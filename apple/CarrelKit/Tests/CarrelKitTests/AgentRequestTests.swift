@@ -340,7 +340,7 @@ struct RequestSample {
         #expect(FileManager.default.fileExists(atPath: inbox.path(percentEncoded: false)))
     }
 
-    @Test func anotherWritersLeaseIsRefusedWithItsReason() async throws {
+    @Test func aChangeWhileAnotherDeviceWritesGoesIntoTheInbox() async throws {
         let test = try await RequestSample()
         try test.holdLeaseElsewhere()
         let item = try test.sample.item(titled: "Desk lamp parts list")
@@ -348,9 +348,14 @@ struct RequestSample {
         let reply = await test.handler.handle(
             .checkOut(
                 archive: nil, item: item, folder: desktop.path(percentEncoded: false), due: nil))
-        #expect(reply.outcome == .refused, "\(reply.message)")
-        #expect(!reply.message.isEmpty)
-        #expect(try !test.handle.active().contains { $0.id == item })
+        #expect(reply.outcome == .done, "\(reply.message)")
+        #expect(reply.message.contains("inbox"), "the writer records it")
+        #expect(reply.working.map { FileManager.default.fileExists(atPath: $0) } == true)
+        #expect(try !test.handle.active().contains { $0.id == item }, "not recorded yet")
+        // Cancelling follows it into the inbox, for the writer to apply after the checkout.
+        let cancel = await test.handler.handle(.cancelCheckout(archive: nil, item: item))
+        #expect(cancel.outcome == .done, "\(cancel.message)")
+        #expect(cancel.message.contains("inbox"))
     }
 }
 

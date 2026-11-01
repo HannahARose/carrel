@@ -84,6 +84,7 @@ pub mod frontmatter;
 pub mod gaps;
 pub mod graph;
 pub mod history;
+pub mod holding;
 pub mod inbox;
 pub mod index;
 pub mod ingest;

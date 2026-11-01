@@ -28,7 +28,7 @@ const ANSWER_TOKENS: u32 = 500;
 const UNCHANGED: &str = "unchanged";
 
 /// A field's new value, and whether the owner stated it outright.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Field<T> {
     /// The new value.
     pub value: T,
@@ -38,7 +38,7 @@ pub struct Field<T> {
 }
 
 /// Tags to add and remove.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TagEdit {
     /// Tags to add, from the vocabulary.
     pub add: Vec<Tag>,
@@ -49,7 +49,7 @@ pub struct TagEdit {
 }
 
 /// What a correction changes. Fields left `None` stay as they are.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Changes {
     /// The title.
     pub title: Option<Field<String>>,
@@ -64,13 +64,14 @@ pub struct Changes {
     /// A collection the owner named, by path.
     pub collection: Option<Field<String>>,
     /// Whether what the item is changed enough that it should be routed again.
+    #[serde(default)]
     pub reroute: bool,
     /// Something true beyond this item, to offer for the glossary.
     pub fact: Option<Fact>,
 }
 
 /// Something the owner said that's true beyond the item, offered for the glossary.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Fact {
     /// The word or name it's about: the glossary entry's heading.
     pub about: String,

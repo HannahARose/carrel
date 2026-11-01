@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use crate::archive::Archive;
 use crate::card::{Card, CardMarker, DateOrTime, Dates, Extra, Id, Sensitivity};
 use crate::card_file::CardFile;
-use crate::coordinator::WriterLease;
+use crate::coordinator::{Holder, WriterLease};
 use crate::history::{Change, History, HistoryError, Operation};
 use crate::ingest::card::{Context, Draft, Glossary, Vocabulary};
 use crate::providers::Registry;
@@ -219,12 +219,35 @@ pub fn add(
     drafted: Option<&Draft>,
     lease: &WriterLease,
 ) -> Result<DeskEntry, DeskError> {
+    add_recording(
+        archive,
+        path,
+        (title, summary),
+        drafted,
+        Recording::Now(lease),
+    )
+}
+
+/// As [`add`], recorded as `recording` says: now, or through this device's inbox when another
+/// device is the writer.
+///
+/// # Errors
+///
+/// As [`add`].
+pub fn add_recording(
+    archive: &Archive,
+    path: &Path,
+    (title, summary): (Option<&str>, Option<&str>),
+    drafted: Option<&Draft>,
+    recording: Recording<'_>,
+) -> Result<DeskEntry, DeskError> {
+    let holder = recording.holder();
     let path = std::fs::canonicalize(path).map_err(|_| DeskError::Missing(path.to_owned()))?;
     let root = std::fs::canonicalize(archive.root()).map_err(io(archive.root()))?;
     if path.starts_with(&root) {
         return Err(DeskError::InArchive(path));
     }
-    let device = lease.info().device;
+    let device = holder.device;
     let mut desk = Desk::load(archive, device)?;
     if desk.find(&path).is_some() {
         return Err(DeskError::Tracked(path));
@@ -268,11 +291,11 @@ pub fn add(
         let mut change = Change::new(
             Operation::Edit,
             format!("Put “{}” on the desk", file.card().title),
-            lease.info().person,
+            holder.person,
             device,
         );
         change.items = vec![id];
-        commit(archive, &change, lease)
+        commit(archive, &change, recording)
     });
     if let Err(e) = result {
         let _ = std::fs::remove_file(&card);
@@ -337,7 +360,43 @@ fn new_card(
 }
 
 /// Rebuilds `Active/`, the desk mirrors included, and commits `change` with it.
-fn commit(archive: &Archive, change: &Change, lease: &WriterLease) -> Result<(), DeskError> {
+/// How a desk change is recorded: now, holding the writer lease, or, when another device is
+/// the writer, through this device's inbox ([`crate::inbox`]), as this holder's. The desk
+/// itself is this device's own file, so it changes either way.
+#[derive(Debug, Clone, Copy)]
+pub enum Recording<'a> {
+    /// Committed now, with this lease.
+    Now(&'a WriterLease),
+    /// Sent to this holder's inbox, for the writer to commit.
+    Inbox(Holder),
+}
+
+impl Recording<'_> {
+    /// Whose change it is.
+    #[must_use]
+    pub fn holder(&self) -> Holder {
+        match self {
+            Self::Now(lease) => Holder {
+                person: lease.info().person,
+                device: lease.info().device,
+            },
+            Self::Inbox(holder) => *holder,
+        }
+    }
+}
+
+fn commit(archive: &Archive, change: &Change, recording: Recording<'_>) -> Result<(), DeskError> {
+    let lease = match recording {
+        Recording::Now(lease) => lease,
+        Recording::Inbox(holder) => {
+            return crate::inbox::send_record(archive, holder, change)
+                .map(drop)
+                .map_err(|e| DeskError::Io {
+                    path: crate::inbox::folder(archive, holder.device),
+                    message: e.to_string(),
+                });
+        }
+    };
     crate::active::regenerate(archive).map_err(|e| DeskError::Io {
         path: archive.root().join("Active"),
         message: e.to_string(),
@@ -373,8 +432,23 @@ pub fn remove(
     delete_card: bool,
     lease: &WriterLease,
 ) -> Result<DeskEntry, DeskError> {
+    remove_recording(archive, path, delete_card, Recording::Now(lease))
+}
+
+/// As [`remove`], recorded as `recording` says.
+///
+/// # Errors
+///
+/// As [`remove`].
+pub fn remove_recording(
+    archive: &Archive,
+    path: &Path,
+    delete_card: bool,
+    recording: Recording<'_>,
+) -> Result<DeskEntry, DeskError> {
+    let holder = recording.holder();
     let wanted = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_owned());
-    let device = lease.info().device;
+    let device = holder.device;
     let mut desk = Desk::load(archive, device)?;
     let Some(at) = desk.items.iter().position(|e| e.path == wanted) else {
         return Err(DeskError::NotTracked(wanted));
@@ -390,11 +464,11 @@ pub fn remove(
             "Take {} off the desk",
             entry.path.file_name().unwrap_or_default().to_string_lossy()
         ),
-        lease.info().person,
+        holder.person,
         device,
     );
     change.items = vec![entry.id];
-    commit(archive, &change, lease)?;
+    commit(archive, &change, recording)?;
     Ok(entry)
 }
 
@@ -468,8 +542,39 @@ pub fn archive(
         device,
     );
     change.items = vec![entry.id];
-    commit(archive, &change, lease)?;
+    commit(archive, &change, Recording::Now(lease))?;
     Ok((entry, intake))
+}
+
+/// Archives the desk item at `path` when another device is the writer: copies of it and its
+/// card go to `holder`'s inbox, for the writer to queue for ingest with the card kept, and it
+/// comes off this device's desk. Returns the entry and the inbox entry's file.
+///
+/// # Errors
+///
+/// [`DeskError::NotTracked`] if it isn't on the desk, [`DeskError::Missing`] if it's gone,
+/// or an error copying or writing.
+pub fn archive_through_inbox(
+    archive: &Archive,
+    path: &Path,
+    holder: Holder,
+) -> Result<(DeskEntry, PathBuf), DeskError> {
+    let wanted = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_owned());
+    let mut desk = Desk::load(archive, holder.device)?;
+    let Some(at) = desk.items.iter().position(|e| e.path == wanted) else {
+        return Err(DeskError::NotTracked(wanted));
+    };
+    if !wanted.exists() {
+        return Err(DeskError::Missing(wanted));
+    }
+    let sent = crate::inbox::send_desk_item(archive, holder, &wanted, &desk.items[at].card)
+        .map_err(|e| DeskError::NotQueued {
+            path: wanted.clone(),
+            reason: e.to_string(),
+        })?;
+    let entry = desk.items.remove(at);
+    desk.save(archive, holder.device)?;
+    Ok((entry, sent))
 }
 
 /// The desk card a queued or proposed item keeps, from its entry's extra fields.
