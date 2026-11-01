@@ -47,9 +47,16 @@ extension CarrelError {
     public var message: String {
         switch self {
         case .NotAnArchive(let message), .Failed(let message), .Callback(let message),
-            .Busy(let message), .Invalid(let message):
+            .Busy(let message), .Invalid(let message), .SentToInbox(let message):
             message
         }
+    }
+
+    /// Whether nothing changed because another device is the writer: the change went into
+    /// this device's inbox for it to apply, as the message says. Not a failure, so it's shown
+    /// as news rather than a problem.
+    public var isSentToInbox: Bool {
+        if case .SentToInbox = self { true } else { false }
     }
 }
 

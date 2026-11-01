@@ -4,7 +4,7 @@
 //! to add) goes into this device's own inbox, `_System/inbox/<device-id>/`, as one JSON file
 //! each, with a copy of any files it needs beside it. Only this device writes there, so
 //! nothing conflicts, even offline. The writer applies every device's inbox in timestamp
-//! order ([`apply`]), each entry recorded in history as the person's and device's that sent it
+//! order ([`apply()`]), each entry recorded in history as the person's and device's that sent it
 //! (`docs/design/sync-and-mobile.md`). An entry that no longer applies, such as a proposal
 //! decided elsewhere meanwhile, is recorded as skipped, with why, in
 //! `_System/inbox-skipped/<device-id>/`, for its device to show.

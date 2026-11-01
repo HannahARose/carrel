@@ -17,10 +17,10 @@ The command line and the interactive mode run on macOS, Linux and Windows. The M
 | Add items to the intake queue | `ingest` | ✓ Ingest | ✓ drag, ⌘O (#236), a folder entry by entry or whole |
 | Add a web address as a `url` item, and a note for the cards | `ingest --url`, `--title`, `--note` | ✓ a web address on the Ingest line, `n` for a note | ✓ Send to Archive and Add to Archive in Shortcuts; the window: #439 |
 | Add while another device is the writer, through this device's inbox | `ingest` | ✓ Ingest | ✓ Send to Archive, the Quick Action, Shortcuts |
-| Every other change while another device is the writer, through this device's inbox: approvals, holds, rejections, answers, corrections and edits, checkouts and returns, desk changes, flags, expanding, undo (#467) | each command, automatically, saying so | ✓ automatically, saying so | ✓ automatically, saying so |
+| Every other change while another device is the writer, through this device's inbox: approvals, holds, rejections, answers, corrections and edits, checkouts and returns, desk changes, flags, expanding, undo (#467; the rest, #484) | each command, automatically, saying so | ✓ automatically, saying so | ✓ automatically, saying so |
 | This device's inbox: what waits for the writer, and what it skipped and why (#467) | `status` | ✓ Status | ✓ Status |
 | The holding folder, on a device without Kopia: how much waits for a snapshot, with warnings (#470) | `status` | ✓ Status | ✓ Status |
-| Restore a version from the holding folder (#470) | `backup restore --held` | ✓ Backups | ✓ Status's holding folder |
+| Restore a version from the holding folder (#470) | `backup restore --held` | #483 | ✓ Status's holding folder |
 | The intake queue: list, remove, move to the front, try again | `ingest --status`, `--remove`, `--first`, `--retry` | ✓ Ingest | ✓ Status, with each failure's reason |
 | The worker's progress | `ingest --status` | ✓ | ✓ (#236) |
 | Review: approve, hold, move, reject | `review` | ✓ Review | ✓ (#234) |

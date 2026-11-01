@@ -56,6 +56,10 @@ public final class AgentRequestHandler {
             return reply
         } catch CarrelError.Busy(let message) {
             return .refused(message, archive: archive)
+        } catch CarrelError.SentToInbox(let message) {
+            // Taken, for the writer to apply: this device's inbox has it.
+            if request.writes { await agent.requestChanged(root) }
+            return AgentReply(.done, message, archive: archive)
         } catch {
             let message = (error as? CarrelError)?.message ?? error.localizedDescription
             return AgentReply(.failed, message, archive: archive)
@@ -97,7 +101,7 @@ public final class AgentRequestHandler {
                 try handle.checkOut(item: item, to: folder, due: due)
             }.value
             return AgentReply(
-                .done, "Checked out “\(out.title)”.",
+                .done, "Checked out “\(out.title)”." + (out.inbox.map { " " + $0 } ?? ""),
                 items: [AgentFoundItem(id: out.item, title: out.title)], working: out.working)
         case .returnItem(_, let item, let from):
             let item = try await resolve(item, in: root)
@@ -166,6 +170,9 @@ public final class AgentRequestHandler {
     /// or that it went into this Mac's inbox while another device is the writer. `named`
     /// names an entry by its path.
     static func reply(to shared: Shared, named: (String) -> String) -> AgentReply {
+        if let sent = shared.sent {
+            return AgentReply(.done, sent)
+        }
         if let writer = shared.writer {
             return AgentReply(
                 .done,

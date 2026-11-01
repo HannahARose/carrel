@@ -1570,10 +1570,62 @@ public protocol ArchiveHandleProtocol: AnyObject, Sendable {
      *
      * # Errors
      *
-     * [`CarrelError::Invalid`] if no change or several match, [`CarrelError::Busy`] if
-     * another writer holds the archive, or [`CarrelError::Failed`] if it can't be undone.
+     * [`CarrelError::Invalid`] if no change or several match, [`CarrelError::SentToInbox`]
+     * while another device is the writer, [`CarrelError::Busy`] if another writer holds the
+     * archive, or [`CarrelError::Failed`] if it can't be undone.
      */
     func undo(id: String) throws  -> String
+    
+    /**
+     * The versions kept in the holding folder, oldest first.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the archive can't be read.
+     */
+    func heldVersions() throws  -> [HeldVersion]
+    
+    /**
+     * The versions kept in the holding folder from the item `item`, oldest first.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the archive can't be read.
+     */
+    func heldVersionsOf(item: String) throws  -> [HeldVersion]
+    
+    /**
+     * What waits in the holding folder for a snapshot, with warnings when it's a lot or
+     * has waited long.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the archive can't be read.
+     */
+    func holdingStatus() throws  -> HoldingStatus
+    
+    /**
+     * This device's inbox: why changes go there now, if they do, what waits for the
+     * writer, and what it skipped, and why.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the archive or this device's identity can't be read.
+     */
+    func inboxStatus() throws  -> InboxStatus
+    
+    /**
+     * Copies the held version `id` (its identifier, or the start of it) to `to`, which
+     * mustn't exist yet, or, when it's `None`, beside the archive as `NAME (held DATE)`.
+     * Nothing in the archive changes; the version stays held until a snapshot clears it.
+     * Returns where it went.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if no held version or several match, or `to` exists, or
+     * [`CarrelError::Failed`] if it can't be copied.
+     */
+    func restoreHeld(id: String, to: String?) throws  -> String
     
     /**
      * The embedding models this device can embed with, and the catalog's others with how
@@ -3946,8 +3998,9 @@ open func status()throws  -> StatusSummary  {
      *
      * # Errors
      *
-     * [`CarrelError::Invalid`] if no change or several match, [`CarrelError::Busy`] if
-     * another writer holds the archive, or [`CarrelError::Failed`] if it can't be undone.
+     * [`CarrelError::Invalid`] if no change or several match, [`CarrelError::SentToInbox`]
+     * while another device is the writer, [`CarrelError::Busy`] if another writer holds the
+     * archive, or [`CarrelError::Failed`] if it can't be undone.
      */
 open func undo(id: String)throws  -> String  {
     return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
@@ -3955,6 +4008,95 @@ open func undo(id: String)throws  -> String  {
     uniffi_carrel_ffi_fn_method_archivehandle_undo(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(id),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * The versions kept in the holding folder, oldest first.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the archive can't be read.
+     */
+open func heldVersions()throws  -> [HeldVersion]  {
+    return try  FfiConverterSequenceTypeHeldVersion.lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_held_versions(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * The versions kept in the holding folder from the item `item`, oldest first.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the archive can't be read.
+     */
+open func heldVersionsOf(item: String)throws  -> [HeldVersion]  {
+    return try  FfiConverterSequenceTypeHeldVersion.lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_held_versions_of(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(item),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * What waits in the holding folder for a snapshot, with warnings when it's a lot or
+     * has waited long.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the archive can't be read.
+     */
+open func holdingStatus()throws  -> HoldingStatus  {
+    return try  FfiConverterTypeHoldingStatus_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_holding_status(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * This device's inbox: why changes go there now, if they do, what waits for the
+     * writer, and what it skipped, and why.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the archive or this device's identity can't be read.
+     */
+open func inboxStatus()throws  -> InboxStatus  {
+    return try  FfiConverterTypeInboxStatus_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_inbox_status(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Copies the held version `id` (its identifier, or the start of it) to `to`, which
+     * mustn't exist yet, or, when it's `None`, beside the archive as `NAME (held DATE)`.
+     * Nothing in the archive changes; the version stays held until a snapshot clears it.
+     * Returns where it went.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if no held version or several match, or `to` exists, or
+     * [`CarrelError::Failed`] if it can't be copied.
+     */
+open func restoreHeld(id: String, to: String?)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_restore_held(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(id),
+        FfiConverterOptionString.lower(to),uniffiCallStatus
     )
 })
 }
@@ -8637,9 +8779,14 @@ public struct CheckedOut: Equatable, Hashable {
      */
     public var working: String
     /**
-     * The history commit.
+     * The history commit; `None` while another device is the writer.
      */
     public var commit: String?
+    /**
+     * While another device is the writer: that the copy was made here, and the checkout
+     * went into this device's inbox for the writer to record, in words.
+     */
+    public var inbox: String?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -8654,12 +8801,17 @@ public struct CheckedOut: Equatable, Hashable {
          * Where the working copy is.
          */working: String, 
         /**
-         * The history commit.
-         */commit: String?) {
+         * The history commit; `None` while another device is the writer.
+         */commit: String?, 
+        /**
+         * While another device is the writer: that the copy was made here, and the checkout
+         * went into this device's inbox for the writer to record, in words.
+         */inbox: String?) {
         self.item = item
         self.title = title
         self.working = working
         self.commit = commit
+        self.inbox = inbox
     }
 
     
@@ -8681,7 +8833,8 @@ public struct FfiConverterTypeCheckedOut: FfiConverterRustBuffer {
                 item: FfiConverterString.read(from: &buf), 
                 title: FfiConverterString.read(from: &buf), 
                 working: FfiConverterString.read(from: &buf), 
-                commit: FfiConverterOptionString.read(from: &buf)
+                commit: FfiConverterOptionString.read(from: &buf), 
+                inbox: FfiConverterOptionString.read(from: &buf)
         )
     }
 
@@ -8690,6 +8843,7 @@ public struct FfiConverterTypeCheckedOut: FfiConverterRustBuffer {
         FfiConverterString.write(value.title, into: &buf)
         FfiConverterString.write(value.working, into: &buf)
         FfiConverterOptionString.write(value.commit, into: &buf)
+        FfiConverterOptionString.write(value.inbox, into: &buf)
     }
 }
 
@@ -11266,6 +11420,11 @@ public struct ExpandedItem: Equatable, Hashable {
      * The history commit.
      */
     public var commit: String?
+    /**
+     * The compressed file, kept in the holding folder instead of the Trash on a device
+     * without Kopia, until a snapshot has it.
+     */
+    public var held: HeldVersion?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -11294,7 +11453,11 @@ public struct ExpandedItem: Equatable, Hashable {
          */trashProblem: String?, 
         /**
          * The history commit.
-         */commit: String?) {
+         */commit: String?, 
+        /**
+         * The compressed file, kept in the holding folder instead of the Trash on a device
+         * without Kopia, until a snapshot has it.
+         */held: HeldVersion?) {
         self.from = from
         self.to = to
         self.card = card
@@ -11303,6 +11466,7 @@ public struct ExpandedItem: Equatable, Hashable {
         self.size = size
         self.trashProblem = trashProblem
         self.commit = commit
+        self.held = held
     }
 
     
@@ -11328,7 +11492,8 @@ public struct FfiConverterTypeExpandedItem: FfiConverterRustBuffer {
                 files: FfiConverterUInt64.read(from: &buf), 
                 size: FfiConverterUInt64.read(from: &buf), 
                 trashProblem: FfiConverterOptionString.read(from: &buf), 
-                commit: FfiConverterOptionString.read(from: &buf)
+                commit: FfiConverterOptionString.read(from: &buf), 
+                held: FfiConverterOptionTypeHeldVersion.read(from: &buf)
         )
     }
 
@@ -11341,6 +11506,7 @@ public struct FfiConverterTypeExpandedItem: FfiConverterRustBuffer {
         FfiConverterUInt64.write(value.size, into: &buf)
         FfiConverterOptionString.write(value.trashProblem, into: &buf)
         FfiConverterOptionString.write(value.commit, into: &buf)
+        FfiConverterOptionTypeHeldVersion.write(value.held, into: &buf)
     }
 }
 
@@ -12796,6 +12962,511 @@ public func FfiConverterTypeHappened_lift(_ buf: RustBuffer) throws -> Happened 
 #endif
 public func FfiConverterTypeHappened_lower(_ value: Happened) -> RustBuffer {
     return FfiConverterTypeHappened.lower(value)
+}
+
+
+/**
+ * A version kept in the holding folder.
+ */
+public struct HeldVersion: Equatable, Hashable {
+    /**
+     * Its identifier.
+     */
+    public var id: String
+    /**
+     * The item it was the contents of, when there's one.
+     */
+    public var item: String?
+    /**
+     * The item's title.
+     */
+    public var title: String
+    /**
+     * Where it was, relative to the archive root.
+     */
+    public var path: String
+    /**
+     * Its name.
+     */
+    public var name: String
+    /**
+     * Why it was kept, in words.
+     */
+    public var why: String
+    /**
+     * Its size in bytes.
+     */
+    public var size: UInt64
+    /**
+     * The device that kept it.
+     */
+    public var device: String
+    /**
+     * When (RFC 3339).
+     */
+    public var at: String
+    /**
+     * How many days it has waited.
+     */
+    public var ageDays: Int64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Its identifier.
+         */id: String, 
+        /**
+         * The item it was the contents of, when there's one.
+         */item: String?, 
+        /**
+         * The item's title.
+         */title: String, 
+        /**
+         * Where it was, relative to the archive root.
+         */path: String, 
+        /**
+         * Its name.
+         */name: String, 
+        /**
+         * Why it was kept, in words.
+         */why: String, 
+        /**
+         * Its size in bytes.
+         */size: UInt64, 
+        /**
+         * The device that kept it.
+         */device: String, 
+        /**
+         * When (RFC 3339).
+         */at: String, 
+        /**
+         * How many days it has waited.
+         */ageDays: Int64) {
+        self.id = id
+        self.item = item
+        self.title = title
+        self.path = path
+        self.name = name
+        self.why = why
+        self.size = size
+        self.device = device
+        self.at = at
+        self.ageDays = ageDays
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension HeldVersion: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeHeldVersion: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> HeldVersion {
+        return
+            try HeldVersion(
+                id: FfiConverterString.read(from: &buf), 
+                item: FfiConverterOptionString.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                path: FfiConverterString.read(from: &buf), 
+                name: FfiConverterString.read(from: &buf), 
+                why: FfiConverterString.read(from: &buf), 
+                size: FfiConverterUInt64.read(from: &buf), 
+                device: FfiConverterString.read(from: &buf), 
+                at: FfiConverterString.read(from: &buf), 
+                ageDays: FfiConverterInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: HeldVersion, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterOptionString.write(value.item, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterString.write(value.path, into: &buf)
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterString.write(value.why, into: &buf)
+        FfiConverterUInt64.write(value.size, into: &buf)
+        FfiConverterString.write(value.device, into: &buf)
+        FfiConverterString.write(value.at, into: &buf)
+        FfiConverterInt64.write(value.ageDays, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHeldVersion_lift(_ buf: RustBuffer) throws -> HeldVersion {
+    return try FfiConverterTypeHeldVersion.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHeldVersion_lower(_ value: HeldVersion) -> RustBuffer {
+    return FfiConverterTypeHeldVersion.lower(value)
+}
+
+
+/**
+ * What waits in the holding folder for a snapshot, for Status.
+ */
+public struct HoldingStatus: Equatable, Hashable {
+    /**
+     * How many versions.
+     */
+    public var count: UInt64
+    /**
+     * Their size in bytes.
+     */
+    public var size: UInt64
+    /**
+     * How many days the oldest has waited.
+     */
+    public var oldestDays: Int64?
+    /**
+     * What's worth warning about: too much, or waiting too long.
+     */
+    public var warnings: [String]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * How many versions.
+         */count: UInt64, 
+        /**
+         * Their size in bytes.
+         */size: UInt64, 
+        /**
+         * How many days the oldest has waited.
+         */oldestDays: Int64?, 
+        /**
+         * What's worth warning about: too much, or waiting too long.
+         */warnings: [String]) {
+        self.count = count
+        self.size = size
+        self.oldestDays = oldestDays
+        self.warnings = warnings
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension HoldingStatus: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeHoldingStatus: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> HoldingStatus {
+        return
+            try HoldingStatus(
+                count: FfiConverterUInt64.read(from: &buf), 
+                size: FfiConverterUInt64.read(from: &buf), 
+                oldestDays: FfiConverterOptionInt64.read(from: &buf), 
+                warnings: FfiConverterSequenceString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: HoldingStatus, into buf: inout [UInt8]) {
+        FfiConverterUInt64.write(value.count, into: &buf)
+        FfiConverterUInt64.write(value.size, into: &buf)
+        FfiConverterOptionInt64.write(value.oldestDays, into: &buf)
+        FfiConverterSequenceString.write(value.warnings, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHoldingStatus_lift(_ buf: RustBuffer) throws -> HoldingStatus {
+    return try FfiConverterTypeHoldingStatus.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHoldingStatus_lower(_ value: HoldingStatus) -> RustBuffer {
+    return FfiConverterTypeHoldingStatus.lower(value)
+}
+
+
+/**
+ * A change this device sent that the writer skipped, because it no longer applied.
+ */
+public struct InboxSkipped: Equatable, Hashable {
+    /**
+     * What it asked, in a few words.
+     */
+    public var what: String
+    /**
+     * When it was asked (RFC 3339).
+     */
+    public var at: String
+    /**
+     * Why it was skipped, in words.
+     */
+    public var reason: String
+    /**
+     * The writer device that skipped it.
+     */
+    public var by: String
+    /**
+     * When it was skipped (RFC 3339).
+     */
+    public var skipped: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * What it asked, in a few words.
+         */what: String, 
+        /**
+         * When it was asked (RFC 3339).
+         */at: String, 
+        /**
+         * Why it was skipped, in words.
+         */reason: String, 
+        /**
+         * The writer device that skipped it.
+         */by: String, 
+        /**
+         * When it was skipped (RFC 3339).
+         */skipped: String) {
+        self.what = what
+        self.at = at
+        self.reason = reason
+        self.by = by
+        self.skipped = skipped
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension InboxSkipped: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeInboxSkipped: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> InboxSkipped {
+        return
+            try InboxSkipped(
+                what: FfiConverterString.read(from: &buf), 
+                at: FfiConverterString.read(from: &buf), 
+                reason: FfiConverterString.read(from: &buf), 
+                by: FfiConverterString.read(from: &buf), 
+                skipped: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: InboxSkipped, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.what, into: &buf)
+        FfiConverterString.write(value.at, into: &buf)
+        FfiConverterString.write(value.reason, into: &buf)
+        FfiConverterString.write(value.by, into: &buf)
+        FfiConverterString.write(value.skipped, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeInboxSkipped_lift(_ buf: RustBuffer) throws -> InboxSkipped {
+    return try FfiConverterTypeInboxSkipped.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeInboxSkipped_lower(_ value: InboxSkipped) -> RustBuffer {
+    return FfiConverterTypeInboxSkipped.lower(value)
+}
+
+
+/**
+ * This device's inbox, for Status.
+ */
+public struct InboxStatus: Equatable, Hashable {
+    /**
+     * Why changes made here go into the inbox now, when they do.
+     */
+    public var sending: String?
+    /**
+     * The writer device they wait for, when another device is the writer.
+     */
+    public var writer: String?
+    /**
+     * The changes waiting for the writer, oldest first.
+     */
+    public var waiting: [InboxWaiting]
+    /**
+     * The changes the writer skipped lately, newest first, each with why.
+     */
+    public var skipped: [InboxSkipped]
+    /**
+     * All of it in lines, as `carrel status` says it.
+     */
+    public var lines: [String]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Why changes made here go into the inbox now, when they do.
+         */sending: String?, 
+        /**
+         * The writer device they wait for, when another device is the writer.
+         */writer: String?, 
+        /**
+         * The changes waiting for the writer, oldest first.
+         */waiting: [InboxWaiting], 
+        /**
+         * The changes the writer skipped lately, newest first, each with why.
+         */skipped: [InboxSkipped], 
+        /**
+         * All of it in lines, as `carrel status` says it.
+         */lines: [String]) {
+        self.sending = sending
+        self.writer = writer
+        self.waiting = waiting
+        self.skipped = skipped
+        self.lines = lines
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension InboxStatus: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeInboxStatus: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> InboxStatus {
+        return
+            try InboxStatus(
+                sending: FfiConverterOptionString.read(from: &buf), 
+                writer: FfiConverterOptionString.read(from: &buf), 
+                waiting: FfiConverterSequenceTypeInboxWaiting.read(from: &buf), 
+                skipped: FfiConverterSequenceTypeInboxSkipped.read(from: &buf), 
+                lines: FfiConverterSequenceString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: InboxStatus, into buf: inout [UInt8]) {
+        FfiConverterOptionString.write(value.sending, into: &buf)
+        FfiConverterOptionString.write(value.writer, into: &buf)
+        FfiConverterSequenceTypeInboxWaiting.write(value.waiting, into: &buf)
+        FfiConverterSequenceTypeInboxSkipped.write(value.skipped, into: &buf)
+        FfiConverterSequenceString.write(value.lines, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeInboxStatus_lift(_ buf: RustBuffer) throws -> InboxStatus {
+    return try FfiConverterTypeInboxStatus.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeInboxStatus_lower(_ value: InboxStatus) -> RustBuffer {
+    return FfiConverterTypeInboxStatus.lower(value)
+}
+
+
+/**
+ * A change waiting in this device's inbox for the writer.
+ */
+public struct InboxWaiting: Equatable, Hashable {
+    /**
+     * What it asks, in a few words.
+     */
+    public var what: String
+    /**
+     * When it was asked (RFC 3339).
+     */
+    public var at: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * What it asks, in a few words.
+         */what: String, 
+        /**
+         * When it was asked (RFC 3339).
+         */at: String) {
+        self.what = what
+        self.at = at
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension InboxWaiting: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeInboxWaiting: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> InboxWaiting {
+        return
+            try InboxWaiting(
+                what: FfiConverterString.read(from: &buf), 
+                at: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: InboxWaiting, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.what, into: &buf)
+        FfiConverterString.write(value.at, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeInboxWaiting_lift(_ buf: RustBuffer) throws -> InboxWaiting {
+    return try FfiConverterTypeInboxWaiting.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeInboxWaiting_lower(_ value: InboxWaiting) -> RustBuffer {
+    return FfiConverterTypeInboxWaiting.lower(value)
 }
 
 
@@ -18708,6 +19379,11 @@ public struct Returned: Equatable, Hashable {
      * What happened to it afterwards, by `checkout.after_return`.
      */
     public var workingCopy: WorkingCopyAfter
+    /**
+     * The archive copy as it was, kept in the holding folder when no snapshot could be
+     * taken first, on a device without Kopia.
+     */
+    public var held: HeldVersion?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -18735,7 +19411,11 @@ public struct Returned: Equatable, Hashable {
          */working: String, 
         /**
          * What happened to it afterwards, by `checkout.after_return`.
-         */workingCopy: WorkingCopyAfter) {
+         */workingCopy: WorkingCopyAfter, 
+        /**
+         * The archive copy as it was, kept in the holding folder when no snapshot could be
+         * taken first, on a device without Kopia.
+         */held: HeldVersion?) {
         self.commit = commit
         self.snapshot = snapshot
         self.returnedSnapshot = returnedSnapshot
@@ -18744,6 +19424,7 @@ public struct Returned: Equatable, Hashable {
         self.snapshotProblems = snapshotProblems
         self.working = working
         self.workingCopy = workingCopy
+        self.held = held
     }
 
     
@@ -18769,7 +19450,8 @@ public struct FfiConverterTypeReturned: FfiConverterRustBuffer {
                 snapshotsKept: FfiConverterUInt32.read(from: &buf), 
                 snapshotProblems: FfiConverterSequenceString.read(from: &buf), 
                 working: FfiConverterString.read(from: &buf), 
-                workingCopy: FfiConverterTypeWorkingCopyAfter.read(from: &buf)
+                workingCopy: FfiConverterTypeWorkingCopyAfter.read(from: &buf), 
+                held: FfiConverterOptionTypeHeldVersion.read(from: &buf)
         )
     }
 
@@ -18782,6 +19464,7 @@ public struct FfiConverterTypeReturned: FfiConverterRustBuffer {
         FfiConverterSequenceString.write(value.snapshotProblems, into: &buf)
         FfiConverterString.write(value.working, into: &buf)
         FfiConverterTypeWorkingCopyAfter.write(value.workingCopy, into: &buf)
+        FfiConverterOptionTypeHeldVersion.write(value.held, into: &buf)
     }
 }
 
@@ -19719,13 +20402,18 @@ public struct Shared: Equatable, Hashable {
      */
     public var added: Added
     /**
-     * The inbox entry it went into instead, while another device is the writer.
+     * The inbox entry it went into instead, while another device is the writer, or this
+     * device acts through its inbox.
      */
     public var inbox: String?
     /**
-     * That device, when it did.
+     * The writer device, when another device is the writer.
      */
     public var writer: String?
+    /**
+     * Why it went into the inbox, in words, when it did.
+     */
+    public var sent: String?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -19734,14 +20422,19 @@ public struct Shared: Equatable, Hashable {
          * What joined this device's intake queue, and what was left out.
          */added: Added, 
         /**
-         * The inbox entry it went into instead, while another device is the writer.
+         * The inbox entry it went into instead, while another device is the writer, or this
+         * device acts through its inbox.
          */inbox: String?, 
         /**
-         * That device, when it did.
-         */writer: String?) {
+         * The writer device, when another device is the writer.
+         */writer: String?, 
+        /**
+         * Why it went into the inbox, in words, when it did.
+         */sent: String?) {
         self.added = added
         self.inbox = inbox
         self.writer = writer
+        self.sent = sent
     }
 
     
@@ -19762,7 +20455,8 @@ public struct FfiConverterTypeShared: FfiConverterRustBuffer {
             try Shared(
                 added: FfiConverterTypeAdded.read(from: &buf), 
                 inbox: FfiConverterOptionString.read(from: &buf), 
-                writer: FfiConverterOptionString.read(from: &buf)
+                writer: FfiConverterOptionString.read(from: &buf), 
+                sent: FfiConverterOptionString.read(from: &buf)
         )
     }
 
@@ -19770,6 +20464,7 @@ public struct FfiConverterTypeShared: FfiConverterRustBuffer {
         FfiConverterTypeAdded.write(value.added, into: &buf)
         FfiConverterOptionString.write(value.inbox, into: &buf)
         FfiConverterOptionString.write(value.writer, into: &buf)
+        FfiConverterOptionString.write(value.sent, into: &buf)
     }
 }
 
@@ -20125,6 +20820,14 @@ public struct StatusSummary: Equatable, Hashable {
      * What the owner flagged as needing work: collections, then items.
      */
     public var flagged: [FlaggedThing]
+    /**
+     * This device's inbox: what waits for the writer, and what it skipped.
+     */
+    public var inbox: InboxStatus
+    /**
+     * What waits in the holding folder for a snapshot.
+     */
+    public var holding: HoldingStatus
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -20176,7 +20879,13 @@ public struct StatusSummary: Equatable, Hashable {
          */questions: UInt64, 
         /**
          * What the owner flagged as needing work: collections, then items.
-         */flagged: [FlaggedThing]) {
+         */flagged: [FlaggedThing], 
+        /**
+         * This device's inbox: what waits for the writer, and what it skipped.
+         */inbox: InboxStatus, 
+        /**
+         * What waits in the holding folder for a snapshot.
+         */holding: HoldingStatus) {
         self.collections = collections
         self.items = items
         self.byKind = byKind
@@ -20193,6 +20902,8 @@ public struct StatusSummary: Equatable, Hashable {
         self.review = review
         self.questions = questions
         self.flagged = flagged
+        self.inbox = inbox
+        self.holding = holding
     }
 
     
@@ -20226,7 +20937,9 @@ public struct FfiConverterTypeStatusSummary: FfiConverterRustBuffer {
                 toArchive: FfiConverterSequenceTypeToArchive.read(from: &buf), 
                 review: FfiConverterUInt64.read(from: &buf), 
                 questions: FfiConverterUInt64.read(from: &buf), 
-                flagged: FfiConverterSequenceTypeFlaggedThing.read(from: &buf)
+                flagged: FfiConverterSequenceTypeFlaggedThing.read(from: &buf), 
+                inbox: FfiConverterTypeInboxStatus.read(from: &buf), 
+                holding: FfiConverterTypeHoldingStatus.read(from: &buf)
         )
     }
 
@@ -20247,6 +20960,8 @@ public struct FfiConverterTypeStatusSummary: FfiConverterRustBuffer {
         FfiConverterUInt64.write(value.review, into: &buf)
         FfiConverterUInt64.write(value.questions, into: &buf)
         FfiConverterSequenceTypeFlaggedThing.write(value.flagged, into: &buf)
+        FfiConverterTypeInboxStatus.write(value.inbox, into: &buf)
+        FfiConverterTypeHoldingStatus.write(value.holding, into: &buf)
     }
 }
 
@@ -21210,6 +21925,16 @@ enum CarrelError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
          * Why, in words.
          */message: String
     )
+    /**
+     * Nothing was changed here: another device is the writer, so the change went into this
+     * device's inbox, for the writer to apply as this device's (FORMAT.md §7.8). Show the
+     * message instead of treating the change as made; Status lists what's waiting.
+     */
+    case SentToInbox(
+        /**
+         * What happened and why, in words.
+         */message: String
+    )
 
     
 
@@ -21254,6 +21979,9 @@ public struct FfiConverterTypeCarrelError: FfiConverterRustBuffer {
         case 5: return .Invalid(
             message: try FfiConverterString.read(from: &buf)
             )
+        case 6: return .SentToInbox(
+            message: try FfiConverterString.read(from: &buf)
+            )
 
          default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -21288,6 +22016,11 @@ public struct FfiConverterTypeCarrelError: FfiConverterRustBuffer {
         
         case let .Invalid(message):
             writeInt(&buf, Int32(5))
+            FfiConverterString.write(message, into: &buf)
+            
+        
+        case let .SentToInbox(message):
+            writeInt(&buf, Int32(6))
             FfiConverterString.write(message, into: &buf)
             
         }
@@ -23358,6 +24091,30 @@ fileprivate struct FfiConverterOptionUInt64: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionInt64: FfiConverterRustBuffer {
+    typealias SwiftType = Int64?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterInt64.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterInt64.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionBool: FfiConverterRustBuffer {
     typealias SwiftType = Bool?
 
@@ -23686,6 +24443,30 @@ fileprivate struct FfiConverterOptionTypeGlossaryFact: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeGlossaryFact.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeHeldVersion: FfiConverterRustBuffer {
+    typealias SwiftType = HeldVersion?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeHeldVersion.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeHeldVersion.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -24675,6 +25456,81 @@ fileprivate struct FfiConverterSequenceTypeHappened: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeHappened.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeHeldVersion: FfiConverterRustBuffer {
+    typealias SwiftType = [HeldVersion]
+
+    public static func write(_ value: [HeldVersion], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeHeldVersion.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [HeldVersion] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [HeldVersion]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeHeldVersion.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeInboxSkipped: FfiConverterRustBuffer {
+    typealias SwiftType = [InboxSkipped]
+
+    public static func write(_ value: [InboxSkipped], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeInboxSkipped.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [InboxSkipped] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [InboxSkipped]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeInboxSkipped.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeInboxWaiting: FfiConverterRustBuffer {
+    typealias SwiftType = [InboxWaiting]
+
+    public static func write(_ value: [InboxWaiting], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeInboxWaiting.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [InboxWaiting] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [InboxWaiting]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeInboxWaiting.read(from: &buf))
         }
         return seq
     }
@@ -26222,7 +27078,22 @@ private let initializationResult: InitializationResult = {
     if (uniffi_carrel_ffi_checksum_method_archivehandle_status() != 49881) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_carrel_ffi_checksum_method_archivehandle_undo() != 57614) {
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_undo() != 19466) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_held_versions() != 34236) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_held_versions_of() != 23152) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_holding_status() != 44021) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_inbox_status() != 35856) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_restore_held() != 361) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_embedding_models() != 58082) {

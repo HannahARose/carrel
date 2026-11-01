@@ -11,6 +11,7 @@ use carrel_core::archive::Archive;
 use carrel_core::card::DateOrTime;
 use carrel_core::checkout::{cancel_checkout, check_out, finish_return, plan_return};
 use carrel_core::coordinator::{Coordinator as _, DEFAULT_LEASE, DiskLock};
+use carrel_core::desk::Recording;
 use carrel_core::sessions::Decision as CoreDecision;
 
 use crate::records::CardHistoryEntry;
@@ -107,8 +108,11 @@ pub struct CheckedOut {
     pub title: String,
     /// Where the working copy is.
     pub working: String,
-    /// The history commit.
+    /// The history commit; `None` while another device is the writer.
     pub commit: Option<String>,
+    /// While another device is the writer: that the copy was made here, and the checkout
+    /// went into this device's inbox for the writer to record, in words.
+    pub inbox: Option<String>,
 }
 
 /// What returning an item would do, to show before the owner says yes.
@@ -152,6 +156,9 @@ pub struct Returned {
     pub working: String,
     /// What happened to it afterwards, by `checkout.after_return`.
     pub working_copy: crate::working_copy::WorkingCopyAfter,
+    /// The archive copy as it was, kept in the holding folder when no snapshot could be
+    /// taken first, on a device without Kopia.
+    pub held: Option<crate::inbox::HeldVersion>,
 }
 
 /// What to do with an item's pending history entries.
@@ -230,6 +237,14 @@ impl ArchiveHandle {
             .ok_or_else(|| CarrelError::invalid(format!("{id} isn't checked out or on this desk")))
     }
 
+    /// The title on `item`'s card, or its card's name when that can't be read.
+    fn title_of(archive: &Archive, item: &carrel_core::archive::ItemRef) -> String {
+        std::fs::read_to_string(archive.root().join(&item.card))
+            .ok()
+            .and_then(|t| carrel_core::card_file::CardFile::parse(&t).ok())
+            .map_or_else(|| item.card.clone(), |f| f.card().title.clone())
+    }
+
     /// Takes the writer lease for `purpose`, runs `change` with it, and lets go.
     pub(crate) fn with_lease<T>(
         &self,
@@ -292,6 +307,17 @@ impl ArchiveHandle {
                     .map_err(|_| CarrelError::invalid(format!("{d} isn't a date (YYYY-MM-DD)")))
             })
             .transpose()?;
+        if let Some((holder, sending)) = self.sending(&archive)? {
+            let (working, _) =
+                carrel_core::inbox::send_checkout(&archive, holder, &item, &destination, due)?;
+            return Ok(CheckedOut {
+                item: item.id.to_string(),
+                title: Self::title_of(&archive, &item),
+                working: text(&working),
+                commit: None,
+                inbox: Some(sending.describe()),
+            });
+        }
         let out = self.with_lease(&archive, "checkout", |lease| {
             Ok(check_out(&archive, &item, &destination, due, lease)?)
         })?;
@@ -300,6 +326,7 @@ impl ArchiveHandle {
             title: out.title,
             working: text(&out.working),
             commit: out.commit,
+            inbox: None,
         })
     }
 
@@ -356,6 +383,10 @@ impl ArchiveHandle {
         let archive = self.fresh()?;
         let item = Self::item(&archive, &item)?;
         let plan = plan_return(&archive, &item, from.as_deref().map(crate::path))?;
+        if let Some((holder, sending)) = self.sending(&archive)? {
+            carrel_core::inbox::send_return(&archive, holder, item.id, &plan.working)?;
+            return Err(CarrelError::sent(&sending));
+        }
         let backups = crate::backups(&archive);
         let sessions = backups
             .as_deref()
@@ -373,6 +404,7 @@ impl ArchiveHandle {
             snapshot_problems: Vec::new(),
             working: crate::text(&plan.working),
             working_copy: crate::working_copy::after_return(&archive, &plan.working),
+            held: returned.held.as_ref().map(Into::into),
         };
         if let Some(backups) = backups.as_deref().filter(|_| !sessions.is_empty()) {
             let kept = carrel_core::sessions::keep_returned_version(
@@ -411,6 +443,9 @@ impl ArchiveHandle {
     pub fn cancel_checkout(&self, item: String) -> Result<Option<String>, CarrelError> {
         let archive = self.fresh()?;
         let item = Self::item(&archive, &item)?;
+        self.through_inbox(&archive, || {
+            Ok(carrel_core::inbox::Request::CancelCheckout { item: item.id })
+        })?;
         self.with_lease(&archive, "return", |lease| {
             Ok(cancel_checkout(&archive, &item, lease)?)
         })
@@ -442,16 +477,19 @@ impl ArchiveHandle {
                 device,
             )?)
         };
-        let entry = self.with_lease(&archive, "desk", |lease| {
-            Ok(carrel_core::desk::add(
+        let add = |recording: Recording<'_>| {
+            carrel_core::desk::add_recording(
                 &archive,
                 crate::path(&path),
-                title.as_deref(),
-                summary.as_deref(),
+                (title.as_deref(), summary.as_deref()),
                 drafted.as_ref(),
-                lease,
-            )?)
-        })?;
+                recording,
+            )
+        };
+        let entry = match self.sending(&archive)? {
+            Some((holder, _)) => add(Recording::Inbox(holder))?,
+            None => self.with_lease(&archive, "desk", |lease| Ok(add(Recording::Now(lease))?))?,
+        };
         Ok(entry.into())
     }
 
@@ -468,14 +506,20 @@ impl ArchiveHandle {
         delete_card: bool,
     ) -> Result<DeskItem, CarrelError> {
         let archive = self.fresh()?;
-        let entry = self.with_lease(&archive, "desk", |lease| {
-            Ok(carrel_core::desk::remove(
+        let remove = |recording: Recording<'_>| {
+            carrel_core::desk::remove_recording(
                 &archive,
                 crate::path(&path),
                 delete_card,
-                lease,
-            )?)
-        })?;
+                recording,
+            )
+        };
+        let entry = match self.sending(&archive)? {
+            Some((holder, _)) => remove(Recording::Inbox(holder))?,
+            None => {
+                self.with_lease(&archive, "desk", |lease| Ok(remove(Recording::Now(lease))?))?
+            }
+        };
         Ok(entry.into())
     }
 
@@ -489,6 +533,10 @@ impl ArchiveHandle {
     /// [`CarrelError::Failed`] if it isn't on the desk or can't be queued.
     pub fn archive_desk_item(&self, path: String) -> Result<String, CarrelError> {
         let archive = self.fresh()?;
+        if let Some((holder, sending)) = self.sending(&archive)? {
+            carrel_core::desk::archive_through_inbox(&archive, crate::path(&path), holder)?;
+            return Err(CarrelError::sent(&sending));
+        }
         let (_, intake) = self.with_lease(&archive, "desk", |lease| {
             Ok(carrel_core::desk::archive(
                 &archive,

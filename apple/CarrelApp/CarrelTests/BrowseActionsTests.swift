@@ -179,9 +179,13 @@ final class BrowseActionsTests: XCTestCase {
         XCTAssertEqual(expanded.kind, .folder)
         let folder = sample.root.appending(path: try XCTUnwrap(expanded.item))
         XCTAssertTrue(FileManager.default.fileExists(atPath: folder.appending(path: "a.txt").path))
+        // Without backups set up, the compressed file waits in the holding folder for a
+        // snapshot instead of going to the Trash.
+        let held = try sample.archive.handle.heldVersions()
         XCTAssertTrue(
             FileManager.default.fileExists(
-                atPath: sample.folder.appending(path: "Trash/Spectra.zip").path))
+                atPath: sample.folder.appending(path: "Trash/Spectra.zip").path)
+                || held.contains { $0.name == "Spectra.zip" && $0.item == zip.id })
         let change = try XCTUnwrap(sample.archive.history.first)
         try await sample.archive.undo(change.id)
         await sample.model.refreshItems()

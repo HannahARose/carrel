@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use carrel_core::card::Id;
 use carrel_core::correct::prepare;
+use carrel_core::inbox::{Answer, Request};
 use carrel_core::questions::answer::{self as core_answer, Target};
 use carrel_core::questions::moments::{self, Daily};
 use carrel_core::questions::{QuestionKind, QuestionQueue, Suggestion};
@@ -100,6 +101,12 @@ impl ArchiveHandle {
     pub fn skip_question(&self, id: String) -> Result<Question, CarrelError> {
         let archive = self.fresh()?;
         let question = QuestionQueue::of(&archive).find(&id)?;
+        self.through_inbox(&archive, || {
+            Ok(Request::Answer {
+                question: question.id,
+                answer: Answer::Skip,
+            })
+        })?;
         Ok((&core_answer::skip(&archive, &question)?).into())
     }
 
@@ -119,6 +126,12 @@ impl ArchiveHandle {
         let archive = self.fresh()?;
         let collections = archive.collections()?;
         let target = carrel_core::actions::collection(&collections, &collection)?;
+        self.through_inbox(&archive, || {
+            Ok(Request::AddRule {
+                subject: subject.clone(),
+                collection: target.path.clone(),
+            })
+        })?;
         Ok(core_answer::add_rule(
             &archive,
             &subject,
@@ -168,6 +181,12 @@ impl ArchiveHandle {
     pub fn settle_question(&self, id: String) -> Result<(), CarrelError> {
         let archive = self.fresh()?;
         let question = QuestionQueue::of(&archive).find(&id)?;
+        self.through_inbox(&archive, || {
+            Ok(Request::Answer {
+                question: question.id,
+                answer: Answer::Settle,
+            })
+        })?;
         core_answer::settled(&archive, &question)?;
         Ok(())
     }

@@ -52,6 +52,7 @@ struct StatusView: View {
             if let intake = model.intake {
                 IntakeSection(intake: intake, isReadOnly: model.isReadOnly)
             }
+            InboxStatusSection(model: model)
             StatusArchiveSections(model: model)
             StatusFlaggedSection(model: model)
             StatusDiscoverySections(model: model)

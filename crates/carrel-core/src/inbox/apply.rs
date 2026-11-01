@@ -1,4 +1,4 @@
-//! Applying every device's inbox, as the writer ([`super::apply`]).
+//! Applying every device's inbox, as the writer ([`super::apply()`]).
 
 use std::path::{Path, PathBuf};
 

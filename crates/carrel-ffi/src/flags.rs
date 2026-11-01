@@ -104,6 +104,17 @@ impl ArchiveHandle {
     ) -> Result<FlagChange, CarrelError> {
         let archive = self.fresh()?;
         let holder = self.holder()?;
+        self.through_inbox(&archive, || {
+            let target = carrel_core::inbox::FlagTarget::of(what);
+            Ok(if set {
+                carrel_core::inbox::Request::Flag {
+                    target,
+                    note: note.map(str::to_owned),
+                }
+            } else {
+                carrel_core::inbox::Request::Unflag { target }
+            })
+        })?;
         let done = if set {
             carrel_core::flags::flag(&archive, what, note, holder)?
         } else {
