@@ -547,6 +547,9 @@ pub struct App {
     /// This device's records of discovery and of the day's questions: saved, or in tests
     /// kept in memory, so they never write the real configuration.
     pub records: crate::asking::Records,
+    /// Where Status looks for active work: the person's home, or in tests none, so they
+    /// never look in the person's own folders.
+    pub active_work_home: Option<std::path::PathBuf>,
     /// The open questions about the item Browse shows.
     pub item_questions: Vec<QuestionEntry>,
     /// The conversation on the Librarian screen.
@@ -647,6 +650,11 @@ impl App {
             } else {
                 crate::asking::Records::here(&archive_for_records)
             },
+            active_work_home: if cfg!(test) {
+                None
+            } else {
+                carrel_core::local::home_dir()
+            },
             item_questions: Vec::new(),
             talk: super::librarian::Talk::default(),
             asking: super::librarian::Asking::default(),
@@ -674,7 +682,14 @@ impl App {
     /// [`Failure`] if the archive can't be read.
     pub fn reload(&mut self) -> Result<(), Failure> {
         self.archive = Archive::open(self.archive.root())?;
-        self.status = lines(&crate::commands::status_on(&self.archive, &mut self.records)?.text);
+        self.status = lines(
+            &crate::commands::status_on(
+                &self.archive,
+                &mut self.records,
+                self.active_work_home.clone(),
+            )?
+            .text,
+        );
         self.status.extend(self.index_status());
         self.status
             .extend(crate::usage_report::status_lines(&self.archive));

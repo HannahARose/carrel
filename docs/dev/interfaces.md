@@ -34,7 +34,7 @@ The command line and the interactive mode run on macOS, Linux and Windows. The M
 | Discovery: wander from an item | `discover wander ITEM` | ✓ `w` in Browse | ✓ Wander from Here on an item |
 | Discovery: the archive map, activity | `discover map`, `discover activity` | ✓ a sized tree and a block heatmap | ✓ a treemap and a heatmap |
 | Discovery: activity over chosen days | `discover activity --from --to` | ✓ `r` on activity | ✓ From and To on Activity |
-| Discovery: the tag and link graph | `discover graph [--items]` | #326, a text view of the strongest connections | #327, a drawn graph |
+| Discovery: the tag and link graph | `discover graph [--items]` | #326, a text view of the strongest connections | ✓ Discover → Connections, drawn |
 | Resurfacing forgotten collections | `status` | ✓ Status | ✓ Status |
 | The embedding index: status, rebuild, switch models | `index` | ✓ Status, Settings | ✓ Settings → Search (#267) |
 | Correct a filed item | `correct` | ✓ `c` | ✓ ⌘K (#234) |
@@ -50,7 +50,7 @@ The command line and the interactive mode run on macOS, Linux and Windows. The M
 | Desk items: a title and summary for the card | `desk add --title --summary` | ✓ asked when adding | ✓ asked when adding |
 | Work-session entries: approve, edit, combine, drop | `sessions` | ✓ Active | ✓ (#235) |
 | History and undo | `log`, `undo` | ✓ History | ✓ History, a page at a time or all, and the librarian's alone |
-| Restructure tags: merge, split and retire, approved all or in part | `restructure tags` | #326 | #327 |
+| Restructure tags: merge, split and retire, approved all or in part | `restructure tags` | #326 | ✓ Restructure, before and after side by side |
 | The librarian: ask, converse, save to the Journal | `ask` | ✓ the Librarian screen (`L`) | ✓ the Librarian panel (⌥⌘L), Ask About This (⇧⌘L) |
 | The librarian's changes: list and undo them together | `status`, `log --librarian`, `undo --librarian` | ✓ the Librarian screen, Status and History | ✓ the Librarian panel, Status and History |
 | Backups: set up, snapshot, list, verify, restore | `backup` | ✓ Backups | ✓ Backups (#266) |

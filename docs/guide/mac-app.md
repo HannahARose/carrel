@@ -56,7 +56,7 @@ Collections are made in the app too (see [Browse](#browse)), but their design do
 
 The window has three columns:
 
-- **The sidebar:** the screens, in the interactive mode's order, with counts beside Review, Questions and Active: **Status**, **Review**, **Questions**, **Active**, then your **Collections** (Browse), then **Discover**'s views, then **History** and **Backups**.
+- **The sidebar:** the screens, in the interactive mode's order, with counts beside Review, Questions, Restructure and Active: **Status**, **Review**, **Questions**, **Restructure**, **Active**, then your **Collections** (Browse), then **Discover**'s views, then **History** and **Backups**.
 - **The list** for the chosen screen.
 - **The inspector:** the chosen thing in full, such as a proposal's card, an item's preview and card, or what a change did.
 
@@ -102,6 +102,14 @@ When several items share a term Carrel doesn't know, or it can't tell where they
 - **Dismiss** (`d`): drop the question.
 
 Both are in the Questions menu. Suggested answers, skipping a question for now, and questions about a single item or a sender are in the interactive mode and `carrel questions` for now ([Questions and the glossary](user-guide.md#questions-and-the-glossary)), as are the questions Carrel asks beside an item, on a wander and from the librarian ([Questions as you go](user-guide.md#questions-as-you-go)); the app gains them in a later build (#319, #316).
+
+### Restructure
+
+Proposals to reorganize the archive wait here, as `carrel restructure` lists them ([Tidying tags](user-guide.md#tidying-tags)). **Propose Tag Changes** in the toolbar looks over the archive's tags for ones to merge, split or retire. Choose a proposal to see, in the inspector:
+
+- **Before and after,** side by side: the collections, each with how many items it holds, and the tags the proposal touches, as they are now and as the changes you've chosen would leave them.
+- **Each change,** with why it's proposed and how invasive it is, from rewriting tags and design documents (one dot) to moving top-level collections (five), the items it changes and those it leaves alone, and why. Untick a change to leave it out; one that needs it is dropped too, and the inspector says so.
+- **Approve Chosen** or **Approve All** makes the changes as one change in History, which undoes them together; **Reject** drops the proposal and changes nothing.
 
 ### Active
 
@@ -179,6 +187,7 @@ The **Discover** section of the sidebar has the discovery views ([Discovering th
 - **Timeline:** items by date, newest period first, each period with a bar for how many it has. Type words or search's filters, such as `tag:receipts after:2024`, and press Return; **By** places items by when they were made, filed or worked on, and **Per** groups them by year, month or day. Below, it says how many items have no such date.
 - **Archive Map:** collections as a treemap, each sized by how much space it takes or how many items it holds (**Measure** in the toolbar). Hover for a collection's items and size. Click one to zoom into it (or, with nothing inside, to show it in Browse), and double-click to show it in Browse; the path above the map takes you back out.
 - **Activity:** when you filed and worked on things over the last year, as a heatmap, a column a week, darker for busier days. Hover over a day for what happened on it.
+- **Connections:** the tag and link graph, drawn: collections round a circle, sized by how many items they hold, with a line between two as thick as what ties their items (shared tags, links, and days you worked on both). A dashed line joins a collection to one inside it. Click a collection to see only its connections, or choose a connection in the list for why they connect and the items that tie them, each a click from Browse. `carrel discover graph` lists the same.
 
 Which collections you opened and your walk are kept on this Mac, never in the archive, so looking around never changes it.
 
@@ -198,7 +207,7 @@ What `carrel backup` does (see [Backups](user-guide.md#backups)), using the Kopi
 
 - **General:** this Mac's settings, and the archive's own, shared by every device that opens it (see [Settings](user-guide.md#settings)), including `librarian.changes`, which lets the librarian make the changes it's sure of, and `librarian.confidence`, how sure it must be. Changing an archive setting is a change in history; **Undo** beside it takes it back.
 - **Models:** which model drafts cards, which gives a second opinion and which the **Librarian** answers with (the strongest that fits this Mac, unless you choose one), the text and embedding models with their sizes, and **Download…** and **Delete…**, which ask first and show the size. Nothing downloads without your OK.
-- **Search:** the archive's index for search by meaning: rebuilding it, and switching to another embedding model, which asks first and can be stopped and carried on.
+- **Search:** the archive's index for search by meaning: rebuilding it, and switching to another embedding model, which asks first and can be stopped and carried on. An embedding model that isn't on this Mac has **Download…** there, which asks first and shows the size; once it's downloaded, you can switch to it.
 - **Providers:** the providers this Mac found, the file types it reads, and those it couldn't read so far.
 - **Backups:** whether Kopia is installed and backups are set up for this archive. Set them up from the [Backups](#backups) screen.
 - **Agent:** the background agent's switch (below).
