@@ -132,6 +132,7 @@ pub fn check_out(
         return Err(CheckoutError::AlreadyOut(out.to.clone()));
     }
     let source = root.join(contents);
+    crate::cloud_files::ensure_downloaded(&source).map_err(io(&source))?;
     let rules = archive
         .rules()
         .map_err(|e| CheckoutError::Card(e.to_string()))?;
@@ -580,6 +581,7 @@ pub fn snapshot(path: &Path, item: Id, rules: &Rules) -> Result<Manifest, Checko
             modified: crate::manifest::timestamp(modified),
         }],
         built: Some(built),
+        not_downloaded: Vec::new(),
     })
 }
 

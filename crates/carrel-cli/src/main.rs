@@ -45,6 +45,7 @@ mod search;
 mod sessions;
 mod settings;
 mod start_screen;
+mod sync;
 mod tui;
 mod usage_report;
 mod worker;
@@ -349,6 +350,14 @@ enum Command {
     Crawl {
         #[command(subcommand)]
         action: Option<crawl::CrawlAction>,
+    },
+    /// An archive shared between devices through iCloud Drive: the writer lock, inboxes,
+    /// holding folder, re-checks, files not downloaded and conflicted copies (`status`, the
+    /// default); `download`, `keep` a collection downloaded, `resolve` a conflicted copy, or
+    /// `move` the archive into iCloud Drive.
+    Sync {
+        #[command(subcommand)]
+        action: Option<sync::SyncAction>,
     },
     /// Measure text models on the benchmark's test set, for choosing defaults
     /// (`docs/design/benchmark.md`).
@@ -1217,6 +1226,7 @@ fn main() -> ExitCode {
         Command::Discover { action } => discover_command(cli.archive.as_deref(), action, cli.json),
         Command::Restructure { action } => restructure_command(cli.archive.as_deref(), action),
         Command::Crawl { action } => crawl::command(cli.archive.as_deref(), action),
+        Command::Sync { action } => sync::command(cli.archive.as_deref(), action),
         Command::Reminders => reminders::list(cli.archive.as_deref()),
         Command::Bench(args) => bench::bench(&args, cli.json),
         Command::Models { action } => models_command(action, cli.archive.as_deref(), cli.json),
@@ -1449,6 +1459,10 @@ fn changes_archive(command: &Command) -> bool {
         ),
         Command::Desk { action } => !matches!(action, None | Some(DeskAction::List)),
         Command::Crawl { action } => !matches!(action, None | Some(crawl::CrawlAction::Status)),
+        Command::Sync { action } => !matches!(
+            action,
+            None | Some(sync::SyncAction::Status | sync::SyncAction::Download { .. })
+        ),
         Command::Backup { action } => {
             matches!(action, BackupAction::Setup { .. } | BackupAction::Now)
         }

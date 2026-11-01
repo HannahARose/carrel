@@ -644,6 +644,12 @@ pub fn snapshot_now(
     description: &str,
 ) -> Result<(Snapshot, Option<String>), SnapshotNowError> {
     use crate::history::{Change, History, Operation};
+    // A snapshot reads everything: files iCloud evicted come back first.
+    crate::cloud_files::ensure_downloaded(archive.root()).map_err(|e| {
+        SnapshotNowError::Backup(BackupError::Failed(format!(
+            "some files aren't downloaded from iCloud: {e}"
+        )))
+    })?;
     let snapshot = backups
         .snapshot(archive.root(), description)
         .map_err(SnapshotNowError::Backup)?;

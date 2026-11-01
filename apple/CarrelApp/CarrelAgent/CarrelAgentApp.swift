@@ -51,6 +51,8 @@ final class AgentHost {
     private var quickActions: AgentQuickActions?
 
     init(environment: [String: String] = ProcessInfo.processInfo.environment) {
+        // iCloud Drive's evicted files are downloaded through file coordination.
+        CloudFiles.register()
         notifications = ReminderNotifications { link in
             Task { @MainActor in AgentHost.open(link) }
         }

@@ -149,6 +149,7 @@ fn the_content_checksum_ignores_times_but_not_contents() {
         item: m.item,
         entries: vec![],
         built: None,
+        not_downloaded: Vec::new(),
     };
     assert_eq!(empty.checksum(), Checksum::of_bytes(b""));
 }

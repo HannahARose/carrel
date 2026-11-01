@@ -532,16 +532,32 @@ fn cards_in(dir: &Path) -> Result<Vec<(PathBuf, crate::card::Card)>, ArchiveErro
 
 /// A folder's entries, sorted by path, leaving out hidden entries (names starting with `.`,
 /// such as `.obsidian` or `.DS_Store`). Collection discovery never looks inside those.
+///
+/// Cards and design documents iCloud evicted to `.icloud` placeholders are downloaded and
+/// listed: they're small, and the archive is read from them.
 fn read_dir_sorted(dir: &Path) -> Result<Vec<PathBuf>, ArchiveError> {
     let mut entries: Vec<PathBuf> = std::fs::read_dir(dir)
         .map_err(io(dir))?
         .map(|e| e.map(|e| e.path()))
         .collect::<Result<_, _>>()
         .map_err(io(dir))?;
+    let mut fetched = Vec::new();
     entries.retain(|p| {
-        p.file_name()
-            .is_some_and(|n| !n.to_string_lossy().starts_with('.'))
+        let name = p
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        if let Some(real) = crate::cloud_files::placeholder_for(&name)
+            && real.to_ascii_lowercase().ends_with(".md")
+        {
+            let real = dir.join(real);
+            if !real.exists() && crate::cloud_files::fetch_if_placeholder(&real) {
+                fetched.push(real);
+            }
+        }
+        !name.starts_with('.')
     });
+    entries.extend(fetched);
     entries.sort();
     Ok(entries)
 }
@@ -563,7 +579,7 @@ fn walk_collections(
     found: &mut Vec<Collection>,
 ) -> Result<(), ArchiveError> {
     let doc_path = dir.join("_collection.md");
-    if doc_path.is_file() {
+    if crate::cloud_files::fetch_if_placeholder(&doc_path) && doc_path.is_file() {
         let text = std::fs::read_to_string(&doc_path).map_err(io(&doc_path))?;
         let split = frontmatter::split(&text).map_err(|e| invalid(&doc_path, e))?;
         let doc: CollectionDoc =
