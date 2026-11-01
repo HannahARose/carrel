@@ -195,3 +195,59 @@ fn status_names_a_few_new_questions_a_day_the_same_all_day() {
     daily.save(&path).unwrap();
     assert_eq!(Daily::load(&path), daily);
 }
+
+/// The sample's project with no description, which Carrel asks about.
+const NOTES: &str = "Projects/Hardware/notes.card.md";
+
+#[test]
+fn an_item_is_asked_about_through_the_queue_and_the_librarian_asks_from_the_archive() {
+    let (_dir, archive) = sample();
+    let items = archive.items().unwrap();
+    let notes = items.iter().find(|i| i.card == NOTES).unwrap();
+
+    let shown = moments::about_item(&archive, notes, today()).unwrap();
+    assert_eq!(
+        shown.first().map(|q| q.question.as_str()),
+        Some("What was this project for?")
+    );
+    // Asking puts it in the queue, so it's answered by its identifier, and only once.
+    let asked = moments::ask_about(&archive, notes, today())
+        .unwrap()
+        .expect("a question");
+    let again = moments::ask_about(&archive, notes, today())
+        .unwrap()
+        .unwrap();
+    assert_eq!(asked.id, again.id);
+    let (queued, _) = QuestionQueue::of(&archive).list().unwrap();
+    assert!(queued.iter().any(|q| q.id == asked.id));
+
+    // The librarian, after an answer about an item that's gone and the notes: it passes over
+    // the one it can't read, asks about the notes, then not twice in a row, and never about
+    // the notes again.
+    let gone = Id::new_v7();
+    let mut conversing = Conversing::default();
+    let first = conversing
+        .after(&archive, &[gone, notes.id], today())
+        .unwrap()
+        .expect("a question about the notes");
+    assert_eq!(first.question, "What was this project for?");
+    assert!(
+        conversing
+            .after(&archive, &[notes.id], today())
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        conversing
+            .after(&archive, &[notes.id], today())
+            .unwrap()
+            .is_none(),
+        "the notes were asked about already"
+    );
+    assert!(
+        conversing
+            .after(&archive, &[gone], today())
+            .unwrap()
+            .is_none()
+    );
+}
