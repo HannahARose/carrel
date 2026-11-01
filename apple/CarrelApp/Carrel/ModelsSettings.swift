@@ -31,17 +31,7 @@ struct ModelsTab: View {
                 }
             }
         }
-        .confirmationDialog(
-            "Download \(model?.confirmingDownload?.name ?? "") (\(model?.confirmingFormat.title ?? ""))?",
-            isPresented: confirming(\.confirmingDownload),
-            presenting: model?.confirmingDownload
-        ) { entry in
-            Button("Download \(downloadSize(entry))") { Task { await model?.downloadConfirmed() } }
-        } message: { entry in
-            Text(
-                "\(entry.title). \(downloadSize(entry)) from the internet, under the \(entry.license) license; it needs about \(entry.memoryGb) GB of memory."
-            )
-        }
+        .modelDownloadConfirmation(model)
         .confirmationDialog(
             "Delete \(model?.confirmingRemoval?.name ?? "") (\(model?.confirmingFormat.title ?? ""))?",
             isPresented: confirming(\.confirmingRemoval),
@@ -53,16 +43,36 @@ struct ModelsTab: View {
         }
     }
 
-    private func downloadSize(_ entry: CatalogModel) -> String {
-        size(model.map { $0.size(of: entry, in: $0.confirmingFormat) } ?? entry.size)
-    }
-
     private func confirming(_ path: ReferenceWritableKeyPath<SettingsModel, CatalogModel?>)
         -> Binding<Bool>
     {
         Binding(
             get: { model?[keyPath: path] != nil },
             set: { if !$0 { model?[keyPath: path] = nil } })
+    }
+}
+
+extension View {
+    /// Asks before downloading the model Settings is waiting to download, with its size and
+    /// license, as Models and Search both offer.
+    func modelDownloadConfirmation(_ model: SettingsModel?) -> some View {
+        confirmationDialog(
+            "Download \(model?.confirmingDownload?.name ?? "") (\(model?.confirmingFormat.title ?? ""))?",
+            isPresented: Binding(
+                get: { model?.confirmingDownload != nil },
+                set: { if !$0 { model?.confirmingDownload = nil } }),
+            presenting: model?.confirmingDownload
+        ) { entry in
+            let bytes = size(
+                model.map { $0.size(of: entry, in: $0.confirmingFormat) } ?? entry.size)
+            Button("Download \(bytes)") { Task { await model?.downloadConfirmed() } }
+        } message: { entry in
+            let bytes = size(
+                model.map { $0.size(of: entry, in: $0.confirmingFormat) } ?? entry.size)
+            Text(
+                "\(entry.title). \(bytes) from the internet, under the \(entry.license) license; it needs about \(entry.memoryGb) GB of memory."
+            )
+        }
     }
 }
 

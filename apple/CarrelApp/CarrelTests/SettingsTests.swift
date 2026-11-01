@@ -173,11 +173,23 @@ final class SettingsTests: XCTestCase {
         XCTAssertTrue(
             model.embedding?.elsewhere.contains { $0.model == "qwen3-embedding-0.6b" } == true)
 
+        // A model that isn't here is one to download, here, not at the command line (#337).
+        let qwen = try XCTUnwrap(
+            model.embedding?.elsewhere.first { $0.model == "qwen3-embedding-0.6b" })
+        XCTAssertEqual(qwen.download?.name, "qwen3-embedding-0.6b")
+        XCTAssertGreaterThan(qwen.download?.size ?? 0, 0)
+        XCTAssertFalse(qwen.how.contains("carrel models"), qwen.how)
+        let apple = try XCTUnwrap(
+            model.embedding?.elsewhere.first { $0.model == "apple-nl-sentence-en" })
+        XCTAssertNil(apple.download)
+        XCTAssertEqual(apple.comesWith, "carrel-provider-apple")
+
         model.confirmingSwitch = "qwen3-embedding-0.6b"
         await model.switchConfirmed()
         XCTAssertEqual(
             model.problem?.hasPrefix("no provider on this device offers qwen3-embedding-0.6b"),
             true, model.problem ?? "")
+        XCTAssertFalse(model.problem?.contains("carrel models") ?? true, model.problem ?? "")
         XCTAssertNil(model.index?.switch)
 
         await model.rebuildIndex()

@@ -8,7 +8,9 @@ use std::sync::Arc;
 use carrel_core::coordinator::{Coordinator as _, DEFAULT_LEASE, DiskLock};
 use carrel_core::index::manage::{self, Built, ManageError, Stage, Switched};
 use carrel_core::models::embedding_models;
-use carrel_core::search::run::how_to_get;
+use carrel_core::search::run::{ModelSource, how_to_get};
+
+use crate::models::{CatalogModel, catalog_model};
 
 use crate::{ArchiveHandle, CarrelError, ProgressListener};
 
@@ -64,8 +66,13 @@ pub struct EmbeddingChoice {
 pub struct EmbeddingElsewhere {
     /// The model's identifier.
     pub model: String,
-    /// How to get it.
+    /// How to get it, in words that name no interface's command.
     pub how: String,
+    /// The catalog model to download for it, when it's downloaded; download it with
+    /// [`ArchiveHandle::download_model`] once the owner has seen its size.
+    pub download: Option<CatalogModel>,
+    /// The provider it comes with instead, which only Apple devices have.
+    pub comes_with: Option<String>,
 }
 
 /// The embedding models to switch to, as `carrel index model` lists them.
@@ -196,9 +203,20 @@ impl ArchiveHandle {
         let elsewhere = embedding_models()
             .filter(|m| !here.iter().any(|h| h.model == m.name))
             .filter_map(|m| {
+                let how = how_to_get(m.name)?;
                 Some(EmbeddingElsewhere {
                     model: m.name.to_owned(),
-                    how: how_to_get(m.name)?,
+                    how: how.to_string(),
+                    download: match how {
+                        ModelSource::Download(found) => {
+                            Some(catalog_model(found, self.models_dir().as_deref()))
+                        }
+                        ModelSource::ComesWith(_) => None,
+                    },
+                    comes_with: match how {
+                        ModelSource::ComesWith(provider) => Some(provider.to_owned()),
+                        ModelSource::Download(_) => None,
+                    },
                 })
             })
             .collect();
@@ -265,5 +283,33 @@ impl ArchiveHandle {
                 built: built(model.trim(), b),
             },
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::tests::Sample;
+
+    #[test]
+    fn a_model_not_here_says_how_to_get_it_as_data() {
+        let sample = Sample::new();
+        let models = sample.handle.embedding_models();
+        let gemma = models
+            .elsewhere
+            .iter()
+            .find(|m| m.model == "embeddinggemma-300m")
+            .unwrap();
+        let download = gemma.download.as_ref().unwrap();
+        assert_eq!(download.name, "embeddinggemma-300m");
+        assert!(download.size > 0);
+        assert_eq!(gemma.comes_with, None);
+        assert!(!gemma.how.contains("carrel models"), "{}", gemma.how);
+        let apple = models
+            .elsewhere
+            .iter()
+            .find(|m| m.model == "apple-nl-sentence-en")
+            .unwrap();
+        assert_eq!(apple.download, None);
+        assert_eq!(apple.comes_with.as_deref(), Some("carrel-provider-apple"));
     }
 }
