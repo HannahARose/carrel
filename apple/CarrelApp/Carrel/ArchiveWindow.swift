@@ -31,6 +31,7 @@ struct ArchiveWindow: View {
         .activeAndHistorySheets(model)
         .modifier(ArchiveWindowActions(model: model))
         .browseSheets(model.browse)
+        .librarianPanel(model)
         .navigationTitle(model.name)
         .navigationSubtitle(
             model.isReadOnly ? "\(model.screenTitle) · Read only" : model.screenTitle
@@ -98,6 +99,11 @@ private struct Sidebar: View {
                         .tag(Screen.collection(node.collection.path))
                 }
             }
+            Section("Discover") {
+                ForEach(DiscoverPage.allCases, id: \.self) { page in
+                    Label(page.title, systemImage: page.symbol).tag(Screen.discover(page))
+                }
+            }
             Section {
                 Label("History", systemImage: "clock.arrow.circlepath").tag(Screen.history)
                 Label("Backups", systemImage: "externaldrive.badge.timemachine").tag(Screen.backups)
@@ -161,6 +167,10 @@ private struct ScreenContent: View {
             if let history = model.historyScreen { HistoryView(model: history) }
         case .backups:
             if let backups = model.backups { BackupsView(backups: backups) }
+        case .discover(let page):
+            if let discover = model.discover {
+                DiscoverView(page: page, discover: discover, window: model)
+            }
         }
     }
 }

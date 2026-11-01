@@ -14,6 +14,7 @@ struct HistoryView: View {
                 HStack(spacing: 6) {
                     Text(change.when)
                     if let operation = change.operation { Text("· \(operation)") }
+                    if change.agent == "librarian" { Text("· by the librarian") }
                 }
                 .font(.caption).foregroundStyle(.secondary)
             }
@@ -54,6 +55,10 @@ struct ChangeInspector: View {
                         LabeledContent("Operation", value: operation)
                     }
                     if let device = change.device { LabeledContent("Device", value: device) }
+                    if let agent = change.agent {
+                        LabeledContent(
+                            "Made by", value: agent == "librarian" ? "The librarian, on its own" : agent)
+                    }
                     LabeledContent("Change") {
                         Text(change.id.prefix(12)).monospaced().textSelection(.enabled)
                     }

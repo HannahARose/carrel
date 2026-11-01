@@ -35,6 +35,7 @@ struct StatusView: View {
             if let intake = model.intake {
                 IntakeSection(intake: intake, isReadOnly: model.isReadOnly)
             }
+            StatusDiscoverySections(model: model)
             Section("Activity") {
                 Text(
                     "The worker’s progress, recent changes and suggestions appear here in a later build."
