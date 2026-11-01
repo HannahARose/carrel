@@ -4,7 +4,7 @@ Status: accepted 2026-10-30, with the five recommendations below. Issue #122.
 
 ## What this adds
 
-The design spec says every poor fit, low-confidence placement and Holding item is recorded as a signal for restructuring, so that a restructure (v0.7) is proposed only when the structure has clearly stopped fitting. v0.2 doesn't propose restructures yet, but it should start keeping the evidence now and show the owner where it gathers, so a collection that needs splitting, or a missing collection, is visible early.
+The design spec says every poor fit, low-confidence placement and Holding item is recorded as a signal for restructuring, so that a restructure (v0.6) is proposed only when the structure has clearly stopped fitting. v0.2 doesn't propose restructures yet, but it should start keeping the evidence now and show the owner where it gathers, so a collection that needs splitting, or a missing collection, is visible early.
 
 ## Recording placements
 
@@ -42,7 +42,7 @@ The spec's other signals, items in different branches often linked or worked on 
 
 - **`carrel status`** gets a **Structure** section listing each signal shown, most items first, with the collection and a count, such as "Receipts: 7 items placed with low confidence" or "Holding: 12 items". With `--json`, the same as a list.
 - **The interactive mode's Status screen** shows the same section.
-- **No nagging:** signals are information. Nothing is moved or proposed until restructure proposals arrive (v0.7), which will start from these signals.
+- **No nagging:** signals are information. Nothing is moved or proposed until restructure proposals arrive (v0.6), which will start from these signals.
 
 ## Building it
 
@@ -56,4 +56,4 @@ The spec's other signals, items in different branches often linked or worked on 
 2. **Compute signals from the archive's current state**, not from a running count. Recommended.
 3. **Thresholds from literary warrant:** `min_collection_items` for Holding and low-confidence clusters, 30 for crowded collections (a setting), with medium confidence counting half. Recommended as a starting point.
 4. **v0.2 shows signals only**, in `carrel status` and the Status screen; restructure proposals use them in v1.2. Recommended.
-5. **Leave the link and level-of-detail signals for v0.7**, when the history they need exists. Recommended.
+5. **Leave the link and level-of-detail signals for restructuring**, when the history they need exists. Recommended.

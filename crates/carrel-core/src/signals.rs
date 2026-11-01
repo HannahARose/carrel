@@ -1,8 +1,8 @@
 //! Restructure signals (`docs/design/signals.md`): where the archive's structure shows signs of
 //! not fitting what's in it. They're computed from the archive as it is, so they're never stale,
-//! and they're information only until restructure proposals (v0.7) start from them.
+//! and they're information only until restructure proposals (v0.6) start from them.
 //!
-//! Two of them need the tag and link graph ([`crate::graph`]), and arrived with it in v0.7
+//! Two of them need the tag and link graph ([`crate::graph`]), and arrived with it in v0.6
 //! (`docs/design/restructure.md`, "When one is proposed"): items in different branches often
 //! linked or worked on together ([`Signal::Entangled`]), and sibling collections at very
 //! different levels of detail ([`Signal::UnevenDetail`]).

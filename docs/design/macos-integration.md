@@ -1,10 +1,10 @@
-# Design: macOS system integration (v0.8)
+# Design: macOS system integration (v0.7)
 
 Status: accepted 2026-11-01, with the five recommendations below. Issue #35.
 
 ## What this adds
 
-Carrel works inside its own windows and the terminal today. v0.8 brings it into the rest of the Mac:
+Carrel works inside its own windows and the terminal today. v0.7 brings it into the rest of the Mac:
 
 - **Finder** badges on the archive's items and on working copies, with context actions (Add to Archive, Check Out, Return);
 - a **Share** extension, "Send to Archive", for anything another app can share;
@@ -54,7 +54,7 @@ Finder Sync, Share and Quick Look extensions must be sandboxed, though the app a
 
 - **What it takes:** files, URLs, text and images from any app's share sheet. Files and images join the intake queue. A URL becomes a `url` item, and text a note item, drafted like anything else.
 - **The sheet:** says which archive it goes to, offers an optional note that becomes part of the card's context, and shows "Added to the intake queue". It doesn't wait for the drafting.
-- **Another Mac as writer:** if another device holds the writer lease, the request goes into this device's inbox (`_System/inbox/<device-id>/`, FORMAT §7.8), and the writer applies it. That's the same path iPad and iPhone use in v0.9, so the share extension is ready for them.
+- **Another Mac as writer:** if another device holds the writer lease, the request goes into this device's inbox (`_System/inbox/<device-id>/`, FORMAT §7.8), and the writer applies it. That's the same path iPad and iPhone use in v0.8, so the share extension is ready for them.
 
 ## Quick Look
 
@@ -133,5 +133,5 @@ The Linux and Windows file managers' context menus (Nautilus scripts, Explorer's
 1. **Extensions never write the archive. They ask the agent over XPC, and read a state file it keeps.** Recommended: the extensions must be sandboxed and the app and agent aren't. It also keeps one writer, with every change going through the core and into History.
 2. **Finder Sync for badges and the archive's actions, plus a Quick Action for adding from anywhere.** Recommended: Finder Sync only sees folders it watches, and File Provider would change how the archive folder lives on disk, at the cost of its plain-folder and Obsidian compatibility.
 3. **Spotlight indexes cards, not contents, with sensitive items by title only and restricted items left out by default (`spotlight.index`).** Recommended: anyone at the Mac sees Spotlight, and the files themselves are already indexed where macOS can read them.
-4. **Shares and intents from a device that isn't the writer go through its inbox (FORMAT §7.8).** Recommended: it's the format's existing path, and the one iPad and iPhone need in v0.9.
+4. **Shares and intents from a device that isn't the writer go through its inbox (FORMAT §7.8).** Recommended: it's the format's existing path, and the one iPad and iPhone need in v0.8.
 5. **These are macOS-only, as allowed deviations; Linux and Windows file manager actions come with v2.0's apps.** Recommended: everything they reach is already in the CLI and the interactive mode.

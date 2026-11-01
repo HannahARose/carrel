@@ -2,7 +2,7 @@
 
 How Carrel is put together as of v0.2: the parts, what each does, how they talk to each other, and what they keep on disk. It's for anyone who wants to change Carrel. The [Code map](code-map.md) points from each part to the types and functions to read in the [code documentation](https://horizon-labs.github.io/carrel/), and the [Overhead](overhead.md) page measures what splitting Carrel into separate programs costs.
 
-What's planned but not built yet (the Mac app in v0.5, its background agent, iCloud sync through CloudKit in v0.9) is marked as such. The design spec and the [Roadmap](https://github.com/Horizon-Labs/carrel/wiki/Roadmap) describe it.
+What's planned but not built yet (the Mac app in v0.5, its background agent, iCloud sync through CloudKit in v0.8) is marked as such. The design spec and the [Roadmap](https://github.com/Horizon-Labs/carrel/wiki/Roadmap) describe it.
 
 ## The shape of it
 
@@ -262,7 +262,7 @@ sequenceDiagram
 - **Writing the archive** needs the writer lease ([`DiskLock`](https://horizon-labs.github.io/carrel/carrel_core/coordinator/struct.DiskLock.html), [`WriterLease`](https://horizon-labs.github.io/carrel/carrel_core/coordinator/struct.WriterLease.html)): filing, undo, renames, new collections, settings. Only the lease holder may commit history. Reading needs nothing.
 - **The worker doesn't hold the lease while drafting**; drafting only writes queue files. It takes the lease briefly only when a rule files an item.
 - **A crash** loses at most the item being drafted: its intake entry stays and is drafted again. A crash in the moment between saving a proposal and removing its entry would leave the entry to be drafted a second time, giving two proposals for one item; rejecting the extra one is safe.
-- **Two devices** on one archive need a coordinator other than the lock file; the CLI warns in synced folders until CloudKit's lock arrives (v0.9).
+- **Two devices** on one archive need a coordinator other than the lock file; the CLI warns in synced folders until CloudKit's lock arrives (v0.8).
 
 ## Where to add things
 
