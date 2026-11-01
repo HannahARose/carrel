@@ -6,7 +6,7 @@ Carrel is a personal archivist with native apps for macOS, iPadOS and iOS and a 
 
 Every document is analyzed on your own devices. Nothing is sent anywhere unless you explicitly opt in.
 
-> **Status:** [v0.5.1](https://github.com/HannahARose/carrel/releases/tag/v0.5.1) is the latest release: the Mac app, with a background agent, over the same archive as the `carrel` command line and its interactive mode on macOS, Linux and Windows, each fully capable. Filing, checking out and returning work, corrections and edits, search in your own words, previews, history, backups and settings, all on your computer. New here? Start with [Getting started](docs/guide/getting-started.md), or [the Mac app](docs/guide/mac-app.md).
+> **Status:** [v0.5.1](https://github.com/Horizon-Labs/carrel/releases/tag/v0.5.1) is the latest release: the Mac app, with a background agent, over the same archive as the `carrel` command line and its interactive mode on macOS, Linux and Windows, each fully capable. Filing, checking out and returning work, corrections and edits, search in your own words, previews, history, backups and settings, all on your computer. New here? Start with [Getting started](docs/guide/getting-started.md), or [the Mac app](docs/guide/mac-app.md).
 
 ## Principles
 
@@ -26,17 +26,19 @@ Every document is analyzed on your own devices. Nothing is sent anywhere unless 
 - **Check out and return:** take an item out to work on it. Carrel locks the archive copy, logs each work session as a short entry, and shows what changed when you return it.
 - **History and backups:** every change is recorded in a Git history of the archive's metadata and can be undone. File contents are versioned with [Kopia](https://kopia.io).
 - **Obsidian-compatible:** the archive root opens as an Obsidian vault.
-- **Command-line tool:** `carrel` does everything the app does, with JSON output for scripts. See the [wiki's Command-Line Tool page](https://github.com/HannahARose/carrel/wiki/Command-Line-Tool).
+- **Command-line tool:** `carrel` does everything the app does, with JSON output for scripts. See the [wiki's Command-Line Tool page](https://github.com/Horizon-Labs/carrel/wiki/Command-Line-Tool).
 
 ## Install
 
-From v0.2, each [release](https://github.com/HannahARose/carrel/releases) has an archive for macOS (Apple silicon and Intel), Linux (x86_64 and arm64) and Windows (x86_64), with `SHA256SUMS` and build provenance attestations. An archive holds `carrel` and everything it runs: the network helper, the llama.cpp provider, the extraction provider (PDF text, and OCR when [Tesseract](https://tesseract-ocr.github.io) is installed), Kopia for backups, and on macOS the Apple provider and, for Apple silicon, the MLX provider. Put them together in a folder on your `PATH`.
+From v0.2, each [release](https://github.com/Horizon-Labs/carrel/releases) has an archive for macOS (Apple silicon and Intel), Linux (x86_64 and arm64) and Windows (x86_64), with `SHA256SUMS` and build provenance attestations. An archive holds `carrel` and everything it runs: the network helper, the llama.cpp provider, the extraction provider (PDF text, and OCR when [Tesseract](https://tesseract-ocr.github.io) is installed), Kopia for backups, and on macOS the Apple provider and, for Apple silicon, the MLX provider. Put them together in a folder on your `PATH`.
 
 To check a download came from this repository's release workflow:
 
 ```bash
-gh attestation verify carrel-0.5.1-linux-x86_64.tar.gz --repo HannahARose/carrel
+gh attestation verify carrel-0.6.0-linux-x86_64.tar.gz --repo Horizon-Labs/carrel
 ```
+
+That works from v0.6, the first release since the repository moved to Horizon-Labs. GitHub's lookup doesn't find the attestations made before the move, so check v0.5.1 and earlier against their `SHA256SUMS` instead.
 
 The binaries aren't signed yet (that comes with the Mac app), so on macOS a browser download needs `xattr -d com.apple.quarantine` on each program before it runs; downloads with `curl` or `gh release download` don't. Then download a model for drafting cards with `carrel models`, unless your Mac has Apple's on-device model.
 
@@ -67,7 +69,7 @@ Until then, build from source as [Getting started](docs/guide/getting-started.md
 | **3.0** | **Offline collections and sharing between archives** |
 | 3.1 | Encryption, web snapshots |
 
-Details are on the [wiki's Roadmap page](https://github.com/HannahARose/carrel/wiki/Roadmap).
+Details are on the [wiki's Roadmap page](https://github.com/Horizon-Labs/carrel/wiki/Roadmap).
 
 ## Documentation
 
@@ -82,8 +84,8 @@ Details are on the [wiki's Roadmap page](https://github.com/HannahARose/carrel/w
 - **[Architecture](docs/dev/architecture.md):** the parts, how they communicate, what they keep on disk, and the main flows.
 - **[Code map](docs/dev/code-map.md):** where each part is in the code, linked to the code documentation.
 - **[What separating the parts costs](docs/dev/overhead.md):** measured time, memory and disk.
-- **[Wiki](https://github.com/HannahARose/carrel/wiki):** design, archive format overview, roadmap, development setup and workflow.
-- **[Code documentation](https://hrose.me/carrel/):** every module, type and function, built from the `dev` branch on each change.
+- **[Wiki](https://github.com/Horizon-Labs/carrel/wiki):** design, archive format overview, roadmap, development setup and workflow.
+- **[Code documentation](https://horizon-labs.github.io/carrel/):** every module, type and function, built from the `dev` branch on each change.
 - **[FORMAT.md](FORMAT.md):** the archive format specification.
 - **[docs/providers.md](docs/providers.md):** the protocol for providers, the programs that give Carrel its text models and text extraction.
 
