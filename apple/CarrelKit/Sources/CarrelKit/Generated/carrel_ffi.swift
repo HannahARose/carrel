@@ -986,6 +986,66 @@ public protocol ArchiveHandleProtocol: AnyObject, Sendable {
     func recordSessions() throws  -> SessionsRecorded
     
     /**
+     * Where backups stand: whether they're set up here and reachable, and the snapshots from
+     * history, newest first, which need no drive.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the archive or its history can't be read.
+     */
+    func backups() throws  -> BackupsState
+    
+    /**
+     * Restores the item `item`'s contents as they were at the change `at` (the snapshot taken
+     * with it, or the latest before it; without `at`, the latest) into `to`, or a new folder
+     * beside the archive, as `carrel backup restore` does. Nothing in the archive changes.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if there's no such item, it has no contents, there's no
+     * snapshot to restore from or `to` exists, or [`CarrelError::Failed`] if the restore
+     * fails, as when the drive isn't connected.
+     */
+    func restoreItem(item: String, at: String?, to: String?, password: String?) throws  -> Restored
+    
+    /**
+     * Creates a backup repository in `folder`, or connects to the one there, for this archive
+     * on this device, and records it in the archive's settings and history, as `carrel backup
+     * setup` does. With `keep_password`, Kopia keeps the password in this Mac's keychain;
+     * without, it's kept nowhere and each call needs it.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] for a folder inside the archive or in a synced folder,
+     * [`CarrelError::Busy`] if another writer holds the archive, or [`CarrelError::Failed`]
+     * if Kopia isn't installed, the password is wrong or the repository can't be written.
+     */
+    func setUpBackups(folder: String, password: String, description: String?, keepPassword: Bool) throws  -> BackupsSetUp
+    
+    /**
+     * Snapshots the whole archive now and records it in history, as `carrel backup now` does.
+     * `password` is for backups set up without keeping it; `None` uses the keychain's.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if backups aren't set up here, [`CarrelError::Busy`] if
+     * another writer holds the archive, or [`CarrelError::Failed`] if the snapshot fails, as
+     * when the backup drive isn't connected.
+     */
+    func snapshotNow(password: String?) throws  -> SnapshotTaken
+    
+    /**
+     * Checks every snapshot's structure and reads back `percent`% of the files' contents, as
+     * `carrel backup verify` does. Returns what Kopia found, in words.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if backups aren't set up here, or [`CarrelError::Failed`] if
+     * the check fails or the drive isn't connected.
+     */
+    func verifyBackups(percent: UInt8, password: String?) throws  -> String
+    
+    /**
      * Creates the collection `path` (such as `Finances/Tax`, inside an existing collection),
      * saying what belongs there and with its tag vocabulary, as `carrel collection new` does.
      *
@@ -2095,6 +2155,112 @@ open func recordSessions()throws  -> SessionsRecorded  {
         uniffiCallStatus in
     uniffi_carrel_ffi_fn_method_archivehandle_record_sessions(
             self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Where backups stand: whether they're set up here and reachable, and the snapshots from
+     * history, newest first, which need no drive.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the archive or its history can't be read.
+     */
+open func backups()throws  -> BackupsState  {
+    return try  FfiConverterTypeBackupsState_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_backups(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Restores the item `item`'s contents as they were at the change `at` (the snapshot taken
+     * with it, or the latest before it; without `at`, the latest) into `to`, or a new folder
+     * beside the archive, as `carrel backup restore` does. Nothing in the archive changes.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if there's no such item, it has no contents, there's no
+     * snapshot to restore from or `to` exists, or [`CarrelError::Failed`] if the restore
+     * fails, as when the drive isn't connected.
+     */
+open func restoreItem(item: String, at: String?, to: String?, password: String?)throws  -> Restored  {
+    return try  FfiConverterTypeRestored_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_restore_item(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(item),
+        FfiConverterOptionString.lower(at),
+        FfiConverterOptionString.lower(to),
+        FfiConverterOptionString.lower(password),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Creates a backup repository in `folder`, or connects to the one there, for this archive
+     * on this device, and records it in the archive's settings and history, as `carrel backup
+     * setup` does. With `keep_password`, Kopia keeps the password in this Mac's keychain;
+     * without, it's kept nowhere and each call needs it.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] for a folder inside the archive or in a synced folder,
+     * [`CarrelError::Busy`] if another writer holds the archive, or [`CarrelError::Failed`]
+     * if Kopia isn't installed, the password is wrong or the repository can't be written.
+     */
+open func setUpBackups(folder: String, password: String, description: String?, keepPassword: Bool)throws  -> BackupsSetUp  {
+    return try  FfiConverterTypeBackupsSetUp_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_set_up_backups(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(folder),
+        FfiConverterString.lower(password),
+        FfiConverterOptionString.lower(description),
+        FfiConverterBool.lower(keepPassword),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Snapshots the whole archive now and records it in history, as `carrel backup now` does.
+     * `password` is for backups set up without keeping it; `None` uses the keychain's.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if backups aren't set up here, [`CarrelError::Busy`] if
+     * another writer holds the archive, or [`CarrelError::Failed`] if the snapshot fails, as
+     * when the backup drive isn't connected.
+     */
+open func snapshotNow(password: String?)throws  -> SnapshotTaken  {
+    return try  FfiConverterTypeSnapshotTaken_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_snapshot_now(
+            self.uniffiCloneHandle(),
+        FfiConverterOptionString.lower(password),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Checks every snapshot's structure and reads back `percent`% of the files' contents, as
+     * `carrel backup verify` does. Returns what Kopia found, in words.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if backups aren't set up here, or [`CarrelError::Failed`] if
+     * the check fails or the drive isn't connected.
+     */
+open func verifyBackups(percent: UInt8, password: String?)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_verify_backups(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt8.lower(percent),
+        FfiConverterOptionString.lower(password),uniffiCallStatus
     )
 })
 }
@@ -4397,6 +4563,220 @@ public func FfiConverterTypeBackedUp_lift(_ buf: RustBuffer) throws -> BackedUp 
 #endif
 public func FfiConverterTypeBackedUp_lower(_ value: BackedUp) -> RustBuffer {
     return FfiConverterTypeBackedUp.lower(value)
+}
+
+
+/**
+ * What setting up backups did.
+ */
+public struct BackupsSetUp: Equatable, Hashable {
+    /**
+     * Whether a new repository was created, rather than one already there connected.
+     */
+    public var created: Bool
+    /**
+     * The repository's description, recorded in the archive's settings.
+     */
+    public var description: String
+    /**
+     * Whether the repository is on the same disk as the archive, which guards against
+     * mistakes but not against losing the disk.
+     */
+    public var sameDisk: Bool
+    /**
+     * Whether Kopia keeps the password in this Mac's keychain.
+     */
+    public var keptInKeychain: Bool
+    /**
+     * The history commit recording it.
+     */
+    public var commit: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Whether a new repository was created, rather than one already there connected.
+         */created: Bool, 
+        /**
+         * The repository's description, recorded in the archive's settings.
+         */description: String, 
+        /**
+         * Whether the repository is on the same disk as the archive, which guards against
+         * mistakes but not against losing the disk.
+         */sameDisk: Bool, 
+        /**
+         * Whether Kopia keeps the password in this Mac's keychain.
+         */keptInKeychain: Bool, 
+        /**
+         * The history commit recording it.
+         */commit: String?) {
+        self.created = created
+        self.description = description
+        self.sameDisk = sameDisk
+        self.keptInKeychain = keptInKeychain
+        self.commit = commit
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension BackupsSetUp: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBackupsSetUp: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BackupsSetUp {
+        return
+            try BackupsSetUp(
+                created: FfiConverterBool.read(from: &buf), 
+                description: FfiConverterString.read(from: &buf), 
+                sameDisk: FfiConverterBool.read(from: &buf), 
+                keptInKeychain: FfiConverterBool.read(from: &buf), 
+                commit: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BackupsSetUp, into buf: inout [UInt8]) {
+        FfiConverterBool.write(value.created, into: &buf)
+        FfiConverterString.write(value.description, into: &buf)
+        FfiConverterBool.write(value.sameDisk, into: &buf)
+        FfiConverterBool.write(value.keptInKeychain, into: &buf)
+        FfiConverterOptionString.write(value.commit, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBackupsSetUp_lift(_ buf: RustBuffer) throws -> BackupsSetUp {
+    return try FfiConverterTypeBackupsSetUp.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBackupsSetUp_lower(_ value: BackupsSetUp) -> RustBuffer {
+    return FfiConverterTypeBackupsSetUp.lower(value)
+}
+
+
+/**
+ * Where this archive's backups stand on this device.
+ */
+public struct BackupsState: Equatable, Hashable {
+    /**
+     * Whether the `kopia` program can be found.
+     */
+    public var installed: Bool
+    /**
+     * The repository's description from the archive's settings, once any device has set up
+     * backups, such as "Backup drive".
+     */
+    public var description: String?
+    /**
+     * Whether this device is connected to the repository.
+     */
+    public var setUpHere: Bool
+    /**
+     * The repository's folder on this device.
+     */
+    public var repository: String?
+    /**
+     * Whether that folder can be reached now: `false` when its drive isn't connected.
+     */
+    public var reachable: Bool
+    /**
+     * The changes that took a snapshot, newest first, from history, so they're listed without
+     * the drive.
+     */
+    public var snapshots: [Change]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Whether the `kopia` program can be found.
+         */installed: Bool, 
+        /**
+         * The repository's description from the archive's settings, once any device has set up
+         * backups, such as "Backup drive".
+         */description: String?, 
+        /**
+         * Whether this device is connected to the repository.
+         */setUpHere: Bool, 
+        /**
+         * The repository's folder on this device.
+         */repository: String?, 
+        /**
+         * Whether that folder can be reached now: `false` when its drive isn't connected.
+         */reachable: Bool, 
+        /**
+         * The changes that took a snapshot, newest first, from history, so they're listed without
+         * the drive.
+         */snapshots: [Change]) {
+        self.installed = installed
+        self.description = description
+        self.setUpHere = setUpHere
+        self.repository = repository
+        self.reachable = reachable
+        self.snapshots = snapshots
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension BackupsState: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBackupsState: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BackupsState {
+        return
+            try BackupsState(
+                installed: FfiConverterBool.read(from: &buf), 
+                description: FfiConverterOptionString.read(from: &buf), 
+                setUpHere: FfiConverterBool.read(from: &buf), 
+                repository: FfiConverterOptionString.read(from: &buf), 
+                reachable: FfiConverterBool.read(from: &buf), 
+                snapshots: FfiConverterSequenceTypeChange.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BackupsState, into buf: inout [UInt8]) {
+        FfiConverterBool.write(value.installed, into: &buf)
+        FfiConverterOptionString.write(value.description, into: &buf)
+        FfiConverterBool.write(value.setUpHere, into: &buf)
+        FfiConverterOptionString.write(value.repository, into: &buf)
+        FfiConverterBool.write(value.reachable, into: &buf)
+        FfiConverterSequenceTypeChange.write(value.snapshots, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBackupsState_lift(_ buf: RustBuffer) throws -> BackupsState {
+    return try FfiConverterTypeBackupsState.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBackupsState_lower(_ value: BackupsState) -> RustBuffer {
+    return FfiConverterTypeBackupsState.lower(value)
 }
 
 
@@ -9887,6 +10267,95 @@ public func FfiConverterTypeRenamedItem_lower(_ value: RenamedItem) -> RustBuffe
 
 
 /**
+ * An item's contents restored beside the archive.
+ */
+public struct Restored: Equatable, Hashable {
+    /**
+     * The item's identifier.
+     */
+    public var item: String
+    /**
+     * Its path in the archive.
+     */
+    public var path: String
+    /**
+     * The folder or file it was restored to.
+     */
+    public var to: String
+    /**
+     * The change whose snapshot it came from.
+     */
+    public var change: Change
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The item's identifier.
+         */item: String, 
+        /**
+         * Its path in the archive.
+         */path: String, 
+        /**
+         * The folder or file it was restored to.
+         */to: String, 
+        /**
+         * The change whose snapshot it came from.
+         */change: Change) {
+        self.item = item
+        self.path = path
+        self.to = to
+        self.change = change
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension Restored: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRestored: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Restored {
+        return
+            try Restored(
+                item: FfiConverterString.read(from: &buf), 
+                path: FfiConverterString.read(from: &buf), 
+                to: FfiConverterString.read(from: &buf), 
+                change: FfiConverterTypeChange.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: Restored, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.item, into: &buf)
+        FfiConverterString.write(value.path, into: &buf)
+        FfiConverterString.write(value.to, into: &buf)
+        FfiConverterTypeChange.write(value.change, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRestored_lift(_ buf: RustBuffer) throws -> Restored {
+    return try FfiConverterTypeRestored.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRestored_lower(_ value: Restored) -> RustBuffer {
+    return FfiConverterTypeRestored.lower(value)
+}
+
+
+/**
  * What returning an item would do, to show before the owner says yes.
  */
 public struct ReturnPreview: Equatable, Hashable {
@@ -10865,6 +11334,95 @@ public func FfiConverterTypeSettingChanged_lift(_ buf: RustBuffer) throws -> Set
 #endif
 public func FfiConverterTypeSettingChanged_lower(_ value: SettingChanged) -> RustBuffer {
     return FfiConverterTypeSettingChanged.lower(value)
+}
+
+
+/**
+ * A snapshot taken on request.
+ */
+public struct SnapshotTaken: Equatable, Hashable {
+    /**
+     * The snapshot's identifier in the backup system.
+     */
+    public var snapshot: String
+    /**
+     * The history commit it's recorded with.
+     */
+    public var commit: String?
+    /**
+     * How many files it holds, when known.
+     */
+    public var files: UInt64?
+    /**
+     * How many bytes it holds, when known.
+     */
+    public var size: UInt64?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The snapshot's identifier in the backup system.
+         */snapshot: String, 
+        /**
+         * The history commit it's recorded with.
+         */commit: String?, 
+        /**
+         * How many files it holds, when known.
+         */files: UInt64?, 
+        /**
+         * How many bytes it holds, when known.
+         */size: UInt64?) {
+        self.snapshot = snapshot
+        self.commit = commit
+        self.files = files
+        self.size = size
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension SnapshotTaken: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSnapshotTaken: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SnapshotTaken {
+        return
+            try SnapshotTaken(
+                snapshot: FfiConverterString.read(from: &buf), 
+                commit: FfiConverterOptionString.read(from: &buf), 
+                files: FfiConverterOptionUInt64.read(from: &buf), 
+                size: FfiConverterOptionUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SnapshotTaken, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.snapshot, into: &buf)
+        FfiConverterOptionString.write(value.commit, into: &buf)
+        FfiConverterOptionUInt64.write(value.files, into: &buf)
+        FfiConverterOptionUInt64.write(value.size, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSnapshotTaken_lift(_ buf: RustBuffer) throws -> SnapshotTaken {
+    return try FfiConverterTypeSnapshotTaken.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSnapshotTaken_lower(_ value: SnapshotTaken) -> RustBuffer {
+    return FfiConverterTypeSnapshotTaken.lower(value)
 }
 
 
@@ -14179,6 +14737,18 @@ public func versionSummary() -> String  {
 })
 }
 /**
+ * Whether `folder` holds a backup repository already, so setting up connects to it, asking
+ * for its password once, rather than creating one and asking twice.
+ */
+public func isBackupRepository(folder: String) -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_func_is_backup_repository(
+        FfiConverterString.lower(folder),uniffiCallStatus
+    )
+})
+}
+/**
  * Whether the item at `path` (or its card's) is named as a compressed file, so Browse
  * offers to expand it. [`ArchiveHandle::expandable`] says whether it would.
  */
@@ -14217,6 +14787,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.contractVersionMismatch
     }
     if (uniffi_carrel_ffi_checksum_func_version_summary() != 21134) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_func_is_backup_repository() != 17165) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_func_looks_compressed() != 40569) {
@@ -14292,6 +14865,21 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_record_sessions() != 29355) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_backups() != 57869) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_restore_item() != 9636) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_set_up_backups() != 9102) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_snapshot_now() != 53198) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_verify_backups() != 19455) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_create_collection() != 22333) {

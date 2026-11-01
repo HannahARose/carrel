@@ -41,7 +41,7 @@ The command line and the interactive mode run on macOS, Linux and Windows. The M
 | Desk items: add, remove, archive | `desk` | ✓ Active | ✓ (#235) |
 | Work-session entries: approve, edit, combine, drop | `sessions` | ✓ Active | ✓ (#235) |
 | History and undo | `log`, `undo` | ✓ History | ✓ (#235) |
-| Backups: set up, snapshot, list, verify, restore | `backup` | ✓ Backups | #266 |
+| Backups: set up, snapshot, list, verify, restore | `backup` | ✓ Backups | ✓ Backups (#266) |
 | Settings, this device's and the archive's | `settings` | ✓ Settings | ✓ Settings → General (#267) |
 | Models: list, download, remove | `models` | ✓ Settings | ✓ Settings → Models (#267) |
 | Providers in use, and file types not read | `providers`, `formats` | ✓ Settings | ✓ Settings → Providers (#267) |

@@ -1,14 +1,15 @@
 //! `carrel backup`: snapshots of the archive's contents with Kopia (`docs/design/backups.md`).
 
 use std::fmt::Write as _;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use carrel_core::archive::Archive;
 use carrel_core::backup::{
-    BackupError, Backups, KOPIA_PREFIX, Kopia, SnapshotNowError, record, snapshot_now,
+    BackupError, Backups, KOPIA_PREFIX, Kopia, SnapshotNowError, default_description, record_setup,
+    restore_beside, restore_point, snapshot_entries, snapshot_now,
 };
 use carrel_core::coordinator::{Coordinator, DEFAULT_LEASE, DiskLock};
-use carrel_core::history::{Change, Entry, History, Operation};
+use carrel_core::history::{Entry, History};
 use carrel_core::ingest::filing::Outcome;
 use serde_json::{Value, json};
 
@@ -82,7 +83,7 @@ fn password(new: bool) -> Result<String, Failure> {
 /// rather than creating one.
 #[must_use]
 pub fn exists(repository: &Path) -> bool {
-    repository.join("kopia.repository.f").exists()
+    carrel_core::backup::is_repository(repository)
 }
 
 /// What to tell the owner before they choose a password for a new repository.
@@ -127,27 +128,10 @@ pub fn setup(
         keep,
         identity.device,
     )?;
-    let description = description.map_or_else(
-        || {
-            repository
-                .file_name()
-                .map_or_else(|| "Backups".into(), |n| n.to_string_lossy().into_owned())
-        },
-        str::to_owned,
-    );
+    let description = description.map_or_else(|| default_description(repository), str::to_owned);
     let lease =
         DiskLock::for_archive(&archive).acquire(holder(&identity), "backup", DEFAULT_LEASE)?;
-    let recorded = (|| -> Result<Option<String>, Failure> {
-        record(&archive, &setup.repository, &description)
-            .map_err(|e| Failure::io(&archive.root().join("_System/settings.json"), &e))?;
-        let change = Change::new(
-            Operation::Edit,
-            format!("Back up to “{description}”"),
-            identity.person,
-            identity.device,
-        );
-        Ok(History::open(&archive)?.commit(&archive, &change, &lease)?)
-    })();
+    let recorded = record_setup(&archive, &setup, &description, &lease);
     lease.release()?;
     recorded?;
 
@@ -214,14 +198,8 @@ pub fn now(archive: Option<&Path>) -> Result<Report, Failure> {
 
 /// The history entries that name a snapshot, newest first.
 fn snapshot_commits(archive: &Archive) -> Result<Vec<Entry>, Failure> {
-    Ok(History::open(archive)?
-        .log()?
-        .into_iter()
-        .filter(|e| {
-            e.snapshot
-                .as_deref()
-                .is_some_and(|s| s.starts_with(KOPIA_PREFIX))
-        })
+    Ok(snapshot_entries(&History::open(archive)?.log()?)
+        .cloned()
         .collect())
 }
 
@@ -298,34 +276,11 @@ pub fn restore(
         .item
         .clone()
         .ok_or_else(|| Failure::new(format!("{} has no contents to restore", item.card)))?;
-    let commits = snapshot_commits(&archive)?;
-    let entry = match at {
-        Some(at) => {
-            let log = History::open(&archive)?.log()?;
-            let position = log
-                .iter()
-                .position(|e| e.id.starts_with(at))
-                .ok_or_else(|| Failure::new(format!("no change {at} in the history")))?;
-            // The snapshot taken with that change, or the latest one before it.
-            log[position..]
-                .iter()
-                .find(|e| e.snapshot.is_some())
-                .cloned()
-                .ok_or_else(|| Failure::new(format!("no snapshot was taken by change {at}")))?
-        }
-        None => commits
-            .first()
-            .cloned()
-            .ok_or_else(|| Failure::new("no snapshot has been taken yet"))?,
-    };
-    let snapshot = entry
-        .snapshot
-        .as_deref()
-        .and_then(|s| s.strip_prefix(KOPIA_PREFIX))
-        .ok_or_else(|| Failure::new("that change's snapshot isn't a Kopia snapshot"))?;
+    let log = History::open(&archive)?.log()?;
+    let (entry, snapshot) = restore_point(&log, at)?;
     let target = match to {
         Some(to) => to.to_owned(),
-        None => beside(&archive, &path, &entry),
+        None => restore_beside(&archive, &path, entry),
     };
     kopia.restore(snapshot, &path, &target)?;
     Ok(Report::new(
@@ -340,38 +295,9 @@ pub fn restore(
     ))
 }
 
-/// A free folder beside the archive for a restored item: `NAME (restored 2026-10-29)`.
-fn beside(archive: &Archive, path: &str, entry: &Entry) -> PathBuf {
-    let parent = archive
-        .root()
-        .parent()
-        .map_or_else(|| archive.root().to_owned(), Path::to_owned);
-    let name = path.rsplit('/').next().unwrap_or(path);
-    let date = jiff::Timestamp::from_second(entry.time)
-        .map(|t| {
-            t.to_zoned(jiff::tz::TimeZone::system())
-                .strftime("%Y-%m-%d")
-                .to_string()
-        })
-        .unwrap_or_default();
-    let mut target = parent.join(format!("{name} (restored {date})"));
-    let mut n = 2;
-    while target.exists() {
-        target = parent.join(format!("{name} (restored {date}, {n})"));
-        n += 1;
-    }
-    target
-}
-
 /// The line `carrel status` shows about backups, from history alone so it needs no drive.
 pub fn status_line(archive: &Archive, history: Option<&[Entry]>) -> String {
-    let last = history.and_then(|log| {
-        log.iter().find(|e| {
-            e.snapshot
-                .as_deref()
-                .is_some_and(|s| s.starts_with(KOPIA_PREFIX))
-        })
-    });
+    let last = history.and_then(|log| snapshot_entries(log).next());
     match (archive.settings().backups.as_ref(), last) {
         (None, _) => "No backups set up (see `carrel backup setup`)\n".into(),
         (Some(_), None) => "Backups set up; no snapshot yet\n".into(),
