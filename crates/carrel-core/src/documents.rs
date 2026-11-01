@@ -153,6 +153,9 @@ pub struct Settings {
     /// When the structure shows signs of needing a restructure.
     #[serde(default, skip_serializing_if = "SignalSettings::is_default")]
     pub signals: SignalSettings,
+    /// How the question queue behaves (`docs/design/librarian.md`, "Questions").
+    #[serde(default, skip_serializing_if = "QuestionSettings::is_default")]
+    pub questions: QuestionSettings,
     /// What happens to compressed files at ingest: `expand`, `keep` or `ask`
     /// (`docs/design/compressed.md`).
     #[serde(default, skip_serializing_if = "is_default_choice")]
@@ -264,6 +267,36 @@ pub struct SignalSettings {
     /// Keys this version doesn't know.
     #[serde(flatten)]
     pub extra: Extra,
+}
+
+/// How the question queue behaves (FORMAT.md §7.2).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct QuestionSettings {
+    /// How many days a skipped question rests before it's asked again.
+    #[serde(default = "default_skip_days")]
+    pub skip_days: u32,
+    /// Keys this version doesn't know.
+    #[serde(flatten)]
+    pub extra: Extra,
+}
+
+fn default_skip_days() -> u32 {
+    14
+}
+
+impl Default for QuestionSettings {
+    fn default() -> Self {
+        Self {
+            skip_days: default_skip_days(),
+            extra: Extra::new(),
+        }
+    }
+}
+
+impl QuestionSettings {
+    fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
 }
 
 fn default_crowded_items() -> u32 {
@@ -406,6 +439,7 @@ impl Default for Settings {
             backups: None,
             ingest: IngestSettings::default(),
             signals: SignalSettings::default(),
+            questions: QuestionSettings::default(),
             compressed_files: crate::compressed::plan::Choice::default(),
             librarian: LibrarianSettings::default(),
             extra: Extra::new(),

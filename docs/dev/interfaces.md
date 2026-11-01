@@ -19,6 +19,8 @@ The command line and the interactive mode run on macOS, Linux and Windows. The M
 | Review: expand or keep compressed files | `review expand`, `keep-compressed` | ✓ | ✓ (#234) |
 | Review: duplicates (keep both, file as a version) | `review` | ✓ | ✓ (#234) |
 | Questions: answer and dismiss | `questions` | ✓ Questions | ✓ (#234) |
+| Questions: ranked, with suggested answers, skip | `questions`, `questions skip` | ✓ Questions (`1`–`9`, `s`) | ranked; suggestions and skip #291 |
+| Questions about an item, a group, a sender | `questions answer`, `questions about` | ✓ Questions | groups ✓; items and senders #291 |
 | Browse collections and items | `show`, `status` | ✓ Browse | ✓ Browse |
 | Previews of items | the item's path in `show` | #258 | ✓ inspector and grid (#256) |
 | An item's history and related items | `show` | ✓ | ✓ |
@@ -41,7 +43,7 @@ The command line and the interactive mode run on macOS, Linux and Windows. The M
 | Settings, this device's and the archive's | `settings` | ✓ Settings | ✓ Settings → General (#267) |
 | Models: list, download, remove | `models` | ✓ Settings | ✓ Settings → Models (#267) |
 | Providers in use, and file types not read | `providers`, `formats` | ✓ Settings | ✓ Settings → Providers (#267) |
-| Background work: sessions as they happen, the queue, the index | #269 | #269 | ✓ agent (#237) |
+| Background work: sessions as they happen, the queue, the index, scheduled snapshots | `agent`, `agent install` (#269) | #279 | ✓ agent (#237) |
 | What's checked out, at a glance | `checkouts` | ✓ Active | ✓ menu bar (#237) |
 
 ## Allowed deviations
@@ -50,6 +52,7 @@ These stay in one interface, for the reason given:
 
 - **`carrel bench`** (the model benchmark) and **`carrel models embed`** (printing vectors) are tools for developing Carrel, not for using it, so they stay on the command line.
 - **`carrel worker`** is what the other interfaces start in the background; nobody needs a screen for it.
+- **`carrel agent` runs in the foreground** until stopped, because it's what the operating system's service manager starts at log-in (`carrel agent install`). The interactive mode shows and installs it (#279) rather than running it while open. The Mac app has its own agent, a login item, with the same schedule; one agent looks after an archive on each device, and the other steps aside.
 - **Previews in a terminal** need a terminal that can draw images (#258). Elsewhere the interactive mode shows the card. The command line's output is text, so `carrel show` gives the card and the item's path instead.
 - **Grid views, dragging and the menu bar** are ways of working in a graphical app. The command line and the interactive mode reach the same capabilities through their own commands and screens, as the table shows.
 - **Platform-only models and readers,** such as Apple's model or Vision's OCR, are available in every interface on the platforms that have them. Elsewhere, the open models and the extraction provider stand in.

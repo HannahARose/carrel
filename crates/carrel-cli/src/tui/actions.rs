@@ -304,6 +304,16 @@ pub fn confirm_text(confirm: &Confirm) -> (&'static str, String, String, &'stati
             ),
             " check it out   ",
         ),
+        Confirm::Rule { subject, path, .. } => (
+            " Routing rule ",
+            format!("Gather “{subject}” in {path}, and file future items there too?"),
+            format!(
+                "Its items go to {path} now, each an undoable move, creating the collection if \
+                 it's new. Saying yes also adds a routing rule, so items named for “{subject}” \
+                 go there from now on."
+            ),
+            " with a rule   ",
+        ),
         Confirm::DeskAdd(path) => (
             " Desk ",
             format!("Put {} on the desk?", path.display()),

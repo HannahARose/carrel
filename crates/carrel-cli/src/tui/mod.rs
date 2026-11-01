@@ -241,6 +241,30 @@ fn event_loop(
     Ok(())
 }
 
+/// Skips or dismisses a question, as `effect` says.
+fn settle_question(root: &Path, effect: &Effect) -> Result<String, String> {
+    let result = match effect {
+        Effect::Skip(id) => crate::questions::skip(Some(root), &id.to_string()),
+        Effect::Dismiss(id) => crate::questions::dismiss(Some(root), &id.to_string()),
+        _ => return Ok(String::new()),
+    };
+    result.map(|r| r.text).map_err(|Failure(e)| e)
+}
+
+/// Answering a question, in the background: a term's answer queues its items to be drafted
+/// again by the worker, and a sender's adds a routing rule if the owner said yes (`learn`).
+fn answer_work(root: PathBuf, id: Id, answer: String, learn: bool) -> (String, Work) {
+    let id = id.to_string();
+    let options = crate::questions::Options {
+        learn,
+        ..crate::questions::Options::default()
+    };
+    (
+        "Answering…".into(),
+        Box::new(move || crate::questions::answer(Some(&root), &id, &[answer], options)),
+    )
+}
+
 /// Shows how work went and reads everything again.
 fn finished(app: &mut App, result: Result<String, String>) {
     let text = match result {
@@ -266,7 +290,11 @@ type Preparing = Receiver<Result<crate::correct::Prepared, String>>;
 /// pop-up, and adding the fact it stated to the glossary.
 fn correction(app: &mut App, step: Step, preparing: &mut Option<Preparing>) {
     match step {
-        Step::Work { target, words } => {
+        Step::Work {
+            target,
+            words,
+            answering,
+        } => {
             // A model takes seconds, so it works in the background; the pop-up follows.
             let root = app.archive.root().to_owned();
             let (send, receive) = std::sync::mpsc::channel();
@@ -280,6 +308,10 @@ fn correction(app: &mut App, step: Step, preparing: &mut Option<Preparing>) {
                         screens::Correcting::Item(card) => {
                             crate::correct::prepare_filed(&archive, card, &words)
                         }
+                    })
+                    .map(|mut prepared| {
+                        prepared.answering = answering;
+                        prepared
                     });
                 let _ = send.send(result.map_err(|Failure(e)| e));
             });
@@ -382,9 +414,8 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
         | Effect::Pick(_)
         | Effect::Correction(_)
         | Effect::Open(_) => return None,
-        Effect::Dismiss(id) => {
-            let result = crate::questions::dismiss(Some(&root), &id.to_string());
-            finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
+        effect @ (Effect::Dismiss(_) | Effect::Skip(_)) => {
+            finished(app, settle_question(&root, &effect));
             return None;
         }
         Effect::SetSetting { key, value } => {
@@ -414,14 +445,7 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
             finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
             return None;
         }
-        Effect::Answer { id, answer } => {
-            // A term's answer queues its items to be drafted again by the worker.
-            let id = id.to_string();
-            (
-                "Answering…".into(),
-                Box::new(move || crate::questions::answer(Some(&root), &id, &[answer])),
-            )
-        }
+        Effect::Answer { id, answer, learn } => answer_work(root, id, answer, learn),
         Effect::Decide {
             ids: chosen,
             holding,
@@ -1283,6 +1307,7 @@ mod tests {
             Some(Effect::Correction(super::app::Step::Work {
                 target: super::screens::Correcting::Proposal(first),
                 words: "created: 2019-03-31".into(),
+                answering: None,
             }))
         );
         assert!(app.keys().iter().any(|(k, v)| *k == "c" && *v == "correct"));
@@ -1300,6 +1325,7 @@ mod tests {
             Some(Effect::Correction(super::app::Step::Work {
                 target: super::screens::Correcting::Item(card),
                 words: "x".into(),
+                answering: None,
             }))
         );
     }
@@ -1631,22 +1657,15 @@ mod tests {
 
     #[test]
     fn questions_are_answered_in_place_or_dismissed() {
-        use carrel_core::questions::{QuestionEntry, QuestionKind, QuestionMarker, QuestionQueue};
+        use carrel_core::questions::{QuestionEntry, QuestionKind, QuestionQueue, Suggestion};
         let (_dir, app) = sample(false);
         let proposal = app.queue[0].id;
         let queue = QuestionQueue::of(&app.archive);
-        let question = |kind, subject: &str, question: &str, choices: Vec<String>| QuestionEntry {
-            carrel: QuestionMarker::Question,
-            format: carrel_core::FORMAT_VERSION,
-            id: Id::new_v7(),
-            batch: Id::new_v7(),
-            created: carrel_core::card::DateOrTime("2026-10-30".into()),
-            kind,
-            subject: subject.into(),
-            question: question.into(),
-            items: vec![proposal],
-            choices,
-            extra: carrel_core::card::Extra::new(),
+        let question = |kind, subject: &str, question: &str, choices: Vec<String>| {
+            let mut entry = QuestionEntry::new(kind, subject, question);
+            entry.items = vec![proposal];
+            entry.choices = choices;
+            entry
         };
         let term = question(QuestionKind::Term, "ABX", "What is “ABX”?", Vec::new());
         let mut place = question(
@@ -1655,17 +1674,38 @@ mod tests {
             "Which collection do items about “lamp” belong in?",
             vec!["Projects".into(), "Projects/Hardware".into()],
         );
-        place.items.push(Id::new_v7());
+        place.suggestions = vec![Suggestion::new(
+            "Projects/Hardware",
+            Some("where one was going".into()),
+        )];
         queue.save(&term).unwrap();
         queue.save(&place).unwrap();
         let mut app = App::new(app.archive.clone()).unwrap();
         app.key(key(KeyCode::Char('4')));
         let text = screen(&app, 160, 30);
         assert!(
-            text.contains("Which collection do items about “lamp” belong in?  (2 items)"),
+            text.contains("Which collection do items about “lamp” belong in?  (1 item)"),
             "{text}"
         );
-        assert_eq!(app.asked[0].id, place.id, "most items first");
+        assert_eq!(
+            app.asked[0].id, term.id,
+            "as worth answering, so the older first"
+        );
+        app.key(key(KeyCode::Down));
+        let text = screen(&app, 160, 30);
+        assert!(
+            text.contains("1  Projects/Hardware  (where one was going)"),
+            "{text}"
+        );
+        assert_eq!(
+            app.key(key(KeyCode::Char('1'))),
+            Some(Effect::Answer {
+                id: place.id,
+                answer: "1".into(),
+                learn: false,
+            }),
+            "a number picks a suggestion"
+        );
 
         app.key(key(KeyCode::Enter));
         assert!(screen(&app, 120, 30).contains("They belong in (type to narrow)"));
@@ -1674,11 +1714,12 @@ mod tests {
             app.key(key(KeyCode::Enter)),
             Some(Effect::Answer {
                 id: place.id,
-                answer: "Projects/Hardware".into()
+                answer: "Projects/Hardware".into(),
+                learn: false,
             })
         );
 
-        app.key(key(KeyCode::Down));
+        app.key(key(KeyCode::Up));
         assert!(
             screen(&app, 120, 30).contains("Desk lamp diffuser (print file)"),
             "what waits on it"
@@ -1692,7 +1733,8 @@ mod tests {
             app.key(key(KeyCode::Enter)),
             Some(Effect::Answer {
                 id: term.id,
-                answer: "An assay kit.".into()
+                answer: "An assay kit.".into(),
+                learn: false,
             })
         );
         app.key(key(KeyCode::Enter));
@@ -1702,8 +1744,87 @@ mod tests {
             "an empty answer isn't sent"
         );
         assert_eq!(
+            app.key(key(KeyCode::Char('s'))),
+            Some(Effect::Skip(term.id))
+        );
+        assert_eq!(
             app.key(key(KeyCode::Char('d'))),
             Some(Effect::Dismiss(term.id))
+        );
+    }
+
+    #[test]
+    fn item_and_sender_questions_ask_before_changing_anything() {
+        use carrel_core::questions::{QuestionEntry, QuestionKind, QuestionQueue, suggest};
+        let (_dir, app) = sample(false);
+        let proposal = app.queue[0].id;
+        let queue = QuestionQueue::of(&app.archive);
+        let mut item = QuestionEntry::new(
+            QuestionKind::Item,
+            "Desk lamp diffuser",
+            "What was this project for?",
+        );
+        item.items = vec![proposal];
+        let mut sender = QuestionEntry::new(
+            QuestionKind::Sender,
+            "Okafor",
+            "Should “Okafor” have its own collection?",
+        );
+        sender.items = vec![proposal];
+        sender.suggestions = vec![
+            suggest::new_collection("Projects/Okafor", "most are in Projects"),
+            suggest::no_change("No, keep them in Projects", None),
+        ];
+        queue.save(&item).unwrap();
+        queue.save(&sender).unwrap();
+        let mut app = App::new(app.archive.clone()).unwrap();
+        app.key(key(KeyCode::Char('4')));
+        assert_eq!(app.asked[0].id, item.id);
+
+        app.key(key(KeyCode::Enter));
+        for c in "A reading light".chars() {
+            app.key(key(KeyCode::Char(c)));
+        }
+        assert_eq!(
+            app.key(key(KeyCode::Enter)),
+            Some(Effect::Correction(super::app::Step::Work {
+                target: super::screens::Correcting::Proposal(proposal),
+                words: "Asked “What was this project for?”, the owner said: A reading light".into(),
+                answering: Some(item.id),
+            })),
+            "an item answer is a correction, shown before it's saved"
+        );
+
+        app.key(key(KeyCode::Down));
+        assert_eq!(app.key(key(KeyCode::Char('1'))), None, "it asks first");
+        let text = screen(&app, 160, 30);
+        assert!(text.contains("y with a rule   n without a rule"), "{text}");
+        assert_eq!(
+            app.key(key(KeyCode::Char('n'))),
+            Some(Effect::Answer {
+                id: sender.id,
+                answer: "1".into(),
+                learn: false,
+            }),
+            "no to the rule still gathers them"
+        );
+        app.key(key(KeyCode::Char('1')));
+        assert_eq!(
+            app.key(key(KeyCode::Char('y'))),
+            Some(Effect::Answer {
+                id: sender.id,
+                answer: "1".into(),
+                learn: true,
+            })
+        );
+        assert_eq!(
+            app.key(key(KeyCode::Char('2'))),
+            Some(Effect::Answer {
+                id: sender.id,
+                answer: "2".into(),
+                learn: false,
+            }),
+            "no change needs no rule"
         );
     }
 

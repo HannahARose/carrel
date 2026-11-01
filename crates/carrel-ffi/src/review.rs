@@ -330,8 +330,10 @@ impl From<&QuestionEntry> for Question {
         Self {
             id: entry.id.to_string(),
             topic: match entry.kind {
-                QuestionKind::Term => QuestionTopic::Term,
-                QuestionKind::Collection => QuestionTopic::Collection,
+                QuestionKind::Term | QuestionKind::Item | QuestionKind::Sender => {
+                    QuestionTopic::Term
+                }
+                QuestionKind::Collection | QuestionKind::Group => QuestionTopic::Collection,
             },
             subject: entry.subject.clone(),
             question: entry.question.clone(),
@@ -557,16 +559,29 @@ impl ArchiveHandle {
             .collect())
     }
 
-    /// The questions waiting for the owner, those holding up the most proposals first.
+    /// The questions waiting for the owner, the most worth answering first (the core's
+    /// ranking), without those resting after a skip. Only the kinds the app answers today are
+    /// listed: terms, and collection and group questions, answered with a collection's path.
+    /// Item and sender questions wait for the app's Questions screen to offer them (#291).
     ///
     /// # Errors
     ///
     /// [`CarrelError::Failed`] if the queue can't be read.
     pub fn questions(&self) -> Result<Vec<Question>, CarrelError> {
         let archive = self.fresh()?;
-        let (mut questions, _) = QuestionQueue::of(&archive).list()?;
-        questions.sort_by_key(|q| std::cmp::Reverse(q.items.len()));
-        Ok(questions.iter().map(Into::into).collect())
+        let ranked = carrel_core::questions::answer::tidy(&archive)?;
+        Ok(ranked
+            .open
+            .iter()
+            .map(|w| &w.question)
+            .filter(|q| {
+                matches!(
+                    q.kind,
+                    QuestionKind::Term | QuestionKind::Collection | QuestionKind::Group
+                )
+            })
+            .map(Into::into)
+            .collect())
     }
 
     /// Answers the question `id`: a term's answer is added to the glossary and the
@@ -596,12 +611,22 @@ impl ArchiveHandle {
                     moved: Vec::new(),
                 })
             }
-            QuestionKind::Collection => {
-                let moved = actions::place(&archive, &question, answer)?;
+            QuestionKind::Item | QuestionKind::Sender => Err(CarrelError::invalid(
+                "answer this question from the command line or the interactive mode",
+            )),
+            QuestionKind::Collection | QuestionKind::Group => {
+                let placed = carrel_core::questions::answer::place(
+                    &archive,
+                    &question,
+                    answer,
+                    false,
+                    self.identity()?.holder(),
+                )?;
                 Ok(Answered {
                     commit: None,
                     requeued: Vec::new(),
-                    moved: moved
+                    moved: placed
+                        .moved
                         .into_iter()
                         .map(|m| MovedProposal {
                             proposal: m.entry.id.to_string(),

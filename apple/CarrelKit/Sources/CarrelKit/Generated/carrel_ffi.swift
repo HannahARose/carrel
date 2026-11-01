@@ -1447,7 +1447,10 @@ public protocol ArchiveHandleProtocol: AnyObject, Sendable {
     func proposal(id: String) throws  -> Proposal
     
     /**
-     * The questions waiting for the owner, those holding up the most proposals first.
+     * The questions waiting for the owner, the most worth answering first (the core's
+     * ranking), without those resting after a skip. Only the kinds the app answers today are
+     * listed: terms, and collection and group questions, answered with a collection's path.
+     * Item and sender questions wait for the app's Questions screen to offer them (#291).
      *
      * # Errors
      *
@@ -2929,7 +2932,10 @@ open func proposal(id: String)throws  -> Proposal  {
 }
     
     /**
-     * The questions waiting for the owner, those holding up the most proposals first.
+     * The questions waiting for the owner, the most worth answering first (the core's
+     * ranking), without those resting after a skip. Only the kinds the app answers today are
+     * listed: terms, and collection and group questions, answered with a collection's path.
+     * Item and sender questions wait for the app's Questions screen to offer them (#291).
      *
      * # Errors
      *
@@ -14408,7 +14414,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_carrel_ffi_checksum_method_archivehandle_proposal() != 58719) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_carrel_ffi_checksum_method_archivehandle_questions() != 39812) {
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_questions() != 64099) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_reject() != 61359) {
