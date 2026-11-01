@@ -192,7 +192,7 @@ enum Link {
     Waiting,
     Running(Connection),
     /// It couldn't be started, and why.
-    Failed(String),
+    Failed(ProviderError),
 }
 
 impl std::fmt::Debug for ProcessProvider {
@@ -292,12 +292,12 @@ impl ProcessProvider {
         if matches!(*link, Link::Waiting) {
             *link = match open(&self.found) {
                 Ok((connection, _)) => Link::Running(connection),
-                Err(e) => Link::Failed(e.to_string()),
+                Err(e) => Link::Failed(e),
             };
         }
         let connection = match &mut *link {
             Link::Running(connection) => connection,
-            Link::Failed(why) => return Err(ProviderError::Protocol(why.clone())),
+            Link::Failed(error) => return Err(error.clone()),
             Link::Waiting => unreachable!("started above"),
         };
         let result = connection.call(method, Some(params), self.request_timeout)?;

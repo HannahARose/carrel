@@ -626,7 +626,9 @@ impl History {
                     m.item, m.to
                 )));
             }
-            if then.exists() {
+            // A move that only changed case finds its own path taken on a disk that
+            // ignores case.
+            if then.exists() && !case_only(m) {
                 return Err(HistoryError::UndoBlocked(format!("{} is taken", m.from)));
             }
         }
@@ -635,7 +637,17 @@ impl History {
             if let Some(parent) = then.parent() {
                 std::fs::create_dir_all(parent).map_err(io(parent))?;
             }
-            std::fs::rename(&now, &then).map_err(io(&now))?;
+            if case_only(m) {
+                // Through a name of its own, as the move itself went, so a disk that
+                // ignores case still renames it.
+                let mut aside = now.clone().into_os_string();
+                aside.push(".carrel-undo");
+                let aside = PathBuf::from(aside);
+                std::fs::rename(&now, &aside).map_err(io(&now))?;
+                std::fs::rename(&aside, &then).map_err(io(&aside))?;
+            } else {
+                std::fs::rename(&now, &then).map_err(io(&now))?;
+            }
         }
 
         let mut checkout = git2::build::CheckoutBuilder::new();
@@ -665,6 +677,11 @@ impl History {
         self.commit_with(&archive, &change, Some(oid))?
             .ok_or_else(|| HistoryError::UndoBlocked("the change had nothing to undo".into()))
     }
+}
+
+/// Whether `m` only changed the case of its path.
+fn case_only(m: &Move) -> bool {
+    m.from != m.to && m.from.eq_ignore_ascii_case(&m.to)
 }
 
 /// Every file under `dir`, relative to `root`, except the folders history never tracks.
