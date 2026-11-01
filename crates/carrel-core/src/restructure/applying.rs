@@ -29,16 +29,10 @@ pub(super) fn moves_files(edit: &Edit) -> bool {
     )
 }
 
-/// Applies one section change to the archive as it is now.
-///
-/// # Errors
-///
-/// An error reading the archive; a change that can't be made safely is reported in the
-/// outcome instead, with nothing changed.
-pub(super) fn apply(
-    archive: &Archive,
-    change: &ProposedChange,
-) -> Result<Outcome, RestructureError> {
+/// Applies one section change to the archive as it is now. A change that can't be made
+/// safely is reported in the outcome (`not_applied`, or `skipped` for single items) instead,
+/// so the history commit always records what was done.
+pub(super) fn apply(archive: &Archive, change: &ProposedChange) -> Outcome {
     let mut outcome = Outcome {
         change: change.id.clone(),
         ..Outcome::default()
@@ -68,7 +62,7 @@ pub(super) fn apply(
     if let Err(why) = result {
         outcome.not_applied = Some(why);
     }
-    Ok(outcome)
+    outcome
 }
 
 /// After the moves: every card's links point where their items are now, and every listing

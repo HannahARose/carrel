@@ -17,6 +17,7 @@
 //! its new subcollections, depends on the collections it names.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::fmt::Write as _;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -744,7 +745,6 @@ fn wording_schema() -> Value {
 /// The prompt: the section's collections, and each group's items by title and tags. Restricted
 /// items are left out, so nothing restricted reaches a model.
 fn wording_prompt(survey: &Survey, section: &str, chosen: &[Plan]) -> String {
-    use std::fmt::Write as _;
     let mut text = String::from("Collections in the section:\n");
     for c in survey
         .graph
@@ -983,6 +983,80 @@ fn capitalize(text: &str) -> String {
 }
 
 /// The proposal's changes for the chosen plans and renames, numbered from 1.
+/// The items `ids` as a change lists them.
+fn touched(survey: &Survey, ids: &[Id]) -> Vec<Touched> {
+    let nodes = survey.graph.positions();
+    ids.iter()
+        .filter_map(|id| nodes.get(id).map(|&i| &survey.graph.items[i]))
+        .map(|i| Touched {
+            id: i.id,
+            card: i.card.clone(),
+            title: i.title.clone(),
+        })
+        .collect()
+}
+
+/// The two changes a new collection makes: creating it, then moving its items in, which
+/// needs it. Returns the creating change's number.
+fn new_collection_changes(
+    survey: &Survey,
+    plan: &Plan,
+    home: &str,
+    list: &mut Vec<ProposedChange>,
+) -> String {
+    let path = join(home, &plan.name);
+    let create = (list.len() + 1).to_string();
+    // A new subcollection subdivides; a new top-level collection reshapes the archive.
+    let creating = if home.is_empty() && plan.invasiveness == Invasiveness::TopLevel {
+        Invasiveness::TopLevel
+    } else {
+        Invasiveness::Subdividing
+    };
+    list.push(change(
+        &create,
+        Edit::CreateCollection {
+            path: path.clone(),
+            description: plan.description.clone(),
+        },
+        format!("A home for the group: {}", plan.description),
+        creating,
+    ));
+    let mut moves = change(
+        &(list.len() + 1).to_string(),
+        Edit::MoveItems { to: path },
+        plan.reason.clone(),
+        plan.invasiveness,
+    );
+    moves.items = touched(survey, &plan.group.members);
+    moves.depends_on = vec![create.clone()];
+    list.push(moves);
+    create
+}
+
+/// The change merging `from` into `into`, listing every item it moves.
+fn merge_change(survey: &Survey, plan: &Plan, from: &str, into: &str, n: usize) -> ProposedChange {
+    let mut merge = change(
+        &n.to_string(),
+        Edit::MergeCollection {
+            from: from.to_owned(),
+            into: into.to_owned(),
+        },
+        plan.reason.clone(),
+        plan.invasiveness,
+    );
+    let ids: Vec<Id> = survey
+        .graph
+        .items
+        .iter()
+        .filter(|i| i.collection == from)
+        .map(|i| i.id)
+        .collect();
+    merge.items = touched(survey, &ids);
+    merge.documents = vec![format!("{into}/_collection.md")];
+    merge
+}
+
+/// The proposal's changes for the chosen plans and renames, numbered from 1.
 fn changes(
     survey: &Survey,
     chosen: &[Plan],
@@ -990,48 +1064,11 @@ fn changes(
 ) -> Vec<ProposedChange> {
     let mut list: Vec<ProposedChange> = Vec::new();
     let next = |list: &Vec<ProposedChange>| (list.len() + 1).to_string();
-    let touched = |ids: &[Id]| -> Vec<Touched> {
-        let nodes = survey.graph.positions();
-        ids.iter()
-            .filter_map(|id| nodes.get(id).map(|&i| &survey.graph.items[i]))
-            .map(|i| Touched {
-                id: i.id,
-                card: i.card.clone(),
-                title: i.title.clone(),
-            })
-            .collect()
-    };
     let mut created: BTreeMap<String, Vec<(String, String, String)>> = BTreeMap::new();
     for plan in chosen {
         match &plan.shape {
             Shape::New { home } => {
-                let path = join(home, &plan.name);
-                let create = next(&list);
-                // A new subcollection subdivides; a new top-level collection reshapes the archive.
-                let creating = if home.is_empty() && plan.invasiveness == Invasiveness::TopLevel {
-                    Invasiveness::TopLevel
-                } else {
-                    Invasiveness::Subdividing
-                };
-                list.push(change(
-                    &create,
-                    Edit::CreateCollection {
-                        path: path.clone(),
-                        description: plan.description.clone(),
-                    },
-                    format!("A home for the group: {}", plan.description),
-                    creating,
-                ));
-                let moving: Vec<Id> = plan.group.members.clone();
-                let mut moves = change(
-                    &next(&list),
-                    Edit::MoveItems { to: path.clone() },
-                    plan.reason.clone(),
-                    plan.invasiveness,
-                );
-                moves.items = touched(&moving);
-                moves.depends_on = vec![create.clone()];
-                list.push(moves);
+                let create = new_collection_changes(survey, plan, home, &mut list);
                 if !home.is_empty() {
                     created.entry(home.clone()).or_default().push((
                         plan.name.clone(),
@@ -1041,24 +1078,7 @@ fn changes(
                 }
             }
             Shape::Merge { from, into } => {
-                let mut merge = change(
-                    &next(&list),
-                    Edit::MergeCollection {
-                        from: from.clone(),
-                        into: into.clone(),
-                    },
-                    plan.reason.clone(),
-                    plan.invasiveness,
-                );
-                let ids: Vec<Id> = survey
-                    .graph
-                    .items
-                    .iter()
-                    .filter(|i| i.collection == *from)
-                    .map(|i| i.id)
-                    .collect();
-                merge.items = touched(&ids);
-                merge.documents = vec![format!("{into}/_collection.md")];
+                let merge = merge_change(survey, plan, from, into, list.len() + 1);
                 list.push(merge);
             }
         }
@@ -1183,12 +1203,15 @@ fn rationale(section: &str, proposal: &Proposal, assessment: &Assessment) -> Str
         assessment.cost,
     );
     match (&assessment.findability, &assessment.untested) {
-        (Some(f), _) => text.push_str(&format!(
-            " The findability test found {} of {} held-out cards with it, against {} now.",
-            f.found_after, f.tried, f.found_now
-        )),
+        (Some(f), _) => {
+            let _ = write!(
+                text,
+                " The findability test found {} of {} held-out cards with it, against {} now.",
+                f.found_after, f.tried, f.found_now
+            );
+        }
         (None, Some(_)) => {
-            text.push_str(" Untested: a device with a text model can run the findability test.")
+            text.push_str(" Untested: a device with a text model can run the findability test.");
         }
         (None, None) => {}
     }

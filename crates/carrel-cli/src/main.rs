@@ -337,6 +337,15 @@ enum RestructureAction {
         /// The proposal, if more than one is waiting.
         id: Option<String>,
     },
+    /// How eager Carrel is to rearrange, archive-wide or at a collection, and the numbers that
+    /// stand for it. With a level, sets a collection's own in its design document; `default`
+    /// clears it so the archive's applies.
+    Eagerness {
+        /// The collection; the archive if left out.
+        collection: Option<String>,
+        /// settled, balanced, eager or default.
+        level: Option<String>,
+    },
     /// Tag proposals: merge tags that mean the same thing, split a tag spread over items that
     /// don't belong together, and retire tags hardly used. Tags you wrote yourself stay.
     /// Without a subcommand, makes a proposal.
@@ -1275,6 +1284,13 @@ fn restructure_command(
         RestructureAction::Reject { id } => {
             return restructure_sections::reject(archive, id.as_deref());
         }
+        RestructureAction::Eagerness { collection, level } => {
+            return restructure_sections::eagerness(
+                archive,
+                collection.as_deref(),
+                level.as_deref(),
+            );
+        }
         RestructureAction::Tags { action } => action,
     };
     match action.unwrap_or(RestructureTagsAction::Propose) {
@@ -1318,6 +1334,7 @@ fn changes_archive(command: &Command) -> bool {
         Command::Restructure { action } => matches!(
             action,
             RestructureAction::Approve { .. }
+                | RestructureAction::Eagerness { level: Some(_), .. }
                 | RestructureAction::Tags {
                     action: Some(RestructureTagsAction::Approve { .. })
                 }

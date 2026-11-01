@@ -10,10 +10,11 @@ use std::fmt::Write as _;
 use std::path::Path;
 
 use carrel_core::backup::Backups;
+use carrel_core::coordinator::{Coordinator as _, DEFAULT_LEASE, DiskLock};
 use carrel_core::discover::Catalog;
 use carrel_core::graph::Graph;
 use carrel_core::providers::{Capability, Registry};
-use carrel_core::restructure::eagerness::Source;
+use carrel_core::restructure::eagerness::{self, Eagerness, Source};
 use carrel_core::restructure::grouping::card_vectors;
 use carrel_core::restructure::section::{Assessment, SectionOptions, propose_section};
 use carrel_core::restructure::{self, Invasiveness, Proposal, ProposalKind};
@@ -205,6 +206,117 @@ pub fn reject(archive: Option<&Path>, id: Option<&str>) -> Result<Report, Failur
         ),
         json!({"rejected": proposal.id}),
     ))
+}
+
+/// `carrel restructure eagerness [COLLECTION] [LEVEL]`: how eager Carrel is to rearrange,
+/// archive-wide or at a collection, and the numbers that stand for it; with a level, sets the
+/// collection's own in its design document (`default` clears it, so the archive's applies).
+///
+/// # Errors
+///
+/// [`Failure`] if the collection or level isn't one, or the design document can't be written.
+pub fn eagerness(
+    archive: Option<&Path>,
+    collection: Option<&str>,
+    level: Option<&str>,
+) -> Result<Report, Failure> {
+    let archive = locate(archive)?;
+    if let (Some(collection), Some(level)) = (collection, level) {
+        let wanted = if level.trim().eq_ignore_ascii_case("default") {
+            None
+        } else {
+            Some(Eagerness::parse(level).ok_or_else(|| {
+                Failure::new(format!(
+                    "“{level}” isn't a level; use settled, balanced, eager or default"
+                ))
+            })?)
+        };
+        let identity = Identity::load_or_create()?;
+        let lease = DiskLock::for_archive(&archive).acquire(
+            holder(&identity),
+            "restructure",
+            DEFAULT_LEASE,
+        )?;
+        let result = eagerness::set_for_collection(&archive, collection, wanted, &lease);
+        lease.release()?;
+        let commit = result?;
+        let archive = carrel_core::archive::Archive::open(archive.root())?;
+        let mut report = eagerness_at(&archive, collection)?;
+        report["commit"] = json!(commit);
+        let text = if commit.is_some() {
+            format!(
+                "{collection} is now {}; undo it from History if you change your mind\n",
+                wanted.map_or("as eager as the archive", Eagerness::as_str)
+            )
+        } else {
+            format!("{collection} was already so\n")
+        };
+        return Ok(Report::new(text, report));
+    }
+    let report = eagerness_at(&archive, collection.unwrap_or(""))?;
+    let t = &report["thresholds"];
+    let mut text = format!(
+        "{}: {} ({})\n",
+        collection.unwrap_or("The archive"),
+        report["eagerness"].as_str().unwrap_or_default(),
+        report["from"].as_str().unwrap_or_default()
+    );
+    writeln!(
+        text,
+        "  margin {}, scaled by how invasive a change is; stability penalty {} for {} days; move budget {}",
+        t["margin"],
+        t["stability_penalty"],
+        t["stability_days"],
+        t["move_budget"].as_u64().map_or("none".to_owned(), |n| n.to_string())
+    )
+    .unwrap();
+    for (path, level) in report["collections"].as_object().into_iter().flatten() {
+        writeln!(
+            text,
+            "  {path} sets its own: {}",
+            level.as_str().unwrap_or_default()
+        )
+        .unwrap();
+    }
+    text.push_str(
+        "Set a collection's with `carrel restructure eagerness COLLECTION settled|balanced|eager|default`, \
+         the archive's with `carrel settings set restructure.eagerness LEVEL`.\n",
+    );
+    Ok(Report::new(text, report))
+}
+
+/// The eagerness at `path`, where it comes from, its numbers, and every collection that sets
+/// its own, as JSON.
+fn eagerness_at(
+    archive: &carrel_core::archive::Archive,
+    path: &str,
+) -> Result<serde_json::Value, Failure> {
+    let collections = archive.collections()?;
+    let path = path.trim().trim_matches('/');
+    if !path.is_empty()
+        && !collections
+            .iter()
+            .any(|c| c.path.eq_ignore_ascii_case(path))
+    {
+        return Err(Failure::new(format!("there's no collection {path}")));
+    }
+    let (level, source) = eagerness::at(archive, &collections, path);
+    let from = match &source {
+        Source::Archive => "the archive's setting".to_owned(),
+        Source::Collection(c) => format!("set by {c}"),
+    };
+    let own: serde_json::Map<String, serde_json::Value> = collections
+        .iter()
+        .filter_map(|c| eagerness::of_collection(c).map(|l| (c.path.clone(), json!(l))))
+        .collect();
+    Ok(json!({
+        "collection": path,
+        "eagerness": level,
+        "from": from,
+        "source": source,
+        "thresholds": eagerness::thresholds_at(archive, &collections, path),
+        "collections": own,
+    }))
 }
 
 fn what(proposal: &Proposal) -> String {

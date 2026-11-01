@@ -104,12 +104,21 @@ fn propose_groups_changes_by_kind_with_reasons_and_the_judgement() {
     let text = sandbox.ok(&["restructure", "propose", "Reading", "--no-model"]);
     assert!(text.contains("Restructure proposal"), "{text}");
     assert!(text.contains("for Reading"), "{text}");
-    assert!(text.contains("Eagerness: balanced (the archive's setting)"), "{text}");
+    assert!(
+        text.contains("Eagerness: balanced (the archive's setting)"),
+        "{text}"
+    );
     assert!(text.contains("Findability: untested"), "{text}");
     assert!(text.contains("Subdividing a collection"), "{text}");
-    assert!(text.contains("create the collection Reading/Birds"), "{text}");
+    assert!(
+        text.contains("create the collection Reading/Birds"),
+        "{text}"
+    );
     assert!(text.contains("Changes 6 items: Bird walk 1"), "{text}");
-    assert!(text.contains("Rewriting design documents and tags"), "{text}");
+    assert!(
+        text.contains("Rewriting design documents and tags"),
+        "{text}"
+    );
 
     let shown = sandbox.json(&["restructure", "show"]);
     let proposal = &shown["proposal"];
@@ -150,16 +159,20 @@ fn approving_part_says_what_was_dropped_and_undo_reverses_it_all() {
     assert!(nothing.contains("2 needs 1"), "{nothing}");
 
     let text = sandbox.ok(&["restructure", "approve", id, "--only", "1,3"]);
-    assert!(text.contains("Restructure Reading: 2 of 3 changes"), "{text}");
+    assert!(
+        text.contains("Restructure Reading: 2 of 3 changes"),
+        "{text}"
+    );
     assert!(text.contains("Left out: 2."), "{text}");
     assert!(text.contains("rewrote Reading/_collection.md"), "{text}");
     let root = sandbox.root();
     assert!(root.join("Reading/Birds/_collection.md").is_file());
-    assert!(root.join("Reading/bird-walk-1.md").is_file(), "the move was left out");
-    assert!(sandbox.json(&["restructure", "list"])["proposals"]
-        .as_array()
-        .unwrap()
-        .is_empty());
+    assert!(
+        root.join("Reading/bird-walk-1.md").is_file(),
+        "the move was left out"
+    );
+    let waiting = sandbox.json(&["restructure", "list"]);
+    assert_eq!(waiting["proposals"].as_array().unwrap().len(), 0);
 
     // All of it, then undone as one change.
     sandbox.ok(&["undo", &latest(&sandbox)]);
@@ -170,12 +183,14 @@ fn approving_part_says_what_was_dropped_and_undo_reverses_it_all() {
     assert_eq!(recent["assessment"]["recently_restructured"], true);
     sandbox.ok(&["settings", "set", "restructure.eagerness", "eager"]);
     let proposal = sandbox.propose();
-    let approved = sandbox.json(&[
-        "restructure",
-        "approve",
-        proposal["id"].as_str().unwrap(),
-    ]);
-    assert_eq!(approved["approved"]["outcomes"][1]["items"].as_array().unwrap().len(), 6);
+    let approved = sandbox.json(&["restructure", "approve", proposal["id"].as_str().unwrap()]);
+    assert_eq!(
+        approved["approved"]["outcomes"][1]["items"]
+            .as_array()
+            .unwrap()
+            .len(),
+        6
+    );
     assert!(root.join("Reading/Birds/bird-walk-1.md").is_file());
     let log = sandbox.json(&["log"]);
     assert_eq!(log[0]["operation"], "restructure");
@@ -196,7 +211,10 @@ fn reject_drops_a_proposal_and_changes_nothing() {
     assert!(text.contains("nothing changed"), "{text}");
     assert!(!sandbox.root().join("Reading/Birds").exists());
     let none = sandbox.fails(&["restructure", "show"]);
-    assert!(none.contains("no restructure proposal is waiting"), "{none}");
+    assert!(
+        none.contains("no restructure proposal is waiting"),
+        "{none}"
+    );
 }
 
 #[test]
@@ -229,4 +247,28 @@ fn eagerness_and_its_numbers_are_settings() {
     assert_eq!(settings["restructure"]["eagerness"], "settled");
     assert_eq!(settings["restructure"]["move_budget"], "none");
     assert!(settings["restructure"].get("margin").is_none());
+}
+
+#[test]
+fn a_collection_sets_its_own_eagerness_in_its_design_document() {
+    let sandbox = Sandbox::new();
+    let set = sandbox.ok(&["restructure", "eagerness", "Reading", "settled"]);
+    assert!(set.contains("Reading is now settled"), "{set}");
+    let design = std::fs::read_to_string(sandbox.root().join("Reading/_collection.md")).unwrap();
+    assert!(
+        design.contains("restructure:\n  eagerness: settled"),
+        "{design}"
+    );
+    let shown = sandbox.json(&["restructure", "eagerness", "Reading"]);
+    assert_eq!(shown["eagerness"], "settled");
+    assert_eq!(shown["source"]["collection"], "Reading");
+    assert_eq!(shown["thresholds"]["move_budget"], 10);
+    let proposal = sandbox.propose();
+    assert_eq!(proposal["assessment"]["eagerness"], "settled");
+    let wrong = sandbox.fails(&["restructure", "eagerness", "Reading", "keen"]);
+    assert!(wrong.contains("isn't a level"), "{wrong}");
+    sandbox.ok(&["restructure", "eagerness", "Reading", "default"]);
+    let shown = sandbox.json(&["restructure", "eagerness", "Reading"]);
+    assert_eq!(shown["eagerness"], "balanced");
+    assert_eq!(shown["source"]["from"], "archive");
 }

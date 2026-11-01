@@ -710,7 +710,7 @@ fn apply_edit(archive: &Archive, change: &ProposedChange) -> Result<Outcome, Res
         | Edit::MoveItems { .. }
         | Edit::RenameCollection { .. }
         | Edit::MergeCollection { .. }
-        | Edit::RewriteDesign { .. } => applying::apply(archive, change),
+        | Edit::RewriteDesign { .. } => Ok(applying::apply(archive, change)),
     }
 }
 

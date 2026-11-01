@@ -17,7 +17,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::Invasiveness;
+use super::{Invasiveness, RestructureError};
 use crate::archive::{Archive, Collection};
 use crate::card::Extra;
 
@@ -272,6 +272,74 @@ pub fn thresholds_at(archive: &Archive, collections: &[Collection], path: &str) 
         .settings()
         .restructure
         .thresholds(at(archive, collections, path).0)
+}
+
+/// Sets the collection at `path`'s own eagerness in its design document, or with `None`
+/// clears it so the archive's applies, holding `lease`, as one change in history undo can
+/// reverse. Returns the commit, or `None` if it was already so.
+///
+/// # Errors
+///
+/// [`RestructureError::Invalid`] if there's no such collection or its design document can't
+/// be read, or an error writing it or the history.
+pub fn set_for_collection(
+    archive: &Archive,
+    path: &str,
+    level: Option<Eagerness>,
+    lease: &crate::coordinator::WriterLease,
+) -> Result<Option<String>, RestructureError> {
+    let path = path.trim().trim_matches('/');
+    let collections = archive.collections()?;
+    let collection = collections
+        .iter()
+        .find(|c| c.path.eq_ignore_ascii_case(path))
+        .ok_or_else(|| RestructureError::Invalid(format!("there's no collection {path}")))?;
+    if of_collection(collection) == level {
+        return Ok(None);
+    }
+    let document = archive.root().join(&collection.path).join("_collection.md");
+    let text = std::fs::read_to_string(&document).map_err(super::io(&document))?;
+    let invalid = |e: String| RestructureError::Invalid(format!("{}: {e}", collection.path));
+    let split = crate::frontmatter::split(&text).map_err(|e| invalid(e.to_string()))?;
+    let mut doc: crate::documents::CollectionDoc =
+        serde_saphyr::from_str(split.yaml).map_err(|e| invalid(e.to_string()))?;
+    let mut section = doc
+        .extra
+        .shift_remove("restructure")
+        .and_then(|v| v.as_object().cloned())
+        .unwrap_or_default();
+    match level {
+        Some(level) => {
+            section.insert("eagerness".into(), level.as_str().into());
+        }
+        None => {
+            section.remove("eagerness");
+        }
+    }
+    if !section.is_empty() {
+        doc.extra
+            .insert("restructure".into(), serde_json::Value::Object(section));
+    }
+    let yaml = serde_saphyr::to_string(&doc).map_err(|e| invalid(e.to_string()))?;
+    std::fs::write(&document, crate::frontmatter::join(&yaml, split.body))
+        .map_err(super::io(&document))?;
+    let what = level.map_or_else(|| "the archive's".to_owned(), |l| l.as_str().to_owned());
+    let _ = crate::listing::add_to_changelog(
+        archive,
+        &collection.path,
+        &format!("set how eager restructuring is here to {what}"),
+    );
+    let change = crate::history::Change::new(
+        crate::history::Operation::Edit,
+        format!(
+            "Set restructure.eagerness for {} to {what}",
+            collection.path
+        ),
+        lease.info().person,
+        lease.info().device,
+    );
+    let archive = Archive::open(archive.root())?;
+    Ok(crate::history::History::open(&archive)?.commit(&archive, &change, lease)?)
 }
 
 #[cfg(test)]

@@ -254,7 +254,7 @@ fn tree(root: &Path) -> BTreeMap<String, Option<String>> {
     out
 }
 
-fn change_of<'a>(proposal: &'a Proposal, wanted: impl Fn(&Edit) -> bool) -> &'a str {
+fn change_of(proposal: &Proposal, wanted: impl Fn(&Edit) -> bool) -> &str {
     &proposal
         .changes
         .iter()
@@ -302,7 +302,7 @@ fn it_proposes_subdividing_and_merging_with_reasons_cost_benefit_and_eagerness()
     assert_eq!(move_birds.invasiveness, Invasiveness::Subdividing);
     assert_eq!(move_birds.items.len(), 6, "the sealed bundle moves whole");
     assert_eq!(move_birds.depends_on, [creates(&proposal, "Reading/Birds")]);
-    assert!(!move_birds.reason.is_empty());
+    assert_ne!(move_birds.reason, "");
     let stars = proposal
         .change(&moves_to(&proposal, "Reading/Stars"))
         .unwrap();
@@ -349,7 +349,7 @@ fn approving_it_all_moves_everything_in_one_change_and_undo_puts_it_back() {
     let archive = setup.archive();
     let approved = restructure::approve(&archive, &proposal, None, setup.holder).unwrap();
     let commit = approved.commit.clone().unwrap();
-    assert!(approved.selection.dropped.is_empty());
+    assert_eq!(approved.selection.dropped.len(), 0);
 
     let root = &setup.root;
     // The bundle moved whole, untouched inside.
@@ -382,7 +382,7 @@ fn approving_it_all_moves_everything_in_one_change_and_undo_puts_it_back() {
     assert_eq!(log[0].operation, Some(Operation::Restructure));
     assert_eq!(log[0].moves.len(), 6 + 5 + 2);
     assert!(log[0].summary.starts_with("Restructure the archive:"));
-    assert!(restructure::waiting(&archive, None).unwrap().is_empty());
+    assert_eq!(restructure::waiting(&archive, None).unwrap().len(), 0);
 
     // Undo puts every item, folder, design document and link back.
     let lease = DiskLock::for_archive(&archive)
@@ -590,7 +590,7 @@ fn a_section_must_be_a_collection_and_a_proposal_covers_only_it() {
             .iter()
             .any(|c| matches!(c.change, Edit::MergeCollection { .. }))
     );
-    assert!(!reading.changes.is_empty());
+    assert_ne!(reading.changes.len(), 0);
 }
 
 /// A scripted text model: it names groups after their first tag when asked for wording, and
