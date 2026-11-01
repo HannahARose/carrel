@@ -889,3 +889,124 @@ fn rewriting_alone_takes_no_snapshot() {
     let design = std::fs::read_to_string(setup.root.join("Reading/_collection.md")).unwrap();
     assert!(design.contains("- By subject."));
 }
+
+#[test]
+fn a_collections_own_eagerness_reaches_its_subcollections_and_undo_takes_it_back() {
+    use carrel_core::restructure::eagerness::{self, Source};
+    let setup = setup_with(
+        &items(),
+        &[
+            ("Reading", "restructure:\n  keep: this\n"),
+            ("Reading/Birds", ""),
+            ("Projects", ""),
+            ("Notes", ""),
+        ],
+    );
+    let archive = setup.archive();
+    let design = setup.root.join("Reading/_collection.md");
+    let before = std::fs::read_to_string(&design).unwrap();
+    let lease = DiskLock::for_archive(&archive)
+        .acquire(setup.holder, "test", DEFAULT_LEASE)
+        .unwrap();
+
+    let commit = eagerness::set_for_collection(&archive, "Reading", Some(Eagerness::Eager), &lease)
+        .unwrap()
+        .expect("a change");
+    let archive = setup.archive();
+    let collections = archive.collections().unwrap();
+    // A subcollection takes the level of the nearest collection above it that sets one.
+    assert_eq!(
+        eagerness::at(&archive, &collections, "Reading/Birds"),
+        (Eagerness::Eager, Source::Collection("Reading".into()))
+    );
+    assert_eq!(
+        eagerness::at(&archive, &collections, "Projects"),
+        (Eagerness::Balanced, Source::Archive)
+    );
+    assert_eq!(
+        eagerness::thresholds_at(&archive, &collections, "Reading/Birds").move_budget,
+        None,
+        "eager has no move budget"
+    );
+    let written = std::fs::read_to_string(&design).unwrap();
+    assert!(
+        written.contains("keep: this"),
+        "other restructure keys stay: {written}"
+    );
+
+    // The same level again changes nothing; an unknown collection is refused.
+    assert_eq!(
+        eagerness::set_for_collection(&archive, "reading", Some(Eagerness::Eager), &lease).unwrap(),
+        None
+    );
+    assert!(
+        eagerness::set_for_collection(&archive, "Nowhere", Some(Eagerness::Eager), &lease).is_err()
+    );
+
+    // Undo puts the design document back as it was.
+    History::open(&archive)
+        .unwrap()
+        .undo(&archive, &commit, &lease)
+        .unwrap();
+    lease.release().unwrap();
+    assert_eq!(std::fs::read_to_string(&design).unwrap(), before);
+    let archive = setup.archive();
+    assert_eq!(
+        eagerness::at(&archive, &archive.collections().unwrap(), "Reading/Birds").1,
+        Source::Archive
+    );
+}
+
+#[test]
+fn a_proposal_is_found_by_its_identifier_or_alone_and_a_section_replaces_its_own() {
+    let setup = setup();
+    let archive = setup.archive();
+    let none = restructure::find_any(&archive, None).unwrap_err();
+    assert!(
+        none.to_string()
+            .contains("no restructure proposal is waiting"),
+        "{none}"
+    );
+
+    let mut reading = Proposal::new(ProposalKind::Section, "Reading");
+    reading.rationale = "Tidy Reading.".into();
+    let mut projects = Proposal::new(ProposalKind::Section, "Projects");
+    projects.rationale = "Tidy Projects.".into();
+    // Proposals change nothing until approved, so a proposal with no changes is enough here.
+    assert_eq!(restructure::queue(&archive, &reading).unwrap(), 0);
+    assert_eq!(
+        restructure::find_any(&archive, None).unwrap().id,
+        reading.id,
+        "the only one"
+    );
+    assert_eq!(restructure::queue(&archive, &projects).unwrap(), 0);
+    let several = restructure::find_any(&archive, None).unwrap_err();
+    assert!(
+        several
+            .to_string()
+            .contains("2 restructure proposals are waiting"),
+        "{several}"
+    );
+    assert_eq!(
+        restructure::find_any(&archive, Some(&projects.id.to_string()))
+            .unwrap()
+            .section,
+        "Projects"
+    );
+
+    // A new proposal for Reading replaces the one waiting for it, and only that one.
+    let mut again = Proposal::new(ProposalKind::Section, "Reading");
+    again.rationale = "Tidy Reading again.".into();
+    assert_eq!(restructure::queue(&archive, &again).unwrap(), 1);
+    let sections: Vec<String> = restructure::waiting(&archive, None)
+        .unwrap()
+        .into_iter()
+        .map(|p| p.rationale)
+        .collect();
+    assert_eq!(sections.len(), 2, "{sections:?}");
+    assert!(sections.contains(&"Tidy Reading again.".to_owned()));
+    assert!(sections.contains(&"Tidy Projects.".to_owned()));
+
+    restructure::reject(&archive, &projects).unwrap();
+    assert_eq!(restructure::find_any(&archive, None).unwrap().id, again.id);
+}

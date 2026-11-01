@@ -354,3 +354,53 @@ fn a_collection_whose_items_keep_failing_becomes_a_signal() {
         )));
     }
 }
+
+#[test]
+fn a_finding_is_waiting_once_and_one_whose_item_has_gone_is_kept_with_why() {
+    let (_dir, archive, holder) = sample(false);
+    let items = archive.items().unwrap();
+    let scan = items.iter().find(|i| i.id.to_string() == SCAN).unwrap();
+    let finding = findings::CrawlEntry::new(
+        scan,
+        "Untitled scan",
+        Finding::Move {
+            from: "Holding".into(),
+            to: "Reading".into(),
+        },
+        "It's a note read for reference.",
+        0.8,
+        "scripted/m",
+    );
+    assert!(findings::propose(&archive, &finding).unwrap());
+    // The same finding about the same item is waiting already, under any identifier.
+    let again = findings::CrawlEntry::new(
+        scan,
+        "Untitled scan",
+        finding.finding.clone(),
+        "Said again.",
+        0.9,
+        "scripted/m",
+    );
+    assert!(!findings::propose(&archive, &again).unwrap());
+    assert_eq!(findings::list(&archive).unwrap().len(), 1);
+    // While it waits, the crawler leaves the item for the owner.
+    assert!(findings::open_items(&archive).unwrap().contains(&scan.id));
+    assert_eq!(
+        findings::find(&archive, &finding.id.to_string())
+            .unwrap()
+            .reason,
+        "It's a note read for reference."
+    );
+
+    // The item gone: approving says why, changes nothing, and keeps the finding.
+    std::fs::remove_file(archive.root().join(&scan.card)).unwrap();
+    let archive = Archive::open(archive.root()).unwrap();
+    let (registry, _) = scripted(Vec::new());
+    let lease = DiskLock::for_archive(&archive)
+        .acquire(holder, "test", DEFAULT_LEASE)
+        .unwrap();
+    let why = findings::approve(&archive, &registry, &finding, &lease).unwrap_err();
+    lease.release().unwrap();
+    assert!(why.contains("no longer in the archive"), "{why}");
+    assert_eq!(findings::list(&archive).unwrap().len(), 1, "kept");
+}

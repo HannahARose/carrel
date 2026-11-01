@@ -462,6 +462,11 @@ pub(super) mod tests {
         let mut steps = 1;
         while !app.stacks.done && steps < 100 {
             app.key(key(KeyCode::Char(' ')));
+            // The key that finds the walk is over takes no step, and leaves the last step's
+            // question showing.
+            if app.stacks.done {
+                break;
+            }
             steps += 1;
             if app.stacks.question.is_some() {
                 asked.push(steps);
