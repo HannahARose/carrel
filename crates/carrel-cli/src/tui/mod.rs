@@ -6,17 +6,21 @@ mod active;
 mod agent;
 mod app;
 mod archives;
+mod asking;
 mod backups;
 mod browser;
+mod discover;
 mod embedding;
 mod intake;
 mod item;
+mod librarian;
 mod preview;
 mod review;
 mod screens;
 mod search;
 mod settings;
 mod ui;
+mod ui_discovery;
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -173,7 +177,9 @@ fn event_loop(
     let mut checked = std::time::Instant::now();
     let mut sessions = SessionLook::default();
     let mut painter = preview::Painter::default();
+    let mut asking = librarian::Asking::default();
     while !app.quit {
+        asking.poll(app);
         sessions.tick(app);
         app.previews.poll();
         // The worker runs in another process; see what it has done about once a second.
@@ -237,6 +243,7 @@ fn event_loop(
                     Err(Failure(e)) => e,
                 });
             }
+            Some(Effect::Ask(question)) if !asking.busy() => asking.start(app, question),
             Some(Effect::Correction(step)) if preparing.is_none() => {
                 correction(app, step, &mut preparing);
             }
@@ -446,7 +453,19 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
         | Effect::EditEntry { .. }
         | Effect::Pick(_)
         | Effect::Correction(_)
+        | Effect::Ask(_)
         | Effect::Open(_) => return None,
+        Effect::SaveConversation => {
+            let result = librarian::save_here(app);
+            finished(app, result);
+            return None;
+        }
+        Effect::UndoLibrarian => {
+            let since = format!("{}d", librarian::CHANGES_DAYS);
+            let result = crate::ask::undo(Some(&root), &since);
+            finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
+            return None;
+        }
         effect @ (Effect::Dismiss(_) | Effect::Skip(_)) => {
             finished(app, settle_question(&root, &effect));
             return None;

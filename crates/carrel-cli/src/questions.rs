@@ -40,7 +40,7 @@ fn items(n: usize) -> String {
 }
 
 /// A suggestion, for people: its answer, and why it's likely.
-fn suggestion_line(n: usize, suggestion: &Suggestion) -> String {
+pub(crate) fn suggestion_line(n: usize, suggestion: &Suggestion) -> String {
     let mut line = format!("{n}  {}", suggestion.answer);
     let mut notes = Vec::new();
     if suggestion.new_collection {

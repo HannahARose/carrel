@@ -342,6 +342,17 @@ fn archive_header(archive: &Archive) -> String {
 /// `carrel status`.
 pub fn status(archive: Option<&Path>) -> Result<Report, Failure> {
     let archive = locate(archive)?;
+    let mut records = crate::asking::Records::here(&archive);
+    status_on(&archive, &mut records)
+}
+
+/// `carrel status` for `archive`, with this device's records of discovery and the day's
+/// questions in `records`.
+pub fn status_on(
+    archive: &Archive,
+    records: &mut crate::asking::Records,
+) -> Result<Report, Failure> {
+    let archive = archive.clone();
     let this_device = Identity::load()?.map(|i| i.device);
     let summary = carrel_core::status::summary(&archive, &Looking::here(this_device))?;
     let history = summary.history.as_deref();
@@ -388,8 +399,10 @@ pub fn status(archive: Option<&Path>) -> Result<Report, Failure> {
     text.push_str(&signals_section(&summary.signals));
     let (desk_text, desk) = crate::desk::suggestions_section(&summary.desk);
     text.push_str(&desk_text);
-    let (resurfaced_text, resurfaced) = crate::discover::resurfaced(&archive);
+    let (resurfaced_text, resurfaced) = crate::discover::resurfaced(&archive, records);
     text.push_str(&resurfaced_text);
+    let (daily_text, daily) = crate::asking::daily_section(&archive, records);
+    text.push_str(&daily_text);
     let mut warnings = Vec::new();
     if summary.synced {
         warnings.push(SYNCED_WARNING);
@@ -414,6 +427,7 @@ pub fn status(archive: Option<&Path>) -> Result<Report, Failure> {
         "librarian": librarian,
         "desk": desk,
         "resurfaced": resurfaced,
+        "questions_today": daily,
         "names": summary.names.iter().map(|f| json!({
             "path": f.path,
             "problems": f.problems,
