@@ -37,6 +37,8 @@ pub enum Purpose {
     Eagerness(String),
     /// Switching archives: these choices, by their words.
     Archive(Vec<(String, super::archives::Choice)>),
+    /// Setting this collection's `sync.keep_downloaded` to it.
+    KeepDownloaded(String),
 }
 
 impl Picker {
@@ -319,6 +321,9 @@ impl App {
                         },
                     )),
                     Purpose::Archive(choices) => self.archive_chosen(&choices, &to),
+                    Purpose::KeepDownloaded(collection) => {
+                        Some(super::sync::keep_chosen(collection, &to))
+                    }
                 };
             }
             _ => {}

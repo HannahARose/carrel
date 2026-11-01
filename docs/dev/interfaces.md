@@ -77,6 +77,11 @@ The command line and the interactive mode run on macOS, Linux and Windows. The M
 | Background work: sessions as they happen, the queue, the index, scheduled snapshots | `agent`, `agent install` (#269) | ✓ Settings (#279) | ✓ agent (#237) |
 | Reminders: entries waiting, checkouts due back, the week's sum, as notifications and on Status | `reminders`, `status`; `agent` notifies through `notify-send` or a PowerShell toast | ✓ Status (`Enter` goes to the item) | ✓ Status; the agent's notifications; `menu-bar` hides its menu bar list |
 | What's checked out, at a glance | `checkouts` | ✓ Active | ✓ menu bar (#237) |
+| Sync status: the writer lock and its expiry, each device's inbox backlog, the holding folder, re-checks, files not downloaded, kept collections (#472) | `sync status`, a line in `status` | ✓ `s` on Status | ✓ Status → Sync |
+| Download an item's or a collection's contents iCloud evicted; done by itself to open, preview, check out, draft or snapshot (#468) | `sync download` | ✓ `d` in Browse | ✓ Download from iCloud on an item, Download Now on a collection; Quick Look downloads first |
+| Keep a collection downloaded on every device, `sync.keep_downloaded` (#468) | `sync keep COLLECTION on\|off\|default` | ✓ `K` on a collection in Browse (on, off, default) | ✓ the collection inspector's Keep Downloaded (on or off; default: #482) |
+| Conflicted copies: reported, and settled as the owner chooses (#468) | `sync status`, `sync resolve --keep` | ✓ Sync on Status, `o` or `c` | ✓ Status → Sync, Keep Original or Keep Copy |
+| Move the archive into iCloud Drive: room, copy, verify, switch over, the old copy kept (#472) | `sync move [--to]` | ✓ `m` on Sync | ✓ File → Move to iCloud Drive… |
 
 ## Settings
 
@@ -110,3 +115,4 @@ These stay in one interface, for the reason given:
 - **Spotlight** is how macOS searches everything at once, so only the Mac has it. `carrel search` and `/` find the same cards. `spotlight.index` is an archive setting in every interface, since it decides what the archive shows anyone at a Mac.
 - **Grid views, dragging and the menu bar** are ways of working in a graphical app. The command line and the interactive mode reach the same capabilities through their own commands and screens, as the table shows.
 - **Platform-only models and readers,** such as Apple's model or Vision's OCR, are available in every interface on the platforms that have them. Elsewhere, the open models and the extraction provider stand in.
+- **Downloading iCloud's evicted files** goes through file coordination in the Mac app and its agent, and through the core in the command line and the interactive mode (reading a dataless file, or `brctl download` for a `.icloud` placeholder). On Linux and Windows the platform's sync client downloads them; Carrel only recognizes the placeholders and never treats them as missing.

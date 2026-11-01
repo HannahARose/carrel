@@ -375,6 +375,8 @@ item_template: project          # optional: a card template name for this collec
 compressed_files: keep          # optional: expand, keep or ask; overrides settings.json (§7.2)
 restructure:                    # optional
   eagerness: settled            # settled, balanced or eager; overrides settings.json (§7.2) here and below
+sync:                           # optional
+  keep_downloaded: true         # keep this collection's items downloaded on every device (§7.13); here and below
 needs_work: "split this folder" # optional: the owner's flag (§5.9)
 tags:                           # this collection's tag vocabulary
   - name: simulation
@@ -469,6 +471,9 @@ _System/
   devices/<device-id>/  device profiles and desk-item registries (§7.10)
   index/                search index (§7.11)
   cache.nosync/         rebuildable caches, excluded from iCloud sync
+  holding/              replaced content waiting for a snapshot, from devices without backups
+  tasks/                re-checks waiting for a stronger device
+  moved.json            only in an old copy left behind by a move: where the archive went (§7.13)
 ```
 
 ### 7.1 `archive.json`
@@ -584,6 +589,7 @@ src/main.rs	sha256:e3b0c442…	2048	2026-09-14T10:02:11.137401922-07:00
 - **Storage:** manifests are stored at `_System/manifests/<item-id>.tsv`. They sync with the archive but are not part of the history repository (§8.1). While an item is checked out, the manifest of what it held when it went out is kept beside them as `<item-id>.checkout.tsv`, for comparing with on return (§9.1); it's deleted when the item comes back.
 - **Content checksum:** the card's `manifest.checksum` identifies the item's contents, not the manifest file. It is the checksum of the text made by writing, for every row in order, the encoded path, a tab, the checksum, a tab, the size and a line feed. Modification times and the header are left out, so touching a file without changing it never changes the card, and a manifest rebuilt from a backup can be checked exactly against history.
 - **Reusing checksums:** a program may reuse an entry's checksum when a file's size and modification time both match the previous manifest, instead of reading the file again, but only when that modification time is at least two seconds before the previous manifest's `built` time. File systems stamp writes from a coarse clock (about 16 ms on Windows, up to two seconds on FAT), so a file edited just after it was read can keep the modification time recorded for it; such files, and every file when `built` is missing, are read again.
+- **Evicted files:** a file whose contents a sync service evicted (§7.13) is never read to build a manifest: it keeps its previous manifest's entry, whatever its modification time. One with no previous entry is left out, and isn't counted as removed.
 - **Past manifests** can be rebuilt from the backup snapshot named in a history commit's `Carrel-Snapshot` trailer, using the rules in `_System/rules/` as of that commit, and checked against the `manifest.checksum` in the card as of that commit.
 
 ### 7.8 Inboxes
@@ -861,6 +867,15 @@ While the archive switches models (`embedding.switching_to`, §7.2), the new mod
 
 Rebuildable, device-specific data. The `.nosync` suffix keeps iCloud Drive from syncing it. Readers **must** ignore it and programs **must** tolerate it being missing.
 
+### 7.13 iCloud Drive
+
+An archive may live in iCloud Drive, as the same plain files.
+
+- **Evicted files:** iCloud Drive may evict a file's contents to save space, leaving a placeholder: a "dataless" file with the file's own name on current macOS, or a hidden `.<name>.icloud` file in its place elsewhere. Programs **must not** treat a placeholder as a missing or changed file, nor list a `.icloud` file as a file of its own. Cards and design documents are read as they are (a `.icloud` card is downloaded first); an item's contents are downloaded only when needed, to open, preview, check out, draft or snapshot it.
+- **Keep downloaded:** a collection whose `_collection.md` says `sync: {keep_downloaded: true}` (§6.3) keeps its items, and those of the collections inside it that don't say otherwise, downloaded on every device. Off by default.
+- **Conflicted copies:** when two devices change a file before syncing, iCloud Drive keeps both, the other as `<name> 2.<ext>` (other services write `<name> (… conflicted copy …).<ext>`). Programs report conflicted copies of cards, design documents and `_System` files for a person to choose between, and never choose silently.
+- **Moving an archive:** a program that moves an archive copies it, checks every file of the copy against a manifest of the original, and leaves `_System/moved.json` in the old copy, `{"to": "<new root>", "moved": "<RFC 3339 time>"}`, so programs opening it say it was moved. The old copy is the person's to remove.
+
 ## 8. History
 
 ### 8.1 The history repository
@@ -931,7 +946,7 @@ On a local or external disk, the writer is whoever holds `_System/writer.lock`, 
 - **Before each commit** the writer re-reads the lock and commits only if it still holds its own `token` and has not expired. A writer whose lease was lost stops and does not commit.
 - **Expired locks** may be taken over: rename the lock to `writer.lock.expired-<token>` (only one program's rename succeeds), delete it, and take the lock as usual. A lock that is not valid JSON is never taken over automatically; a person must confirm no writer is running before it is removed.
 - **Releasing:** the writer deletes the lock when it finishes, but only while it still holds its own `token`.
-- **Synced folders:** a lock file is only safe while a single device uses the archive. Sync services such as iCloud Drive can let two devices each create the file before either sees the other's, so archives shared between devices use a coordinator the sync service supports instead (to be specified with iCloud support). Programs should warn when the lock is used inside a synced folder.
+- **Synced folders:** a lock file is only safe while a single device uses the archive. Sync services such as iCloud Drive can let two devices each create the file before either sees the other's, so archives shared between devices use a coordinator the sync service supports instead (to be specified with iCloud support). Programs should warn when the lock is used inside a synced folder. `carrel sync status` shows the lock's holder and expiry, each device's inbox backlog, and what waits in `holding/` and `tasks/`.
 
 ## 9. Active items and the Journal
 

@@ -42,6 +42,7 @@ struct ItemActions: View {
         Button("Wander from Here", systemImage: "figure.walk") { model.wander(from: item.id) }
             .disabled(model.discover == nil)
         ItemFlagButtons(model: model, item: item)
+        ItemDownloadButton(model: model, item: item)
         Button("Report a Missing Feature…", systemImage: "exclamationmark.bubble") {
             model.missingFeature = MissingFeatureModel(item: item)
         }

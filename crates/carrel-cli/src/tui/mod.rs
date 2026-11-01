@@ -28,6 +28,7 @@ mod screens;
 mod search;
 mod settings;
 mod start_screen;
+mod sync;
 mod ui;
 mod ui_discovery;
 
@@ -348,6 +349,7 @@ fn work_done(app: &mut App, result: Result<String, String>) {
     let succeeded = result.is_ok();
     finished(app, result);
     app.ask_about_working_copy(succeeded);
+    app.follow_moved_archive();
     // After a download, Settings finds what the providers offer again.
     app.settings_shown();
 }
@@ -558,6 +560,7 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
         ),
         Effect::Keep { id, kept, target } => keep(root, id, kept, target),
         Effect::Redraft(chosen) => review::redraft_work(root, &chosen),
+        Effect::Sync(work) => sync::sync_work(app, root, work),
         effect @ (Effect::Checkout { .. }
         | Effect::DeskAdd(_)
         | Effect::DeskRemove { .. }

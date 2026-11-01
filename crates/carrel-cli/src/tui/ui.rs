@@ -106,6 +106,7 @@ pub fn draw(frame: &mut Frame, app: &App, theme: Theme) {
         Tab::Active => draw_active(frame, app, theme, inner),
         Tab::Questions => draw_questions(frame, app, theme, inner),
         Tab::Browse => draw_browse(frame, app, theme, inner),
+        Tab::Status if app.sync.shown => super::sync::draw_sync(frame, app, theme, inner),
         Tab::Status if app.gaps.shown => super::gaps::draw_gaps(frame, app, theme, inner),
         Tab::Status => draw_report(frame, app, inner, Some(waiting_line(app))),
         Tab::Ingest => draw_ingest(frame, app, theme, inner),
@@ -357,6 +358,14 @@ const HELP_ROWS: &[(&str, &str)] = &[
         "change a setting; rebuild the search index or switch its model; install the agent (Settings)",
     ),
     ("x", "uninstall the background agent, on its row (Settings)"),
+    (
+        "s  o  c  m",
+        "sync; keep a conflicted copy's original or the copy; move into iCloud Drive (Status)",
+    ),
+    (
+        "d  K",
+        "download an item or a collection; keep a collection downloaded (Browse)",
+    ),
     ("Ctrl-O", "open another archive, or create one"),
     ("Ctrl-R", "read everything again"),
     ("?", "this help"),
@@ -448,6 +457,7 @@ fn draw_confirm(frame: &mut Frame, confirm: &Confirm, theme: Theme, area: Rect) 
             " undo   ",
         ),
         Confirm::UndoLibrarian(count) => super::librarian::confirm_text(*count),
+        Confirm::Sync(sync) => super::sync::confirm_text(sync),
         Confirm::Agent(change) => super::agent::confirm_popup(change),
         Confirm::Download { name, about } => download_confirm(name, about),
         Confirm::ModelChange { change, about } => model_change_confirm(change, about),
@@ -506,7 +516,8 @@ fn draw_confirm(frame: &mut Frame, confirm: &Confirm, theme: Theme, area: Rect) 
         answers.extend([Span::styled("n", theme.key()), Span::raw(" keep it")]);
     }
     lines.extend([Line::from(""), Line::from(answers)]);
-    let width = if matches!(confirm, Confirm::Return { .. }) {
+    // Paths need the room.
+    let width = if matches!(confirm, Confirm::Return { .. } | Confirm::Sync(_)) {
         area.width.saturating_sub(8).clamp(64, 100)
     } else {
         64
@@ -520,7 +531,11 @@ fn draw_confirm(frame: &mut Frame, confirm: &Confirm, theme: Theme, area: Rect) 
                 .max(1)
         })
         .sum();
-    let height = u16::try_from(wrapped + 2).unwrap_or(u16::MAX).max(9);
+    // Long paths wrap early, at a word's start, so a sync pop-up gets a line to spare.
+    let spare = usize::from(matches!(confirm, Confirm::Sync(_)));
+    let height = u16::try_from(wrapped + 2 + spare)
+        .unwrap_or(u16::MAX)
+        .max(9);
     let popup = centered(area, width, height);
     frame.render_widget(Clear, popup);
     frame.render_widget(
@@ -710,6 +725,7 @@ fn draw_picker(frame: &mut Frame, picker: &Picker, theme: Theme, area: Rect) {
         super::review::Purpose::Index(_) => "Search index",
         super::review::Purpose::Eagerness(_) => "How eager to rearrange",
         super::review::Purpose::Archive(_) => "Archives",
+        super::review::Purpose::KeepDownloaded(_) => "Keep downloaded on every device",
     };
     let title = if picker.filter.is_empty() {
         format!(" {what} (type to narrow) ")
@@ -1124,6 +1140,12 @@ fn draw_input(frame: &mut Frame, input: &Input, theme: Theme, area: Rect) {
         ),
         InputPurpose::Option(line) => line.text(),
         InputPurpose::Gap(gap) => gap.text(),
+        InputPurpose::SyncMoveTo => (
+            " Move into iCloud Drive ",
+            "The folder to move the archive to; it mustn't exist yet. Next, you see what moves \
+             and the room there before anything is copied:"
+                .to_owned(),
+        ),
         purpose => super::actions::input_text(purpose).unwrap_or((" ", String::new())),
     };
     let shown = if input.masked() {

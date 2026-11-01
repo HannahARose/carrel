@@ -124,6 +124,20 @@ See [The crawler](user-guide.md#the-crawler).
 
 It runs by itself in `carrel agent` and after the background worker, only when the device has been idle a while and is on power (on a Mac; elsewhere when the agent has seen no changes for a few minutes), and stops for anything you do. `crawler.pace` sets how much of the idle time it uses (`off`, `gentle`, `steady` or `brisk`), and `crawler.changes` whether it makes the refiles and corrections it's sure of itself, each undoable. With `--json`, `status` prints `{"pace", "changes", "items", "judged", "waiting", "misfits", "findings", "last_pass", "recent"}`, and `run` prints `{"judged", "misfits", "proposed", "made", "failed", "stopped"}`.
 
+## Sync
+
+For an archive shared between devices through iCloud Drive.
+
+| Command | What it does |
+| --- | --- |
+| `carrel sync [status]` | Shows who holds the writer lock and until when, each device's inbox backlog, what waits in the holding folder for a snapshot, re-checks waiting for a stronger device, the files not downloaded on this device, the collections kept downloaded, and conflicted copies. |
+| `carrel sync download ITEM\|COLLECTION` | Downloads the contents iCloud evicted from this device. Carrel does this by itself when it needs an item: to open, preview, check out, draft or snapshot it. |
+| `carrel sync keep COLLECTION [on\|off\|default]` | Keeps a collection's items downloaded on every device (`sync.keep_downloaded`, off by default; collections inside follow it), or shows whether it does. Undo can reverse it, and the agent downloads what it keeps when the device is idle. |
+| `carrel sync resolve COPY --keep original\|copy` | Settles a conflicted copy iCloud made: keeps one version, the other going to the Trash. Carrel never picks one by itself. |
+| `carrel sync move [--to FOLDER] [--yes]` | Moves the archive into iCloud Drive (a folder of its name there, by default): checks there's room, copies it holding the writer lock, checks every file of the copy against the original, then uses the copy from now on. The old copy stays until you remove it, and `carrel status` there says it was moved. |
+
+With `--json`, `status` prints `{"synced", "writer", "inboxes", "holding", "rechecks", "not_downloaded", "kept_downloaded", "conflicts"}`, and `move` prints `{"moved", "from", "to", "files", "bytes"}`. `carrel status` adds a line about files not downloaded and conflicted copies when the archive is in a synced folder.
+
 ## Questions
 
 | Command | What it does |

@@ -60,6 +60,11 @@ pub enum SyncAction {
     },
 }
 
+/// `n` and the word for one or many, as `3 entries`.
+fn counted(n: usize, one: &str, many: &str) -> String {
+    format!("{n} {}", if n == 1 { one } else { many })
+}
+
 /// `carrel sync [ACTION]`.
 ///
 /// # Errors
@@ -117,7 +122,7 @@ pub(crate) fn status_text(
         writeln!(
             text,
             "Inbox of {whose}: {} waiting",
-            plural(inbox.waiting, "entry").replace("entrys", "entries")
+            counted(inbox.waiting, "entry", "entries")
         )
         .unwrap();
     }
@@ -164,7 +169,11 @@ pub(crate) fn status_text(
         writeln!(
             text,
             "\n{} for you to settle with `carrel sync resolve COPY --keep original|copy`:",
-            plural(status.conflicts.len(), "conflicted copy").replace("copys", "copies")
+            counted(
+                status.conflicts.len(),
+                "conflicted copy",
+                "conflicted copies"
+            )
         )
         .unwrap();
         for c in &status.conflicts {
@@ -193,7 +202,7 @@ pub(crate) fn status_lines(archive: &Archive, synced: bool) -> String {
             text,
             "Synced: {} not downloaded here, {}; see `carrel sync status`",
             plural(away.files.len(), "file"),
-            plural(conflicts.len(), "conflicted copy").replace("copys", "copies")
+            counted(conflicts.len(), "conflicted copy", "conflicted copies")
         )
         .unwrap();
     }
@@ -239,7 +248,7 @@ fn collection_named(archive: &Archive, query: &str) -> Result<Option<String>, Fa
 }
 
 /// `carrel sync download ITEM|COLLECTION`.
-fn download(archive: &Archive, target: &str) -> Result<Report, Failure> {
+pub(crate) fn download(archive: &Archive, target: &str) -> Result<Report, Failure> {
     let path = if let Some(collection) = collection_named(archive, target)? {
         archive.root().join(collection)
     } else {
@@ -266,7 +275,11 @@ fn download(archive: &Archive, target: &str) -> Result<Report, Failure> {
 }
 
 /// `carrel sync keep COLLECTION [on|off|default]`.
-fn keep(archive: &Archive, query: &str, setting: Option<&str>) -> Result<Report, Failure> {
+pub(crate) fn keep(
+    archive: &Archive,
+    query: &str,
+    setting: Option<&str>,
+) -> Result<Report, Failure> {
     let collection = collection_named(archive, query)?
         .ok_or_else(|| Failure::new(format!("there's no collection {query}")))?;
     let Some(setting) = setting else {
@@ -327,7 +340,7 @@ fn keep(archive: &Archive, query: &str, setting: Option<&str>) -> Result<Report,
 }
 
 /// `carrel sync resolve COPY --keep original|copy`.
-fn resolve(archive: &Archive, copy: &str, keep: &str) -> Result<Report, Failure> {
+pub(crate) fn resolve(archive: &Archive, copy: &str, keep: &str) -> Result<Report, Failure> {
     let keep = match keep.to_ascii_lowercase().as_str() {
         "original" => Keep::Original,
         "copy" => Keep::Copy,

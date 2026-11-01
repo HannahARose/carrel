@@ -236,6 +236,7 @@ impl App {
                 keys.push(("z", "expand"));
             }
         }
+        keys.extend(self.sync_browse_keys());
         keys.extend([
             ("F", "flagged"),
             ("/", "search"),

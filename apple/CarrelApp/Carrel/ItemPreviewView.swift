@@ -22,7 +22,7 @@ struct ItemPreviewView: View {
                 }
                 .frame(maxWidth: .infinity, minHeight: 120)
             case .quickLook(let url):
-                QuickLookPreview(url: url).frame(height: 280)
+                DownloadingQuickLook(item: item, url: url, store: store).frame(height: 280)
             case .drawing:
                 DrawingPreview(item: item, store: store).frame(height: 280)
             case .folder:
