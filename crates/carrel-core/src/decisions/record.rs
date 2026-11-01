@@ -219,5 +219,11 @@ pub enum Event {
         single: usize,
         /// Tags used across several top-level collections.
         spread_tags: usize,
+        /// Pairs of collections whose items are linked or worked on together.
+        #[serde(default)]
+        entangled: usize,
+        /// Sibling collections at very different levels of detail.
+        #[serde(default)]
+        uneven: usize,
     },
 }

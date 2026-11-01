@@ -304,6 +304,8 @@ mod tests {
                 crowded: 0,
                 single: 0,
                 spread_tags: 0,
+                entangled: 0,
+                uneven: 0,
             },
         }
     }

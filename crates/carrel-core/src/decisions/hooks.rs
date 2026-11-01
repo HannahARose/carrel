@@ -251,7 +251,7 @@ pub fn snapshot(archive: &Archive, items: &[ItemRef], signals: &[Signal]) {
     if std::fs::read_to_string(&marker).is_ok_and(|d| d.trim() == today) {
         return;
     }
-    let mut event = (0, 0, 0, 0, 0);
+    let mut event = (0, 0, 0, 0, 0, 0, 0);
     for signal in signals {
         match signal {
             Signal::Uncertain { low, medium, .. } => {
@@ -261,6 +261,8 @@ pub fn snapshot(archive: &Archive, items: &[ItemRef], signals: &[Signal]) {
             Signal::Crowded { .. } => event.2 += 1,
             Signal::Single { .. } => event.3 += 1,
             Signal::SpreadTag { .. } => event.4 += 1,
+            Signal::Entangled { .. } => event.5 += 1,
+            Signal::UnevenDetail { .. } => event.6 += 1,
             Signal::Holding { .. } => {}
         }
     }
@@ -278,6 +280,8 @@ pub fn snapshot(archive: &Archive, items: &[ItemRef], signals: &[Signal]) {
             crowded: event.2,
             single: event.3,
             spread_tags: event.4,
+            entangled: event.5,
+            uneven: event.6,
         },
     );
     let _ = std::fs::write(marker, today + "\n");
