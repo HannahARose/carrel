@@ -422,3 +422,27 @@ fn leaving_out_a_change_drops_the_ones_that_need_it() {
         Err(RestructureError::Invalid(_))
     ));
 }
+
+#[test]
+fn groups_far_apart_in_one_collection_are_not_split() {
+    let setup = setup();
+    // The computer items move in with the kitchen's: the tag is spread, but where it's
+    // used agrees.
+    let root = setup.archive.root();
+    for name in ["c1", "c2", "c3"] {
+        std::fs::rename(
+            root.join(format!("Computers/{name}.md")),
+            root.join(format!("Kitchen/{name}.md")),
+        )
+        .unwrap();
+    }
+    let proposal = setup.propose();
+    assert!(
+        proposal
+            .changes
+            .iter()
+            .all(|c| !matches!(c.change, Edit::SplitTag { .. })),
+        "{:#?}",
+        proposal.changes
+    );
+}

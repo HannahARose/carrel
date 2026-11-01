@@ -5,8 +5,8 @@
 //!   `receipt`), plurals (`photo`, `photos`), near spellings whose items are close in meaning
 //!   (`colour`, `color`), and tags the embedding index puts very close that rarely share an
 //!   item;
-//! - **splitting** a tag spread over groups of items that don't belong together, each group
-//!   getting a narrower tag;
+//! - **splitting** a tag spread over two groups of items far apart in meaning and mostly in
+//!   different collections, each group getting a narrower tag;
 //! - **retiring** a tag used once or twice and in no vocabulary.
 //!
 //! Each change says why and which items it touches. Tags the owner wrote themselves (a card
@@ -619,12 +619,27 @@ fn splits(
                 return None;
             }
             let (groups, similarity) = two_groups(&vs)?;
-            if similarity > options.split_similarity || groups.iter().any(|g| g.len() < 2) {
+            if similarity > options.split_similarity
+                || groups.iter().any(|g| g.len() < 2)
+                || main_collection(survey, &groups[0]) == main_collection(survey, &groups[1])
+            {
                 return None;
             }
             split(survey, tag, &groups, similarity)
         })
         .collect()
+}
+
+/// The collection most of the items `group` (indexes into the survey's items) are in.
+fn main_collection<'a>(survey: &'a Survey, group: &[usize]) -> Option<&'a str> {
+    let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
+    for &i in group {
+        *counts.entry(&survey.items[i].collection).or_insert(0) += 1;
+    }
+    counts
+        .into_iter()
+        .max_by(|a, b| a.1.cmp(&b.1).then_with(|| b.0.cmp(a.0)))
+        .map(|(c, _)| c)
 }
 
 /// Splits `vectors` into two groups by two-means, seeded with the two vectors farthest
@@ -762,14 +777,7 @@ fn part_name(survey: &Survey, tag: &Tag, mine: &[usize], theirs: &[usize]) -> (S
     if let Some((t, _)) = telling {
         return (canonical(&t.0), format!("the items also tagged “{}”", t.0));
     }
-    let mut collections: BTreeMap<&str, usize> = BTreeMap::new();
-    for &i in mine {
-        *collections.entry(&survey.items[i].collection).or_insert(0) += 1;
-    }
-    let Some((collection, _)) = collections
-        .into_iter()
-        .max_by(|a, b| a.1.cmp(&b.1).then_with(|| b.0.cmp(a.0)))
-    else {
+    let Some(collection) = main_collection(survey, mine) else {
         return (String::new(), String::new());
     };
     let last = collection.rsplit('/').next().unwrap_or(collection);
