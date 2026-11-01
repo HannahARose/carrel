@@ -58,7 +58,7 @@ fn main() {
             embedded += 1;
         }
         let scripted = (method == "text/complete")
-            .then(|| script.as_mut().and_then(Script::next))
+            .then(|| script.as_mut().map(Script::next))
             .flatten();
         let reply = match scripted.map_or_else(
             || answer(method, &request["params"], &mode, embedded),
@@ -201,9 +201,9 @@ impl Script {
         })
     }
 
-    fn next(&mut self) -> Option<Value> {
-        Some(self.answers.pop_front().unwrap_or_else(|| {
+    fn next(&mut self) -> Value {
+        self.answers.pop_front().unwrap_or_else(|| {
             json!({"action": "answer", "input": "", "answer": "The script has run out.", "items": [], "passages": [], "suggestions": []})
-        }))
+        })
     }
 }
