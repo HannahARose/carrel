@@ -8,6 +8,8 @@ mod agent;
 mod ask;
 mod backup;
 mod bench;
+mod bench_librarian;
+mod bench_questions;
 mod checkout;
 mod commands;
 mod config;
