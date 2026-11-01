@@ -26,6 +26,7 @@
 //! | [`agent`] | The Mac app's agent: its claim on an archive, work sessions and scheduled snapshots |
 //! | [`librarian`] | The librarian: a conversation, saving it to the Journal, and its own changes |
 //! | [`discover`] | Discovery: on this day, wander, the timeline, the archive map, activity, resurfacing |
+//! | [`quick_look`] | Quick Look: cards laid out for the preview extension, and the drawings the agent keeps for it |
 //! | [`spotlight`] | Spotlight on the Mac: what the agent indexes, by `spotlight.index` |
 //! | [`creating`] | Creating an archive with a chosen embedding model |
 //!
@@ -68,6 +69,7 @@ pub mod model_formats;
 pub mod models;
 pub mod previews;
 pub mod questions;
+pub mod quick_look;
 pub mod records;
 pub mod reminders;
 pub mod restructure;

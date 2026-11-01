@@ -56,7 +56,8 @@ final class AgentHost {
         }
         agent = Agent(
             options: .app(helpers: Self.helpers), badges: AgentService.badgeStateFile,
-            reminders: notifications, spotlight: CoreSpotlightIndex())
+            reminders: notifications, quickLook: QuickLookStore.shared,
+            spotlight: CoreSpotlightIndex())
         let override = environment[Self.archivesEnv].map {
             $0.split(separator: ":").map { URL(filePath: String($0)) }
         }

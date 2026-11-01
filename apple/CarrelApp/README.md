@@ -8,9 +8,10 @@ The Mac app, as designed in [the Mac app design](../../docs/design/mac-app.md): 
 - **`SendToArchive`:** the Share extension, "Send to Archive", for files, images and text from any app's share sheet. It's sandboxed and sends everything to the agent over XPC; it never writes the archive.
 - **`CarrelFinder`:** the Finder Sync extension. It badges every archive the agent follows and every working copy and desk item (sealed, checked out, working copy, on the desk) from the agent's badge state file, and adds Check Out to Desktop, Check Out…, Return…, Cancel Checkout…, Show in Carrel and Ask About This to the context menu. Actions that need a decision open Carrel's own sheet for them through a `carrel://open` link with an `action`.
 - **App Intents** (`CarrelAgent/AgentIntents.swift`): Add to Archive, Search the Archive, Ask the Librarian, Check Out, Return (which opens Carrel's return preview), What's Checked Out, Take a Snapshot and Open in Carrel, with items and collections as entities. They run in the agent through the same requests as the extensions, so they work with Carrel's window closed.
+- **`CarrelQuickLook`:** the Quick Look extension, embedded at `Contents/PlugIns`. It shows a card (a Markdown file starting `carrel: card`) as the inspector does, a restricted one by its title only, and Carrel's drawings of STEP, IGES and 3MF files. It's sandboxed and never opens the archive: it reads the file it previews, and the drawings and archive roots the agent keeps in `~/Library/Application Support/Carrel/QuickLook` (CarrelKit's `QuickLookStore`), which its entitlements let it read. The app declares the STEP, IGES and 3MF types it previews.
 - **`CarrelTests`:** the view models, against the sample archive in `fixtures/`.
 
-The project file is written by hand and committed; its folders are synchronized groups, so adding a Swift file under `Carrel/`, `CarrelAgent/` or `CarrelTests/` needs no change to it.
+The project file is written by hand and committed; its folders are synchronized groups, so adding a Swift file under `Carrel/`, `CarrelAgent/`, `CarrelQuickLook/` or `CarrelTests/` needs no change to it.
 
 To try the agent without registering it, or touching your archives, run it from the build with an archive and a configuration folder of its own:
 
