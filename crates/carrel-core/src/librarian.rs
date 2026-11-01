@@ -455,15 +455,16 @@ impl<'a> Librarian<'a> {
         };
         let completion = match self.complete(&request) {
             // An answer cut off before its JSON ended gets the whole room once; cut off with
-            // the whole room, the question ends as out of room, keeping what was found.
-            Err(LibrarianError::Model(ProviderError::Failed(_))) => {
+            // the whole room, the question ends as out of room, keeping what was found. A model
+            // that failed for any other reason fails the question, to ask again.
+            Err(LibrarianError::Model(ProviderError::Failed(why))) if cut_off(&why) => {
                 if request.max_tokens >= Some(answer_room) {
                     return Ok(Asked::OutOfTokens);
                 }
                 work.tokens += needed;
                 request.max_tokens = Some(answer_room);
                 match self.complete(&request) {
-                    Err(LibrarianError::Model(ProviderError::Failed(_))) => {
+                    Err(LibrarianError::Model(ProviderError::Failed(why))) if cut_off(&why) => {
                         return Ok(Asked::OutOfTokens);
                     }
                     other => other?,
@@ -688,6 +689,12 @@ fn call_key(tool: &str, input: &str) -> String {
         "search" | "collection" => format!("{tool} {}", input.to_lowercase()),
         _ => format!("{tool} {input}"),
     }
+}
+
+/// Whether a model's failure says its answer was cut off before it ended, as the llama.cpp and
+/// MLX providers say when it runs out of room.
+fn cut_off(why: &str) -> bool {
+    why.contains("was cut off")
 }
 
 /// The newest of `earlier`'s questions and answers that fit in `room` tokens, oldest first:

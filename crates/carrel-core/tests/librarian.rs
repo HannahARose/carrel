@@ -962,3 +962,23 @@ fn a_cut_off_answer_on_the_last_step_keeps_what_was_found() {
     let answer = answer.expect("the question failed outright");
     assert_ne!(answer.items, []);
 }
+
+#[test]
+fn a_model_that_fails_on_the_last_step_fails_the_question_to_ask_again() {
+    use carrel_core::providers::ProviderError;
+    let (_dir, archive, _) = sample();
+    let (registry, _) = scripted(vec![
+        tool("search", "lamp"),
+        Err(ProviderError::Failed("the model crashed".into())),
+    ]);
+    let librarian = Librarian::new(&archive, &registry, the_model(), &providers)
+        .unwrap()
+        .with_limits(Limits {
+            steps: 2,
+            ..Limits::default()
+        });
+    let mut conversation = Conversation::default();
+    let asked = librarian.ask(&mut conversation, "What's the lamp made of?");
+    assert!(asked.is_err(), "only a cut-off answer ends as out of room");
+    assert!(conversation.answers.is_empty());
+}
