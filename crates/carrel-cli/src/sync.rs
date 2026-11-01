@@ -61,7 +61,7 @@ pub enum SyncAction {
 }
 
 /// `n` and the word for one or many, as `3 entries`.
-fn counted(n: usize, one: &str, many: &str) -> String {
+pub(crate) fn counted(n: usize, one: &str, many: &str) -> String {
     format!("{n} {}", if n == 1 { one } else { many })
 }
 

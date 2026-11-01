@@ -37,7 +37,7 @@ import Testing
         #expect(CloudFiles.state(observed(dataless: true)) == .notDownloaded)
     }
 
-    @Test func realFilesArePresentPlaceheldOrMissing() throws {
+    @Test func realFilesArePresentPlaceholdersOrMissing() throws {
         let folder = FileManager.default.temporaryDirectory
             .appending(path: "carrelkit-cloud-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

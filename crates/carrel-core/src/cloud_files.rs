@@ -16,7 +16,7 @@
 //!
 //! A collection whose design document says `sync: {keep_downloaded: true}` keeps its items on
 //! every device ([`keeps_downloaded`], [`keep_downloaded_pass`]); the conflicted copies iCloud
-//! leaves are found by [`conflicts`].
+//! leaves are found by [`conflicts()`].
 
 pub mod conflicts;
 pub mod keep;

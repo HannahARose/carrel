@@ -480,7 +480,7 @@ pub(super) fn sync_lines(app: &App, status: &SyncStatus) -> String {
         } else {
             format!("device {}", inbox.device)
         };
-        let waiting = plural(inbox.waiting, "entry").replace("entrys", "entries");
+        let waiting = crate::sync::counted(inbox.waiting, "entry", "entries");
         writeln!(text, "Inbox of {whose}: {waiting} waiting").unwrap();
     }
     holding_and_files(&mut text, status);
@@ -547,7 +547,11 @@ pub fn draw_sync(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
         Layout::vertical([Constraint::Length(height), Constraint::Min(0)]).areas(area);
     let heading = format!(
         "{text}\n{} for you to settle: o keeps the original, c the copy",
-        plural(status.conflicts.len(), "conflicted copy").replace("copys", "copies")
+        crate::sync::counted(
+            status.conflicts.len(),
+            "conflicted copy",
+            "conflicted copies"
+        )
     );
     frame.render_widget(Paragraph::new(heading).wrap(Wrap { trim: false }), top);
     let items: Vec<ListItem> = status
