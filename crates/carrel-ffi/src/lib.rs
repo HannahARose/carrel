@@ -66,6 +66,7 @@ pub mod librarian;
 pub mod model_formats;
 pub mod models;
 pub mod previews;
+pub mod question_subjects;
 pub mod questions;
 pub mod records;
 pub mod redraft;

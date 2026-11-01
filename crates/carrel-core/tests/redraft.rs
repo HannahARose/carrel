@@ -153,7 +153,7 @@ fn a_proposal_drafted_without_a_model_is_offered_again() {
         failed.iter().map(|e| e.id).collect::<Vec<_>>(),
         vec![entry.id]
     );
-    assert!(failed_drafts(&s.archive, Id::new_v7()).unwrap().is_empty());
+    assert_eq!(failed_drafts(&s.archive, Id::new_v7()).unwrap().len(), 0);
 }
 
 #[test]

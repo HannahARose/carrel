@@ -20,9 +20,11 @@ The command line and the interactive mode run on macOS, Linux and Windows. The M
 | Review: edit and correct a proposal | `review edit`, `review correct` | ✓ | ✓ (#234) |
 | Review: expand or keep compressed files | `review expand`, `keep-compressed` | ✓ | ✓ (#234) |
 | Review: duplicates (keep both, file as a version) | `review` | ✓ | ✓ (#234) |
+| Review: draft a proposal again with the models here now, keeping what you set | `review redraft`, `--all-failed` | ✓ `d`, offered first when the card or collection failed | ✓ Draft Again (`d`, context menu, inspector) (#445) |
 | Questions: answer and dismiss | `questions` | ✓ Questions | ✓ (#234) |
 | Questions: ranked, with suggested answers, skip | `questions`, `questions skip` | ✓ Questions (`1`–`9`, `s`) | ✓ Questions (`s`, Show Skipped) |
 | Questions about an item, a group, a sender | `questions answer`, `questions about` | ✓ Questions; `A` in Browse asks for an item's | ✓ Questions; Carrel Asks under an item's card |
+| Questions show what they're about: each item's path, and its preview | `questions` (each item's path) | ✓ Questions: the preview where the terminal draws images, else the path | ✓ Questions: Quick Look, or thumbnails for a group, with Open (#446) |
 | Questions while browsing and wandering, from the librarian, and a few a day on Status | `show`, `discover wander`, `ask`, `status` | ✓ Browse, Discover, Librarian, Status (`a`) | ✓ inspector, Discover, Librarian, Status |
 | Browse collections and items | `show`, `status` | ✓ Browse | ✓ Browse |
 | Previews of items | the item's path in `show` | ✓ Browse, in terminals that draw images (#258) | ✓ inspector and grid (#256) |
