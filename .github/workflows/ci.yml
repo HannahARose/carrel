@@ -1,10 +1,26 @@
 name: CI
 
+# Which jobs run when (docs/dev/development-setup.md, "Continuous integration"):
+#
+# - The "Changes" job (.github/scripts/ci-changes.sh) lists the files a pull request or push
+#   changes and says which areas they touch. Each job below runs only for its area: a docs-only
+#   change runs Format, Docs hygiene and nothing else. Format and Docs hygiene always run.
+# - Everything runs for a change to any workflow, the weekly schedule, a manual run and a pull
+#   request into main.
+# - A push to dev (a merged pull request) runs the jobs for what that merge changed, which
+#   checks dev against merge skew and keeps the caches warm. Each push gets its own run, so a
+#   later merge can't cancel the check of an earlier one.
+# - Caches are restored everywhere and saved only on dev, so pull requests don't evict them.
+#   Pull requests into main restore none: a release is checked from a clean build.
+# - "CI passed" is the required check. It passes when every job passed or was skipped because
+#   its area didn't change, and fails if "Changes" itself failed.
+
 on:
   pull_request:
     branches: [dev, main]
+  # main gets only merges of dev that its pull request has already checked from scratch.
   push:
-    branches: [dev, main]
+    branches: [dev]
   workflow_dispatch:
   # Weekly, so new security advisories against existing dependencies show up even when
   # nothing changes.
@@ -15,7 +31,8 @@ permissions:
   contents: read # check out the code
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # A pull request's newer push cancels its older run; every push to dev runs to the end.
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -23,6 +40,38 @@ env:
   RUSTFLAGS: -D warnings
 
 jobs:
+  changes:
+    name: Changes
+    runs-on: ubuntu-latest
+    outputs:
+      rust: ${{ steps.areas.outputs.rust }}
+      swift: ${{ steps.areas.outputs.swift }}
+      app: ${{ steps.areas.outputs.app }}
+      mlx: ${{ steps.areas.outputs.mlx }}
+      swift-format: ${{ steps.areas.outputs.swift_format }}
+      llama: ${{ steps.areas.outputs.llama }}
+      cad: ${{ steps.areas.outputs.cad }}
+      extract: ${{ steps.areas.outputs.extract }}
+      kopia: ${{ steps.areas.outputs.kopia }}
+      editors: ${{ steps.areas.outputs.editors }}
+      deny: ${{ steps.areas.outputs.deny }}
+      workflows: ${{ steps.areas.outputs.workflows }}
+      cache: ${{ steps.areas.outputs.cache }}
+      save: ${{ steps.areas.outputs.save }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # a push's earlier commit, and a pull request's base
+      - id: areas
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          REF: ${{ github.ref }}
+          BEFORE: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
+        run: .github/scripts/ci-changes.sh
+
   fmt:
     name: Format
     runs-on: ubuntu-latest
@@ -34,17 +83,24 @@ jobs:
 
   clippy:
     name: Clippy
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        if: needs.changes.outputs.cache == 'true'
+        with:
+          save-if: ${{ needs.changes.outputs.save == 'true' }}
       # The llama.cpp provider has its own job: building llama.cpp takes minutes.
       - run: cargo clippy --workspace --exclude carrel-provider-llama --all-targets --locked -- -D warnings
 
   test:
     name: Test (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -56,6 +112,9 @@ jobs:
         with:
           persist-credentials: false
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        if: needs.changes.outputs.cache == 'true'
+        with:
+          save-if: ${{ needs.changes.outputs.save == 'true' }}
       - run: cargo test --workspace --exclude carrel-provider-llama --all-targets --locked --no-fail-fast
       - run: cargo test --workspace --exclude carrel-provider-llama --doc --locked
       - name: CLI reports its version
@@ -63,6 +122,8 @@ jobs:
 
   docs:
     name: Docs
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     env:
       # Broken intra-doc links and other rustdoc warnings fail the build, including links in
@@ -73,12 +134,17 @@ jobs:
         with:
           persist-credentials: false
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        if: needs.changes.outputs.cache == 'true'
+        with:
+          save-if: ${{ needs.changes.outputs.save == 'true' }}
       - run: cargo doc --workspace --exclude carrel-provider-llama --no-deps --document-private-items --locked
 
   swift:
     # The Swift side: build the XCFramework and bindings, test them from Swift, check the
     # package also builds for iOS, and test the Apple provider on its own and through Carrel.
     name: Swift package
+    needs: changes
+    if: needs.changes.outputs.swift == 'true'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -86,6 +152,26 @@ jobs:
           persist-credentials: false
       # Caches target/, including each Apple target's build under target/<triple>.
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        if: needs.changes.outputs.cache == 'true'
+        with:
+          save-if: ${{ needs.changes.outputs.save == 'true' }}
+      # SwiftPM and Xcode build products of both packages. Restored from dev's latest, saved only on dev. The key names the Xcode
+      # version, since a build from another Xcode can't be reused.
+      - name: Xcode version
+        id: xcode
+        if: needs.changes.outputs.cache == 'true'
+        run: echo "version=$(xcodebuild -version | tr -s ' \n' '-')" >> "$GITHUB_OUTPUT"
+      - name: Restore the Swift build
+        id: swift-cache
+        if: needs.changes.outputs.cache == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            apple/CarrelKit/.build
+            apple/CarrelProviders/.build
+            !apple/*/.build/xcode/Logs
+          key: swift-${{ steps.xcode.outputs.version }}-${{ hashFiles('apple/CarrelKit/Package.swift', 'apple/CarrelProviders/Package.swift') }}-${{ hashFiles('apple/CarrelKit/Sources/**', 'apple/CarrelKit/Tests/**', 'apple/CarrelProviders/Sources/**', 'apple/CarrelProviders/Tests/**') }}
+          restore-keys: swift-${{ steps.xcode.outputs.version }}-${{ hashFiles('apple/CarrelKit/Package.swift', 'apple/CarrelProviders/Package.swift') }}-
       - run: rustup target add aarch64-apple-ios aarch64-apple-ios-sim
       - name: Build the XCFramework and Swift bindings
         run: PROFILE=dev scripts/build-xcframework.sh
@@ -114,32 +200,70 @@ jobs:
           swift build --package-path apple/CarrelProviders --product carrel-provider-apple
           CARREL_TEST_APPLE_PROVIDER="$bin/carrel-provider-apple" cargo test --locked -p carrel-core --test apple_provider
           PATH="$bin:$PATH" cargo run --locked --bin carrel -- providers
+      - name: Save the Swift build
+        if: needs.changes.outputs.save == 'true' && steps.swift-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            apple/CarrelKit/.build
+            apple/CarrelProviders/.build
+            !apple/*/.build/xcode/Logs
+          key: ${{ steps.swift-cache.outputs.cache-primary-key }}
 
   app:
     # The Mac app (apple/CarrelApp): its tests, then a development build, signed ad hoc and
     # kept as the "Carrel" artifact for 30 days. Developer ID signing and notarization wait
     # for v1.0 (#47), so there are no signing secrets here.
     name: Mac app
+    needs: changes
+    if: needs.changes.outputs.app == 'true'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        if: needs.changes.outputs.cache == 'true'
+        with:
+          save-if: ${{ needs.changes.outputs.save == 'true' }}
+      # The app's Xcode build products. Restored from dev's latest, saved only on dev. The key names the Xcode
+      # version, since a build from another Xcode can't be reused.
+      - name: Xcode version
+        id: xcode
+        if: needs.changes.outputs.cache == 'true'
+        run: echo "version=$(xcodebuild -version | tr -s ' \n' '-')" >> "$GITHUB_OUTPUT"
+      - name: Restore the Swift build
+        id: swift-cache
+        if: needs.changes.outputs.cache == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            apple/CarrelApp/.build/xcode
+            !apple/CarrelApp/.build/xcode/Logs
+          key: app-${{ steps.xcode.outputs.version }}-${{ hashFiles('apple/CarrelApp/CarrelApp.xcodeproj/project.pbxproj', 'apple/CarrelKit/Package.swift') }}-${{ hashFiles('apple/CarrelApp/**', 'apple/CarrelKit/Sources/**') }}
+          restore-keys: app-${{ steps.xcode.outputs.version }}-${{ hashFiles('apple/CarrelApp/CarrelApp.xcodeproj/project.pbxproj', 'apple/CarrelKit/Package.swift') }}-
       - run: rustup target add aarch64-apple-ios aarch64-apple-ios-sim
       - name: Build the XCFramework
         run: scripts/build-xcframework.sh
       - name: App tests
         run: |
           xcodebuild -project apple/CarrelApp/CarrelApp.xcodeproj -scheme Carrel \
-            -derivedDataPath target/xcode-app test
+            -derivedDataPath apple/CarrelApp/.build/xcode test
       - name: Build the app
         run: |
           xcodebuild -project apple/CarrelApp/CarrelApp.xcodeproj -scheme Carrel \
-            -configuration Release -derivedDataPath target/xcode-app build
-          app=target/xcode-app/Build/Products/Release/Carrel.app
+            -configuration Release -derivedDataPath apple/CarrelApp/.build/xcode build
+          app=apple/CarrelApp/.build/xcode/Build/Products/Release/Carrel.app
           codesign --verify --strict --verbose=2 "$app"
           ditto -c -k --keepParent "$app" target/Carrel.zip
+      - name: Save the Swift build
+        if: needs.changes.outputs.save == 'true' && steps.swift-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            apple/CarrelApp/.build/xcode
+            !apple/CarrelApp/.build/xcode/Logs
+          key: ${{ steps.swift-cache.outputs.cache-primary-key }}
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: Carrel
@@ -150,6 +274,8 @@ jobs:
   swift-format:
     # Swift style, as set in .swift-format. swift-format comes with Xcode.
     name: Swift format
+    needs: changes
+    if: needs.changes.outputs.swift-format == 'true'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -167,6 +293,8 @@ jobs:
     # Hosted runners can't run a model, so this builds it and runs the tests that need none;
     # the on-device runner drafts with real MLX models.
     name: MLX provider
+    needs: changes
+    if: needs.changes.outputs.mlx == 'true'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -177,16 +305,42 @@ jobs:
         run: |
           xcodebuild -showComponent MetalToolchain | grep -q "Status: installed" \
             || xcodebuild -downloadComponent MetalToolchain
+      # SwiftPM's packages (mlx-swift and the rest) and their Xcode build products. Restored from dev's latest, saved only on dev. The key names the Xcode
+      # version, since a build from another Xcode can't be reused.
+      - name: Xcode version
+        id: xcode
+        if: needs.changes.outputs.cache == 'true'
+        run: echo "version=$(xcodebuild -version | tr -s ' \n' '-')" >> "$GITHUB_OUTPUT"
+      - name: Restore the Swift build
+        id: swift-cache
+        if: needs.changes.outputs.cache == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            apple/CarrelMLX/.build/xcode
+            !apple/CarrelMLX/.build/xcode/Logs
+          key: mlx-${{ steps.xcode.outputs.version }}-${{ hashFiles('apple/CarrelMLX/Package.resolved') }}-${{ hashFiles('apple/CarrelMLX/Package.swift', 'apple/CarrelMLX/Sources/**', 'apple/CarrelMLX/Tests/**', 'apple/CarrelProviders/Package.swift', 'apple/CarrelProviders/Sources/**') }}
+          restore-keys: mlx-${{ steps.xcode.outputs.version }}-${{ hashFiles('apple/CarrelMLX/Package.resolved') }}-
       - name: Build and test
         working-directory: apple/CarrelMLX
         run: |
           xcodebuild -scheme CarrelMLX-Package -destination 'platform=macOS' \
             -derivedDataPath .build/xcode -skipMacroValidation test
+      - name: Save the Swift build
+        if: needs.changes.outputs.save == 'true' && steps.swift-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            apple/CarrelMLX/.build/xcode
+            !apple/CarrelMLX/.build/xcode/Logs
+          key: ${{ steps.swift-cache.outputs.cache-primary-key }}
 
   deny:
     # Known vulnerabilities, unmaintained or yanked crates, licenses, duplicate versions and
     # crate sources, as set in deny.toml.
     name: Dependencies
+    needs: changes
+    if: needs.changes.outputs.deny == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -199,6 +353,8 @@ jobs:
   zizmor:
     # Security problems in the workflows themselves, such as injection or broad permissions.
     name: Workflow audit
+    needs: changes
+    if: needs.changes.outputs.workflows == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -251,6 +407,8 @@ jobs:
   llama:
     # The portable model provider, with llama.cpp built in, run against a tiny test model.
     name: llama.cpp provider (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.llama == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -266,6 +424,9 @@ jobs:
         with:
           persist-credentials: false
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        if: needs.changes.outputs.cache == 'true'
+        with:
+          save-if: ${{ needs.changes.outputs.save == 'true' }}
       - run: cargo clippy -p carrel-provider-llama --all-targets --locked -- -D warnings
       - name: Download the test model
         run: |
@@ -283,6 +444,8 @@ jobs:
     # The CAD provider with OpenCascade from each platform's package manager, so STEP and IGES
     # drawing is tested rather than skipped.
     name: CAD provider (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.cad == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -295,6 +458,9 @@ jobs:
         with:
           persist-credentials: false
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        if: needs.changes.outputs.cache == 'true'
+        with:
+          save-if: ${{ needs.changes.outputs.save == 'true' }}
       - name: Install OpenCascade
         run: |
           if [ "$RUNNER_OS" = macOS ]; then
@@ -310,6 +476,8 @@ jobs:
     # The portable extraction provider with Tesseract and Poppler installed, so OCR of images
     # and scanned PDFs is tested rather than skipped.
     name: Portable extraction
+    needs: changes
+    if: needs.changes.outputs.extract == 'true'
     runs-on: ubuntu-latest
     env:
       CARREL_REQUIRE_TESSERACT: "1"
@@ -318,6 +486,9 @@ jobs:
         with:
           persist-credentials: false
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        if: needs.changes.outputs.cache == 'true'
+        with:
+          save-if: ${{ needs.changes.outputs.save == 'true' }}
       - name: Install Tesseract and Poppler
         run: sudo apt-get update -q && sudo apt-get install -yq tesseract-ocr poppler-utils
       - run: cargo test -p carrel-provider-extract --locked
@@ -327,6 +498,8 @@ jobs:
     # fixture JSON: headless Neovim tests, ERT, a byte-compile with warnings as errors,
     # checkdoc and package-lint. Neovim and Emacs come from Ubuntu's own packages.
     name: Editor plugins
+    needs: changes
+    if: needs.changes.outputs.editors == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -341,6 +514,8 @@ jobs:
   kopia:
     # Backups against the real kopia program and a throwaway filesystem repository.
     name: Kopia backups (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.kopia == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -372,6 +547,9 @@ jobs:
         with:
           persist-credentials: false
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        if: needs.changes.outputs.cache == 'true'
+        with:
+          save-if: ${{ needs.changes.outputs.save == 'true' }}
       - name: Install Kopia
         run: |
           file="$RUNNER_TEMP/kopia.$ARCHIVE"
@@ -392,16 +570,18 @@ jobs:
         run: cargo test -p carrel-core --test backup_kopia --locked
 
   ok:
-    # The single required check for branch protection. It passes only if every job above passed.
+    # The single required check for branch protection. It passes only if "Changes" passed and
+    # every other job above passed or was skipped because its area didn't change. A job whose
+    # area changed can only be skipped if "Changes" failed, which this catches.
     name: CI passed
     if: always()
-    needs: [fmt, clippy, test, docs, swift, app, swift-format, mlx, llama, cad, extract, kopia, editors, deny, zizmor, hygiene]
+    needs: [changes, fmt, clippy, test, docs, swift, app, swift-format, mlx, llama, cad, extract, kopia, editors, deny, zizmor, hygiene]
     runs-on: ubuntu-latest
     steps:
       - name: Check job results
         env:
           NEEDS: ${{ toJSON(needs) }}
-          FAILED: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped') }}
+          FAILED: ${{ needs.changes.result != 'success' || contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
         run: |
           echo "$NEEDS"
           [ "$FAILED" = "false" ]

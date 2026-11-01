@@ -81,7 +81,7 @@ The repository's `rust-toolchain.toml` pins the exact Rust version (currently 1.
 
 ## 4. Build and test
 
-From the repository root, these are the same checks CI runs on every pull request:
+From the repository root, these are the same checks CI runs on every pull request that changes Rust:
 
 ```bash
 cargo fmt --all --check
@@ -104,6 +104,10 @@ cargo run --bin carrel -- --version
 ```
 
 `cargo fmt --all` fixes formatting. To try the CLI without touching your own identity and settings, set `CARREL_CONFIG_DIR` to a scratch folder (see [Commands](../guide/commands.md)). The workspace has three crates under `crates/`: `carrel-core` (the library), `carrel-cli` (the `carrel` binary) and `carrel-ffi` (Swift bindings).
+
+### Which CI jobs run when
+
+CI (`.github/workflows/ci.yml`) runs only what a change affects. Its first job, "Changes" (`.github/scripts/ci-changes.sh`), lists the files a pull request or push changes and says which areas they touch: Rust, the Swift package, the Mac app, the MLX provider, Swift formatting, each portable provider, Kopia backups, the editor plugins, dependencies and the workflows. Each job runs only for its own area, so a change to the docs runs Format and Docs hygiene, which always run, and nothing else. Everything runs when a workflow changes, for the weekly schedule and a manual run, and for a pull request into `main`, which also restores no caches so that a release is checked from a clean build. A push to `dev`, which is a merged pull request, runs the jobs for what that merge changed, to catch two pull requests that pass alone but not together, and it's the only run that saves caches. "CI passed" is the required check: it passes when every job passed or was skipped because its area didn't change. To see what a change would run, `EVENT=push BEFORE=origin/dev SHA=HEAD .github/scripts/ci-changes.sh`.
 
 ### The Swift package
 
