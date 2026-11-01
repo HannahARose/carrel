@@ -31,6 +31,10 @@ pub enum Purpose {
     Setting(String),
     /// Downloading this catalog model, after asking.
     Download,
+    /// Working on the embedding index: these choices, by their words.
+    Index(Vec<(String, super::embedding::Choice)>),
+    /// Switching archives: these choices, by their words.
+    Archive(Vec<(String, super::archives::Choice)>),
 }
 
 impl Picker {
@@ -284,6 +288,8 @@ impl App {
                         self.confirm_download(&to);
                         None
                     }
+                    Purpose::Index(choices) => self.index_chosen(&choices, &to),
+                    Purpose::Archive(choices) => self.archive_chosen(&choices, &to),
                 };
             }
             _ => {}

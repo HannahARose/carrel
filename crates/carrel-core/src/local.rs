@@ -196,12 +196,40 @@ pub struct Prefs {
     /// The folder files were last picked from, where picking starts next time.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_folder: Option<PathBuf>,
+    /// The archives opened or created on this device, most recent first, at most
+    /// [`RECENT_ARCHIVES`], so the interactive mode and the apps can offer them again.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub recent: Vec<PathBuf>,
     /// Keys this version doesn't know.
     #[serde(flatten)]
     pub extra: Extra,
 }
 
+/// How many archives [`Prefs::recent`] remembers.
+pub const RECENT_ARCHIVES: usize = 10;
+
 impl Prefs {
+    /// Notes that the archive at `root` was opened or created, putting it first among the
+    /// recent archives.
+    pub fn note_archive(&mut self, root: &Path) {
+        self.recent.retain(|r| r != root);
+        self.recent.insert(0, root.to_owned());
+        self.recent.truncate(RECENT_ARCHIVES);
+    }
+
+    /// The archives to offer: the one chosen with `carrel open`, then the recent ones, each
+    /// once, leaving out those no longer there.
+    #[must_use]
+    pub fn known_archives(&self) -> Vec<PathBuf> {
+        let mut known: Vec<PathBuf> = Vec::new();
+        for root in self.archive.iter().chain(&self.recent) {
+            if !known.contains(root) && root.join("_System/archive.json").is_file() {
+                known.push(root.clone());
+            }
+        }
+        known
+    }
+
     /// The saved preferences, or the defaults.
     ///
     /// # Errors
@@ -265,4 +293,40 @@ fn write(path: &Path, value: &impl serde::Serialize) -> Result<(), LocalError> {
     }
     let text = serde_json::to_string_pretty(value).expect("settings always serialize") + "\n";
     std::fs::write(path, text).map_err(io(path))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Prefs, RECENT_ARCHIVES};
+
+    #[test]
+    fn recent_archives_are_kept_newest_first_and_offered_while_they_exist() {
+        let dir = tempfile::tempdir().unwrap();
+        let archive = |name: &str| {
+            let root = dir.path().join(name);
+            std::fs::create_dir_all(root.join("_System")).unwrap();
+            std::fs::write(root.join("_System/archive.json"), "{}").unwrap();
+            root
+        };
+        let (a, b) = (archive("a"), archive("b"));
+        let mut prefs = Prefs::default();
+        prefs.note_archive(&a);
+        prefs.note_archive(&b);
+        prefs.note_archive(&a);
+        assert_eq!(prefs.recent, vec![a.clone(), b.clone()]);
+
+        // The one chosen with `carrel open` comes first; gone ones are left out.
+        prefs.archive = Some(b.clone());
+        prefs.note_archive(&dir.path().join("gone"));
+        assert_eq!(prefs.known_archives(), vec![b.clone(), a.clone()]);
+
+        for i in 0..RECENT_ARCHIVES + 2 {
+            prefs.note_archive(&dir.path().join(i.to_string()));
+        }
+        assert_eq!(prefs.recent.len(), RECENT_ARCHIVES);
+
+        // Saved and read back with the other preferences.
+        prefs.save_to(dir.path()).unwrap();
+        assert_eq!(Prefs::load_from(dir.path()).unwrap().recent, prefs.recent);
+    }
 }

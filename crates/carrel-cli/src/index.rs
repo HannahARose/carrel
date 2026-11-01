@@ -10,7 +10,9 @@ use std::fmt::Write as _;
 use std::path::Path;
 
 use carrel_core::archive::Archive;
-use carrel_core::coordinator::{Coordinator as _, DEFAULT_LEASE, DiskLock};
+use carrel_core::coordinator::{
+    Coordinator as _, CoordinatorError, DEFAULT_LEASE, DiskLock, WriterLease,
+};
 use carrel_core::index::manage::{self, Built, Stage, SwitchStatus, Switched};
 use carrel_core::index::{Index, IndexError};
 use carrel_core::models::embedding_models;
@@ -166,7 +168,23 @@ pub fn rebuild(archive: Option<&Path>, json: bool) -> Result<Report, Failure> {
     let archive = locate(archive)?;
     let model = crate::models::archive_model(&archive)?;
     let (registry, _) = crate::providers::registry();
-    let built = manage::rebuild(&archive, &registry, &model, &mut shown(&model, json))?;
+    rebuild_with(&archive, &registry, &model, &mut shown(&model, json))
+}
+
+/// Embeds every item of `archive` again with `model`, the archive's embedding model, through
+/// `registry`, calling `progress` as it goes: what `carrel index rebuild` and the interactive
+/// mode's Settings do.
+///
+/// # Errors
+///
+/// [`Failure`] if no provider in `registry` runs the model, or the index can't be written.
+pub fn rebuild_with(
+    archive: &Archive,
+    registry: &Registry,
+    model: &str,
+    progress: &mut manage::Progress<'_>,
+) -> Result<Report, Failure> {
+    let built = manage::rebuild(archive, registry, model, progress)?;
     let text = format!(
         "{} {} with {model}, as {}.\n",
         if built.resumed {
@@ -287,7 +305,7 @@ pub fn switch_to(archive: Option<&Path>, model: &str, json: bool) -> Result<Repo
     let model = model.trim();
     let (registry, _) = crate::providers::registry();
     let identity = Identity::load_or_create()?;
-    let switched = manage::switch_to(
+    let report = switch_with(
         &archive,
         &registry,
         model,
@@ -296,6 +314,29 @@ pub fn switch_to(archive: Option<&Path>, model: &str, json: bool) -> Result<Repo
         },
         &mut shown(model, json),
     )?;
+    if let Some(replaced) = report.json["replaced"].as_str() {
+        eprintln!("Gave up switching to {replaced}, and removed its index.");
+    }
+    Ok(report)
+}
+
+/// Switches `archive` to the embedding model `model` through `registry`, taking the writer
+/// lease with `lease` while the switch is recorded and finished, and calling `progress` as it
+/// goes: what `carrel index model NAME` and the interactive mode's Settings do. `model`
+/// already the archive's, it stops a switch to another model, if one is under way.
+///
+/// # Errors
+///
+/// [`Failure`] if no provider in `registry` offers `model`, it fails, or the index or settings
+/// can't be written.
+pub fn switch_with(
+    archive: &Archive,
+    registry: &Registry,
+    model: &str,
+    lease: &mut dyn FnMut() -> Result<WriterLease, CoordinatorError>,
+    progress: &mut manage::Progress<'_>,
+) -> Result<Report, Failure> {
+    let switched = manage::switch_to(archive, registry, model, lease, progress)?;
     let (from, replaced, built) = match switched {
         Switched::Already => {
             return Ok(Report::new(
@@ -317,9 +358,6 @@ pub fn switch_to(archive: Option<&Path>, model: &str, json: bool) -> Result<Repo
             built,
         } => (from, replaced, built),
     };
-    if let Some(replaced) = &replaced {
-        eprintln!("Gave up switching to {replaced}, and removed its index.");
-    }
     let Built {
         embedded,
         items,

@@ -225,7 +225,7 @@ fn draw_history(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
 
 fn draw_help_line(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
     let mut spans = Vec::new();
-    if let Some(busy) = &app.busy {
+    if let Some(busy) = app.busy_line() {
         spans.push(Span::styled(format!(" {busy}  ·"), theme.key()));
     }
     if let Some(worker) = app.worker_line() {
@@ -313,6 +313,11 @@ fn draw_help(frame: &mut Frame, theme: Theme, area: Rect) {
             "e  w",
             "each entry, or whole folder, before queueing (Ingest)",
         ),
+        (
+            "Enter",
+            "change a setting; rebuild the search index or switch its model (Settings)",
+        ),
+        ("Ctrl-O", "open another archive, or create one"),
         ("Ctrl-R", "read everything again"),
         ("?", "this help"),
         ("q, Esc, Ctrl-C", "quit"),
@@ -603,13 +608,19 @@ fn draw_picker(frame: &mut Frame, picker: &Picker, theme: Theme, area: Rect) {
     let matching = picker.matching();
     let items: Vec<ListItem> = matching.iter().map(|c| ListItem::new(*c)).collect();
     let height = u16::try_from(matching.len().clamp(1, 12)).unwrap_or(12) + 3;
-    let popup = centered(area, 50, height);
+    let wide = matches!(
+        picker.purpose,
+        super::review::Purpose::Archive(_) | super::review::Purpose::Index(_)
+    );
+    let popup = centered(area, if wide { 76 } else { 50 }, height);
     frame.render_widget(Clear, popup);
     let what = match picker.purpose {
         super::review::Purpose::Move(_) => "Move to",
         super::review::Purpose::Answer(_) => "They belong in",
         super::review::Purpose::Setting(_) => "Set it to",
         super::review::Purpose::Download => "Download",
+        super::review::Purpose::Index(_) => "Search index",
+        super::review::Purpose::Archive(_) => "Archives",
     };
     let title = if picker.filter.is_empty() {
         format!(" {what} (type to narrow) ")
@@ -884,6 +895,17 @@ fn draw_input(frame: &mut Frame, input: &Input, theme: Theme, area: Rect) {
             "The item to restore as of this snapshot (its identifier, or its card's or \
              contents' path). It goes in a new folder beside the archive; nothing in the \
              archive changes:"
+                .to_owned(),
+        ),
+        InputPurpose::OpenArchive => (
+            " Archives ",
+            "The archive to open: its folder, or any folder in it (drop it here, or paste):"
+                .to_owned(),
+        ),
+        InputPurpose::CreateArchive => (
+            " Archives ",
+            "The folder for the new archive, which is named after it, as `carrel init` makes \
+             it. An empty or new folder is best:"
                 .to_owned(),
         ),
         purpose => super::actions::input_text(purpose).unwrap_or((" ", String::new())),

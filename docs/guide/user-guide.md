@@ -255,6 +255,8 @@ The meaning index has three commands:
 | `carrel index rebuild` | Embeds every item again, with a progress bar; interrupted, it carries on where it stopped |
 | `carrel index model NAME` | Switches the archive to another embedding model, building the new index while the old one keeps serving (below) |
 
+In the interactive mode, Status shows the index's state, and Settings' **Search index** row rebuilds it, switches models and downloads one, with the same progress bar on the help line.
+
 To switch the archive to another model, run `carrel index model NAME` (`carrel index model` alone lists the models this device can embed with). A provider on this device must offer the model. The new model's index is built beside the old one, with a progress bar, and search keeps using the old one until the new one is complete. Then the archive switches, on every device: `embedding.model` changes and the old index is removed. The switch is recorded in the archive's settings as soon as it starts, so every device's `carrel index status` shows how far it's got. If it's interrupted, running the same command again carries on. To give up a switch part way, run `carrel index model` with the archive's current model. A device without a provider for the new model searches by words once the switch is done, and says why.
 
 Switching re-embeds the whole archive, on every device that searches it, so it's worth doing only for a reason: a model that finds your things better, or one that every device you search from can run. The benchmark's findability test ([docs/bench](../bench/README.md)) compares the models on offer.
@@ -358,6 +360,7 @@ The Settings screen (`8`), or `carrel settings`, shows two kinds:
 - **Editor** for cards, before `$VISUAL` and `$EDITOR`.
 - **Second model**, asked when the first isn't sure where an item goes: a model name, `off`, or `default` for a recommended model you've installed.
 - **Model** that drafts cards, routes and rates items, as `provider/offer` (such as `llama/qwen3.5-4b`), or `default` to let Carrel choose: Apple's on-device model where there is one, then local models. If the chosen model isn't available, for example because its file was removed, Carrel uses the next best. `carrel settings` shows which is in use.
+- **Providers** and **File types**, shown only: what `carrel providers` and `carrel formats` list.
 
 **This archive**, kept in `_System/settings.json` and shared by every device that opens it:
 
@@ -370,6 +373,8 @@ The Settings screen (`8`), or `carrel settings`, shows two kinds:
 
 Changing an archive setting is a change in history, so it can be undone.
 
+The Settings screen also shows the **Archive** it's on, which `Enter` (or `Ctrl-O` on any screen) switches, and the **Search index**, which stands in for `embedding.model`: `Enter` rebuilds the index, switches the archive's model, or downloads an embedding model after asking (see [Searching by meaning](#searching-by-meaning)).
+
 ## What Carrel keeps on this device
 
 Outside any archive, in `~/Library/Application Support/Carrel` on macOS, `%APPDATA%\Carrel` on Windows, or `~/.config/carrel` elsewhere (or `CARREL_CONFIG_DIR`):
@@ -377,7 +382,7 @@ Outside any archive, in `~/Library/Application Support/Carrel` on macOS, `%APPDA
 | File | What it is |
 | --- | --- |
 | `identity.json` | This device's identifier and yours, recorded in every history change |
-| `cli.json` | The archive chosen with `carrel open`, and this device's preferences |
+| `cli.json` | The archive chosen with `carrel open`, the archives opened or created lately, and this device's preferences |
 | `models/` | Downloaded models (or `CARREL_MODELS_DIR`) |
 | `workers/` | Each archive's worker lock, status and log |
 | `backups/` | Kopia's configuration for each archive's repository |
