@@ -551,5 +551,33 @@ mod tests {
         let ids: Vec<String> = recent(&log, 15).into_iter().map(|e| e.id).collect();
         assert_eq!(ids, ["c"]);
         assert_eq!(recent(&log, 0).len(), 2);
+
+        // Each agent's changes are its own: undoing the crawler's leaves the librarian's.
+        let crawler = crate::crawl::AGENT;
+        let mixed = [
+            entry("k2", 40, Some(crawler), None),
+            entry("l1", 30, Some(AGENT), None),
+            entry("k1", 20, Some(crawler), None),
+            entry("u", 25, None, Some("k1")),
+        ];
+        let ids = |agent| -> Vec<String> {
+            recent_by(&mixed, agent, 0)
+                .into_iter()
+                .map(|e| e.id)
+                .collect()
+        };
+        assert_eq!(ids(crawler), ["k2"], "k1 is undone already");
+        assert_eq!(ids(AGENT), ["l1"]);
+        assert_eq!(ids("someone"), Vec::<String>::new());
+    }
+
+    #[test]
+    fn since_refuses_negative_and_reads_zero_as_now() {
+        let now: jiff::Zoned = "2026-11-01T12:00:00+00:00[UTC]".parse().unwrap();
+        let at = now.timestamp().as_second();
+        assert_eq!(parse_since("0d", &now), Some(at));
+        assert_eq!(parse_since(" 2W ", &now), Some(at - 2 * 604_800));
+        assert_eq!(parse_since("-3d", &now), None);
+        assert_eq!(parse_since("", &now), None);
     }
 }
