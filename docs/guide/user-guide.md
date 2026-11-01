@@ -310,6 +310,8 @@ The **librarian** answers questions about what's in your archive, in plain words
 
 **Which model:** the strongest this device has, the largest open model you've installed that fits in its memory, else Apple's on-device model, else whatever text model there is. Choose one with `carrel settings set librarian.model NAME`. A small model gives short answers and leans on search; a larger one reads and connects more.
 
+**With no model:** the librarian says why and what to do. When this device has no text model, it names the one from Carrel's catalog that suits its memory, with its size: `carrel ask` gives the `carrel models download NAME` command, which asks first; the Librarian screen asks whether to download it, as Settings does; and the Mac app's panel has a **Download…** button, confirmed first. When a model is downloaded but nothing runs it, it says the provider is missing. When `librarian.model` names a model that's gone, it lists those this device has and the one it would use instead (**Use** in the Mac app, or `carrel settings set librarian.model default`).
+
 **Saving a conversation:** conversations are kept only while they last. `--save` writes one to this month's Journal (`Journal/2026/2026-11.md`), under **Conversations with the librarian**: each question and answer, and links to the items, readable without Carrel. Saving is a change in history, like any other.
 
 ### What the librarian may change
