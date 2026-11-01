@@ -7,6 +7,11 @@ import SwiftUI
 struct CarrelApp: App {
     @State private var app = AppModel()
 
+    init() {
+        // This device's decision log for the usage report, unless `report.log` is off.
+        startDecisionLog()
+    }
+
     var body: some Scene {
         Window("Welcome to Carrel", id: WelcomeView.windowID) {
             WelcomeView()

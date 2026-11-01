@@ -18,6 +18,9 @@ pub struct Searched {
     pub results: Results,
     /// Why it was by words only, when the query had words and meaning couldn't be used.
     pub words_only: Option<String>,
+    /// When that's because no provider here runs the archive's embedding model, how to get
+    /// it.
+    pub missing_model: Option<ModelSource>,
 }
 
 /// Why a search couldn't run.
@@ -51,18 +54,44 @@ impl From<ArchiveError> for SearchError {
     }
 }
 
+/// How to get an embedding model this device doesn't have, from Carrel's catalog. Each
+/// interface offers it its own way: `carrel models download NAME`, a key in the interactive
+/// mode, a Download button in the app.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModelSource {
+    /// It's downloaded, as this catalog model.
+    Download(&'static Model),
+    /// It comes with this provider, which only Apple devices have; there's nothing to
+    /// download.
+    ComesWith(&'static str),
+}
+
+impl std::fmt::Display for ModelSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Download(model) => write!(
+                f,
+                "download {} ({}) from Carrel's catalog",
+                model.name,
+                crate::human_size(model.size)
+            ),
+            Self::ComesWith(provider) => {
+                write!(f, "it comes with {provider}, which only Apple devices have")
+            }
+        }
+    }
+}
+
 /// How to get `model` on this device, if Carrel's catalog has it: a download, or the provider
 /// it comes with.
 #[must_use]
-pub fn how_to_get(model: &str) -> Option<String> {
+pub fn how_to_get(model: &str) -> Option<ModelSource> {
     match find(model)? {
         Model {
             comes_with: Some(provider),
             ..
-        } => Some(format!(
-            "it comes with {provider}, which only Apple devices have"
-        )),
-        _ => Some(format!("download it with `carrel models download {model}`")),
+        } => Some(ModelSource::ComesWith(provider)),
+        found => Some(ModelSource::Download(found)),
     }
 }
 
@@ -113,19 +142,39 @@ pub fn search(
     }
     let mut search = Search::build(archive)?;
     let mut words_only = None;
+    let mut missing_model = None;
     if !words {
         let merge = model
             .as_deref()
             .map_or_else(Merge::default, Merge::for_model);
         match by_meaning(archive, model, index, registry, &query.text)? {
             Ok(ranking) => search = search.with_meaning(ranking).with_merge(merge),
-            Err(why) => words_only = Some(why),
+            Err(WordsOnly { why, missing }) => {
+                words_only = Some(why);
+                missing_model = missing;
+            }
         }
     }
+    let results = search.search(query, limit);
+    crate::decisions::search(archive, query, &results);
     Ok(Searched {
-        results: search.search(query, limit),
+        results,
         words_only,
+        missing_model,
     })
+}
+
+/// Why a search was by words only, and how to get the archive's embedding model when that's
+/// why.
+struct WordsOnly {
+    why: String,
+    missing: Option<ModelSource>,
+}
+
+impl WordsOnly {
+    fn because(why: String) -> Self {
+        Self { why, missing: None }
+    }
 }
 
 /// The ranking by meaning for `query` from the archive's embedding `index` for `model`, or why
@@ -136,31 +185,37 @@ fn by_meaning(
     index: Option<Index>,
     registry: Option<Registry>,
     query: &str,
-) -> Result<Result<Box<dyn Ranking>, String>, SearchError> {
+) -> Result<Result<Box<dyn Ranking>, WordsOnly>, SearchError> {
     let Some(model) = model else {
-        return Ok(Err(
+        return Ok(Err(WordsOnly::because(
             "This archive has no embedding model yet, so it was searched by words only; see `carrel index status`."
                 .into(),
-        ));
+        )));
     };
     let Some(index) = index else {
-        return Ok(Err(format!(
+        return Ok(Err(WordsOnly::because(format!(
             "There's no meaning index for {model} yet, so this was searched by words only; build it with `carrel index rebuild`."
-        )));
+        ))));
     };
     let Some(registry) = registry.filter(|r| crate::worker::offered(r, &model)) else {
-        let how = how_to_get(&model)
-            .unwrap_or_else(|| "see `carrel index model` for the models this device has".into());
-        return Ok(Err(format!(
-            "No provider on this device runs {model}, the archive's embedding model, so this was searched by words only; {how}."
-        )));
+        let missing = how_to_get(&model);
+        let how = missing.map_or_else(
+            || "Carrel's catalog doesn't have it".to_owned(),
+            |how| how.to_string(),
+        );
+        return Ok(Err(WordsOnly {
+            why: format!(
+                "No provider on this device runs {model}, the archive's embedding model, so this was searched by words only; {how}."
+            ),
+            missing,
+        }));
     };
     let vector = match embed_query(&registry, &model, query) {
         Ok(vector) => vector,
         Err(e) => {
-            return Ok(Err(format!(
+            return Ok(Err(WordsOnly::because(format!(
                 "{model} couldn't embed the query ({e}), so this was searched by words only."
-            )));
+            ))));
         }
     };
     let behind = plan(archive, Some(&index))
@@ -184,4 +239,29 @@ fn by_meaning(
         behind,
         embed,
     ))))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_catalog_model_is_downloaded_or_comes_with_its_provider() {
+        let gemma = find("embeddinggemma-300m").unwrap();
+        assert_eq!(
+            how_to_get("embeddinggemma-300m"),
+            Some(ModelSource::Download(gemma))
+        );
+        let words = how_to_get("embeddinggemma-300m").unwrap().to_string();
+        assert!(
+            words.starts_with("download embeddinggemma-300m ("),
+            "{words}"
+        );
+        assert!(!words.contains("carrel"), "no interface's command: {words}");
+        assert_eq!(
+            how_to_get("apple-nl-sentence-en"),
+            Some(ModelSource::ComesWith("carrel-provider-apple"))
+        );
+        assert_eq!(how_to_get("not-in-the-catalog"), None);
+    }
 }

@@ -213,6 +213,7 @@ impl App {
                     Some(Row::Related(_)) => keys.push(("Enter", "go to it")),
                     None => {}
                 }
+                keys.extend([("w", "wander from it"), ("A", "its questions")]);
             }
         }
         if self.browse_pane != Pane::Collections && !self.browse_items.is_empty() {

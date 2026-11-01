@@ -23,6 +23,7 @@ struct SearchTab: View {
                 ChoicesSection(embedding: embedding, current: model.index?.model, model: model)
             }
         }
+        .modelDownloadConfirmation(model)
         .confirmationDialog(
             "Switch this archive to \(model?.confirmingSwitch ?? "")?",
             isPresented: Binding(
@@ -131,13 +132,31 @@ private struct ChoicesSection: View {
                 }
             }
             ForEach(embedding.elsewhere, id: \.model) { other in
-                VStack(alignment: .leading) {
-                    Text(other.model).font(.body.monospaced())
-                    Text("Not on this Mac: \(other.how)")
-                        .font(.caption).foregroundStyle(.secondary)
+                HStack {
+                    VStack(alignment: .leading) {
+                        Text(other.model).font(.body.monospaced())
+                        Text(elsewhere(other)).font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if let download = other.download {
+                        Button("Download…") { model.confirmingDownload = download }
+                            .disabled(!download.downloadable || model.isWorking)
+                    }
                 }
             }
         }
+    }
+
+    /// Why a model isn't offered here, and what getting it takes.
+    private func elsewhere(_ other: EmbeddingElsewhere) -> String {
+        if let download = other.download {
+            let size = download.size.formatted(.byteCount(style: .file))
+            return "Not on this Mac: \(size) to download. Once it’s here, you can switch to it."
+        }
+        if let provider = other.comesWith {
+            return "Not on this Mac: it comes with \(provider), which only Apple devices have."
+        }
+        return "Not on this Mac: \(other.how)."
     }
 
     private func details(_ choice: EmbeddingChoice) -> String {

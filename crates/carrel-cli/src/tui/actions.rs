@@ -136,7 +136,7 @@ impl App {
     }
 
     /// Goes on with what was picked for a checkout or the desk: the due date for a
-    /// checkout's folder (the folder a picked file is in), or asking to put it on the desk.
+    /// checkout's folder (the folder a picked file is in), or the desk card's title.
     pub(super) fn picked_path(&mut self, paths: &[PathBuf]) {
         let picking = std::mem::replace(&mut self.picking, Picking::Ingest);
         let Some(first) = paths.first().cloned() else {
@@ -146,7 +146,7 @@ impl App {
         };
         if picking == Picking::DeskItem {
             self.tab = super::app::Tab::Active;
-            self.confirm = Some(Confirm::DeskAdd(first));
+            self.ask_option(super::option_lines::OptionLine::DeskTitle { path: first });
             return;
         }
         let Some((card, title)) = self.checking_out.take() else {
@@ -314,12 +314,10 @@ pub fn confirm_text(confirm: &Confirm) -> (&'static str, String, String, &'stati
             ),
             " with a rule   ",
         ),
-        Confirm::DeskAdd(path) => (
+        Confirm::DeskAdd(card) => (
             " Desk ",
-            format!("Put {} on the desk?", path.display()),
-            "It stays where it is: a card goes beside it, drafted by this device's text model, \
-             and Active lists it with its work sessions."
-                .to_owned(),
+            format!("Put {} on the desk?", card.path.display()),
+            desk_card_text(card),
             " put it on   ",
         ),
         Confirm::DeskRemove { title, .. } => (
@@ -384,6 +382,27 @@ pub fn confirm_text(confirm: &Confirm) -> (&'static str, String, String, &'stati
     }
 }
 
+/// What putting `card` on the desk does, with the title and summary given.
+fn desk_card_text(card: &super::option_lines::DeskCard) -> String {
+    let mut text = match (&card.title, &card.summary) {
+        (None, None) => "It stays where it is: a card goes beside it, drafted by this device's \
+                         text model, and Active lists it with its work sessions."
+            .to_owned(),
+        (Some(_), Some(_)) => "It stays where it is: a card goes beside it, and Active lists it \
+                               with its work sessions."
+            .to_owned(),
+        _ => "It stays where it is: a card goes beside it, the rest drafted by this device's \
+              text model, and Active lists it with its work sessions."
+            .to_owned(),
+    };
+    for (label, given) in [("Title", &card.title), ("Summary", &card.summary)] {
+        if let Some(given) = given {
+            write!(text, "\n{label}: {given}").unwrap();
+        }
+    }
+    text
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::{Path, PathBuf};
@@ -392,6 +411,7 @@ mod tests {
 
     use super::super::app::{App, Confirm, Effect, Picking, Tab};
     use super::super::item::Pane;
+    use super::super::option_lines::{DeskCard, OptionLine};
     use super::super::screens::InputPurpose;
     use super::super::tests::{active_sample, choose_parts_list, key, sample, screen};
     use super::NewCollection;
@@ -583,7 +603,20 @@ mod tests {
         app.key(key(KeyCode::Char('/')));
         assert_eq!(purpose(&app), &InputPurpose::DeskPath);
         enter(&mut app, &notes.display().to_string());
-        assert_eq!(app.confirm, Some(Confirm::DeskAdd(notes.clone())));
+        // Then the card's title and summary, each drafted when left empty.
+        assert!(matches!(
+            purpose(&app),
+            InputPurpose::Option(OptionLine::DeskTitle { .. })
+        ));
+        assert!(screen(&app, 120, 30).contains("A title for the card of"));
+        enter(&mut app, "");
+        assert!(matches!(
+            purpose(&app),
+            InputPurpose::Option(OptionLine::DeskSummary { title: None, .. })
+        ));
+        enter(&mut app, "");
+        let drafted = DeskCard::drafted(notes.clone());
+        assert_eq!(app.confirm, Some(Confirm::DeskAdd(drafted.clone())));
         let text = screen(&app, 120, 30);
         assert!(
             text.contains(" Desk ") && text.contains("Put "),
@@ -591,7 +624,7 @@ mod tests {
         );
         assert_eq!(
             app.key(key(KeyCode::Char('y'))),
-            Some(Effect::DeskAdd(notes.clone()))
+            Some(Effect::DeskAdd(drafted.clone()))
         );
 
         choose_parts_list(&mut app);
@@ -603,8 +636,38 @@ mod tests {
                 .contains("already in the archive")
         );
         let (busy, _) =
-            super::super::archive_work(app.archive.root().to_owned(), Effect::DeskAdd(notes));
+            super::super::archive_work(app.archive.root().to_owned(), Effect::DeskAdd(drafted));
         assert_eq!(busy, "Putting it on the desk and drafting its card…");
+    }
+
+    #[test]
+    fn a_desk_card_is_given_its_title_and_summary() {
+        let (dir, mut app) = active_sample();
+        app.picker_preference = Some("builtin".into());
+        app.start_folder = dir.path().to_owned();
+        app.key(key(KeyCode::Char('3')));
+        let notes = dir.path().join("Notes");
+        std::fs::create_dir_all(&notes).unwrap();
+        // As `carrel desk add --title --summary` gives them.
+        app.key(key(KeyCode::Char('n')));
+        app.key(key(KeyCode::Char('/')));
+        enter(&mut app, &notes.display().to_string());
+        enter(&mut app, "Lamp notes");
+        enter(&mut app, "Notes on rewiring the lamp.");
+        let given = DeskCard {
+            path: notes.clone(),
+            title: Some("Lamp notes".into()),
+            summary: Some("Notes on rewiring the lamp.".into()),
+        };
+        assert_eq!(app.confirm, Some(Confirm::DeskAdd(given.clone())));
+        assert!(screen(&app, 120, 30).contains("Title: Lamp notes"));
+        assert_eq!(
+            app.key(key(KeyCode::Char('y'))),
+            Some(Effect::DeskAdd(given.clone()))
+        );
+        let (busy, _) =
+            super::super::archive_work(app.archive.root().to_owned(), Effect::DeskAdd(given));
+        assert_eq!(busy, "Putting it on the desk…");
     }
 
     #[test]

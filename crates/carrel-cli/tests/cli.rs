@@ -3758,8 +3758,19 @@ fn librarian_settings_are_shown_and_checked() {
     sandbox.ok(&root, &["settings", "set", "librarian.confidence", "0.8"]);
     let wrong = sandbox.run_in(&root, &["settings", "set", "librarian.model", "nope/none"]);
     assert_eq!(wrong.status.code(), Some(1));
-    let none = sandbox.run_in(&root, &["ask", "Anything?"]);
+    // With no providers on the path, there's no text model, whatever this machine has.
+    let empty = sandbox.path("no-providers");
+    std::fs::create_dir_all(&empty).unwrap();
+    sandbox.ok(&root, &["settings", "set", "librarian.model", "default"]);
+    let none = run_with_providers(&sandbox, &root, &empty, &["ask", "Anything?"]);
     assert_eq!(none.status.code(), Some(1), "no text model here");
+    // It says what to do: the model that suits this device, and how to download it.
+    let why = String::from_utf8_lossy(&none.stderr);
+    assert!(why.contains("The librarian needs a text model"), "{why}");
+    assert!(
+        why.contains("Download it with `carrel models download "),
+        "{why}"
+    );
 }
 
 const PARTS_LIST: &str = "Projects/Hardware/parts-list.csv.md";
@@ -3830,6 +3841,55 @@ fn questions_come_up_on_status_in_show_on_a_wander_and_from_the_librarian() {
         assert!(question["step"].as_u64().unwrap() >= 2, "{walk}");
     }
     assert!(steps > 1, "{walk}");
+}
+
+#[test]
+fn report_sums_up_the_decision_log_without_titles_or_queries() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    let empty = sandbox.ok(&root, &["report"]);
+    assert!(empty.contains("Nothing recorded yet"), "{empty}");
+
+    sandbox.ok(&root, &["review", "reject", "01a18701"]);
+    let found = sandbox.json(&root, &["search", "oscillators"]);
+    let first = found["results"][0]["found"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    sandbox.ok(&root, &["show", &first]);
+
+    let report = sandbox.json(&root, &["report", "--since", "1d"]);
+    assert_eq!(report["models"][0]["rejected"], 1, "{report}");
+    assert_eq!(report["search"][0]["opened"], 1, "{report}");
+    let log = std::fs::read_dir(sandbox.path("config/decisions"))
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|e| e.path().extension().is_some_and(|x| x == "jsonl"))
+        .map(|e| std::fs::read_to_string(e.path()).unwrap())
+        .collect::<String>();
+    let text = sandbox.ok(&root, &["report"]);
+    for shared in [&log, &report.to_string(), &text] {
+        assert!(!shared.to_lowercase().contains("oscillat"), "{shared}");
+    }
+    assert!(text.contains("carrel report --names"), "{text}");
+
+    sandbox.ok(&root, &["settings", "set", "report.log", "off"]);
+    let settings = sandbox.json(&root, &["settings"]);
+    assert_eq!(settings["device"]["report.log"], "off");
+    sandbox.ok(&root, &["search", "oscillators"]);
+    let after = std::fs::read_dir(sandbox.path("config/decisions"))
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|e| e.path().extension().is_some_and(|x| x == "jsonl"))
+        .map(|e| std::fs::read_to_string(e.path()).unwrap())
+        .collect::<String>();
+    assert_eq!(after, log, "nothing is logged while it's off");
+    assert!(sandbox.ok(&root, &["report"]).contains("is off"));
+    let bad = sandbox.run_in(&root, &["settings", "set", "report.keep_days", "0"]);
+    assert_eq!(bad.status.code(), Some(1));
+    let bad = sandbox.run_in(&root, &["report", "--since", "sometime"]);
+    assert_eq!(bad.status.code(), Some(1));
 }
 
 #[test]

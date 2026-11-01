@@ -37,6 +37,7 @@ mod search;
 mod sessions;
 mod settings;
 mod tui;
+mod usage_report;
 mod worker;
 
 use std::path::{Path, PathBuf};
@@ -135,6 +136,16 @@ enum Command {
     Providers,
     /// List the file types this device reads, and those it couldn't read so far.
     Formats,
+    /// How well Carrel is doing on this device and what to tweak, from its decision log: no
+    /// titles, text, names or searches, so it can be shared.
+    Report {
+        /// The period: a span such as 14d or 2w, `today`, or a date such as 2026-10-01.
+        #[arg(long, value_name = "WHEN", default_value = usage_report::DEFAULT_SINCE)]
+        since: String,
+        /// Show collections by path rather than identifier, for your eyes only.
+        #[arg(long)]
+        names: bool,
+    },
     /// Add files and folders to the intake queue. A worker drafts each one's card and
     /// destination in the background, saving proposals for `carrel review` as they're ready.
     /// Nothing is moved until a proposal is approved.
@@ -1040,6 +1051,9 @@ fn without_command(archive: Option<&std::path::Path>, json: bool) -> ExitCode {
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+    if !matches!(cli.command, Some(Command::Bench(_))) {
+        carrel_core::decisions::start();
+    }
     let Some(command) = cli.command else {
         return without_command(cli.archive.as_deref(), cli.json);
     };
@@ -1079,6 +1093,9 @@ fn main() -> ExitCode {
         } => commands::log(cli.archive.as_deref(), max_count, librarian),
         Command::Providers => Ok(providers::list()),
         Command::Formats => Ok(formats::list()),
+        Command::Report { since, names } => {
+            usage_report::report(cli.archive.as_deref(), &since, names)
+        }
         Command::Ingest(args) => {
             ingest::command(cli.archive.as_deref(), &args.into_request(), cli.json)
         }

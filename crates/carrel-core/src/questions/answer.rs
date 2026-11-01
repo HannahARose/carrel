@@ -123,6 +123,12 @@ pub fn place(
     }
     let (refiled, not_refiled) = refile_all(archive, question, &target, holder)?;
     QuestionQueue::of(archive).remove(question.id)?;
+    crate::decisions::question(
+        archive,
+        question,
+        crate::decisions::QuestionOutcome::Answered,
+        moved.len() + refiled.len(),
+    );
     Ok(Placed {
         collection: target.path,
         created,
@@ -196,6 +202,12 @@ pub fn decline(archive: &Archive, question: &QuestionEntry) -> Result<(), Action
     let mut kept = question.clone();
     kept.declined = Some(now());
     QuestionQueue::of(archive).save(&kept)?;
+    crate::decisions::question(
+        archive,
+        question,
+        crate::decisions::QuestionOutcome::Declined,
+        0,
+    );
     Ok(())
 }
 
@@ -210,6 +222,12 @@ pub fn skip(archive: &Archive, question: &QuestionEntry) -> Result<QuestionEntry
     skipped.skipped = Some(now());
     skipped.skips += 1;
     QuestionQueue::of(archive).save(&skipped)?;
+    crate::decisions::question(
+        archive,
+        question,
+        crate::decisions::QuestionOutcome::Skipped,
+        0,
+    );
     Ok(skipped)
 }
 
@@ -220,6 +238,12 @@ pub fn skip(archive: &Archive, question: &QuestionEntry) -> Result<QuestionEntry
 ///
 /// A queue error.
 pub fn settled(archive: &Archive, question: &QuestionEntry) -> Result<(), ActionError> {
+    crate::decisions::question(
+        archive,
+        question,
+        crate::decisions::QuestionOutcome::Answered,
+        question.items.len(),
+    );
     crate::actions::dismiss(archive, question)
 }
 

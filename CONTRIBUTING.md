@@ -6,10 +6,10 @@ Carrel is in early development. This page explains how work is organized.
 
 | What | Where |
 | --- | --- |
-| Bugs, features, tasks, open questions | [Issues](https://github.com/HannahARose/carrel/issues), using the templates |
+| Bugs, features, tasks, open questions | [Issues](https://github.com/Horizon-Labs/carrel/issues), using the templates |
 | Planning and status | The Carrel [project board](https://github.com/users/HannahARose/projects/2) |
 | Versions | One milestone per version, v0.1 through v2.0 (see the wiki's Roadmap page) |
-| Design and reference docs | The [wiki](https://github.com/HannahARose/carrel/wiki) |
+| Design and reference docs | The [wiki](https://github.com/Horizon-Labs/carrel/wiki) |
 | The archive format spec | `FORMAT.md` in this repository (once written) |
 
 ## Labels

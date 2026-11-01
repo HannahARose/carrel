@@ -12,7 +12,7 @@ Until v1.0 there are two ways to get it. **Signed and notarized builds**, which 
 
 Every push to `dev` builds the app. To download the latest:
 
-1. Open the repository's [Actions](https://github.com/HannahARose/carrel/actions/workflows/ci.yml?query=branch%3Adev), and choose the newest successful run on `dev`.
+1. Open the repository's [Actions](https://github.com/Horizon-Labs/carrel/actions/workflows/ci.yml?query=branch%3Adev), and choose the newest successful run on `dev`.
 2. Under **Artifacts**, download **Carrel**. It's a zip holding `Carrel.app`, kept for 30 days. You need to be signed in to GitHub to download it.
 3. Unzip it and move `Carrel.app` to Applications.
 
@@ -198,7 +198,7 @@ What `carrel backup` does (see [Backups](user-guide.md#backups)), using the Kopi
 
 - **General:** this Mac's settings, and the archive's own, shared by every device that opens it (see [Settings](user-guide.md#settings)), including `librarian.changes`, which lets the librarian make the changes it's sure of, and `librarian.confidence`, how sure it must be. Changing an archive setting is a change in history; **Undo** beside it takes it back.
 - **Models:** which model drafts cards, which gives a second opinion and which the **Librarian** answers with (the strongest that fits this Mac, unless you choose one), the text and embedding models with their sizes, and **Download…** and **Delete…**, which ask first and show the size. Nothing downloads without your OK.
-- **Search:** the archive's index for search by meaning: rebuilding it, and switching to another embedding model, which asks first and can be stopped and carried on.
+- **Search:** the archive's index for search by meaning: rebuilding it, and switching to another embedding model, which asks first and can be stopped and carried on. An embedding model that isn't on this Mac has **Download…** there, which asks first and shows the size; once it's downloaded, you can switch to it.
 - **Providers:** the providers this Mac found, the file types it reads, and those it couldn't read so far.
 - **Backups:** whether Kopia is installed and backups are set up for this archive. Set them up from the [Backups](#backups) screen.
 - **Agent:** the background agent's switch (below).

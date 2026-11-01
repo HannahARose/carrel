@@ -1488,6 +1488,18 @@ public protocol ArchiveHandleProtocol: AnyObject, Sendable {
     func librarianMakesChanges() throws  -> Bool
     
     /**
+     * Which model the librarian would answer with, as [`ArchiveHandle::ask_librarian`]
+     * chooses it, or why there's none and what would let it: the models this device has
+     * once a `librarian.model` that's gone is cleared, or the catalog model to download for
+     * `memory_gb`.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the preferences can't be read.
+     */
+    func librarianModelChoice(model: ModelProvider?, memoryGb: UInt64?) throws  -> LibrarianModelChoice
+    
+    /**
      * The model the librarian would answer with, for people, as
      * [`ArchiveHandle::ask_librarian`] chooses it.
      *
@@ -1839,6 +1851,23 @@ public protocol ArchiveHandleProtocol: AnyObject, Sendable {
      * [`CarrelError::Failed`] if the archive can't be read.
      */
     func settings() throws  -> [Setting]
+    
+    /**
+     * Notes that the item `id` was opened, so a search it came from records where it
+     * ranked.
+     */
+    func noteOpened(id: String) 
+    
+    /**
+     * The report since `since` (a span such as `14d`, `today`, or a date), with collections
+     * by path when `names` is true, for the owner alone.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if `since` can't be read, or [`CarrelError::Failed`] if
+     * there's no configuration folder.
+     */
+    func usageReport(since: String, names: Bool) throws  -> UsageReportText
     
 }
 /**
@@ -3180,6 +3209,27 @@ open func librarianMakesChanges()throws  -> Bool  {
 }
     
     /**
+     * Which model the librarian would answer with, as [`ArchiveHandle::ask_librarian`]
+     * chooses it, or why there's none and what would let it: the models this device has
+     * once a `librarian.model` that's gone is cleared, or the catalog model to download for
+     * `memory_gb`.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the preferences can't be read.
+     */
+open func librarianModelChoice(model: ModelProvider?, memoryGb: UInt64?)throws  -> LibrarianModelChoice  {
+    return try  FfiConverterTypeLibrarianModelChoice_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_librarian_model_choice(
+            self.uniffiCloneHandle(),
+        FfiConverterOptionTypeModelProvider.lower(model),
+        FfiConverterOptionUInt64.lower(memoryGb),uniffiCallStatus
+    )
+})
+}
+    
+    /**
      * The model the librarian would answer with, for people, as
      * [`ArchiveHandle::ask_librarian`] chooses it.
      *
@@ -3810,6 +3860,39 @@ open func settings()throws  -> [Setting]  {
         uniffiCallStatus in
     uniffi_carrel_ffi_fn_method_archivehandle_settings(
             self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Notes that the item `id` was opened, so a search it came from records where it
+     * ranked.
+     */
+open func noteOpened(id: String)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_note_opened(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(id),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * The report since `since` (a span such as `14d`, `today`, or a date), with collections
+     * by path when `names` is true, for the owner alone.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if `since` can't be read, or [`CarrelError::Failed`] if
+     * there's no configuration folder.
+     */
+open func usageReport(since: String, names: Bool)throws  -> UsageReportText  {
+    return try  FfiConverterTypeUsageReportText_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_usage_report(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(since),
+        FfiConverterBool.lower(names),uniffiCallStatus
     )
 })
 }
@@ -7351,6 +7434,75 @@ public func FfiConverterTypeDayInYear_lower(_ value: DayInYear) -> RustBuffer {
 
 
 /**
+ * This device's decision log preferences.
+ */
+public struct DecisionLogSettings: Equatable, Hashable {
+    /**
+     * Whether the log is kept (`report.log`).
+     */
+    public var on: Bool
+    /**
+     * How many days it keeps (`report.keep_days`).
+     */
+    public var keepDays: UInt32
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Whether the log is kept (`report.log`).
+         */on: Bool, 
+        /**
+         * How many days it keeps (`report.keep_days`).
+         */keepDays: UInt32) {
+        self.on = on
+        self.keepDays = keepDays
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension DecisionLogSettings: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeDecisionLogSettings: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> DecisionLogSettings {
+        return
+            try DecisionLogSettings(
+                on: FfiConverterBool.read(from: &buf), 
+                keepDays: FfiConverterUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: DecisionLogSettings, into buf: inout [UInt8]) {
+        FfiConverterBool.write(value.on, into: &buf)
+        FfiConverterUInt32.write(value.keepDays, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDecisionLogSettings_lift(_ buf: RustBuffer) throws -> DecisionLogSettings {
+    return try FfiConverterTypeDecisionLogSettings.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDecisionLogSettings_lower(_ value: DecisionLogSettings) -> RustBuffer {
+    return FfiConverterTypeDecisionLogSettings.lower(value)
+}
+
+
+/**
  * A desk item.
  */
 public struct DeskItem: Equatable, Hashable {
@@ -8048,9 +8200,18 @@ public struct EmbeddingElsewhere: Equatable, Hashable {
      */
     public var model: String
     /**
-     * How to get it.
+     * How to get it, in words that name no interface's command.
      */
     public var how: String
+    /**
+     * The catalog model to download for it, when it's downloaded; download it with
+     * [`ArchiveHandle::download_model`] once the owner has seen its size.
+     */
+    public var download: CatalogModel?
+    /**
+     * The provider it comes with instead, which only Apple devices have.
+     */
+    public var comesWith: String?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -8059,10 +8220,19 @@ public struct EmbeddingElsewhere: Equatable, Hashable {
          * The model's identifier.
          */model: String, 
         /**
-         * How to get it.
-         */how: String) {
+         * How to get it, in words that name no interface's command.
+         */how: String, 
+        /**
+         * The catalog model to download for it, when it's downloaded; download it with
+         * [`ArchiveHandle::download_model`] once the owner has seen its size.
+         */download: CatalogModel?, 
+        /**
+         * The provider it comes with instead, which only Apple devices have.
+         */comesWith: String?) {
         self.model = model
         self.how = how
+        self.download = download
+        self.comesWith = comesWith
     }
 
     
@@ -8082,13 +8252,17 @@ public struct FfiConverterTypeEmbeddingElsewhere: FfiConverterRustBuffer {
         return
             try EmbeddingElsewhere(
                 model: FfiConverterString.read(from: &buf), 
-                how: FfiConverterString.read(from: &buf)
+                how: FfiConverterString.read(from: &buf), 
+                download: FfiConverterOptionTypeCatalogModel.read(from: &buf), 
+                comesWith: FfiConverterOptionString.read(from: &buf)
         )
     }
 
     public static func write(_ value: EmbeddingElsewhere, into buf: inout [UInt8]) {
         FfiConverterString.write(value.model, into: &buf)
         FfiConverterString.write(value.how, into: &buf)
+        FfiConverterOptionTypeCatalogModel.write(value.download, into: &buf)
+        FfiConverterOptionString.write(value.comesWith, into: &buf)
     }
 }
 
@@ -9974,6 +10148,118 @@ public func FfiConverterTypeLibrarianItem_lift(_ buf: RustBuffer) throws -> Libr
 #endif
 public func FfiConverterTypeLibrarianItem_lower(_ value: LibrarianItem) -> RustBuffer {
     return FfiConverterTypeLibrarianItem.lower(value)
+}
+
+
+/**
+ * Which model the librarian answers with, or, when it has none, why and what would let it:
+ * the setting to clear, or a model to download.
+ */
+public struct LibrarianModelChoice: Equatable, Hashable {
+    /**
+     * The model it answers with, for people; `None` when there's none.
+     */
+    public var label: String?
+    /**
+     * When there's none, why and what to do, in words.
+     */
+    public var problem: String?
+    /**
+     * What `librarian.model` names, when it's a model that isn't available.
+     */
+    public var gone: String?
+    /**
+     * The text models this device has, `provider/offer`, best first.
+     */
+    public var available: [String]
+    /**
+     * The one it runs on once `librarian.model` is cleared, `provider/offer`.
+     */
+    public var instead: String?
+    /**
+     * When there's no text model at all, the catalog's to download for this device. Download
+     * it with [`ArchiveHandle::download_model`] once the owner has seen its size.
+     */
+    public var download: CatalogModel?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The model it answers with, for people; `None` when there's none.
+         */label: String?, 
+        /**
+         * When there's none, why and what to do, in words.
+         */problem: String?, 
+        /**
+         * What `librarian.model` names, when it's a model that isn't available.
+         */gone: String?, 
+        /**
+         * The text models this device has, `provider/offer`, best first.
+         */available: [String], 
+        /**
+         * The one it runs on once `librarian.model` is cleared, `provider/offer`.
+         */instead: String?, 
+        /**
+         * When there's no text model at all, the catalog's to download for this device. Download
+         * it with [`ArchiveHandle::download_model`] once the owner has seen its size.
+         */download: CatalogModel?) {
+        self.label = label
+        self.problem = problem
+        self.gone = gone
+        self.available = available
+        self.instead = instead
+        self.download = download
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension LibrarianModelChoice: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeLibrarianModelChoice: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> LibrarianModelChoice {
+        return
+            try LibrarianModelChoice(
+                label: FfiConverterOptionString.read(from: &buf), 
+                problem: FfiConverterOptionString.read(from: &buf), 
+                gone: FfiConverterOptionString.read(from: &buf), 
+                available: FfiConverterSequenceString.read(from: &buf), 
+                instead: FfiConverterOptionString.read(from: &buf), 
+                download: FfiConverterOptionTypeCatalogModel.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: LibrarianModelChoice, into buf: inout [UInt8]) {
+        FfiConverterOptionString.write(value.label, into: &buf)
+        FfiConverterOptionString.write(value.problem, into: &buf)
+        FfiConverterOptionString.write(value.gone, into: &buf)
+        FfiConverterSequenceString.write(value.available, into: &buf)
+        FfiConverterOptionString.write(value.instead, into: &buf)
+        FfiConverterOptionTypeCatalogModel.write(value.download, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLibrarianModelChoice_lift(_ buf: RustBuffer) throws -> LibrarianModelChoice {
+    return try FfiConverterTypeLibrarianModelChoice.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLibrarianModelChoice_lower(_ value: LibrarianModelChoice) -> RustBuffer {
+    return FfiConverterTypeLibrarianModelChoice.lower(value)
 }
 
 
@@ -13298,6 +13584,11 @@ public struct SearchResults: Equatable, Hashable {
      * Why it was by words only, when the query had words and meaning couldn't be used.
      */
     public var wordsOnly: String?
+    /**
+     * When that's because this device doesn't have the archive's embedding model, the
+     * catalog model to download for it.
+     */
+    public var missingModel: CatalogModel?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -13316,12 +13607,17 @@ public struct SearchResults: Equatable, Hashable {
          */behind: UInt64, 
         /**
          * Why it was by words only, when the query had words and meaning couldn't be used.
-         */wordsOnly: String?) {
+         */wordsOnly: String?, 
+        /**
+         * When that's because this device doesn't have the archive's embedding model, the
+         * catalog model to download for it.
+         */missingModel: CatalogModel?) {
         self.hits = hits
         self.total = total
         self.byMeaning = byMeaning
         self.behind = behind
         self.wordsOnly = wordsOnly
+        self.missingModel = missingModel
     }
 
     
@@ -13344,7 +13640,8 @@ public struct FfiConverterTypeSearchResults: FfiConverterRustBuffer {
                 total: FfiConverterUInt64.read(from: &buf), 
                 byMeaning: FfiConverterBool.read(from: &buf), 
                 behind: FfiConverterUInt64.read(from: &buf), 
-                wordsOnly: FfiConverterOptionString.read(from: &buf)
+                wordsOnly: FfiConverterOptionString.read(from: &buf), 
+                missingModel: FfiConverterOptionTypeCatalogModel.read(from: &buf)
         )
     }
 
@@ -13354,6 +13651,7 @@ public struct FfiConverterTypeSearchResults: FfiConverterRustBuffer {
         FfiConverterBool.write(value.byMeaning, into: &buf)
         FfiConverterUInt64.write(value.behind, into: &buf)
         FfiConverterOptionString.write(value.wordsOnly, into: &buf)
+        FfiConverterOptionTypeCatalogModel.write(value.missingModel, into: &buf)
     }
 }
 
@@ -14340,6 +14638,85 @@ public func FfiConverterTypeUnreadType_lift(_ buf: RustBuffer) throws -> UnreadT
 #endif
 public func FfiConverterTypeUnreadType_lower(_ value: UnreadType) -> RustBuffer {
     return FfiConverterTypeUnreadType.lower(value)
+}
+
+
+/**
+ * The report, for people and as JSON to share.
+ */
+public struct UsageReportText: Equatable, Hashable {
+    /**
+     * The report in words.
+     */
+    public var text: String
+    /**
+     * The same as JSON, the form `carrel report --json` gives, safe to share.
+     */
+    public var json: String
+    /**
+     * Whether nothing has been recorded yet.
+     */
+    public var empty: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The report in words.
+         */text: String, 
+        /**
+         * The same as JSON, the form `carrel report --json` gives, safe to share.
+         */json: String, 
+        /**
+         * Whether nothing has been recorded yet.
+         */empty: Bool) {
+        self.text = text
+        self.json = json
+        self.empty = empty
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension UsageReportText: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeUsageReportText: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UsageReportText {
+        return
+            try UsageReportText(
+                text: FfiConverterString.read(from: &buf), 
+                json: FfiConverterString.read(from: &buf), 
+                empty: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: UsageReportText, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.text, into: &buf)
+        FfiConverterString.write(value.json, into: &buf)
+        FfiConverterBool.write(value.empty, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeUsageReportText_lift(_ buf: RustBuffer) throws -> UsageReportText {
+    return try FfiConverterTypeUsageReportText.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeUsageReportText_lower(_ value: UsageReportText) -> RustBuffer {
+    return FfiConverterTypeUsageReportText.lower(value)
 }
 
 
@@ -16509,6 +16886,30 @@ fileprivate struct FfiConverterOptionTypeProgressListener: FfiConverterRustBuffe
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeCatalogModel: FfiConverterRustBuffer {
+    typealias SwiftType = CatalogModel?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeCatalogModel.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeCatalogModel.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeChange: FfiConverterRustBuffer {
     typealias SwiftType = Change?
 
@@ -18087,6 +18488,46 @@ public func thumbnailPixels() -> UInt32  {
     )
 })
 }
+/**
+ * This device's decision log preferences.
+ *
+ * # Errors
+ *
+ * [`CarrelError::Failed`] if the preferences can't be read.
+ */
+public func decisionLogSettings()throws  -> DecisionLogSettings  {
+    return try  FfiConverterTypeDecisionLogSettings_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_func_decision_log_settings(uniffiCallStatus
+    )
+})
+}
+/**
+ * Turns the decision log on or off and sets how many days it keeps, for this device, as
+ * `carrel settings set report.log` and `report.keep_days` do.
+ *
+ * # Errors
+ *
+ * [`CarrelError::Invalid`] for fewer than one day, or [`CarrelError::Failed`] if the
+ * preferences can't be saved.
+ */
+public func setDecisionLog(settings: DecisionLogSettings)throws   {try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_func_set_decision_log(
+        FfiConverterTypeDecisionLogSettings_lower(settings),uniffiCallStatus
+    )
+}
+}
+/**
+ * Starts this device's decision log, unless `report.log` is off. The app calls it once as
+ * it starts, as the command line does.
+ */
+public func startDecisionLog()  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_func_start_decision_log(uniffiCallStatus
+    )
+}
+}
 
 private enum InitializationResult {
     case ok
@@ -18113,6 +18554,15 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_func_thumbnail_pixels() != 32344) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_func_decision_log_settings() != 63067) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_func_set_decision_log() != 20313) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_func_start_decision_log() != 10234) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_collections() != 26221) {
@@ -18316,6 +18766,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_carrel_ffi_checksum_method_archivehandle_librarian_makes_changes() != 38367) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_librarian_model_choice() != 46979) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_librarian_model_label() != 9489) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -18419,6 +18872,12 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_settings() != 47688) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_note_opened() != 42251) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_usage_report() != 37808) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_progresslistener_update() != 58359) {

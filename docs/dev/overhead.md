@@ -85,7 +85,7 @@ The figures above don't depend on an archive's size. What does is measured by th
 | Parsing 100,000 cards | 4.4 s | 44 µs |
 | Reading a history of 100,000 changes | 1.8 s | 18 µs |
 
-Every one grows in step with the archive, without a jump at any size. At a million items, searching by meaning by brute force takes about a second, and building the word index, done once per search process, about thirty: those are the two to watch, and the reason [`Neighbours`](https://hrose.me/carrel/carrel_core/index/trait.Neighbours.html) leaves room for an approximate index.
+Every one grows in step with the archive, without a jump at any size. At a million items, searching by meaning by brute force takes about a second, and building the word index, done once per search process, about thirty: those are the two to watch, and the reason [`Neighbours`](https://horizon-labs.github.io/carrel/carrel_core/index/trait.Neighbours.html) leaves room for an approximate index.
 
 ## Measuring it again
 

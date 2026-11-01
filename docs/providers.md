@@ -7,7 +7,9 @@
 A provider is an executable named `carrel-provider-<name>` (with `.exe` on Windows). Carrel looks in these places, in order, and uses the first one found for each name:
 
 1. the folder containing the `carrel` program
-2. each folder on `PATH`
+2. in the Mac app, its bundle's `Contents/Helpers`
+3. each folder on `PATH`
+4. in the Mac app, which doesn't have the shell's `PATH` when it's opened from the Finder, the folders programs are usually installed in: `~/.local/bin`, `~/.cargo/bin`, `/opt/homebrew/bin` and `/usr/local/bin`
 
 `<name>` identifies the provider in settings and in the provenance Carrel records on cards (FORMAT.md §5.6).
 
