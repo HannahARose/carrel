@@ -247,10 +247,10 @@ fn event_loop(
             Some(Effect::Correction(step)) if preparing.is_none() => {
                 correction(app, step, &mut preparing);
             }
-            Some(Effect::EditItem(card)) => {
+            Some(Effect::EditItem { card, body }) => {
                 // The editor needs the terminal to itself.
                 leave();
-                let result = crate::edit::edit(Some(app.archive.root()), &card);
+                let result = crate::edit::edit(Some(app.archive.root()), &card, body);
                 reenter(terminal, &mut painter);
                 changed(app.archive.root(), &result);
                 finished(app, result.map(|r| r.text).map_err(|Failure(e)| e));
@@ -448,7 +448,7 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
         }
         // The run loop does these itself, on the terminal or in the pop-up.
         Effect::Edit(_)
-        | Effect::EditItem(_)
+        | Effect::EditItem { .. }
         | Effect::EditEntry { .. }
         | Effect::Pick(_)
         | Effect::Correction(_)
@@ -1458,7 +1458,19 @@ mod tests {
         assert!(app.keys().iter().any(|(k, v)| *k == "e" && *v == "edit"));
         assert_eq!(
             app.key(key(KeyCode::Char('e'))),
-            Some(Effect::EditItem(card))
+            Some(Effect::EditItem {
+                card: card.clone(),
+                body: false
+            })
+        );
+        assert!(
+            app.keys()
+                .iter()
+                .any(|(k, v)| *k == "b" && *v == "edit notes")
+        );
+        assert_eq!(
+            app.key(key(KeyCode::Char('b'))),
+            Some(Effect::EditItem { card, body: true })
         );
     }
 

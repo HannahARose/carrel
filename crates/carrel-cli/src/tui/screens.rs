@@ -452,7 +452,7 @@ impl App {
     }
 
     /// Handles a key on the Browse screen: ←→ move between collections, items and the chosen
-    /// item's view, `e` and `c` edit or correct the chosen item, `o`, `r` and `z` check it out,
+    /// item's view, `e` and `c` edit or correct the chosen item, `b` edits its notes, `o`, `r` and `z` check it out,
     /// rename or expand it, `a` answers Carrel's question about it and `A` asks for them, `w`
     /// wanders from it, `n` creates a collection, `/` searches, and Esc clears a search.
     pub(super) fn browse_key(&mut self, key: KeyEvent) -> Handled {
@@ -483,9 +483,12 @@ impl App {
                     self.browse_pane = Pane::Collections;
                 }
             }
-            KeyCode::Char('e') if on_item => {
+            KeyCode::Char(c @ ('e' | 'b')) if on_item => {
                 if let Some((card, _)) = self.browse_items.get(self.browse_item) {
-                    return Handled::Yes(Some(Effect::EditItem(card.clone())));
+                    return Handled::Yes(Some(Effect::EditItem {
+                        card: card.clone(),
+                        body: c == 'b',
+                    }));
                 }
             }
             KeyCode::Char('c') if on_item => {

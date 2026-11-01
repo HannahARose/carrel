@@ -289,8 +289,14 @@ pub enum Effect {
     },
     /// Edit this proposal's card in the owner's editor.
     Edit(Id),
-    /// Edit this filed item's card, by its card's path, in the owner's editor.
-    EditItem(String),
+    /// Edit this filed item's card in the owner's editor, as `carrel edit [--body]` does: its
+    /// fields, or its body.
+    EditItem {
+        /// The card's path.
+        card: String,
+        /// Whether it's the body, its Notes and the rest below the fields.
+        body: bool,
+    },
     /// Edit an active item's pending history entry in the owner's editor, as
     /// `carrel sessions edit` does.
     EditEntry {
