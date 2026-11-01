@@ -21,7 +21,7 @@
 //! | [`settings`] | The archive's settings and this device's model choices |
 //! | [`models`] | The model catalog, providers, and downloads |
 //! | [`intake`] | The intake queue |
-//! | [`backups`] | Backups: setting up a repository, the snapshots, taking one, verifying, restoring |
+//! | [`backups`](mod@backups) | Backups: setting up a repository, the snapshots, taking one, verifying, restoring |
 //! | [`agent`] | The Mac app's agent: its claim on an archive, work sessions and scheduled snapshots |
 //!
 //! [`TextModel`] and [`ModelProvider`](correct::ModelProvider) are implemented in Swift and called from Rust, as is
