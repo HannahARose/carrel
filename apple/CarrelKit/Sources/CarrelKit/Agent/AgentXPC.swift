@@ -11,30 +11,6 @@ import Foundation
     func handle(_ request: Data, reply: @escaping @Sendable (Data) -> Void)
 }
 
-/// Where the agent and the extensions meet.
-public enum AgentService {
-    /// The app group the app, the agent and the extensions share.
-    public static let appGroup = "io.github.hannaharose.Carrel"
-    /// The agent's Mach service: its bundle identifier, inside the app group.
-    public static let machServiceName = appGroup + ".Agent"
-
-    /// The app group's container, where the badge state file is kept.
-    public static var container: URL {
-        FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroup)
-            ?? FileManager.default.homeDirectoryForCurrentUser
-            .appending(path: "Library/Group Containers/\(appGroup)")
-    }
-
-    /// The badge state file.
-    public static var badgeStateFile: URL {
-        container.appending(path: BadgeState.fileName)
-    }
-
-    static func encode<T: Encodable>(_ value: T) -> Data {
-        (try? JSONEncoder().encode(value)) ?? Data()
-    }
-}
-
 /// The agent's side: accepts connections and answers each request with `handler`.
 public final class AgentXPCListener: NSObject, NSXPCListenerDelegate, @unchecked Sendable {
     private let listener: NSXPCListener
