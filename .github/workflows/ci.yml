@@ -227,7 +227,7 @@ jobs:
           fi
           # The summary goes to the job summary; its ::notice line to the log, as an annotation.
           python3 .github/scripts/coverage-summary.py target/lcov.info ${range[@]+"${range[@]}"} \
-            2>&1 >> "$GITHUB_STEP_SUMMARY"
+            >> "$GITHUB_STEP_SUMMARY"
 
   swift:
     # The Swift side: build the XCFramework and bindings, test them from Swift, check the
@@ -654,7 +654,11 @@ jobs:
     # The single required check for branch protection. It passes only if "Changes" passed and
     # every other job above passed or was skipped because its area didn't change. A job whose
     # area changed can only be skipped if "Changes" failed, which this catches.
-    name: CI passed
+    # A push to dev reports under another name: it runs on the same commit a release pull
+    # request into main is opened from, and its result must not stand in for that pull
+    # request's own clean run of every job. Pull requests and merge queue groups report as
+    # "CI passed", the required check.
+    name: ${{ github.event_name == 'push' && 'Dev check' || 'CI passed' }}
     if: always()
     needs: [changes, fmt, clippy, test, docs, coverage, swift, app, swift-format, mlx, llama, cad, extract, kopia, editors, deny, zizmor, hygiene]
     runs-on: ubuntu-latest
