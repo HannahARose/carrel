@@ -23,6 +23,10 @@ The command line and the interactive mode run on macOS, Linux and Windows. The M
 | Previews of items | the item's path in `show` | #258 | #256 |
 | An item's history and related items | `show` | ✓ | ✓ |
 | Search, with filters and reasons | `search` | ✓ `/` | ✓ ⌘F (#236) |
+| Discovery: on this day, timeline | `discover today`, `discover timeline` | #290 | #291 |
+| Discovery: wander the stacks | `discover wander` | #290 | #291 |
+| Discovery: the archive map, activity | `discover map`, `discover activity` | #290 | #291 |
+| Resurfacing forgotten collections | `status` | #290 | #291 |
 | The embedding index: status, rebuild, switch models | `index` | ✓ Status, Settings | ✓ Settings → Search (#267) |
 | Correct a filed item | `correct` | ✓ `c` | ✓ ⌘K (#234) |
 | Edit a filed item's card | `edit` | ✓ `e` | ✓ ⌘E (#234) |

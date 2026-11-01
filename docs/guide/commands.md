@@ -17,7 +17,7 @@ Exit status is `0` on success, `1` when the command failed, and `2` for a usage 
 | --- | --- |
 | `carrel init [PATH] [--name NAME] [--allow-existing-files] [--embedding-model NAME]` | Creates an archive in `PATH` (or the current folder) and starts its history. With `--allow-existing-files`, files already there become uncataloged items to ingest. `--embedding-model` chooses the model every device uses to search the archive by meaning: `embeddinggemma-300m` (the default), `qwen3-embedding-0.6b`, or `apple-nl-sentence-en`, which needs no download but works only on Apple devices. Inside an archive that has no history yet, it starts the history. |
 | `carrel open [PATH]` | Chooses the archive commands use outside one; with no path, shows the choice and the archives opened or created on this device lately. |
-| `carrel status` | Summarizes the archive: items by kind, cards with problems, names that won't work everywhere, **Structure** signals, the last change and backup, who is writing, and **Recent**: the latest changes and work sessions, archive-wide. Also suggests folders on the Desktop or in `~/Code` that look like active work (changed in the last two weeks, or a Git repository) to put on the desk, and desk items unchanged for 60 days to archive; nothing is tracked or moved unless you ask. |
+| `carrel status` | Summarizes the archive: items by kind, cards with problems, names that won't work everywhere, **Structure** signals, the last change and backup, who is writing, and **Recent**: the latest changes and work sessions, archive-wide. Also suggests folders on the Desktop or in `~/Code` that look like active work (changed in the last two weeks, or a Git repository) to put on the desk, and desk items unchanged for 60 days to archive; nothing is tracked or moved unless you ask. Now and then it names a collection not opened in a long time, with an item or two from it ([Discovering the archive](user-guide.md#discovering-the-archive)). |
 | `carrel show ITEM` | Shows an item's card; under Related, its links and the five items nearest it in the meaning index (by its card, which is already embedded, so it needs no model), or why only the links are listed; and every change that touched it, newest first (undo one with `carrel undo CHANGE`). `ITEM` is its identifier, or the path of the item or its card. See [Related items](user-guide.md#related-items). |
 | `carrel search QUERY... [-n COUNT]` | Finds items by the words in their cards and text, and collection documents and glossary facts, best first, with the passage that matched and why. Filters narrow it: `collection:NAME`, `tag:TAG`, `kind:KIND`, `after:DATE`, `before:DATE` (a year, month or day), `sensitivity:LEVEL` and `checked-out`. Restricted items are found by their card only. Reads the text of items not read yet first. `-n`/`--limit` shows at most `COUNT` results (20). See [Searching](user-guide.md#searching). |
 | `carrel index [status]` | Shows the archive's embedding model, how many items are embedded in the meaning index and how many are behind, and whether the worker is catching up. |
@@ -81,6 +81,20 @@ Identifiers can be shortened to their last eight characters, as the list shows t
 | `carrel questions` | Lists the questions waiting for an answer, most items first. |
 | `carrel questions answer ID ANSWER...` | Answers a question: a sentence for what a term means, or a collection's path. Items waiting on a term are drafted again with the answer, which is saved to the glossary. |
 | `carrel questions dismiss ID` | Dismisses a question; its items stop waiting on it. |
+
+## Discovery
+
+See [Discovering the archive](user-guide.md#discovering-the-archive).
+
+| Command | What it does |
+| --- | --- |
+| `carrel discover [today] [--date DATE]` | What was made, filed or worked on on this day (or `DATE`) in other years. |
+| `carrel discover wander [ITEM] [--seed N] [--steps N] [--next]` | Wanders the stacks from `ITEM` or from somewhere you haven't been in a while, one item at a time, each with why it came next. In a terminal, `Enter` takes the next step. `--next` goes on with the last walk; the same `--seed` takes the same steps. |
+| `carrel discover timeline [QUERY...] [--by created\|filed\|worked] [--per year\|month\|day] [--items N]` | Items by date, narrowed by words and search's filters. |
+| `carrel discover map [--depth N]` | Collections by total size and number of items, as a tree. |
+| `carrel discover activity [--from DATE] [--to DATE]` | Filing and work sessions by day, as a heatmap; the last year by default. |
+
+With `--json`, `carrel discover today` prints `{"date", "years"}`, each year `{"year", "years_ago", "items"}` and each item `{"item", "what", "summary"}`, where `item` is `{"id", "title", "card", "item", "collection", "kind", "sensitivity"}` and `what` lists `created`, `filed` or `worked`. `wander` prints `{"seed", "steps", "visited", "done"}`, each step `{"number", "item", "reason", "summary", "tags", "preview"}`, with `reason.why` one of `start`, `linked`, `near`, `neighbour` or `jump`. `timeline` prints `{"resolution", "by", "periods", "undated"}`, each period `{"period", "items"}` and each item `{"item", "date", "what"}`. `map` prints `{"regions", "total_items", "total_size", "without_size"}`, each region `{"path", "title", "items", "size", "total_items", "total_size", "children"}`. `activity` prints `{"from", "to", "days", "busiest"}`, each day `{"date", "filed", "sessions"}`, listing only days with something. `carrel status --json` has `resurfaced`: `null`, or `{"collection", "title", "last_seen", "days", "items"}`.
 
 ## Backups
 
