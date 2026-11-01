@@ -245,6 +245,7 @@ pub fn keep(
         note: None,
         extra: crate::card::Extra::new(),
     });
+    crate::decisions::duplicate(archive, entry, kept);
     Ok(())
 }
 
@@ -419,6 +420,7 @@ pub fn decide(
         return Ok(Outcome::default());
     }
     let mut lease = DiskLock::for_archive(archive).acquire(holder, "ingest", DEFAULT_LEASE)?;
+    let noted = crate::decisions::deciding(&entries, placement);
     let decided = entries
         .into_iter()
         .map(|mut e| {
@@ -427,6 +429,7 @@ pub fn decide(
         })
         .collect();
     let outcome = file_batch(archive, decided, &mut lease, holder.device, backups);
+    noted.filed(archive, outcome.as_ref().ok());
     lease.release()?;
     Ok(outcome?)
 }
@@ -440,6 +443,7 @@ pub fn reject(
     archive: &Archive,
     entries: Vec<ReviewEntry>,
 ) -> Result<Vec<ReviewEntry>, ActionError> {
+    crate::decisions::rejected(archive, &entries);
     let queue = ReviewQueue::of(archive);
     let mut rejected = Vec::new();
     for mut entry in entries {
@@ -491,6 +495,7 @@ pub fn move_to(archive: &Archive, id: &str, path: &str) -> Result<Moved, ActionE
     decidable(&entry)?;
     let collections = archive.collections()?;
     let target = collection(&collections, path)?;
+    crate::decisions::moved(archive, &entry, target.doc.id);
     let dropped = redirect(
         archive,
         &collections,
@@ -551,6 +556,7 @@ pub fn choose_compressed(
         entry.state = State::Proposed;
     }
     queue.save(&entry)?;
+    crate::decisions::compressed(archive, &entry, choice);
     Ok(entry)
 }
 
@@ -585,6 +591,12 @@ pub fn teach(
 ) -> Result<Option<String>, ActionError> {
     let commit = learn(archive, &question.subject, fact, holder)?;
     QuestionQueue::of(archive).remove(question.id)?;
+    crate::decisions::question(
+        archive,
+        question,
+        crate::decisions::QuestionOutcome::Answered,
+        question.items.len(),
+    );
     Ok(commit)
 }
 
@@ -656,6 +668,12 @@ pub fn place(
         });
     }
     QuestionQueue::of(archive).remove(question.id)?;
+    crate::decisions::question(
+        archive,
+        question,
+        crate::decisions::QuestionOutcome::Answered,
+        moved.len(),
+    );
     Ok(moved)
 }
 
@@ -671,6 +689,12 @@ pub fn dismiss(archive: &Archive, question: &QuestionEntry) -> Result<(), Action
         queue.save(&entry)?;
     }
     QuestionQueue::of(archive).remove(question.id)?;
+    crate::decisions::question(
+        archive,
+        question,
+        crate::decisions::QuestionOutcome::Dismissed,
+        0,
+    );
     Ok(())
 }
 
@@ -699,8 +723,10 @@ pub fn ingest(
     backups: Option<&dyn Backups>,
     progress: &mut dyn FnMut(Progress<'_>),
 ) -> Result<Ingested, ActionError> {
+    let started = std::time::Instant::now();
     let run = run_with_progress(archive, registry, paths, options, holder.device, progress)?;
     run.save(archive)?;
+    crate::decisions::drafted(archive, None, &run, started);
     let new: Vec<crate::card::Id> = run.entries.iter().flatten().map(|e| e.id).collect();
     let (open, _) = ReviewQueue::of(archive).list()?;
     let senders: Vec<QuestionEntry> = crate::questions::about::senders_in(archive, &open)?

@@ -209,6 +209,14 @@ pub struct Prefs {
     /// [`RECENT_ARCHIVES`], so the interactive mode and the apps can offer them again.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub recent: Vec<PathBuf>,
+    /// Whether this device keeps its decision log for `carrel report`
+    /// ([`crate::decisions`]): on unless turned off (`report.log`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub report_log: Option<bool>,
+    /// How many days the decision log keeps (`report.keep_days`); unset,
+    /// [`crate::decisions::KEEP_DAYS`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub report_keep_days: Option<u32>,
     /// Keys this version doesn't know.
     #[serde(flatten)]
     pub extra: Extra,
