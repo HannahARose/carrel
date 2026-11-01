@@ -347,7 +347,7 @@ Search finds what you ask for. Discovery shows you the archive itself, so you co
 - **The graph** (`carrel discover graph`): which collections connect and why, strongest first. Two items are tied by the tags they share (a tag on fewer items ties them more), the links between them, and the days both were worked on; two collections are tied by all their items' ties. Each connection says how many pairs of items it has, and its links, days and tags. `--items` lists the strongest ties between items in different collections instead, and `-n N` lists `N` (10 by default).
 - **Resurfacing:** now and then, `carrel status` names a collection you haven't opened in six months, with an item or two from it. It names the same one all day, then none for a week. Showing an item in it (`carrel show`, or a wander step) counts as opening it.
 
-In the interactive mode, `D` opens the **Discover** screen, with a key for each view: `d` on this day, `w` wander (`Space` takes the next step, `n` starts another walk, `o` opens the item in Browse; the item's preview is beside it where the terminal draws one), `t` the timeline (`p` changes between months, days and years), `m` the archive map as a sized tree, and `h` activity as a block heatmap. Status shows the resurfaced collection, and showing an item in Browse counts as opening its collection.
+In the interactive mode, `D` opens the **Discover** screen, with a key for each view: `d` on this day, `w` wander (`Space` takes the next step, `n` starts another walk, `o` opens the item in Browse; the item's preview is beside it where the terminal draws one), `t` the timeline (`p` changes between months, days and years), `m` the archive map as a sized tree, `h` activity as a block heatmap, and `g` the graph's strongest connections, as `carrel discover graph` lists them (`c` switches between collections and items). Status shows the resurfaced collection, and showing an item in Browse counts as opening its collection.
 
 In the Mac app, the views are in the sidebar's **Discover** section: wander with each item's preview, the archive map as a treemap and activity as a heatmap, and Status's **Not Opened in a While** (see [The Mac app](mac-app.md#discover)).
 
@@ -417,7 +417,7 @@ Each change says why and which items it changes. **Tags you wrote yourself stay 
 
 Approve it all with `carrel restructure tags approve`, part of it with `--only 1,3` (the changes' numbers), or none with `carrel restructure tags reject`. Approving rewrites the cards and the vocabularies in `ARCHIVE.md` and each `_collection.md` (noting it in the collection's changelog) as **one change in History**, so `carrel undo` puts everything back at once. A vocabulary keeps a tag that items left alone still use. Changes are applied to the archive as it is when you approve: a card you've changed since is left alone and reported.
 
-The proposal waits in `_System/queue/proposals/` until you decide, and proposing again replaces it. Tag proposals in the interactive mode (#326) and the Mac app (#327) come later in v0.7.
+The proposal waits in `_System/queue/proposals/` until you decide, and proposing again replaces it. In the interactive mode, `f` on Review goes to the restructure proposals, where `t` proposes tag changes (see [Reorganizing a section](#reorganizing-a-section) for the keys).
 
 ### Reorganizing a section
 
@@ -430,6 +430,8 @@ Filing puts each item where it fits best today, but an archive's shape drifts: a
 
 Approve it all with `carrel restructure approve`, or part of it with `--only 1,2`: a change that needs one you left out (moving items into a collection you didn't create, say) is dropped too, and Carrel says so. Approving takes a backup snapshot first when backups are set up, applies the changes to the archive as it is then (an item checked out or moved since is left alone and reported), rewrites links to the moved cards and rebuilds the listings, and records it all as **one change in History**, so `carrel undo` puts every item, folder, design document and link back.
 
+In the interactive mode, `f` on Review (twice from the proposals to file) shows the restructure proposals waiting, tag proposals too. The chosen one's changes are beside the archive as it is now and as they would leave it. `↑↓` choose a change, with its reason and what it touches below, `Space` leaves one out (the after side follows), `a` approves the rest, `x` rejects the proposal, and `[` `]` go to another. `p` proposes a new shape for the whole archive, and on a collection in Browse, `R` proposes one for it.
+
 ### How eager Carrel is to rearrange
 
 Some people want the organization refined even when that means moving a lot; others have learned where things are and would rather it stayed put. `restructure.eagerness` says which:
@@ -441,7 +443,7 @@ Some people want the organization refined even when that means moving a lot; oth
 | Extra cost in a section restructured recently | heavy (0.5), for a year | moderate (0.2), for 90 days | light (0.05), for 30 days |
 | Items moved between branches per proposal | at most 10 | as many as the gain justifies | as many as the gain justifies |
 
-Set it for the archive with `carrel settings set restructure.eagerness settled`, or for one collection and everything in it with `carrel restructure eagerness Reading settled` (stored in its `_collection.md`, so a collection you know by heart can stay still while a messy one gets tidied; `default` clears it). The numbers behind the levels are settings too (`restructure.margin`, `restructure.stability_penalty`, `restructure.stability_days`, `restructure.move_budget`; `default` puts one back to its level's). Eagerness changes how readily Carrel proposes, never whether it asks: every restructure waits for your approval, and even Eager won't propose a shape the findability test finds harder to navigate.
+Set it for the archive with `carrel settings set restructure.eagerness settled`, or for one collection and everything in it with `carrel restructure eagerness Reading settled` (stored in its `_collection.md`, so a collection you know by heart can stay still while a messy one gets tidied; `default` clears it). The numbers behind the levels are settings too (`restructure.margin`, `restructure.stability_penalty`, `restructure.stability_days`, `restructure.move_budget`; `default` puts one back to its level's). Eagerness changes how readily Carrel proposes, never whether it asks: every restructure waits for your approval, and even Eager won't propose a shape the findability test finds harder to navigate. In the interactive mode, it's in Settings for the archive, and `E` on a collection in Browse sets the collection's own.
 
 ### The crawler
 
@@ -453,7 +455,7 @@ Filing puts each item where it fits best on the day, with whatever model the dev
 - **Its pace** (`crawler.pace`: `off`, `gentle`, `steady` by default, or `brisk`) is how much of the device's idle time it uses. It runs in `carrel agent` and after the background worker, only when the device has been idle a while and is on power, and stops as soon as you use it or add something to the queue. `restructure.eagerness` doesn't slow it: it gathers the evidence any reorganization needs.
 - **What it learns feeds the structure signals:** a collection whose items keep not fitting shows on Status, as a sign it may want restructuring.
 
-`carrel crawl` shows how far it has got, and `carrel crawl run` checks a few items now. The crawler in the interactive mode (#326) and the Mac app (#327) comes later in v0.7.
+`carrel crawl` shows how far it has got, and `carrel crawl run` checks a few items now. In the interactive mode, `f` on Review shows the crawler's findings, with how far it has got above them: `a` approves one (or those marked with `Space`), `x` rejects it, `r` checks a few items now and `u` undoes the changes it made on its own this week. Its changes are on Status and in History, and its settings in Settings. The crawler in the Mac app comes later in v0.7 (#327).
 
 ### Writing safely
 
