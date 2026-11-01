@@ -244,7 +244,7 @@ private struct Inspector: View {
             BackupInspector(change: change, backups: backups, items: model.items)
         } else if let item = model.selectedItem {
             if let edit = model.editing, edit.target == .item(item.id) {
-                ItemEditor(item: item, edit: edit) { model.editing = nil }
+                ItemEditor(item: item, edit: edit, items: model.items) { model.editing = nil }
             } else {
                 VStack(spacing: 0) {
                     if let previews = model.previews {

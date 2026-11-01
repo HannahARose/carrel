@@ -1365,17 +1365,20 @@ public protocol ArchiveHandleProtocol: AnyObject, Sendable {
     func cardBody(item: String) throws  -> String
     
     /**
-     * Saves `fields` to the filed item `item`'s card, checked as `carrel edit` checks
-     * them, as one change undone from History. The card's body is kept exactly.
+     * Saves `fields`, the owner's edit of `base`, the fields [`ArchiveHandle::editable_card`]
+     * gave the editor, to the filed item `item`'s card, checked as `carrel edit` checks them,
+     * as one change undone from History. The card's body is kept exactly, and so is a field
+     * saved another way meanwhile that the edit didn't change.
      *
      * # Errors
      *
      * [`CarrelError::Invalid`] if there's no such item or it's checked out,
      * [`CarrelError::Busy`] if another writer holds the archive, or
      * [`CarrelError::Failed`]. Fields that don't check out aren't an error: they come back
-     * as [`EditOutcome::Problems`].
+     * as [`EditOutcome::Problems`], and ones the edit changed that were saved another way
+     * meanwhile as [`EditOutcome::FieldsChanged`].
      */
-    func editCard(item: String, fields: CardFields) throws  -> EditOutcome
+    func editCard(item: String, base: CardFields, fields: CardFields) throws  -> EditOutcome
     
     /**
      * Saves `body`, the owner's edit of `base`, the body [`ArchiveHandle::card_body`] gave
@@ -3380,22 +3383,26 @@ open func cardBody(item: String)throws  -> String  {
 }
     
     /**
-     * Saves `fields` to the filed item `item`'s card, checked as `carrel edit` checks
-     * them, as one change undone from History. The card's body is kept exactly.
+     * Saves `fields`, the owner's edit of `base`, the fields [`ArchiveHandle::editable_card`]
+     * gave the editor, to the filed item `item`'s card, checked as `carrel edit` checks them,
+     * as one change undone from History. The card's body is kept exactly, and so is a field
+     * saved another way meanwhile that the edit didn't change.
      *
      * # Errors
      *
      * [`CarrelError::Invalid`] if there's no such item or it's checked out,
      * [`CarrelError::Busy`] if another writer holds the archive, or
      * [`CarrelError::Failed`]. Fields that don't check out aren't an error: they come back
-     * as [`EditOutcome::Problems`].
+     * as [`EditOutcome::Problems`], and ones the edit changed that were saved another way
+     * meanwhile as [`EditOutcome::FieldsChanged`].
      */
-open func editCard(item: String, fields: CardFields)throws  -> EditOutcome  {
+open func editCard(item: String, base: CardFields, fields: CardFields)throws  -> EditOutcome  {
     return try  FfiConverterTypeEditOutcome_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
         uniffiCallStatus in
     uniffi_carrel_ffi_fn_method_archivehandle_edit_card(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(item),
+        FfiConverterTypeCardFields_lower(base),
         FfiConverterTypeCardFields_lower(fields),uniffiCallStatus
     )
 })
@@ -7302,6 +7309,23 @@ public struct CardFields: Equatable, Hashable {
      * How sensitive it is.
      */
     public var sensitivity: Sensitivity
+    /**
+     * Typed links to other items. A proposal has none until it's filed.
+     */
+    public var links: [CardLink]
+    /**
+     * Where it is, for a physical object or an external reference.
+     */
+    public var location: String?
+    /**
+     * Its address, for a URL item.
+     */
+    public var url: String?
+    /**
+     * Whether its working copy is snapshotted only at checkout and return, not after every
+     * work session, as for large data.
+     */
+    public var snapshotOnReturnOnly: Bool
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -7320,12 +7344,29 @@ public struct CardFields: Equatable, Hashable {
          */dates: CardDates, 
         /**
          * How sensitive it is.
-         */sensitivity: Sensitivity) {
+         */sensitivity: Sensitivity, 
+        /**
+         * Typed links to other items. A proposal has none until it's filed.
+         */links: [CardLink], 
+        /**
+         * Where it is, for a physical object or an external reference.
+         */location: String?, 
+        /**
+         * Its address, for a URL item.
+         */url: String?, 
+        /**
+         * Whether its working copy is snapshotted only at checkout and return, not after every
+         * work session, as for large data.
+         */snapshotOnReturnOnly: Bool) {
         self.title = title
         self.summary = summary
         self.tags = tags
         self.dates = dates
         self.sensitivity = sensitivity
+        self.links = links
+        self.location = location
+        self.url = url
+        self.snapshotOnReturnOnly = snapshotOnReturnOnly
     }
 
     
@@ -7348,7 +7389,11 @@ public struct FfiConverterTypeCardFields: FfiConverterRustBuffer {
                 summary: FfiConverterOptionString.read(from: &buf), 
                 tags: FfiConverterSequenceString.read(from: &buf), 
                 dates: FfiConverterTypeCardDates.read(from: &buf), 
-                sensitivity: FfiConverterTypeSensitivity.read(from: &buf)
+                sensitivity: FfiConverterTypeSensitivity.read(from: &buf), 
+                links: FfiConverterSequenceTypeCardLink.read(from: &buf), 
+                location: FfiConverterOptionString.read(from: &buf), 
+                url: FfiConverterOptionString.read(from: &buf), 
+                snapshotOnReturnOnly: FfiConverterBool.read(from: &buf)
         )
     }
 
@@ -7358,6 +7403,10 @@ public struct FfiConverterTypeCardFields: FfiConverterRustBuffer {
         FfiConverterSequenceString.write(value.tags, into: &buf)
         FfiConverterTypeCardDates.write(value.dates, into: &buf)
         FfiConverterTypeSensitivity.write(value.sensitivity, into: &buf)
+        FfiConverterSequenceTypeCardLink.write(value.links, into: &buf)
+        FfiConverterOptionString.write(value.location, into: &buf)
+        FfiConverterOptionString.write(value.url, into: &buf)
+        FfiConverterBool.write(value.snapshotOnReturnOnly, into: &buf)
     }
 }
 
@@ -7463,6 +7512,85 @@ public func FfiConverterTypeCardHistoryEntry_lift(_ buf: RustBuffer) throws -> C
 #endif
 public func FfiConverterTypeCardHistoryEntry_lower(_ value: CardHistoryEntry) -> RustBuffer {
     return FfiConverterTypeCardHistoryEntry.lower(value)
+}
+
+
+/**
+ * A link from a card to another item (FORMAT.md §5.4).
+ */
+public struct CardLink: Equatable, Hashable {
+    /**
+     * Its type, such as `version-of` or `related`.
+     */
+    public var linkType: String
+    /**
+     * The item linked to: its identifier.
+     */
+    public var item: String
+    /**
+     * A short explanation.
+     */
+    public var note: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Its type, such as `version-of` or `related`.
+         */linkType: String, 
+        /**
+         * The item linked to: its identifier.
+         */item: String, 
+        /**
+         * A short explanation.
+         */note: String?) {
+        self.linkType = linkType
+        self.item = item
+        self.note = note
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CardLink: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCardLink: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CardLink {
+        return
+            try CardLink(
+                linkType: FfiConverterString.read(from: &buf), 
+                item: FfiConverterString.read(from: &buf), 
+                note: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CardLink, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.linkType, into: &buf)
+        FfiConverterString.write(value.item, into: &buf)
+        FfiConverterOptionString.write(value.note, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCardLink_lift(_ buf: RustBuffer) throws -> CardLink {
+    return try FfiConverterTypeCardLink.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCardLink_lower(_ value: CardLink) -> RustBuffer {
+    return FfiConverterTypeCardLink.lower(value)
 }
 
 
@@ -10099,6 +10227,23 @@ public struct EditableCard: Equatable, Hashable {
      * The lowest sensitivity it may be given.
      */
     public var floor: Sensitivity
+    /**
+     * The link types it may have links of: the built-in ones, then those `ARCHIVE.md`
+     * declares.
+     */
+    public var linkTypes: [String]
+    /**
+     * Whether it needs a location: a physical object or an external reference.
+     */
+    public var needsLocation: Bool
+    /**
+     * Whether it needs a URL: a URL item.
+     */
+    public var needsUrl: Bool
+    /**
+     * Whether it's checked out, and so may take snapshots: a file, folder or bundle.
+     */
+    public var takesSnapshots: Bool
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -10112,10 +10257,27 @@ public struct EditableCard: Equatable, Hashable {
          */tags: [String], 
         /**
          * The lowest sensitivity it may be given.
-         */floor: Sensitivity) {
+         */floor: Sensitivity, 
+        /**
+         * The link types it may have links of: the built-in ones, then those `ARCHIVE.md`
+         * declares.
+         */linkTypes: [String], 
+        /**
+         * Whether it needs a location: a physical object or an external reference.
+         */needsLocation: Bool, 
+        /**
+         * Whether it needs a URL: a URL item.
+         */needsUrl: Bool, 
+        /**
+         * Whether it's checked out, and so may take snapshots: a file, folder or bundle.
+         */takesSnapshots: Bool) {
         self.fields = fields
         self.tags = tags
         self.floor = floor
+        self.linkTypes = linkTypes
+        self.needsLocation = needsLocation
+        self.needsUrl = needsUrl
+        self.takesSnapshots = takesSnapshots
     }
 
     
@@ -10136,7 +10298,11 @@ public struct FfiConverterTypeEditableCard: FfiConverterRustBuffer {
             try EditableCard(
                 fields: FfiConverterTypeCardFields.read(from: &buf), 
                 tags: FfiConverterSequenceString.read(from: &buf), 
-                floor: FfiConverterTypeSensitivity.read(from: &buf)
+                floor: FfiConverterTypeSensitivity.read(from: &buf), 
+                linkTypes: FfiConverterSequenceString.read(from: &buf), 
+                needsLocation: FfiConverterBool.read(from: &buf), 
+                needsUrl: FfiConverterBool.read(from: &buf), 
+                takesSnapshots: FfiConverterBool.read(from: &buf)
         )
     }
 
@@ -10144,6 +10310,10 @@ public struct FfiConverterTypeEditableCard: FfiConverterRustBuffer {
         FfiConverterTypeCardFields.write(value.fields, into: &buf)
         FfiConverterSequenceString.write(value.tags, into: &buf)
         FfiConverterTypeSensitivity.write(value.floor, into: &buf)
+        FfiConverterSequenceString.write(value.linkTypes, into: &buf)
+        FfiConverterBool.write(value.needsLocation, into: &buf)
+        FfiConverterBool.write(value.needsUrl, into: &buf)
+        FfiConverterBool.write(value.takesSnapshots, into: &buf)
     }
 }
 
@@ -19367,7 +19537,8 @@ public enum EditOutcome: Equatable, Hashable {
      */
     case saved(
         /**
-         * The fields, by name: `title`, `summary`, `tags`, `dates`, `sensitivity`.
+         * The fields, by name: `title`, `summary`, `tags`, `dates`, `sensitivity`, `links`,
+         * `location`, `url` or `snapshots`.
          */fields: [String], 
         /**
          * The history commit, for a filed card.
@@ -19394,6 +19565,19 @@ public enum EditOutcome: Equatable, Hashable {
         /**
          * Both versions together, each changed line from each.
          */both: String
+    )
+    /**
+     * These fields were saved another way while they were being edited, to other values
+     * than the edit's; nothing was written. The app offers to reload `current`, or to keep
+     * the edit, saved again against `current`.
+     */
+    case fieldsChanged(
+        /**
+         * The fields, by name, as in [`EditOutcome::Saved`].
+         */fields: [String], 
+        /**
+         * The card's fields as they are now.
+         */current: CardFields
     )
 
 
@@ -19427,6 +19611,9 @@ public struct FfiConverterTypeEditOutcome: FfiConverterRustBuffer {
         case 4: return .bodyChanged(current: try FfiConverterString.read(from: &buf), both: try FfiConverterString.read(from: &buf)
         )
         
+        case 5: return .fieldsChanged(fields: try FfiConverterSequenceString.read(from: &buf), current: try FfiConverterTypeCardFields.read(from: &buf)
+        )
+        
         default: throw UniffiInternalError.unexpectedEnumCase
         }
     }
@@ -19454,6 +19641,12 @@ public struct FfiConverterTypeEditOutcome: FfiConverterRustBuffer {
             writeInt(&buf, Int32(4))
             FfiConverterString.write(current, into: &buf)
             FfiConverterString.write(both, into: &buf)
+            
+        
+        case let .fieldsChanged(fields,current):
+            writeInt(&buf, Int32(5))
+            FfiConverterSequenceString.write(fields, into: &buf)
+            FfiConverterTypeCardFields.write(current, into: &buf)
             
         }
     }
@@ -21993,6 +22186,31 @@ fileprivate struct FfiConverterSequenceTypeCardHistoryEntry: FfiConverterRustBuf
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeCardLink: FfiConverterRustBuffer {
+    typealias SwiftType = [CardLink]
+
+    public static func write(_ value: [CardLink], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeCardLink.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [CardLink] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [CardLink]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeCardLink.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeCardProblem: FfiConverterRustBuffer {
     typealias SwiftType = [CardProblem]
 
@@ -23823,7 +24041,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_carrel_ffi_checksum_method_archivehandle_card_body() != 37529) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_carrel_ffi_checksum_method_archivehandle_edit_card() != 19413) {
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_edit_card() != 42048) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_edit_card_body() != 45058) {

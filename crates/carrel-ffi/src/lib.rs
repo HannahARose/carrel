@@ -868,13 +868,20 @@ mod tests {
         let mut fields = editable.fields.clone();
         fields.title = "  ".into();
         assert!(matches!(
-            sample.handle.edit_card(item.clone(), fields).unwrap(),
+            sample
+                .handle
+                .edit_card(item.clone(), editable.fields.clone(), fields)
+                .unwrap(),
             EditOutcome::Problems { problems } if problems.iter().any(|p| p.contains("title"))
         ));
         assert_eq!(
             sample
                 .handle
-                .edit_card(item.clone(), editable.fields.clone())
+                .edit_card(
+                    item.clone(),
+                    editable.fields.clone(),
+                    editable.fields.clone()
+                )
                 .unwrap(),
             EditOutcome::Unchanged
         );
@@ -883,7 +890,10 @@ mod tests {
         let EditOutcome::Saved {
             fields: changed,
             commit,
-        } = sample.handle.edit_card(item.clone(), fields).unwrap()
+        } = sample
+            .handle
+            .edit_card(item.clone(), editable.fields.clone(), fields)
+            .unwrap()
         else {
             panic!("not saved");
         };
@@ -935,10 +945,11 @@ mod tests {
         let lease = DiskLock::for_archive(&archive)
             .acquire(other, "ingest", DEFAULT_LEASE)
             .unwrap();
-        let mut fields = sample.handle.editable_card(item.clone()).unwrap().fields;
+        let base = sample.handle.editable_card(item.clone()).unwrap().fields;
+        let mut fields = base.clone();
         fields.title = "Parts".into();
         assert!(matches!(
-            sample.handle.edit_card(item, fields),
+            sample.handle.edit_card(item, base, fields),
             Err(CarrelError::Busy { message }) if message.contains("ingest")
         ));
         lease.release().unwrap();

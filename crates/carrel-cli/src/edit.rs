@@ -1,18 +1,22 @@
-//! `carrel edit ITEM`: a filed card in the owner's editor, checked as proposals are, with
-//! the body kept exactly, as one undoable change (`docs/design/checkout.md`). With `--body`,
-//! the body instead: its notes and anything below the fields, Carrel's sections kept.
+//! `carrel edit ITEM`: a filed card's fields in the owner's editor, every one the owner may
+//! set, checked as the core checks them, with the body kept exactly, as one undoable change
+//! (`docs/design/checkout.md`). With `--body`, the body instead: its notes and anything below
+//! the fields, Carrel's sections kept.
 
 use std::fmt::Write as _;
 use std::path::Path;
 
-use carrel_core::actions::{self, EditedCard};
+use carrel_core::actions;
+use carrel_core::edit::Saved;
 use serde_json::json;
 
 use crate::commands::{find_item, holder, locate};
 use crate::config::Identity;
 use crate::{Failure, Report};
 
-/// `carrel edit ITEM`.
+/// `carrel edit ITEM`: the card's fields in the owner's editor, saved against the fields it
+/// opened ([`carrel_core::edit::save`]), so a field saved another way meanwhile isn't
+/// overwritten. When one the owner changed was, the editor opens again saying so.
 ///
 /// # Errors
 ///
@@ -22,55 +26,104 @@ pub fn edit(archive: Option<&Path>, query: &str) -> Result<Report, Failure> {
     let items = archive.items()?;
     let item = find_item(&archive, &items, query)?.clone();
     let (registry, _) = crate::providers::registry();
+    let identity = Identity::load_or_create()?;
     let editing = carrel_core::edit::open(&archive, &registry, &item)?;
-    let (collection, floor) = (editing.collection.clone(), editing.floor);
-    let temp = std::env::temp_dir().join(format!("carrel-card-{}.yaml", item.id));
-    let mut card = editing.file.card().clone();
-    let mut text = actions::card_text(&archive, &card, &collection, floor, &[])?;
-    let changed = loop {
+    // `base` is the fields the editor last opened, which the save is checked against.
+    let mut base = editing.fields();
+    let mut text = actions::card_text(
+        &archive,
+        editing.file.card(),
+        &editing.collection,
+        editing.floor,
+        &[],
+    )?;
+    let temp = std::env::temp_dir().join(format!(
+        "carrel-card-{}-{}.yaml",
+        item.id,
+        std::process::id()
+    ));
+    let saved = loop {
         std::fs::write(&temp, &text).map_err(|e| Failure::io(&temp, &e))?;
         crate::review::run_editor(&temp)?;
         let edited = std::fs::read_to_string(&temp).map_err(|e| Failure::io(&temp, &e))?;
         if edited == text {
-            break None;
+            break Saved::Unchanged;
         }
-        match actions::apply_card(&archive, &mut card, &collection, floor, &edited)? {
-            EditedCard::Unchanged => break None,
-            EditedCard::Changed(changed) => break Some(changed),
-            EditedCard::Problems(problems) => {
-                // The owner's edits stay; the problems go on top, replacing earlier ones.
-                let mut again = String::new();
-                for problem in &problems {
-                    writeln!(again, "# To fix: {problem}").unwrap();
-                }
-                again.push_str("#\n");
-                for line in edited
-                    .lines()
-                    .skip_while(|l| l.starts_with("# To fix: ") || *l == "#")
-                {
-                    again.push_str(line);
-                    again.push('\n');
-                }
-                text = again;
+        let fields = match actions::card_fields_from_text(&edited) {
+            Ok(fields) => fields,
+            Err(problem) => {
+                text = with_field_problems(&[problem], &edited);
+                continue;
             }
+        };
+        let editing = carrel_core::edit::open(&archive, &registry, &item)?;
+        match carrel_core::edit::save(&archive, editing, &base, fields, holder(&identity))? {
+            Saved::Problems(problems) => text = with_field_problems(&problems, &edited),
+            Saved::FieldsChanged { fields, current } => {
+                // Saved another way meanwhile: saving again keeps the owner's.
+                text = with_field_problems(&[fields_changed(&fields, &current)], &edited);
+                base = *current;
+            }
+            outcome => break outcome,
         }
     };
     let _ = std::fs::remove_file(&temp);
-    let Some(changed) = changed else {
-        return Ok(Report::new(
+    match saved {
+        Saved::Changed {
+            fields,
+            summary,
+            commit,
+        } => Ok(Report::new(
+            format!("{summary}; undo it from History or with `carrel undo`.\n"),
+            json!({"item": item.id, "changed": fields, "commit": commit}),
+        )),
+        _ => Ok(Report::new(
             "Nothing changed\n",
             json!({"item": item.id, "changed": [], "commit": null}),
-        ));
-    };
-    let mut file = editing.file;
-    *file.card_mut() = card;
-    let summary = format!("Edit “{}”: {}", file.card().title, changed.join(", "));
-    let identity = Identity::load_or_create()?;
-    let commit = carrel_core::edit::write(&archive, &item, &file, &summary, holder(&identity))?;
-    Ok(Report::new(
-        format!("{summary}; undo it from History or with `carrel undo`.\n"),
-        json!({"item": item.id, "changed": changed, "commit": commit}),
-    ))
+        )),
+    }
+}
+
+/// `edited` with a line on top for each of `problems`, replacing the problems put there
+/// before; the owner's edits stay.
+fn with_field_problems(problems: &[String], edited: &str) -> String {
+    let mut again = String::new();
+    for problem in problems {
+        writeln!(again, "# To fix: {problem}").unwrap();
+    }
+    again.push_str("#\n");
+    for line in edited
+        .lines()
+        .skip_while(|l| l.starts_with("# To fix: ") || *l == "#")
+    {
+        again.push_str(line);
+        again.push('\n');
+    }
+    again
+}
+
+/// The problem shown when `fields` were saved another way while they were edited: what each
+/// is now, as `current` has it.
+fn fields_changed(fields: &[&str], current: &actions::CardFields) -> String {
+    let now = serde_json::to_value(current).unwrap_or_default();
+    let values: Vec<String> = fields
+        .iter()
+        .map(|f| {
+            let value = now
+                .get(f)
+                .map_or_else(|| "nothing".to_owned(), ToString::to_string);
+            format!("{f} is now {value}")
+        })
+        .collect();
+    format!(
+        "{} saved another way while you edited: {}. To keep yours, delete this line and save; to keep the card as it is now, save without changing anything",
+        if fields.len() == 1 {
+            "one field was"
+        } else {
+            "fields were"
+        },
+        values.join(", ")
+    )
 }
 
 /// The line `carrel edit --body` puts above the body for each problem to fix, as an HTML
@@ -113,16 +166,16 @@ pub fn edit_body(archive: Option<&Path>, query: &str) -> Result<Report, Failure>
         let edited = std::fs::read_to_string(&temp).map_err(|e| Failure::io(&temp, &e))?;
         if edited == text {
             // Saved as it was opened, problems and all: the owner gave up, so nothing changes.
-            break carrel_core::edit::Saved::Unchanged;
+            break Saved::Unchanged;
         }
         let body = without_body_problems(&edited);
         let editing = carrel_core::edit::open(&archive, &registry, &item)?;
         match carrel_core::edit::save_body(&archive, editing, &base, &body, holder(&identity))? {
-            carrel_core::edit::Saved::Problems(problems) => {
+            Saved::Problems(problems) => {
                 // The owner's edits stay; the problems go on top, replacing earlier ones.
                 text = with_body_problems(&problems, &body);
             }
-            carrel_core::edit::Saved::BodyChanged { current, both } => {
+            Saved::BodyChanged { current, both } => {
                 // Saved another way meanwhile: both versions, to tidy and save against the
                 // body as it is now, or to leave as they are, keeping the card's.
                 text = with_body_problems(&[BODY_CHANGED.to_owned()], &both);
@@ -133,7 +186,7 @@ pub fn edit_body(archive: Option<&Path>, query: &str) -> Result<Report, Failure>
     };
     let _ = std::fs::remove_file(&temp);
     match saved {
-        carrel_core::edit::Saved::Changed {
+        Saved::Changed {
             summary, commit, ..
         } => Ok(Report::new(
             format!("{summary}; undo it from History or with `carrel undo`.\n"),

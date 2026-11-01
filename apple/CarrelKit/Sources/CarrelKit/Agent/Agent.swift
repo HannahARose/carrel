@@ -44,6 +44,9 @@ public final class Agent {
         var claim: AgentClaim?
         var plan: AgentPlan
         var watcher: AnyObject?
+        /// Its items, for the sealed bundles and checked-out paths in the badge state, read
+        /// again when something may have been filed.
+        var items: [ItemSummary]?
     }
 
     private var followed: [URL: Followed] = [:]
@@ -51,21 +54,24 @@ public final class Agent {
     private let state: UserDefaults
     private let watching: Bool
     private let now: @Sendable () -> Date
+    private let badges: URL?
+    private var badgesWritten: BadgeState?
     private var sleeper: Task<Void, Never>?
     private let spotlight: SpotlightIndexer?
 
     /// An agent opening archives with `options` (the device's own when `nil`), keeping when
-    /// it last backed each up in `state`. It watches files only when `watching` says so; tests
-    /// tell it what changed instead. It keeps what Spotlight finds in `spotlight`, when given
-    /// one.
+    /// it last backed each up in `state`, and the badge state file at `badges` if given. It
+    /// watches files only when `watching` says so; tests tell it what changed instead. It keeps
+    /// what Spotlight finds in `spotlight`, when given one.
     public init(
         options: OpenOptions? = nil, state: UserDefaults = .standard, watching: Bool = true,
-        spotlight: (any SpotlightIndexing)? = nil,
+        badges: URL? = nil, spotlight: (any SpotlightIndexing)? = nil,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.options = options
         self.state = state
         self.watching = watching
+        self.badges = badges
         self.spotlight = spotlight.map(SpotlightIndexer.init)
         self.now = now
     }
@@ -108,6 +114,7 @@ public final class Agent {
         }
         for root in opened { await refresh(root) }
         if !opened.isEmpty { nudge() }
+        writeBadges()
         for root in opened { indexForSpotlight(root, changed: true) }
     }
 
@@ -171,6 +178,7 @@ public final class Agent {
             stopWatching(root)
         }
         nudge()
+        writeBadges()
     }
 
     /// Resumes, catching up on everything at once.
@@ -178,6 +186,7 @@ public final class Agent {
         isPaused = false
         for root in followed.keys { claim(root) }
         nudge()
+        writeBadges()
     }
 
     // MARK: - Noticing changes
@@ -186,6 +195,9 @@ public final class Agent {
     public func noticed(_ paths: [String], in root: URL) {
         guard followed[root] != nil, !isPaused else { return }
         let paths = paths.map(Self.realPath)
+        if paths.contains(where: { followed[root]?.plan.classify($0) == .filed }) {
+            followed[root]?.items = nil
+        }
         if followed[root]?.plan.noticed(paths, at: now()) == true {
             Task { await refresh(root) }
         }
@@ -325,6 +337,7 @@ public final class Agent {
         }
         activity = nil
         followed[root]?.plan.ran(job, startedAt: started, succeeded: succeeded)
+        if job == .work || job == .crawl { followed[root]?.items = nil }
         if job == .backup {
             state.set(started, forKey: Self.key("lastBackup", handle))
             state.set(!succeeded, forKey: Self.key("backupFailed", handle))
@@ -362,14 +375,16 @@ public final class Agent {
     /// Reads what's active and queued in `root` again, and the working copies to watch.
     private func refresh(_ root: URL) async {
         guard let handle = followed[root]?.handle else { return }
+        let known = followed[root]?.items
         let read = await Task.detached {
             (
                 try? handle.active(), (try? handle.intake())?.waiting.count ?? 0,
                 handle.idleMinutes(), handle.backupsSetUp(),
-                (try? handle.crawlerFindings())?.count ?? 0
+                (try? handle.crawlerFindings())?.count ?? 0, known ?? (try? handle.items())
             )
         }.value
         guard followed[root] != nil else { return }
+        followed[root]?.items = read.5
         let active = read.0 ?? []
         let working = active.map { Self.realPath($0.working) }
         let moved = followed[root]?.plan.workingCopies != working
@@ -382,11 +397,89 @@ public final class Agent {
             archives[index].findings = read.4
         }
         if moved, followed[root]?.claim != nil { watch(root) }
+        writeBadges()
     }
 
     private func problem(_ root: URL, _ message: String?) {
         if let index = archives.firstIndex(where: { $0.root == root }) {
             archives[index].problem = message
+        }
+    }
+
+    // MARK: - Requests from the extensions
+
+    /// The archive a request from an extension goes to, `archive` or the first followed, and
+    /// its handle. A request is refused while the agent is paused, for an archive it doesn't
+    /// follow, and, when it `writes`, for one another agent has claimed.
+    func archiveForRequest(_ archive: String?, writes: Bool) throws(AgentRefusal)
+        -> (URL, ArchiveHandle)
+    {
+        guard !isPaused else {
+            throw AgentRefusal("Carrel Agent is paused. Resume it from its menu in the menu bar.")
+        }
+        let root = archive.map { URL(filePath: Self.realPath($0)) } ?? archives.first?.root
+        guard let root else {
+            throw AgentRefusal("Carrel Agent isn’t following an archive. Open one in Carrel first.")
+        }
+        guard let followed = followed[root] else {
+            if let problem = archives.first(where: { $0.root == root })?.problem {
+                throw AgentRefusal(problem)
+            }
+            throw AgentRefusal(
+                "“\(root.lastPathComponent)” isn’t open in Carrel. Open it there, and Carrel Agent "
+                    + "follows it.")
+        }
+        if writes, followed.claim == nil {
+            throw AgentRefusal("Another Carrel agent looks after this archive.")
+        }
+        return (root, followed.handle)
+    }
+
+    /// Reads `root` again after a request changed it, and wakes the loop for what's now due.
+    func requestChanged(_ root: URL) async {
+        followed[root]?.items = nil
+        await refresh(root)
+        nudge()
+    }
+
+    // MARK: - The badge state
+
+    /// What the Finder extension badges: for each archive followed, its sealed bundles, what's
+    /// checked out and where, and the desk.
+    public var badgeState: BadgeState {
+        BadgeState(
+            archives: archives.compactMap { archive in
+                guard let followed = followed[archive.root] else { return nil }
+                let root = followed.plan.root
+                let items = followed.items ?? []
+                var paths: [String: String] = [:]
+                for item in items { paths[item.id] = item.item.map { root + "/" + $0 } }
+                return BadgeState.Archive(
+                    root: root, name: archive.name,
+                    sealed: items.filter { $0.kind == .bundle }.compactMap { paths[$0.id] },
+                    checkouts: archive.active.filter { $0.kind == .checkedOut }.map {
+                        BadgeState.Archive.Checkout(
+                            item: $0.id, title: $0.title, path: paths[$0.id],
+                            working: Self.realPath($0.working))
+                    },
+                    desk: archive.active.filter { $0.kind == .desk }.map {
+                        BadgeState.Archive.Desk(
+                            item: $0.id, title: $0.title, path: Self.realPath($0.working))
+                    })
+            }, paused: isPaused)
+    }
+
+    /// Writes the badge state file, if there is one and what it lists has changed. A write
+    /// that fails is tried again at the next change.
+    private func writeBadges() {
+        guard let badges else { return }
+        let state = badgeState
+        guard state != badgesWritten else { return }
+        do {
+            try state.write(to: badges)
+            badgesWritten = state
+        } catch {
+            badgesWritten = nil
         }
     }
 
