@@ -376,6 +376,19 @@ fn draw_help(frame: &mut Frame, theme: Theme, area: Rect) {
     );
 }
 
+/// The answers a confirmation takes besides yes and no: deleting a desk item's card too,
+/// or trimming a returned checkout's session snapshots.
+fn extra_answers(confirm: &Confirm, theme: Theme) -> Vec<Span<'static>> {
+    let (key, what) = match confirm {
+        Confirm::DeskRemove { .. } => ("d", " delete its card too   "),
+        Confirm::Return {
+            snapshots: true, ..
+        } => ("t", " return it and forget its session snapshots   "),
+        _ => return Vec::new(),
+    };
+    vec![Span::styled(key, theme.key()), Span::raw(what)]
+}
+
 /// A correction worked out: each change before and after, waiting for `y` or `n`.
 fn draw_correction(
     frame: &mut Frame,
@@ -480,24 +493,7 @@ fn draw_confirm(frame: &mut Frame, confirm: &Confirm, theme: Theme, area: Rect) 
     let mut lines = vec![Line::from(question), Line::from("")];
     lines.extend(explanation.lines().map(|l| Line::from(l.to_owned())));
     let mut answers = vec![Span::styled("y", theme.key()), Span::raw(yes)];
-    if matches!(confirm, Confirm::DeskRemove { .. }) {
-        answers.extend([
-            Span::styled("d", theme.key()),
-            Span::raw(" delete its card too   "),
-        ]);
-    }
-    if matches!(
-        confirm,
-        Confirm::Return {
-            snapshots: true,
-            ..
-        }
-    ) {
-        answers.extend([
-            Span::styled("t", theme.key()),
-            Span::raw(" return it and forget its session snapshots   "),
-        ]);
-    }
+    answers.extend(extra_answers(confirm, theme));
     if matches!(confirm, Confirm::Rule { .. }) {
         answers.extend([
             Span::styled("n", theme.key()),

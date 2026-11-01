@@ -170,12 +170,8 @@ impl App {
                 );
                 None
             }
-            'r' => {
-                self.ask_to_return(item.id, None);
-                None
-            }
-            'm' => {
-                self.ask_option(super::option_lines::OptionLine::ReturnFrom { id: item.id });
+            'r' | 'm' => {
+                self.start_return(c, item.id);
                 None
             }
             'x' => {
@@ -229,6 +225,16 @@ impl App {
                 },
             }),
         })
+    }
+
+    /// `r` asks to return the checkout `id` from where it was checked out to; `m` first asks
+    /// where its working copy moved to.
+    fn start_return(&mut self, c: char, id: Id) {
+        if c == 'm' {
+            self.ask_option(super::option_lines::OptionLine::ReturnFrom { id });
+        } else {
+            self.ask_to_return(id, None);
+        }
     }
 
     /// Works out returning the checkout `id`, from `from` if its working copy moved, and asks,

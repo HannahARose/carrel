@@ -759,23 +759,7 @@ impl App {
             return vec![("y", "save"), ("n", "discard")];
         }
         if let Some(confirm) = &self.confirm {
-            if matches!(confirm, Confirm::DeskRemove { .. }) {
-                return vec![
-                    ("y", "keep its card"),
-                    ("d", "delete its card"),
-                    ("n", "no"),
-                ];
-            }
-            if matches!(
-                confirm,
-                Confirm::Return {
-                    snapshots: true,
-                    ..
-                }
-            ) {
-                return vec![("y", "yes"), ("t", "and trim snapshots"), ("n", "no")];
-            }
-            return vec![("y", "yes"), ("n", "no")];
+            return confirm_keys(confirm);
         }
         // Typing comes before any screen's keys: they don't apply while a line is open.
         if let Some(input) = &self.input {
@@ -1146,6 +1130,21 @@ fn confirmed(confirm: Confirm, key: KeyCode) -> Option<Effect> {
         },
         Confirm::UndoLibrarian(_) => Effect::UndoLibrarian,
     })
+}
+
+/// The keys a confirmation answers to, for the help line.
+fn confirm_keys(confirm: &Confirm) -> Vec<(&'static str, &'static str)> {
+    match confirm {
+        Confirm::DeskRemove { .. } => vec![
+            ("y", "keep its card"),
+            ("d", "delete its card"),
+            ("n", "no"),
+        ],
+        Confirm::Return {
+            snapshots: true, ..
+        } => vec![("y", "yes"), ("t", "and trim snapshots"), ("n", "no")],
+        _ => vec![("y", "yes"), ("n", "no")],
+    }
 }
 
 /// `index` moved by `delta` within `len` items.

@@ -401,9 +401,6 @@ fn prepared(app: &mut App, result: Result<crate::correct::Prepared, String>) {
 /// Changes proposals without filing anything: their destination, or whether a compressed file
 /// is expanded.
 fn change_proposals(root: &Path, effect: Effect) -> Result<String, String> {
-    let ids = |ids: &[carrel_core::card::Id]| -> Vec<String> {
-        ids.iter().map(ToString::to_string).collect()
-    };
     match effect {
         Effect::Compressed {
             ids: chosen,
@@ -425,11 +422,13 @@ fn change_proposals(root: &Path, effect: Effect) -> Result<String, String> {
     }
 }
 
+/// The identifiers `ids`, as the commands take them.
+fn ids(ids: &[carrel_core::card::Id]) -> Vec<String> {
+    ids.iter().map(ToString::to_string).collect()
+}
+
 fn background(app: &mut App, effect: Effect) -> Option<Done> {
     let root: PathBuf = app.archive.root().to_owned();
-    let ids = |ids: &[carrel_core::card::Id]| -> Vec<String> {
-        ids.iter().map(ToString::to_string).collect()
-    };
     let (busy, work): (String, Work) = match effect {
         Effect::Undo(id) => {
             let result = crate::commands::undo(Some(&root), &id);

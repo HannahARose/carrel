@@ -626,7 +626,29 @@ mod tests {
             app.key(key(KeyCode::Char('y'))),
             Some(Effect::DeskAdd(drafted.clone()))
         );
-        // Or given, as `carrel desk add --title --summary` gives them.
+
+        choose_parts_list(&mut app);
+        assert_eq!(app.key(key(KeyCode::Char('f'))), None);
+        assert!(
+            app.message
+                .as_deref()
+                .unwrap()
+                .contains("already in the archive")
+        );
+        let (busy, _) =
+            super::super::archive_work(app.archive.root().to_owned(), Effect::DeskAdd(drafted));
+        assert_eq!(busy, "Putting it on the desk and drafting its card…");
+    }
+
+    #[test]
+    fn a_desk_card_is_given_its_title_and_summary() {
+        let (dir, mut app) = active_sample();
+        app.picker_preference = Some("builtin".into());
+        app.start_folder = dir.path().to_owned();
+        app.key(key(KeyCode::Char('3')));
+        let notes = dir.path().join("Notes");
+        std::fs::create_dir_all(&notes).unwrap();
+        // As `carrel desk add --title --summary` gives them.
         app.key(key(KeyCode::Char('n')));
         app.key(key(KeyCode::Char('/')));
         enter(&mut app, &notes.display().to_string());
@@ -646,18 +668,6 @@ mod tests {
         let (busy, _) =
             super::super::archive_work(app.archive.root().to_owned(), Effect::DeskAdd(given));
         assert_eq!(busy, "Putting it on the desk…");
-
-        choose_parts_list(&mut app);
-        assert_eq!(app.key(key(KeyCode::Char('f'))), None);
-        assert!(
-            app.message
-                .as_deref()
-                .unwrap()
-                .contains("already in the archive")
-        );
-        let (busy, _) =
-            super::super::archive_work(app.archive.root().to_owned(), Effect::DeskAdd(drafted));
-        assert_eq!(busy, "Putting it on the desk and drafting its card…");
     }
 
     #[test]

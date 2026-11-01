@@ -8,6 +8,8 @@
 
 use carrel_core::discover::timeline::{Options, Resolution};
 use carrel_core::discover::wander::{self, Surroundings, Walk};
+use std::fmt::Write as _;
+
 use carrel_core::discover::{Catalog, DateKind};
 use carrel_core::questions::QuestionEntry;
 use carrel_core::questions::moments::wander_asks;
@@ -146,7 +148,7 @@ impl App {
                 .map_or("when made, else filed", DateKind::name)
         );
         if !self.stacks.timeline_words.is_empty() {
-            text.push_str(&format!(", for “{}”", self.stacks.timeline_words));
+            write!(text, ", for “{}”", self.stacks.timeline_words).unwrap();
         }
         text.push_str("\n\n");
         text.push_str(&crate::discover::timeline_text(
