@@ -2,16 +2,25 @@
 //! reason and how invasive it is, what the chosen changes would leave beside what's there
 //! now, and approving all or part of one, or rejecting it, as `carrel restructure` does.
 
+use std::collections::HashMap;
+use std::sync::Arc;
+
 use carrel_core::card::Id;
+use carrel_core::coordinator::{Coordinator as _, DEFAULT_LEASE, DiskLock};
 use carrel_core::discover::Catalog;
 use carrel_core::graph::Graph;
+use carrel_core::providers::Capability;
+use carrel_core::restructure::eagerness::{self, Eagerness, Source};
+use carrel_core::restructure::grouping::card_vectors;
 use carrel_core::restructure::preview::{self, PreviewCollection, PreviewTag};
+use carrel_core::restructure::section::{self, SectionOptions, propose_section};
 use carrel_core::restructure::tags::{TagOptions, propose};
 use carrel_core::restructure::{
     self, Invasiveness as CoreInvasiveness, Proposal, ProposalQueue, ProposedChange,
     RestructureError,
 };
 
+use crate::correct::ModelProvider;
 use crate::{ArchiveHandle, CarrelError};
 
 impl From<RestructureError> for CarrelError {
@@ -122,7 +131,7 @@ impl From<&ProposedChange> for RestructureChange {
 }
 
 /// A restructure proposal waiting for the owner.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
 pub struct RestructureProposal {
     /// Its identifier.
     pub id: String,
@@ -138,6 +147,68 @@ pub struct RestructureProposal {
     pub rationale: String,
     /// The changes, in the order they'd be applied.
     pub changes: Vec<RestructureChange>,
+    /// For a section proposal, how it was judged.
+    pub assessment: Option<RestructureAssessment>,
+}
+
+/// How a section proposal was judged: the eagerness it was judged by, its benefit and cost,
+/// the findability test, and what it held back.
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct RestructureAssessment {
+    /// The eagerness that applied: `settled`, `balanced` or `eager`.
+    pub eagerness: String,
+    /// The collection that set it, or `None` for the archive's setting.
+    pub eagerness_from: Option<String>,
+    /// Its changes' benefits added up.
+    pub benefit: f64,
+    /// Their cost, weighted by how invasive each is.
+    pub cost: f64,
+    /// How many held-out cards the findability test looked for, if it ran.
+    pub tried: Option<u64>,
+    /// How many it found in the archive as it is.
+    pub found_now: Option<u64>,
+    /// How many it found in the proposed shape.
+    pub found_after: Option<u64>,
+    /// Why the findability test didn't run, if it didn't.
+    pub untested: Option<String>,
+    /// Groups the proposal leaves out, each with why.
+    pub held_back: Vec<String>,
+}
+
+impl From<&section::Assessment> for RestructureAssessment {
+    fn from(assessment: &section::Assessment) -> Self {
+        let found = assessment.findability.as_ref();
+        Self {
+            eagerness: assessment.eagerness.as_str().to_owned(),
+            eagerness_from: match &assessment.eagerness_from {
+                Source::Archive => None,
+                Source::Collection(path) => Some(path.clone()),
+            },
+            benefit: assessment.benefit,
+            cost: assessment.cost,
+            tried: found.map(|f| f.tried as u64),
+            found_now: found.map(|f| f.found_now as u64),
+            found_after: found.map(|f| f.found_after as u64),
+            untested: assessment.untested.clone(),
+            held_back: assessment
+                .held_back
+                .iter()
+                .map(|h| format!("{}: {}", h.what, h.why))
+                .collect(),
+        }
+    }
+}
+
+/// How eager Carrel is to rearrange at a collection, and where that comes from.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct EagernessAt {
+    /// `settled`, `balanced` or `eager`.
+    pub level: String,
+    /// The collection whose design document sets it (this one or one it's inside), or `None`
+    /// when it's the archive's `restructure.eagerness`.
+    pub from_collection: Option<String>,
+    /// The archive's own level.
+    pub archive_level: String,
 }
 
 impl From<&Proposal> for RestructureProposal {
@@ -150,6 +221,7 @@ impl From<&Proposal> for RestructureProposal {
             invasiveness: proposal.invasiveness.into(),
             rationale: proposal.rationale.clone(),
             changes: proposal.changes.iter().map(Into::into).collect(),
+            assessment: proposal.assessment.as_ref().map(Into::into),
         }
     }
 }
@@ -255,6 +327,91 @@ impl ArchiveHandle {
         }
         restructure::queue(&archive, &proposal)?;
         Ok(Some((&proposal).into()))
+    }
+
+    /// Proposes reorganizing the section at `collection` (empty for the whole archive), as
+    /// `carrel restructure propose` does: grouping its items by the graph and the meaning
+    /// index, judged by how eager Carrel is there, and tested for findability with `model` or
+    /// this device's text model when there is one. Puts it in the queue in place of any
+    /// proposal waiting for the same section. Returns it, or, when nothing is worth
+    /// proposing, a proposal with no changes whose rationale says why, which isn't queued.
+    ///
+    /// # Errors
+    ///
+    /// [`CarrelError::Invalid`] if the collection isn't one, or [`CarrelError::Failed`] if the
+    /// archive can't be read or the queue written.
+    pub fn propose_section_restructure(
+        &self,
+        collection: String,
+        model: Option<Arc<dyn ModelProvider>>,
+    ) -> Result<RestructureProposal, CarrelError> {
+        let archive = self.fresh()?;
+        let vectors = match carrel_core::index::related::open(&archive) {
+            Ok(index) => card_vectors(&index, &Graph::build(&Catalog::read(&archive)?), ""),
+            Err(_) => HashMap::new(),
+        };
+        let registry = self.correction_registry(model);
+        let registry = (!registry.ranked(Capability::TextModel).is_empty()).then_some(registry);
+        let options = SectionOptions::for_archive(&archive);
+        let proposal =
+            propose_section(&archive, &collection, &vectors, registry.as_ref(), &options)?;
+        if !proposal.changes.is_empty() {
+            restructure::queue(&archive, &proposal)?;
+        }
+        Ok((&proposal).into())
+    }
+
+    /// How eager Carrel is to rearrange at `collection` (empty for the archive), and where
+    /// that comes from.
+    ///
+    /// # Errors
+    ///
+    /// [`CarrelError::Failed`] if the archive can't be read.
+    pub fn eagerness_at(&self, collection: String) -> Result<EagernessAt, CarrelError> {
+        let archive = self.fresh()?;
+        let collections = archive.collections()?;
+        let (level, source) = eagerness::at(&archive, &collections, &collection);
+        Ok(EagernessAt {
+            level: level.as_str().to_owned(),
+            from_collection: match source {
+                Source::Archive => None,
+                Source::Collection(path) => Some(path),
+            },
+            archive_level: archive.settings().restructure.eagerness.as_str().to_owned(),
+        })
+    }
+
+    /// Sets the collection `collection`'s own eagerness (`settled`, `balanced` or `eager`) in
+    /// its design document, or with `None` clears it so the archive's applies, as one change
+    /// History can undo. Returns the commit, or `None` when it was already so.
+    ///
+    /// # Errors
+    ///
+    /// [`CarrelError::Invalid`] for an unknown collection or level, [`CarrelError::Busy`] if
+    /// another writer holds the archive, or [`CarrelError::Failed`].
+    pub fn set_collection_eagerness(
+        &self,
+        collection: String,
+        level: Option<String>,
+    ) -> Result<Option<String>, CarrelError> {
+        let level = level
+            .map(|l| {
+                Eagerness::parse(&l).ok_or_else(|| {
+                    CarrelError::invalid(format!(
+                        "“{l}” isn't a level; use settled, balanced or eager"
+                    ))
+                })
+            })
+            .transpose()?;
+        let archive = self.fresh()?;
+        let lease = DiskLock::for_archive(&archive).acquire(
+            self.holder()?,
+            "restructure",
+            DEFAULT_LEASE,
+        )?;
+        let done = eagerness::set_for_collection(&archive, &collection, level, &lease);
+        lease.release()?;
+        Ok(done?)
     }
 
     /// What the proposal `id`'s changes named in `only` would leave, beside the archive as it
@@ -447,5 +604,77 @@ mod tests {
         sample.handle.reject_restructure(id.clone()).unwrap();
         assert_eq!(sample.handle.restructure_proposals().unwrap(), []);
         assert!(sample.handle.approve_restructure(id, None).is_err());
+    }
+
+    #[test]
+    fn a_collections_eagerness_is_set_inherited_and_cleared() {
+        let sample = Sample::new();
+        let archive = sample.handle.eagerness_at(String::new()).unwrap();
+        assert_eq!(archive.level, "balanced");
+        assert_eq!(archive.from_collection, None);
+        let commit = sample
+            .handle
+            .set_collection_eagerness("Projects".into(), Some("eager".into()))
+            .unwrap();
+        assert!(commit.is_some(), "one change in history");
+        let inside = sample
+            .handle
+            .eagerness_at("Projects/Hardware".into())
+            .unwrap();
+        assert_eq!(inside.level, "eager");
+        assert_eq!(inside.from_collection.as_deref(), Some("Projects"));
+        assert_eq!(inside.archive_level, "balanced");
+        assert_eq!(
+            sample
+                .handle
+                .set_collection_eagerness("Projects".into(), Some("eager".into()))
+                .unwrap(),
+            None,
+            "already so"
+        );
+        sample
+            .handle
+            .set_collection_eagerness("Projects".into(), None)
+            .unwrap();
+        assert_eq!(
+            sample
+                .handle
+                .eagerness_at("Projects".into())
+                .unwrap()
+                .from_collection,
+            None
+        );
+        assert!(matches!(
+            sample
+                .handle
+                .set_collection_eagerness("Projects".into(), Some("wild".into())),
+            Err(CarrelError::Invalid { .. })
+        ));
+    }
+
+    #[test]
+    fn a_section_is_proposed_and_judged() {
+        let sample = Sample::new();
+        let proposal = sample
+            .handle
+            .propose_section_restructure("Projects".into(), None)
+            .unwrap();
+        assert_eq!(proposal.kind, "section");
+        assert_eq!(proposal.section, "Projects");
+        assert_ne!(proposal.rationale, "");
+        let assessment = proposal.assessment.expect("a section proposal is judged");
+        assert_eq!(assessment.eagerness, "balanced");
+        let queued = sample.handle.restructure_proposals().unwrap();
+        assert_eq!(
+            queued.iter().any(|p| p.id == proposal.id),
+            !proposal.changes.is_empty(),
+            "queued only when it changes something"
+        );
+        assert!(
+            sample
+                .handle
+                .propose_section_restructure("Nowhere".into(), None)
+                .is_err()
+        );
     }
 }
