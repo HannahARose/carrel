@@ -526,22 +526,16 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
         | Effect::StartHistory(_)) => switch_or_index_work(app, root, effect)?,
         Effect::QuestionsAbout(card) => option_lines::questions_about_work(root, card),
         Effect::Queue {
-            note,
-            written: Some(written),
-            ..
-        } => {
-            let result = intake::queue_written_note(&root, &written, note.as_deref());
-            finished(app, result.map_err(|Failure(e)| e));
-            return None;
-        }
-        Effect::Queue {
             paths,
             options,
             url,
             note,
-            written: None,
+            written,
         } => {
-            let result = queue(&root, &paths, options, url.as_deref(), note.as_deref());
+            let result = match written {
+                Some(text) => intake::queue_written_note(&root, &text, note.as_deref()),
+                None => queue(&root, &paths, options, url.as_deref(), note.as_deref()),
+            };
             finished(app, result.map_err(|Failure(e)| e));
             return None;
         }

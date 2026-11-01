@@ -332,8 +332,11 @@ final class Reports: ProgressListener, @unchecked Sendable {
 
         let note = try await model.shareNote("Ring the framer about the print.", title: "Framer")
         let path = try #require(note.added.added.first?.path)
-        #expect(path.hasSuffix("/config/notes/" + URL(filePath: path).deletingLastPathComponent()
-            .lastPathComponent + "/Framer.md"))
+        #expect(
+            path.hasSuffix(
+                "/config/notes/"
+                    + URL(filePath: path).deletingLastPathComponent()
+                    .lastPathComponent + "/Framer.md"))
         #expect(model.intake.waiting.count == 2, "the queue is read again")
 
         await #expect(throws: CarrelError.self) { try await model.shareNote("  ") }

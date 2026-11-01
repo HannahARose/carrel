@@ -66,7 +66,7 @@ pub fn written_note_file_name(text: &str, title: Option<&str>) -> String {
         .take(80)
         .collect();
     if name.is_empty() {
-        name = "Note".to_owned();
+        name.push_str("Note");
     }
     let lower = name.to_ascii_lowercase();
     if ![".md", ".markdown", ".txt"]

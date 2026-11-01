@@ -249,9 +249,7 @@ mod tests {
             .share_note("In the configuration".into(), None, None, None)
             .unwrap();
         assert!(
-            kept.added.added[0]
-                .path
-                .contains("/config/notes/"),
+            kept.added.added[0].path.contains("/config/notes/"),
             "{:?}",
             kept.added.added[0].path
         );

@@ -2380,6 +2380,19 @@ public protocol ArchiveHandleProtocol: AnyObject, Sendable {
     func settings() throws  -> [Setting]
     
     /**
+     * Adds `text` as a note item of its own, titled `title` (or named by its first words),
+     * with the owner's `note` for its draft and card: kept as a Markdown file in a folder of
+     * its own in `folder` (`notes` in this handle's configuration folder when `None`) and queued as any file is.
+     * While another device is the writer, it goes into this device's inbox instead.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if `text` is empty, or [`CarrelError::Failed`] if the note,
+     * the queue or the inbox can't be written.
+     */
+    func shareNote(text: String, title: String?, note: String?, folder: String?) throws  -> Shared
+    
+    /**
      * Adds the files and folders at `paths` to the intake queue, as
      * [`queue`](ArchiveHandle::queue) does, with the owner's `note` for their drafts and cards.
      * While another device is the writer, they go into this device's inbox instead.
@@ -5386,6 +5399,30 @@ open func settings()throws  -> [Setting]  {
         uniffiCallStatus in
     uniffi_carrel_ffi_fn_method_archivehandle_settings(
             self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Adds `text` as a note item of its own, titled `title` (or named by its first words),
+     * with the owner's `note` for its draft and card: kept as a Markdown file in a folder of
+     * its own in `folder` (`notes` in this handle's configuration folder when `None`) and queued as any file is.
+     * While another device is the writer, it goes into this device's inbox instead.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] if `text` is empty, or [`CarrelError::Failed`] if the note,
+     * the queue or the inbox can't be written.
+     */
+open func shareNote(text: String, title: String?, note: String?, folder: String?)throws  -> Shared  {
+    return try  FfiConverterTypeShared_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_share_note(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(text),
+        FfiConverterOptionString.lower(title),
+        FfiConverterOptionString.lower(note),
+        FfiConverterOptionString.lower(folder),uniffiCallStatus
     )
 })
 }
@@ -26457,6 +26494,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_settings() != 47688) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_share_note() != 32532) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_share_paths() != 49218) {

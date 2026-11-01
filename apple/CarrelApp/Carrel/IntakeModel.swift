@@ -59,7 +59,9 @@ final class IntakeModel {
         guard !urls.isEmpty else { return }
         await report {
             try await $0.share(urls, each: how == .each, whole: how == .whole, note: note)
-        } named: { URL(filePath: $0).lastPathComponent }
+        } named: {
+            URL(filePath: $0).lastPathComponent
+        }
     }
 
     /// Adds the web address `address` as a `url` item, with its `title` and the owner's
@@ -71,7 +73,9 @@ final class IntakeModel {
             try await $0.shareWebAddress(
                 address.trimmingCharacters(in: .whitespacesAndNewlines), title: title,
                 note: note.cleanedForIntake)
-        } named: { title ?? $0 }
+        } named: {
+            title ?? $0
+        }
     }
 
     /// Adds `text` as a note item of its own, with its `title` and the owner's `note`, as
@@ -80,7 +84,9 @@ final class IntakeModel {
         writing = nil
         await report {
             try await $0.shareNote(text, title: title.cleanedForIntake, note: note.cleanedForIntake)
-        } named: { URL(filePath: $0).lastPathComponent }
+        } named: {
+            URL(filePath: $0).lastPathComponent
+        }
     }
 
     /// Runs `share` and keeps what it did as `report`, naming each entry by its path with

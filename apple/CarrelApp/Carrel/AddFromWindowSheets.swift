@@ -52,7 +52,8 @@ struct AddFilesSheet: View {
             } header: {
                 Text(
                     adding.urls.count == 1
-                        ? "Add to the Intake Queue" : "Add \(adding.urls.count) Items to the Intake Queue"
+                        ? "Add to the Intake Queue"
+                        : "Add \(adding.urls.count) Items to the Intake Queue"
                 )
                 .font(.headline)
             }
@@ -67,7 +68,8 @@ struct AddFilesSheet: View {
                 )
             }
             TextField(
-                "Note", text: $note, prompt: Text("Optional; given to the drafter, kept in the card"),
+                "Note", text: $note,
+                prompt: Text("Optional; given to the drafter, kept in the card"),
                 axis: .vertical
             )
             .lineLimit(2...5)
@@ -135,7 +137,8 @@ struct WriteToAddSheet: View {
             if isWebAddress {
                 TextField(
                     "Your note", text: $note,
-                    prompt: Text("Optional; given to the drafter, kept in the card"), axis: .vertical
+                    prompt: Text("Optional; given to the drafter, kept in the card"),
+                    axis: .vertical
                 )
                 .lineLimit(2...5)
             }

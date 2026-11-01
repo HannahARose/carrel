@@ -63,7 +63,7 @@ struct IntakeSection: View {
                 Text(
                     "Drop or paste files, folders, web addresses or text on the window, or choose File → Add to Archive…, Add Web Address… or Add Note…"
                 )
-                    .foregroundStyle(.secondary)
+                .foregroundStyle(.secondary)
             }
         }
     }
