@@ -297,4 +297,6 @@ The app, `carrel` and its interactive mode are three ways into the **same archiv
 - **One history.** Every change, from any of them, is in History, with the device it was made on, and can be undone from any of them.
 - **This Mac's settings are shared.** The app reads and writes the same configuration folder as `carrel`, so the models, backups and this device's preferences are the same in both. The app keeps its own list of recent archives.
 
+`carrel gui` opens the app from the command line, on the archive `carrel` would use, and `carrel gui SCREEN` on one screen, such as `carrel gui questions` or `carrel gui discover:wander`, with the names `carrel tui SCREEN` uses ([Commands](commands.md#the-interactive-mode)). `--item ITEM` chooses an item too.
+
 Some things are only in one interface for now, and some always will be, such as `carrel bench`; [Interfaces](../dev/interfaces.md) lists where each capability stands.

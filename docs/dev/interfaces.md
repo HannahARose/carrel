@@ -11,6 +11,7 @@ The command line and the interactive mode run on macOS, Linux and Windows. The M
 | Capability | Command line | Interactive mode | Mac app |
 | --- | --- | --- | --- |
 | Create, open and switch archives | `init`, `open` | ✓ `Ctrl-O`, Settings | ✓ |
+| Open the interactive mode or the app at a screen, with the same names (#450) | `tui SCREEN`, `gui SCREEN [--item]` | ✓ starts on it | ✓ `carrel://open?screen=`; Ingest is Status, the librarian its panel, Settings its window |
 | Create an archive with a chosen embedding model, or start history for one that has none | `init --embedding-model`, `init` in the archive | ✓ `Ctrl-O` | ✓ New Archive…'s embedding model; Start History on Status and History |
 | Status, problems and Recent | `status` | ✓ Status | ✓ Status: Recent, cards with problems, names to rename, restructure signals, desk suggestions |
 | Add items to the intake queue | `ingest` | ✓ Ingest | ✓ drag, ⌘O (#236), a folder entry by entry or whole |

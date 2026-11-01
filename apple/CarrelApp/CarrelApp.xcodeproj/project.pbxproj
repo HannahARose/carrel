@@ -824,7 +824,7 @@
 					"@executable_path/../Frameworks",
 					"@executable_path/../../../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = io.github.hannaharose.Carrel.QuickLook;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(CARREL_BUNDLE_IDENTIFIER).QuickLook";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -846,7 +846,7 @@
 					"@executable_path/../Frameworks",
 					"@executable_path/../../../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = io.github.hannaharose.Carrel.QuickLook;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(CARREL_BUNDLE_IDENTIFIER).QuickLook";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;

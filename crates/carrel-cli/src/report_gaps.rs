@@ -13,6 +13,19 @@ use serde_json::json;
 use crate::commands::{find_item, locate};
 use crate::{Failure, Report};
 
+/// `carrel report`'s options: the usage report's, or what else it does.
+#[derive(Debug, clap::Args)]
+pub struct ReportArgs {
+    #[command(subcommand)]
+    action: Option<ReportAction>,
+    /// The period: a span such as 14d or 2w, `today`, or a date such as 2026-10-01.
+    #[arg(long, value_name = "WHEN", default_value = crate::usage_report::DEFAULT_SINCE)]
+    since: String,
+    /// Show collections by path rather than identifier, for your eyes only.
+    #[arg(long)]
+    names: bool,
+}
+
 /// What `carrel report` does besides the usage report.
 #[derive(Debug, clap::Subcommand)]
 pub enum ReportAction {
@@ -45,20 +58,15 @@ pub struct GapsArgs {
     pub item: Option<String>,
 }
 
-/// `carrel report`, with `action` or the usage report since `since`.
+/// `carrel report`: what `args` ask, or the usage report.
 ///
 /// # Errors
 ///
 /// [`Failure`] as each action says.
-pub fn command(
-    archive: Option<&Path>,
-    action: Option<ReportAction>,
-    since: &str,
-    names: bool,
-) -> Result<Report, Failure> {
-    match action {
-        None => crate::usage_report::report(archive, since, names),
-        Some(ReportAction::Gaps(args)) => gaps(archive, args),
+pub fn command(archive: Option<&Path>, args: ReportArgs) -> Result<Report, Failure> {
+    match args.action {
+        None => crate::usage_report::report(archive, &args.since, args.names),
+        Some(ReportAction::Gaps(gaps_args)) => gaps(archive, gaps_args),
     }
 }
 

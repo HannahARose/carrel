@@ -10,6 +10,7 @@ struct ArchiveWindow: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismissWindow) private var dismissWindow
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
     @Environment(\.controlActiveState) private var activeState
     @State private var model: ArchiveWindowModel
 
@@ -75,10 +76,14 @@ extension ArchiveWindow {
     /// Chooses the item a link asked for: on Active when it's checked out or on the desk, as
     /// in the agent's menu, or when a link from Finder asks to do something with it, which
     /// starts; else in Browse, as from Spotlight.
+    /// A screen a link asks for is shown first, so an item it names is chosen where it is.
     fileprivate func choosePendingItem() {
-        guard model.handle != nil, let link = app.takePendingLink(for: model.root),
-            let item = link.item
-        else { return }
+        guard model.handle != nil, let link = app.takePendingLink(for: model.root) else { return }
+        if let screen = link.screen {
+            model.show(linked: screen)
+            if screen == .settings { openSettings() }
+        }
+        guard let item = link.item else { return }
         if link.action == nil, model.archive?.active.contains(where: { $0.id == item }) == false {
             model.open(item: item)
             return

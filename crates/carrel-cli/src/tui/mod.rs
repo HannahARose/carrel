@@ -25,6 +25,7 @@ mod review_restructure;
 mod screens;
 mod search;
 mod settings;
+mod start_screen;
 mod ui;
 mod ui_discovery;
 
@@ -58,8 +59,11 @@ fn lines_of(text: &str) -> Vec<String> {
 }
 
 /// Opens the interactive mode on the archive commands would use, and returns when the owner
-/// quits. The terminal is restored however it ends.
-pub fn run(archive: Option<&Path>) -> Result<Report, Failure> {
+/// quits, starting on `screen` when one is asked for. The terminal is restored however it ends.
+pub fn run(
+    archive: Option<&Path>,
+    screen: Option<crate::start_screen::StartScreen>,
+) -> Result<Report, Failure> {
     let archive = locate(archive)?;
     // Noted among the recent archives, so the switcher can come back to it.
     if let Ok(root) = std::fs::canonicalize(archive.root()) {
@@ -71,6 +75,9 @@ pub fn run(archive: Option<&Path>) -> Result<Report, Failure> {
     app.previews = preview::Previews::detected();
     // The item shown first gets its preview too.
     app.load_card();
+    if let Some(screen) = screen {
+        app.start_on_screen(screen);
+    }
     let theme = ui::Theme::from_env();
     let mut terminal = enter();
     let result = event_loop(&mut terminal, &mut app, theme);
