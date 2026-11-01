@@ -82,6 +82,9 @@ impl Shelf<'_> {
     #[must_use]
     pub fn run(&self, name: &str, input: &str, question: &str) -> Ran {
         let input = input.trim();
+        if name == "flagged" {
+            return self.flagged(input);
+        }
         if input.is_empty() {
             return Ran::said(
                 format!("{name} needs an input."),
@@ -631,6 +634,63 @@ impl Shelf<'_> {
         Ran {
             text,
             summary: format!("looked at the collection {}", collection.path),
+            found,
+            read: Vec::new(),
+        }
+    }
+}
+
+impl Shelf<'_> {
+    /// What the owner flagged as needing work, in the collection `input` names and below, or
+    /// everywhere for `all` or nothing.
+    fn flagged(&self, input: &str) -> Ran {
+        let within = input.trim().trim_matches('/');
+        let within = if within.is_empty() || within.eq_ignore_ascii_case("all") {
+            None
+        } else {
+            Some(within.to_lowercase())
+        };
+        let inside = |path: &str| {
+            within.as_deref().is_none_or(|w| {
+                let path = path.to_lowercase();
+                path == w || path.starts_with(&format!("{w}/"))
+            })
+        };
+        let mut flagged = crate::flags::flagged_collections(self.archive).unwrap_or_default();
+        for item in &self.items {
+            if let Some(card) = self.card(item) {
+                flagged.extend(crate::flags::flagged_item(item, &card));
+            }
+        }
+        flagged.retain(|f| inside(f.what.path()));
+        let place = within
+            .as_deref()
+            .map_or_else(|| "the archive".to_owned(), str::to_owned);
+        if flagged.is_empty() {
+            return Ran::said(
+                format!("Nothing in {place} is flagged as needing work."),
+                format!("looked for flags in {place}, and found none"),
+            );
+        }
+        let mut text = format!("Flagged as needing work in {place}:\n");
+        let mut found = Vec::new();
+        for f in &flagged {
+            let what = crate::flags::describe(&f.flag);
+            match &f.what {
+                crate::flags::Flaggable::Collection { path } => {
+                    writeln!(text, "- the collection {path} ({}): {what}", f.title).unwrap();
+                }
+                crate::flags::Flaggable::Item { id, card } => {
+                    writeln!(text, "- {} (id {id}, card {card}): {what}", f.title).unwrap();
+                    if let Some(item) = self.items.iter().find(|i| i.id == *id) {
+                        found.push(self.link(item));
+                    }
+                }
+            }
+        }
+        Ran {
+            text,
+            summary: format!("listed {} flagged in {place}", flagged.len()),
             found,
             read: Vec::new(),
         }

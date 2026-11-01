@@ -239,6 +239,7 @@ impl Archive {
             description: Some("Items waiting for a better home".into()),
             item_template: None,
             tags: Vec::new(),
+            needs_work: None,
             extra: crate::card::Extra::new(),
         };
         let mut settings = Settings::default();

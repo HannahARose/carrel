@@ -130,6 +130,7 @@ fn as_found(entry: &Entry, date: Date) -> FoundItem {
         date: Some(date.to_string()),
         tags: entry.tags.clone(),
         checked_out: entry.checked_out,
+        flagged: entry.flagged,
     }
 }
 

@@ -188,6 +188,7 @@ Fields are owned by programs unless marked as owner fields. Optional fields are 
 | `placement` | map | no | How sure filing was of the item's collection, when it wasn't (§5.8) |
 | `removed` | map | for `tombstone` | §10 |
 | `expanded_from` | map | no | The compressed file the item was expanded from when it was filed or with `carrel expand`: its `name`, `size` and `checksum` (§2.6) |
+| `needs_work` | `true`, string or map | no | The owner's mark that the item or its card needs work (§5.9) (owner field) |
 
 Programs **must** preserve fields they don't recognize when rewriting a card.
 
@@ -306,6 +307,19 @@ placement:
 
 Programs write `placement` when filing a proposal whose destination confidence (§7.9) was `low` or `medium`, and never for items filed to Holding, where being there says the same. They remove it when the owner places the item themselves, such as by moving or renaming it, since the owner's choice settles where it belongs.
 
+### 5.9 Needs work
+
+The owner may flag an item, or a collection (§6.3), as needing work, such as while browsing, with a few words saying what:
+
+```yaml
+needs_work:
+  note: "wrong title"      # optional: what needs doing, one line
+  person: 01928f39-eeee-7fff-8000-000000000005
+  at: "2026-11-01T09:30:00-04:00"
+```
+
+Written by hand, `needs_work: true` or `needs_work: "split this folder"` mean the same without who and when; `false` is the same as leaving it out. Programs write the map. A flag stays until the owner clears it; programs **may** offer to clear it when the owner corrects or edits the card, and **may** look at flagged items first when they reassess the archive, but **must not** clear it themselves.
+
 ## 6. Collections and design documents
 
 ### 6.1 Design documents
@@ -360,6 +374,7 @@ item_template: project          # optional: a card template name for this collec
 compressed_files: keep          # optional: expand, keep or ask; overrides settings.json (§7.2)
 restructure:                    # optional
   eagerness: settled            # settled, balanced or eager; overrides settings.json (§7.2) here and below
+needs_work: "split this folder" # optional: the owner's flag (§5.9)
 tags:                           # this collection's tag vocabulary
   - name: simulation
     description: "Numerical models and simulation code"

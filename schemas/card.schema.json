@@ -195,6 +195,17 @@
           "type": "null"
         }
       ]
+    },
+    "needs_work": {
+      "description": "The owner's mark that the item or its card needs work (FORMAT.md §5.9).",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/NeedsWorkForm"
+        },
+        {
+          "type": "null"
+        }
+      ]
     }
   },
   "required": [
@@ -680,6 +691,58 @@
         "size",
         "checksum"
       ]
+    },
+    "NeedsWorkForm": {
+      "description": "The forms `needs_work` may take: `true` (or `false`, the same as leaving it out), a note,\nor the whole record.",
+      "anyOf": [
+        {
+          "description": "Flagged, or with `false`, not.",
+          "type": "boolean"
+        },
+        {
+          "description": "Flagged, with what needs doing.",
+          "type": "string"
+        },
+        {
+          "description": "Flagged, with what, who and when.",
+          "$ref": "#/$defs/NeedsWork"
+        }
+      ]
+    },
+    "NeedsWork": {
+      "description": "The owner's mark that an item or a collection needs work (FORMAT.md §5.9), with what, who\nand when. Written by hand it may be only `true` or a note; programs write the whole record.",
+      "type": "object",
+      "properties": {
+        "note": {
+          "description": "What needs doing, in a few words, such as \"wrong title\" or \"split this folder\".",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "person": {
+          "description": "The person who flagged it.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "at": {
+          "description": "When it was flagged.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DateOrTime"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
     }
   }
 }

@@ -89,10 +89,90 @@ pub struct Card {
     /// The compressed file the item was expanded from (FORMAT.md §5.2).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expanded_from: Option<ExpandedFrom>,
+    /// The owner's mark that the item or its card needs work (FORMAT.md §5.9).
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "needs_work_field"
+    )]
+    #[schemars(with = "Option<NeedsWorkForm>")]
+    pub needs_work: Option<NeedsWork>,
     /// Fields this version doesn't know, preserved unchanged.
     #[serde(flatten)]
     #[schemars(skip)]
     pub extra: Extra,
+}
+
+/// The owner's mark that an item or a collection needs work (FORMAT.md §5.9), with what, who
+/// and when. Written by hand it may be only `true` or a note; programs write the whole record.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+pub struct NeedsWork {
+    /// What needs doing, in a few words, such as "wrong title" or "split this folder".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    /// The person who flagged it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub person: Option<Id>,
+    /// When it was flagged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub at: Option<DateOrTime>,
+    /// Keys this version doesn't know.
+    #[serde(flatten)]
+    #[schemars(skip)]
+    pub extra: Extra,
+}
+
+/// The forms `needs_work` may take: `true` (or `false`, the same as leaving it out), a note,
+/// or the whole record.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub(crate) enum NeedsWorkForm {
+    /// Flagged, or with `false`, not.
+    Flag(bool),
+    /// Flagged, with what needs doing.
+    Note(String),
+    /// Flagged, with what, who and when.
+    Record(NeedsWork),
+}
+
+/// Reads and writes `needs_work` in any of its forms, writing back the short form a record
+/// that has only a note, or nothing, was read from.
+pub(crate) mod needs_work_field {
+    use serde::{Deserialize as _, Deserializer, Serialize as _, Serializer};
+
+    use super::{NeedsWork, NeedsWorkForm};
+
+    #[allow(clippy::ref_option)] // serde's `with` passes the field by reference
+    pub fn serialize<S: Serializer>(
+        value: &Option<NeedsWork>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        match value {
+            None => serializer.serialize_none(),
+            Some(flag) if flag.person.is_none() && flag.at.is_none() && flag.extra.is_empty() => {
+                match &flag.note {
+                    Some(note) => NeedsWorkForm::Note(note.clone()),
+                    None => NeedsWorkForm::Flag(true),
+                }
+                .serialize(serializer)
+            }
+            Some(flag) => NeedsWorkForm::Record(flag.clone()).serialize(serializer),
+        }
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<NeedsWork>, D::Error> {
+        Ok(match Option::<NeedsWorkForm>::deserialize(deserializer)? {
+            None | Some(NeedsWorkForm::Flag(false)) => None,
+            Some(NeedsWorkForm::Flag(true)) => Some(NeedsWork::default()),
+            Some(NeedsWorkForm::Note(note)) => Some(NeedsWork {
+                note: Some(note).filter(|n| !n.trim().is_empty()),
+                ..NeedsWork::default()
+            }),
+            Some(NeedsWorkForm::Record(flag)) => Some(flag),
+        })
+    }
 }
 
 /// The `carrel: card` marker that identifies a Markdown file as a card (FORMAT.md §5).

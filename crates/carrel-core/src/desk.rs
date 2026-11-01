@@ -331,6 +331,7 @@ fn new_card(
         placement: None,
         removed: None,
         expanded_from: None,
+        needs_work: None,
         extra: Extra::new(),
     }
 }

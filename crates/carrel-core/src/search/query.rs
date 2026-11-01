@@ -3,7 +3,7 @@
 //!
 //! Filters are written `name:value`, or `name:"a value with spaces"`: `collection:Finances`,
 //! `tag:receipts`, `kind:folder`, `after:2025-01`, `before:2026`, `sensitivity:sensitive`,
-//! and `checked-out` on its own. Anything else is words, including a word with a colon that
+//! and `checked-out` and `flagged` on their own. Anything else is words, including a word with a colon that
 //! isn't a filter's name, such as `10:30`.
 
 use crate::card::{Kind, Sensitivity};
@@ -66,6 +66,8 @@ pub struct Filters {
     pub sensitivity: Vec<Sensitivity>,
     /// Only items that are checked out.
     pub checked_out: bool,
+    /// Only items the owner flagged as needing work.
+    pub flagged: bool,
 }
 
 impl Filters {
@@ -146,6 +148,10 @@ impl Query {
                 filters.checked_out = true;
                 continue;
             }
+            if piece.eq_ignore_ascii_case("flagged") {
+                filters.flagged = true;
+                continue;
+            }
             let Some((name, value)) = piece.split_once(':') else {
                 words.push(piece);
                 continue;
@@ -189,7 +195,7 @@ mod tests {
     #[test]
     fn filters_are_taken_out_of_the_words() {
         let query = Query::parse(
-            r#"invoice collection:"Finances/Bills" tag:Receipts kind:file after:2025-01 before:2026 sensitivity:sensitive checked-out 10:30 2057-4038"#,
+            r#"invoice collection:"Finances/Bills" tag:Receipts kind:file after:2025-01 before:2026 sensitivity:sensitive checked-out Flagged 10:30 2057-4038"#,
         )
         .unwrap();
         assert_eq!(query.text, "invoice 10:30 2057-4038");
@@ -201,6 +207,7 @@ mod tests {
         assert_eq!(f.before, Period::parse("2026"));
         assert_eq!(f.sensitivity, [Sensitivity::Sensitive]);
         assert!(f.checked_out);
+        assert!(f.flagged);
         assert!(Query::parse("plain words").unwrap().filters.is_empty());
     }
 
