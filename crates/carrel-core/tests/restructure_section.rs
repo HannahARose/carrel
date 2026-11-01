@@ -646,30 +646,7 @@ impl Provider for Walker {
                 "rationale": "Birds get a home of their own."
             })
         } else {
-            let summary = request
-                .prompt
-                .lines()
-                .next()
-                .unwrap_or_default()
-                .to_lowercase();
-            let choices: Vec<String> = schema["properties"]["choice"]["enum"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|c| c.as_str().unwrap().to_owned())
-                .collect();
-            let choice = choices
-                .iter()
-                .find(|c| !self.lost && c.as_str() != "here" && summary.contains(&c.to_lowercase()))
-                .cloned()
-                .unwrap_or_else(|| {
-                    if !self.lost && choices.iter().any(|c| c == "here") {
-                        "here".into()
-                    } else {
-                        "nowhere at all".into()
-                    }
-                });
-            json!({"choice": choice})
+            walk_choice(request, self.lost)
         };
         Ok(Completion {
             text: json.to_string(),
@@ -678,6 +655,36 @@ impl Provider for Walker {
             usage: None,
         })
     }
+}
+
+/// A findability walk's answer: the collection the card's description names, else `here`;
+/// or, `lost`, an answer that isn't one of the choices.
+fn walk_choice(request: &CompletionRequest, lost: bool) -> Value {
+    let schema = request.schema.as_ref().unwrap();
+    let summary = request
+        .prompt
+        .lines()
+        .next()
+        .unwrap_or_default()
+        .to_lowercase();
+    let choices: Vec<String> = schema["properties"]["choice"]["enum"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c.as_str().unwrap().to_owned())
+        .collect();
+    let choice = choices
+        .iter()
+        .find(|c| !lost && c.as_str() != "here" && summary.contains(&c.to_lowercase()))
+        .cloned()
+        .unwrap_or_else(|| {
+            if !lost && choices.iter().any(|c| c == "here") {
+                "here".into()
+            } else {
+                "nowhere at all".into()
+            }
+        });
+    json!({"choice": choice})
 }
 
 /// Six bird notes waiting in Holding beside a star note, which the walker can only find under a collection whose
@@ -1099,7 +1106,8 @@ fn a_merge_that_fails_part_way_leaves_each_item_whole_and_undoes_exactly() {
 // Found reviewing #350: a section proposal stays in its section, never hides a collection,
 // and approving it is safe when changes fail, the lease runs out or a rename changes case.
 
-/// A text model that names no groups and suggests the renames it's given.
+/// A text model that names no groups, suggests the renames it's given, and walks trees as
+/// [`Walker`] does.
 struct Renamer {
     offers: Vec<Offer>,
     renames: Value,
@@ -1137,9 +1145,17 @@ impl Provider for Renamer {
     fn complete(
         &self,
         _offer: &str,
-        _request: &CompletionRequest,
+        request: &CompletionRequest,
     ) -> Result<Completion, ProviderError> {
-        let json = json!({"groups": [], "renames": self.renames, "rationale": "Tidier."});
+        let walking = request
+            .schema
+            .as_ref()
+            .is_some_and(|s| s["properties"].get("choice").is_some());
+        let json = if walking {
+            walk_choice(request, false)
+        } else {
+            json!({"groups": [], "renames": self.renames, "rationale": "Tidier."})
+        };
         Ok(Completion {
             text: json.to_string(),
             json: Some(json),
@@ -1149,8 +1165,8 @@ impl Provider for Renamer {
     }
 }
 
-/// `items()` without summaries, so the findability test has nothing to hold out and the
-/// proposal stands untested.
+/// `items()` without summaries, so the findability test looks for cards by their titles and
+/// tags.
 fn items_without_summaries() -> Vec<Item> {
     items()
         .into_iter()
@@ -1203,8 +1219,31 @@ fn a_rename_never_hides_a_collection_behind_a_dot() {
         {"from": "Misc", "to": ".Misc", "reason": "Out of the way."}
     ]));
     let proposal = setup.propose_with(Some(&registry), "");
+    assert!(
+        !proposal.changes.iter().any(
+            |c| matches!(&c.change, Edit::RenameCollection { to, .. } if to.contains(".Misc"))
+        ),
+        "the model's rename is dropped: {:#?}",
+        proposal.changes
+    );
+    // Nor is one applied when a proposal asks for it.
+    let mut by_hand = Proposal::new(ProposalKind::Section, "");
+    by_hand.changes = vec![
+        serde_json::from_value(json!({
+            "id": "1",
+            "change": {"kind": "rename-collection", "from": "Misc", "to": ".Misc"},
+            "reason": "Out of the way.",
+            "invasiveness": "renaming",
+        }))
+        .unwrap(),
+    ];
     let archive = setup.archive();
-    let approved = restructure::approve(&archive, &proposal, None, setup.holder).unwrap();
+    let approved = restructure::approve(&archive, &by_hand, None, setup.holder).unwrap();
+    assert!(
+        approved.outcomes[0].not_applied.is_some(),
+        "{:?}",
+        approved.outcomes
+    );
     let archive = setup.archive();
     let ids: Vec<Id> = archive.items().unwrap().iter().map(|i| i.id).collect();
     assert!(

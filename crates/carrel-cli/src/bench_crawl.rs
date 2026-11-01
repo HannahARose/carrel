@@ -52,6 +52,8 @@ pub fn crawl_bench(args: &BenchArgs, json: bool) -> Result<Report, Failure> {
         &corpus.join("items"),
         &answers,
         &muddle,
+        &carrel_core::bench::findability::Descriptions::load(&corpus.join("descriptions.yaml"))
+            .map_err(Failure::new)?,
         &dir.join("archive"),
     )
     .map_err(Failure::new)?;

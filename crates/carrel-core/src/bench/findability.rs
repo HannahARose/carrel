@@ -105,7 +105,7 @@ pub fn check(descriptions: &Descriptions, answers: &Answers) -> Vec<String> {
 }
 
 /// A file name without its extension.
-fn stem(file: &str) -> &str {
+pub(crate) fn stem(file: &str) -> &str {
     Path::new(file)
         .file_stem()
         .and_then(|s| s.to_str())

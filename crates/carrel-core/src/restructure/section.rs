@@ -404,7 +404,8 @@ fn plan_thresholds(survey: &Survey, group: &CandidateGroup, shape: &Shape) -> Th
 
 /// Judges `group`: what it becomes, what it's worth and what it costs.
 ///
-/// - **Benefit:** how much more alike its items are than grouping needed (half of it), the
+/// - **Benefit:** how much more alike its items are to each other than to the rest of the
+///   collections they'd leave, past what grouping needed (half of it), the
 ///   share of them that leave Holding or a placement filing wasn't sure of (0.3), and 0.2 when
 ///   it subdivides a crowded collection.
 /// - **Cost:** each item moved out of a collection the owner knows, weighted by how invasive
@@ -439,7 +440,8 @@ fn judge(survey: &Survey, group: CandidateGroup, options: &GroupingOptions) -> P
         .iter()
         .filter(|id| collection_of.get(id).is_some_and(|c| !in_holding(c)))
         .count();
-    let tightness = ((group.cohesion - options.threshold) / (1.0 - options.threshold).max(1e-9))
+    // Items already together with others like them gain little from moving.
+    let tightness = ((group.separation - options.threshold) / (1.0 - options.threshold).max(1e-9))
         .clamp(0.0, 1.0);
     let crowded = matches!(&shape, Shape::New { home } if invasiveness == Invasiveness::Subdividing
         && survey.items_in(home) > survey.crowded_items);
@@ -599,15 +601,21 @@ pub fn propose_section<S: std::hash::BuildHasher>(
             options,
             &mut assessment,
         );
-        if assessment
-            .findability
-            .as_ref()
-            .is_some_and(|f| !f.is_better())
-        {
+        // Even Eager won't propose a shape that's harder to navigate: with a model at hand,
+        // a shape the test couldn't show is easier is held back too. Without one, it's a
+        // draft that says it's untested.
+        let held = match (&assessment.findability, &assessment.untested) {
+            (Some(f), _) if !f.is_better() => {
+                Some("the new shape wasn't easier to find things in, as tested".to_owned())
+            }
+            (None, Some(why)) if registry.is_some() => {
+                Some(format!("it couldn't be tested for findability ({why})"))
+            }
+            _ => None,
+        };
+        if let Some(why) = held {
             for plan in &chosen {
-                assessment.held_back.push(
-                    plan.held_back("the new shape wasn't easier to find things in, as tested"),
-                );
+                assessment.held_back.push(plan.held_back(why.clone()));
             }
             chosen.clear();
             proposal.changes.clear();
@@ -646,7 +654,8 @@ fn test_findability(
     };
     let cards = findability::hold_out(&survey.catalog, section, options.sample, options.seed);
     if cards.is_empty() {
-        assessment.untested = Some("no card in the section has a summary to test with".into());
+        assessment.untested =
+            Some("no card in the section has a summary or title to test with".into());
         return;
     }
     let current = Tree::current(&survey.graph);

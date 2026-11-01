@@ -56,6 +56,8 @@ pub fn restructure_bench(args: &BenchArgs, json: bool) -> Result<Report, Failure
         &corpus.join("items"),
         &answers,
         &muddle,
+        &carrel_core::bench::findability::Descriptions::load(&corpus.join("descriptions.yaml"))
+            .map_err(Failure::new)?,
         &dir.join("archive"),
     )
     .map_err(Failure::new)?;
@@ -280,6 +282,9 @@ fn report_markdown(rows: &[Row], notes: &[String]) -> String {
         let s = &r.score;
         if s.changes == 0 {
             text.push_str("No changes proposed.\n");
+        }
+        for change in &s.changed {
+            writeln!(text, "- Change: {change}").unwrap();
         }
         for (kind, moved) in s.moves.by_invasiveness.iter().filter(|(_, n)| **n > 0) {
             writeln!(text, "- {}: {moved} items", kind.describe()).unwrap();
