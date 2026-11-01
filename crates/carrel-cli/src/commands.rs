@@ -7,7 +7,7 @@ use carrel_core::Access;
 use carrel_core::archive::{Archive, ArchiveError, InitOptions, ItemRef};
 use carrel_core::card::{Card, Id};
 use carrel_core::card_file::CardFile;
-use carrel_core::coordinator::{Coordinator, DEFAULT_LEASE, DiskLock, Holder, LockInfo};
+use carrel_core::coordinator::{self, Coordinator, DEFAULT_LEASE, DiskLock, Holder, LockInfo};
 use carrel_core::history::{Entry, History, HistoryError, Operation};
 use carrel_core::status::{Happened, Looking, Recent};
 use serde_json::{Value, json};
@@ -15,8 +15,22 @@ use serde_json::{Value, json};
 use crate::config::{Identity, Prefs};
 use crate::{Failure, Report};
 
-const SYNCED_WARNING: &str = "this archive is in a synced folder; until iCloud support \
-     arrives, use it from one device at a time";
+const SYNCED_WARNING: &str = "this archive is in a synced folder, where a lock file can't keep \
+     two devices from writing at once; use it from one device at a time";
+const ICLOUD_WARNING: &str = "this archive is in iCloud Drive, but its writer isn't being chosen \
+     through iCloud here (on a Mac, Carrel Agent does that once iCloud is set up); until then, \
+     use it from one device at a time";
+
+/// What to warn about an archive in a synced folder, if anything: nothing once devices take
+/// turns through `CloudKit`.
+fn synced_warning(archive: &Archive) -> Option<&'static str> {
+    let root = archive.root();
+    if coordinator::is_in_icloud_drive(root) {
+        (!DiskLock::for_archive(archive).uses_cloud()).then_some(ICLOUD_WARNING)
+    } else {
+        DiskLock::is_synced_folder(root).then_some(SYNCED_WARNING)
+    }
+}
 
 /// Finds the archive to work on: `--archive`, else the one containing the current folder,
 /// else the one chosen with `carrel open`.
@@ -136,9 +150,7 @@ pub fn init(
     }
 
     let mut warnings = Vec::new();
-    if DiskLock::is_synced_folder(archive.root()) {
-        warnings.push(SYNCED_WARNING);
-    }
+    warnings.extend(synced_warning(&archive));
     let mut text = if existing {
         format!(
             "Started history for archive “{}” in {}\n",
@@ -410,9 +422,9 @@ pub fn status_on(
     let (daily_text, daily) = crate::asking::daily_section(&archive, records);
     text.push_str(&daily_text);
     let mut warnings = Vec::new();
-    if summary.synced {
-        warnings.push(SYNCED_WARNING);
-        writeln!(text, "\nwarning: {SYNCED_WARNING}").unwrap();
+    if let Some(warning) = synced_warning(&archive).filter(|_| summary.synced) {
+        warnings.push(warning);
+        writeln!(text, "\nwarning: {warning}").unwrap();
     }
 
     let json = json!({

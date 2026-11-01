@@ -5555,6 +5555,432 @@ public func FfiConverterTypeArchiveHandle_lower(_ value: ArchiveHandle) -> UInt6
 
 
 /**
+ * The Mac agent's lock service, serving the app and the command line until stopped.
+ */
+public protocol CloudLockServiceProtocol: AnyObject, Sendable {
+    
+    /**
+     * The socket the app and the command line reach it at.
+     */
+    func socket()  -> String?
+    
+    /**
+     * Stops serving, and stops using the store in this process.
+     */
+    func stop() 
+    
+}
+/**
+ * The Mac agent's lock service, serving the app and the command line until stopped.
+ */
+open class CloudLockService: CloudLockServiceProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_carrel_ffi_fn_clone_cloudlockservice(self.handle, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_carrel_ffi_fn_free_cloudlockservice(handle, $0) }
+    }
+
+    
+
+    
+    /**
+     * The socket the app and the command line reach it at.
+     */
+open func socket() -> String?  {
+    return try!  FfiConverterOptionString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_cloudlockservice_socket(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Stops serving, and stops using the store in this process.
+     */
+open func stop()  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_cloudlockservice_stop(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+}
+}
+    
+
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCloudLockService: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = CloudLockService
+
+    public static func lift(_ handle: UInt64) throws -> CloudLockService {
+        return CloudLockService(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: CloudLockService) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CloudLockService {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: CloudLockService, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCloudLockService_lift(_ handle: UInt64) throws -> CloudLockService {
+    return try FfiConverterTypeCloudLockService.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCloudLockService_lower(_ value: CloudLockService) -> UInt64 {
+    return FfiConverterTypeCloudLockService.lower(value)
+}
+
+
+
+
+
+
+/**
+ * Where lock records are kept: one per archive in the owner's private `CloudKit` database,
+ * implemented in Swift. Called from a background thread, and may block on the network.
+ */
+public protocol CloudLockStore: AnyObject, Sendable {
+    
+    /**
+     * The record for the archive `archive_id`, if there is one.
+     *
+     * # Errors
+     *
+     * When `CloudKit` can't be reached, as [`CarrelError::Callback`].
+     */
+    func fetch(archiveId: String) throws  -> CloudLockRecord?
+    
+    /**
+     * Saves `record` for the archive, only if the stored record's change tag is still
+     * `expected_tag` (`None`: only if there's no record yet).
+     *
+     * # Errors
+     *
+     * When `CloudKit` can't be reached, as [`CarrelError::Callback`].
+     */
+    func save(archiveId: String, record: CloudLockRecord, expectedTag: String?) throws  -> CloudLockSave
+    
+}
+/**
+ * Where lock records are kept: one per archive in the owner's private `CloudKit` database,
+ * implemented in Swift. Called from a background thread, and may block on the network.
+ */
+open class CloudLockStoreImpl: CloudLockStore, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_carrel_ffi_fn_clone_cloudlockstore(self.handle, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_carrel_ffi_fn_free_cloudlockstore(handle, $0) }
+    }
+
+    
+
+    
+    /**
+     * The record for the archive `archive_id`, if there is one.
+     *
+     * # Errors
+     *
+     * When `CloudKit` can't be reached, as [`CarrelError::Callback`].
+     */
+open func fetch(archiveId: String)throws  -> CloudLockRecord?  {
+    return try  FfiConverterOptionTypeCloudLockRecord.lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_cloudlockstore_fetch(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(archiveId),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Saves `record` for the archive, only if the stored record's change tag is still
+     * `expected_tag` (`None`: only if there's no record yet).
+     *
+     * # Errors
+     *
+     * When `CloudKit` can't be reached, as [`CarrelError::Callback`].
+     */
+open func save(archiveId: String, record: CloudLockRecord, expectedTag: String?)throws  -> CloudLockSave  {
+    return try  FfiConverterTypeCloudLockSave_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_cloudlockstore_save(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(archiveId),
+        FfiConverterTypeCloudLockRecord_lower(record),
+        FfiConverterOptionString.lower(expectedTag),uniffiCallStatus
+    )
+})
+}
+    
+
+    
+}
+
+
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+fileprivate struct UniffiCallbackInterfaceCloudLockStore {
+
+    // Create the VTable using a series of closures.
+    // Swift automatically converts these into C callback functions.
+    //
+    // Store the vtable directly.
+    static let vtable: UniffiVTableCallbackInterfaceCloudLockStore = UniffiVTableCallbackInterfaceCloudLockStore(
+        uniffiFree: { (uniffiHandle: UInt64) -> () in
+            do {
+                try FfiConverterTypeCloudLockStore.handleMap.remove(handle: uniffiHandle)
+            } catch {
+                print("Uniffi callback interface CloudLockStore: handle missing in uniffiFree")
+            }
+        },
+        uniffiClone: { (uniffiHandle: UInt64) -> UInt64 in
+            do {
+                return try FfiConverterTypeCloudLockStore.handleMap.clone(handle: uniffiHandle)
+            } catch {
+                fatalError("Uniffi callback interface CloudLockStore: handle missing in uniffiClone")
+            }
+        },
+        fetch: { (
+            uniffiHandle: UInt64,
+            archiveId: RustBuffer,
+            uniffiOutReturn: UnsafeMutablePointer<RustBuffer>,
+            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+            let makeCall = {
+                () throws -> CloudLockRecord? in
+                guard let uniffiObj = try? FfiConverterTypeCloudLockStore.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return try uniffiObj.fetch(
+                     archiveId: try FfiConverterString.lift(archiveId)
+                )
+            }
+
+            
+            let writeReturn = { uniffiOutReturn.pointee = FfiConverterOptionTypeCloudLockRecord.lower($0) }
+            uniffiTraitInterfaceCallWithError(
+                callStatus: uniffiCallStatus,
+                makeCall: makeCall,
+                writeReturn: writeReturn,
+                lowerError: FfiConverterTypeCarrelError_lower
+            )
+        },
+        save: { (
+            uniffiHandle: UInt64,
+            archiveId: RustBuffer,
+            record: RustBuffer,
+            expectedTag: RustBuffer,
+            uniffiOutReturn: UnsafeMutablePointer<RustBuffer>,
+            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+            let makeCall = {
+                () throws -> CloudLockSave in
+                guard let uniffiObj = try? FfiConverterTypeCloudLockStore.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return try uniffiObj.save(
+                     archiveId: try FfiConverterString.lift(archiveId),
+                     record: try FfiConverterTypeCloudLockRecord_lift(record),
+                     expectedTag: try FfiConverterOptionString.lift(expectedTag)
+                )
+            }
+
+            
+            let writeReturn = { uniffiOutReturn.pointee = FfiConverterTypeCloudLockSave_lower($0) }
+            uniffiTraitInterfaceCallWithError(
+                callStatus: uniffiCallStatus,
+                makeCall: makeCall,
+                writeReturn: writeReturn,
+                lowerError: FfiConverterTypeCarrelError_lower
+            )
+        }
+    )
+
+    // Rust stores this pointer for future callback invocations, so it must live
+    // for the process lifetime (not just for the init function call).
+    //
+    // `nonisolated(unsafe)` is needed under Swift 6 strict concurrency.
+    // This is safe because the pointee is initialized once during static init
+    // and never mutated by either side of the FFI.  Its fields are C function pointers.
+    nonisolated(unsafe) static let vtablePtr: UnsafePointer<UniffiVTableCallbackInterfaceCloudLockStore> = {
+        let ptr = UnsafeMutablePointer<UniffiVTableCallbackInterfaceCloudLockStore>.allocate(capacity: 1)
+        ptr.initialize(to: vtable)
+        return UnsafePointer(ptr)
+    }()
+}
+
+private func uniffiCallbackInitCloudLockStore() {
+    uniffi_carrel_ffi_fn_init_callback_vtable_cloudlockstore(UniffiCallbackInterfaceCloudLockStore.vtablePtr)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCloudLockStore: FfiConverter {
+    fileprivate static let handleMap = UniffiHandleMap<CloudLockStore>()
+
+    typealias FfiType = UInt64
+    typealias SwiftType = CloudLockStore
+
+    public static func lift(_ handle: UInt64) throws -> CloudLockStore {
+        if ((handle & 1) == 0) {
+            // Rust-generated handle, construct a new class that uses the handle to implement the
+            // interface
+            return CloudLockStoreImpl(unsafeFromHandle: handle)
+        } else {
+            // Swift-generated handle, get the object from the handle map
+            return try handleMap.remove(handle: handle)
+        }
+    }
+
+    public static func lower(_ value: CloudLockStore) -> UInt64 {
+         if let rustImpl = value as? CloudLockStoreImpl {
+             // Rust-implemented object.  Clone the handle and return it
+            return rustImpl.uniffiCloneHandle()
+         } else {
+            // Swift object, generate a new vtable handle and return that.
+            return handleMap.insert(obj: value)
+         }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CloudLockStore {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: CloudLockStore, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCloudLockStore_lift(_ handle: UInt64) throws -> CloudLockStore {
+    return try FfiConverterTypeCloudLockStore.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCloudLockStore_lower(_ value: CloudLockStore) -> UInt64 {
+    return FfiConverterTypeCloudLockStore.lower(value)
+}
+
+
+
+
+
+
+/**
  * A correction worked out and held until the owner agrees: save it with
  * [`ArchiveHandle::save_correction`], or drop it to change nothing.
  */
@@ -8706,6 +9132,146 @@ public func FfiConverterTypeCheckedOut_lift(_ buf: RustBuffer) throws -> Checked
 #endif
 public func FfiConverterTypeCheckedOut_lower(_ value: CheckedOut) -> RustBuffer {
     return FfiConverterTypeCheckedOut.lower(value)
+}
+
+
+/**
+ * An archive's lock record, as `CloudKit` keeps it: who holds the lease and until when, and
+ * the history head. Never file contents.
+ */
+public struct CloudLockRecord: Equatable, Hashable {
+    /**
+     * The lease's random identifier.
+     */
+    public var token: String
+    /**
+     * The person holding it.
+     */
+    public var person: String
+    /**
+     * The device holding it.
+     */
+    public var device: String
+    /**
+     * What the writer is doing, such as `ingest`.
+     */
+    public var purpose: String
+    /**
+     * The program, such as `carrel 0.8.0`.
+     */
+    public var program: String
+    /**
+     * When the lease was taken (RFC 3339).
+     */
+    public var acquired: String
+    /**
+     * When it runs out (RFC 3339); released leases have run out.
+     */
+    public var expires: String
+    /**
+     * The history commit the last writer recorded.
+     */
+    public var head: String?
+    /**
+     * The store's version of the record (its change tag); empty when saving.
+     */
+    public var tag: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The lease's random identifier.
+         */token: String, 
+        /**
+         * The person holding it.
+         */person: String, 
+        /**
+         * The device holding it.
+         */device: String, 
+        /**
+         * What the writer is doing, such as `ingest`.
+         */purpose: String, 
+        /**
+         * The program, such as `carrel 0.8.0`.
+         */program: String, 
+        /**
+         * When the lease was taken (RFC 3339).
+         */acquired: String, 
+        /**
+         * When it runs out (RFC 3339); released leases have run out.
+         */expires: String, 
+        /**
+         * The history commit the last writer recorded.
+         */head: String?, 
+        /**
+         * The store's version of the record (its change tag); empty when saving.
+         */tag: String) {
+        self.token = token
+        self.person = person
+        self.device = device
+        self.purpose = purpose
+        self.program = program
+        self.acquired = acquired
+        self.expires = expires
+        self.head = head
+        self.tag = tag
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CloudLockRecord: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCloudLockRecord: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CloudLockRecord {
+        return
+            try CloudLockRecord(
+                token: FfiConverterString.read(from: &buf), 
+                person: FfiConverterString.read(from: &buf), 
+                device: FfiConverterString.read(from: &buf), 
+                purpose: FfiConverterString.read(from: &buf), 
+                program: FfiConverterString.read(from: &buf), 
+                acquired: FfiConverterString.read(from: &buf), 
+                expires: FfiConverterString.read(from: &buf), 
+                head: FfiConverterOptionString.read(from: &buf), 
+                tag: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CloudLockRecord, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.token, into: &buf)
+        FfiConverterString.write(value.person, into: &buf)
+        FfiConverterString.write(value.device, into: &buf)
+        FfiConverterString.write(value.purpose, into: &buf)
+        FfiConverterString.write(value.program, into: &buf)
+        FfiConverterString.write(value.acquired, into: &buf)
+        FfiConverterString.write(value.expires, into: &buf)
+        FfiConverterOptionString.write(value.head, into: &buf)
+        FfiConverterString.write(value.tag, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCloudLockRecord_lift(_ buf: RustBuffer) throws -> CloudLockRecord {
+    return try FfiConverterTypeCloudLockRecord.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCloudLockRecord_lower(_ value: CloudLockRecord) -> RustBuffer {
+    return FfiConverterTypeCloudLockRecord.lower(value)
 }
 
 
@@ -21311,6 +21877,93 @@ public func FfiConverterTypeCarrelError_lower(_ value: CarrelError) -> RustBuffe
 
 
 /**
+ * How a conditional save went.
+ */
+
+public enum CloudLockSave: Equatable, Hashable {
+    
+    /**
+     * Saved, as this version.
+     */
+    case saved(
+        /**
+         * The record's new change tag.
+         */tag: String
+    )
+    /**
+     * Not saved, because the record had changed: what it holds now, if anything.
+     */
+    case changed(
+        /**
+         * The record as stored now.
+         */current: CloudLockRecord?
+    )
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension CloudLockSave: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCloudLockSave: FfiConverterRustBuffer {
+    typealias SwiftType = CloudLockSave
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CloudLockSave {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .saved(tag: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 2: return .changed(current: try FfiConverterOptionTypeCloudLockRecord.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: CloudLockSave, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .saved(tag):
+            writeInt(&buf, Int32(1))
+            FfiConverterString.write(tag, into: &buf)
+            
+        
+        case let .changed(current):
+            writeInt(&buf, Int32(2))
+            FfiConverterOptionTypeCloudLockRecord.write(current, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCloudLockSave_lift(_ buf: RustBuffer) throws -> CloudLockSave {
+    return try FfiConverterTypeCloudLockSave.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCloudLockSave_lower(_ value: CloudLockSave) -> RustBuffer {
+    return FfiConverterTypeCloudLockSave.lower(value)
+}
+
+
+
+/**
  * How sure a proposal is of where it goes.
  */
 
@@ -23566,6 +24219,30 @@ fileprivate struct FfiConverterOptionTypeChanges: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeChanges.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeCloudLockRecord: FfiConverterRustBuffer {
+    typealias SwiftType = CloudLockRecord?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeCloudLockRecord.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeCloudLockRecord.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -25839,6 +26516,56 @@ public func looksCompressed(path: String) -> Bool  {
 })
 }
 /**
+ * Whether the archive at `root` is in iCloud Drive, so its writer is chosen through
+ * `CloudKit`.
+ */
+public func isInIcloudDrive(root: String) -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_func_is_in_icloud_drive(
+        FfiConverterString.lower(root),uniffiCallStatus
+    )
+})
+}
+/**
+ * Uses `store` in this process and serves it to the app and the command line on this Mac,
+ * as the agent does. `socket` is where, by default the configuration folder's
+ * `cloud-lock.sock`; tests give another, so they never write the real configuration.
+ *
+ * # Errors
+ *
+ * [`CarrelError::Failed`] if another agent is serving, or the socket can't be made.
+ */
+public func serveCloudLock(store: CloudLockStore, socket: String? = nil)throws  -> CloudLockService  {
+    return try  FfiConverterTypeCloudLockService_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_func_serve_cloud_lock(
+        FfiConverterTypeCloudLockStore_lower(store),
+        FfiConverterOptionString.lower(socket),uniffiCallStatus
+    )
+})
+}
+/**
+ * Stops taking writer locks through the store given to [`use_cloud_lock`].
+ */
+public func stopUsingCloudLock()  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_func_stop_using_cloud_lock(uniffiCallStatus
+    )
+}
+}
+/**
+ * Takes archives' writer locks in iCloud Drive through `store`, in this process, as the iOS
+ * app does.
+ */
+public func useCloudLock(store: CloudLockStore)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_func_use_cloud_lock(
+        FfiConverterTypeCloudLockStore_lower(store),uniffiCallStatus
+    )
+}
+}
+/**
  * The embedding model a new archive uses unless another is chosen.
  */
 public func defaultEmbeddingModel() -> String  {
@@ -25974,6 +26701,18 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_func_looks_compressed() != 40569) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_func_is_in_icloud_drive() != 19251) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_func_serve_cloud_lock() != 61862) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_func_stop_using_cloud_lock() != 24793) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_func_use_cloud_lock() != 35095) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_func_default_embedding_model() != 53069) {
@@ -26486,6 +27225,18 @@ private let initializationResult: InitializationResult = {
     if (uniffi_carrel_ffi_checksum_method_agentclaim_release() != 20833) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_carrel_ffi_checksum_method_cloudlockservice_socket() != 13790) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_cloudlockservice_stop() != 13903) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_cloudlockstore_fetch() != 11130) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_cloudlockstore_save() != 42250) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_carrel_ffi_checksum_method_correction_changes() != 53890) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -26520,6 +27271,7 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
 
+    uniffiCallbackInitCloudLockStore()
     uniffiCallbackInitCrawlStop()
     uniffiCallbackInitModelProvider()
     uniffiCallbackInitProgressListener()

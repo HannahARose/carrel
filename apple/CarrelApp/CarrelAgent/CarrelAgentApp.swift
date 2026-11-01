@@ -49,6 +49,9 @@ final class AgentHost {
     private var loop: Task<Void, Never>?
     private var service: AgentXPCListener?
     private var quickActions: AgentQuickActions?
+    /// The CloudKit writer lock, served to the app and the command line, when this build can
+    /// use CloudKit.
+    private var cloudLock: CloudLockService?
 
     init(environment: [String: String] = ProcessInfo.processInfo.environment) {
         notifications = ReminderNotifications { link in
@@ -70,6 +73,7 @@ final class AgentHost {
             service.resume()
             self.service = service
         }
+        cloudLock = Self.serveCloudLock()
         let quickActions = AgentQuickActions(handler: handler)
         self.quickActions = quickActions
         // NSApp exists once the app has finished starting.
@@ -88,6 +92,14 @@ final class AgentHost {
     func answer(_ request: AgentRequest) async -> AgentReply {
         if agent.archives.isEmpty { await agent.follow(override ?? Self.recentArchives()) }
         return await handler.handle(request)
+    }
+
+    /// Takes archives' writer locks in iCloud Drive through CloudKit, here and for the app and
+    /// the command line (docs/design/sync-and-mobile.md, "The writer lock"). Without CloudKit
+    /// (a build without the iCloud entitlement, or another agent serving), there's none.
+    static func serveCloudLock() -> CloudLockService? {
+        guard let store = CloudKitLockStore.forBundle() else { return nil }
+        return try? CarrelKit.serveCloudLock(store: store)
     }
 
     /// The archives the app has open or opened recently, newest first.

@@ -2,10 +2,14 @@
 //!
 //! Only one writer at a time may change an archive's metadata and record history. A
 //! [`Coordinator`] hands out [`WriterLease`]s; history commits require one. This module
-//! provides the coordinator for archives on a local or external disk, [`DiskLock`], which uses
-//! `_System/writer.lock`. Archives shared between devices through a sync service need a
-//! coordinator that service supports (`CloudKit` for iCloud Drive, in a later version): a lock
-//! file is not reliable when several devices can create it before syncing.
+//! provides [`DiskLock`], which every writer takes:
+//!
+//! - **On a local or external disk,** it's `_System/writer.lock`.
+//! - **In iCloud Drive,** a lock file isn't reliable, since several devices can each create it
+//!   before syncing, so the device that writes is chosen through `CloudKit` ([`cloud`]), and
+//!   the lock file, moved to `_System/cache.nosync/`, only picks the process on this device.
+//!   A device that can't reach `CloudKit` (no agent on a Mac, or Linux and Windows) doesn't
+//!   write an archive that has used it, and acts through its inbox instead.
 //!
 //! Leases expire unless renewed, so a crashed writer can't block an archive forever.
 
@@ -17,6 +21,12 @@ use serde::{Deserialize, Serialize};
 use crate::archive::Archive;
 use crate::card::{Extra, Id};
 use crate::{Access, CARREL_VERSION};
+
+#[cfg(unix)]
+pub mod agent_lock;
+pub mod cloud;
+
+pub use cloud::{CloudLock, FakeCloudKit, RemoteLock, is_in_icloud_drive};
 
 /// The lock file, relative to the archive root.
 pub const LOCK_FILE: &str = "_System/writer.lock";
@@ -77,6 +87,14 @@ pub enum CoordinatorError {
     /// The lock file exists but can't be read as a lock. Use [`DiskLock::force_break`] once
     /// you are sure no other writer is running.
     Corrupt(PathBuf),
+    /// The archive's writer is chosen through `CloudKit`, which can't be reached from here.
+    Unavailable(String),
+    /// iCloud Drive hasn't yet delivered the history the last writer recorded, so writing
+    /// now would build on history this device hasn't seen.
+    HistoryBehind {
+        /// The commit the last writer recorded.
+        head: String,
+    },
     /// A file operation failed.
     Io {
         /// The path concerned.
@@ -97,6 +115,18 @@ impl std::fmt::Display for CoordinatorError {
             Self::ReadOnly => f.write_str("the archive uses a newer format and is read-only"),
             Self::LeaseLost => f.write_str("this writer's lease expired and was taken over"),
             Self::Corrupt(p) => write!(f, "{} exists but isn't a valid writer lock", p.display()),
+            Self::Unavailable(why) => write!(
+                f,
+                "this archive's writer is chosen through iCloud, which can't be reached ({why}); \
+                 on a Mac, open Carrel so its agent runs, and elsewhere, changes go through this \
+                 device's inbox"
+            ),
+            Self::HistoryBehind { head } => write!(
+                f,
+                "iCloud Drive hasn't delivered the archive's latest history yet (commit {}); try \
+                 again once it has synced",
+                head.get(..12).unwrap_or(head.as_str())
+            ),
             Self::Io { path, source } => write!(f, "{}: {source}", path.display()),
         }
     }
@@ -147,21 +177,68 @@ pub trait Coordinator {
     fn current(&self) -> Result<Option<LockInfo>, CoordinatorError>;
 }
 
-/// The coordinator for archives on a local or external disk: an atomically created lock file.
+/// The writer lock every writer takes: an atomically created lock file, and, for an archive in
+/// iCloud Drive, the `CloudKit` lock record too.
 #[derive(Debug, Clone)]
 pub struct DiskLock {
     path: PathBuf,
     read_only: bool,
+    devices: Devices,
+}
+
+/// How devices take turns.
+#[derive(Debug, Clone)]
+enum Devices {
+    /// One device uses the archive: the lock file is enough.
+    One,
+    /// Through `CloudKit`.
+    Cloud(CloudLock),
+    /// Through `CloudKit`, which this process can't reach.
+    Unreachable,
 }
 
 impl DiskLock {
-    /// The coordinator for `archive`.
+    /// The coordinator for `archive`. For an archive in iCloud Drive it uses `CloudKit` when
+    /// this process can reach it ([`cloud::remote_lock`]); one that can't writes only an
+    /// archive that has never used `CloudKit`, with the lock file alone, as before v0.8.
     #[must_use]
     pub fn for_archive(archive: &Archive) -> Self {
+        let root = archive.root();
+        let devices = if is_in_icloud_drive(root) {
+            match cloud::remote_lock() {
+                Some(remote) => Devices::Cloud(CloudLock::new(archive, remote)),
+                None if cloud::uses_cloud_lock(root) => Devices::Unreachable,
+                None => Devices::One,
+            }
+        } else {
+            Devices::One
+        };
+        Self::with_devices(archive, devices)
+    }
+
+    /// The coordinator for `archive`, with devices taking turns through `cloud`, wherever the
+    /// archive is.
+    #[must_use]
+    pub fn with_cloud(archive: &Archive, cloud: CloudLock) -> Self {
+        Self::with_devices(archive, Devices::Cloud(cloud))
+    }
+
+    fn with_devices(archive: &Archive, devices: Devices) -> Self {
+        let file = match devices {
+            Devices::One => LOCK_FILE,
+            Devices::Cloud(_) | Devices::Unreachable => cloud::LOCAL_LOCK_FILE,
+        };
         Self {
-            path: archive.root().join(LOCK_FILE),
+            path: archive.root().join(file),
             read_only: archive.access() == Access::ReadOnly,
+            devices,
         }
+    }
+
+    /// Whether devices take turns through `CloudKit` here.
+    #[must_use]
+    pub fn uses_cloud(&self) -> bool {
+        matches!(self.devices, Devices::Cloud(_))
     }
 
     /// Whether `root` is inside a folder synced by iCloud Drive or another file provider
@@ -291,6 +368,48 @@ impl Coordinator for DiskLock {
         if self.read_only {
             return Err(CoordinatorError::ReadOnly);
         }
+        let mut lease = self.acquire_file(holder, purpose, lease)?;
+        match &self.devices {
+            Devices::One => {}
+            Devices::Cloud(cloud) => {
+                // Dropping the lease on failure releases the lock file.
+                lease.cloud = Some(cloud.take(&lease.info, lease_length(&lease.info))?);
+            }
+            Devices::Unreachable => {
+                return Err(CoordinatorError::Unavailable(
+                    "this process has no connection to CloudKit".into(),
+                ));
+            }
+        }
+        Ok(lease)
+    }
+
+    fn current(&self) -> Result<Option<LockInfo>, CoordinatorError> {
+        if let Devices::Cloud(cloud) = &self.devices
+            && let Ok(current) = cloud.current()
+        {
+            return Ok(current);
+        }
+        self.read_settled()
+    }
+}
+
+/// How long `info`'s lease was taken for.
+fn lease_length(info: &LockInfo) -> Duration {
+    let span = |t: &str| t.parse::<jiff::Timestamp>().ok();
+    match (span(&info.acquired), span(&info.expires)) {
+        (Some(from), Some(to)) => Duration::try_from(to.duration_since(from)).unwrap_or_default(),
+        _ => DEFAULT_LEASE,
+    }
+}
+
+impl DiskLock {
+    fn acquire_file(
+        &self,
+        holder: Holder,
+        purpose: &str,
+        lease: Duration,
+    ) -> Result<WriterLease, CoordinatorError> {
         if let Some(parent) = self.path.parent() {
             std::fs::create_dir_all(parent).map_err(io(parent))?;
         }
@@ -313,6 +432,7 @@ impl Coordinator for DiskLock {
                     info,
                     released: false,
                     agent: None,
+                    cloud: None,
                 });
             }
             match self.read_settled()? {
@@ -326,10 +446,6 @@ impl Coordinator for DiskLock {
             None => Err(CoordinatorError::LeaseLost),
         }
     }
-
-    fn current(&self) -> Result<Option<LockInfo>, CoordinatorError> {
-        self.read_settled()
-    }
 }
 
 /// The right to change an archive, held until released, dropped or expired.
@@ -340,6 +456,8 @@ pub struct WriterLease {
     released: bool,
     /// The program acting for the holder on its own, such as the librarian, while it is.
     agent: Option<String>,
+    /// The lease's hold on the `CloudKit` lock record, for an archive in iCloud Drive.
+    cloud: Option<cloud::CloudHold>,
 }
 
 impl WriterLease {
@@ -363,12 +481,17 @@ impl WriterLease {
     }
 
     /// Confirms the lease is still this writer's: the lock file holds this lease's token and
-    /// hasn't expired.
+    /// hasn't expired, nor has its hold on the `CloudKit` lock record.
     ///
     /// # Errors
     ///
     /// [`CoordinatorError::LeaseLost`] if not.
     pub fn check(&self) -> Result<(), CoordinatorError> {
+        self.check_file()?;
+        self.cloud.as_ref().map_or(Ok(()), cloud::CloudHold::check)
+    }
+
+    fn check_file(&self) -> Result<(), CoordinatorError> {
         let text = std::fs::read_to_string(&self.path).map_err(|_| CoordinatorError::LeaseLost)?;
         let current: LockInfo =
             serde_json::from_str(&text).map_err(|_| CoordinatorError::LeaseLost)?;
@@ -378,11 +501,13 @@ impl WriterLease {
         Ok(())
     }
 
-    /// Extends the lease to `lease` from now, for long operations.
+    /// Extends the lease to `lease` from now, for long operations. In iCloud Drive, it also
+    /// records the history head, so other devices wait for it.
     ///
     /// # Errors
     ///
-    /// [`CoordinatorError::LeaseLost`] if the lease was already lost, or an I/O error.
+    /// [`CoordinatorError::LeaseLost`] if the lease was already lost,
+    /// [`CoordinatorError::Unavailable`] if `CloudKit` can't be reached, or an I/O error.
     ///
     /// # Panics
     ///
@@ -396,14 +521,21 @@ impl WriterLease {
             .path
             .with_file_name(format!("writer.lock.renew-{}", self.info.token));
         std::fs::write(&temp, text).map_err(io(&temp))?;
-        rename_retrying(&temp, &self.path).map_err(io(&self.path))
+        rename_retrying(&temp, &self.path).map_err(io(&self.path))?;
+        match &mut self.cloud {
+            Some(cloud) => cloud.renew(lease),
+            None => Ok(()),
+        }
     }
 
-    /// Gives up the lease. A lease that was already lost is left alone.
+    /// Gives up the lease. A lease that was already lost is left alone. In iCloud Drive, it
+    /// records the history head first, so the next writer waits for it.
     ///
     /// # Errors
     ///
-    /// [`CoordinatorError::Io`] if the lock can't be removed.
+    /// [`CoordinatorError::Io`] if the lock can't be removed, or
+    /// [`CoordinatorError::Unavailable`] if `CloudKit` can't be reached (the lease then runs
+    /// out by itself).
     pub fn release(mut self) -> Result<(), CoordinatorError> {
         self.release_inner()
     }
@@ -413,10 +545,14 @@ impl WriterLease {
             return Ok(());
         }
         self.released = true;
-        if self.check().is_ok() {
+        let cloud = self
+            .cloud
+            .as_mut()
+            .map_or(Ok(()), cloud::CloudHold::release);
+        if self.check_file().is_ok() {
             std::fs::remove_file(&self.path).map_err(io(&self.path))?;
         }
-        Ok(())
+        cloud
     }
 }
 

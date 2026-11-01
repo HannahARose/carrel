@@ -55,6 +55,7 @@ pub mod active;
 pub mod agent;
 pub mod backups;
 pub mod browse;
+pub mod cloud_lock;
 pub mod correct;
 pub mod crawl;
 pub mod creating;
@@ -150,7 +151,7 @@ impl CarrelError {
 impl From<CoordinatorError> for CarrelError {
     fn from(error: CoordinatorError) -> Self {
         match error {
-            CoordinatorError::Held(_) => Self::Busy {
+            CoordinatorError::Held(_) | CoordinatorError::HistoryBehind { .. } => Self::Busy {
                 message: error.to_string(),
             },
             error => Self::failed(error),

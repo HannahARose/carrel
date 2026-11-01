@@ -6,6 +6,8 @@
 	<string>$(CARREL_APP_GROUP)</string>
 	<key>CarrelAppIdentifier</key>
 	<string>$(CARREL_BUNDLE_IDENTIFIER)</string>
+	<key>CarrelCloudKitContainer</key>
+	<string>$(CARREL_CLOUDKIT_CONTAINER)</string>
 	<key>NSServices</key>
 	<array>
 		<dict>
