@@ -17,7 +17,7 @@ name: CI
 
 on:
   pull_request:
-    branches: [dev, main]
+    branches: [dev, main, claude/ci-speedup] # TEMPORARY: scratch tests, removed before review
   # main gets only merges of dev that its pull request has already checked from scratch.
   push:
     branches: [dev]
