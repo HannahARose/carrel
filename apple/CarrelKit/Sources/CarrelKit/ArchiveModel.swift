@@ -349,10 +349,14 @@ public final class ArchiveModel {
         try await changed { _ in }
     }
 
-    /// Saves edited fields to a filed card, with `carrel edit`'s checks.
+    /// Saves `fields`, an edit of `base`, the fields the editor opened, to a filed card, with
+    /// `carrel edit`'s checks. A field saved another way meanwhile is kept, unless the edit
+    /// changed it too, which comes back as `.fieldsChanged`.
     @discardableResult
-    public func edit(item id: String, fields: CardFields) async throws -> EditOutcome {
-        let outcome = try await call { try $0.editCard(item: id, fields: fields) }
+    public func edit(item id: String, base: CardFields, fields: CardFields) async throws
+        -> EditOutcome
+    {
+        let outcome = try await call { try $0.editCard(item: id, base: base, fields: fields) }
         if case .saved = outcome { try await changed { _ in } }
         return outcome
     }

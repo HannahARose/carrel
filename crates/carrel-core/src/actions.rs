@@ -18,6 +18,9 @@ use crate::providers::Registry;
 use crate::questions::{QuestionEntry, QuestionQueue, add_fact, clear_waiting, redirect};
 use crate::review::{Confidence, ReviewEntry, ReviewError, ReviewQueue, State, short_id};
 
+mod owner_fields;
+pub use owner_fields::LinkField;
+
 /// Why a decision couldn't be carried out.
 #[derive(Debug)]
 pub enum ActionError {
@@ -813,6 +816,18 @@ pub struct CardFields {
     pub dates: Option<crate::card::Dates>,
     /// How sensitive it is.
     pub sensitivity: Sensitivity,
+    /// Typed links to other items (FORMAT.md §5.4).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub links: Vec<LinkField>,
+    /// Where it is, for a physical object or an external reference.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub location: Option<String>,
+    /// Its address, for a URL item.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    /// When its working copy is snapshotted, when not after every work session.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snapshots: Option<crate::card::Snapshots>,
 }
 
 /// The fields of the proposal `entry` the owner edits, its proposed new tag among its tags.
@@ -826,6 +841,11 @@ pub fn draft_fields(entry: &ReviewEntry) -> CardFields {
         tags,
         dates: entry.card.dates.clone(),
         sensitivity: entry.card.sensitivity,
+        // Set once it's filed, on its card.
+        links: Vec::new(),
+        location: None,
+        url: None,
+        snapshots: None,
     }
 }
 
@@ -838,6 +858,10 @@ pub fn card_fields(card: &crate::card::Card) -> CardFields {
         tags: card.tags.iter().map(|t| t.0.clone()).collect(),
         dates: card.dates.clone(),
         sensitivity: card.sensitivity,
+        links: card.links.iter().map(LinkField::from).collect(),
+        location: card.location.clone(),
+        url: card.url.clone(),
+        snapshots: card.snapshots,
     }
 }
 
@@ -1015,6 +1039,38 @@ fn check_fields(
     })
 }
 
+/// [`check_fields`] and the owner's other fields of `card`, going in `folder`, checked
+/// together: every problem from both.
+fn check_all_fields(
+    archive: &Archive,
+    card: &crate::card::Card,
+    folder: &str,
+    fields: CardFields,
+    vocabulary: &[String],
+    floor: Sensitivity,
+) -> Result<(Checked, owner_fields::CheckedOwnerFields), Vec<String>> {
+    let owner = owner_fields::check_owner_fields(
+        archive,
+        card,
+        folder,
+        &fields.links,
+        (
+            fields.location.as_deref(),
+            fields.url.as_deref(),
+            fields.snapshots,
+        ),
+    );
+    match (check_fields(fields, vocabulary, floor), owner) {
+        (Ok(checked), Ok(owner)) => Ok((checked, owner)),
+        (checked, owner) => Err(checked
+            .err()
+            .unwrap_or_default()
+            .into_iter()
+            .chain(owner.err().unwrap_or_default())
+            .collect()),
+    }
+}
+
 /// Applies the owner's edited `text` to `entry`, checking it first.
 ///
 /// # Errors
@@ -1045,6 +1101,16 @@ pub fn apply_draft_fields(
 ) -> Result<Edited, ActionError> {
     let collections = archive.collections()?;
     let vocabulary = applicable_tags(archive, &collections, &entry.destination.path);
+    if !fields.links.is_empty()
+        || fields.location.is_some()
+        || fields.url.is_some()
+        || fields.snapshots.is_some()
+    {
+        return Ok(Edited::Problems(vec![
+            "links, location, url and snapshots are set on the card once it's filed; edit it then"
+                .to_owned(),
+        ]));
+    }
     let checked = match check_fields(fields, &vocabulary, entry.card.sensitivity) {
         Ok(checked) => checked,
         Err(problems) => return Ok(Edited::Problems(problems)),
@@ -1286,12 +1352,28 @@ pub fn card_text(
         level_name(floor),
     )
     .unwrap();
+    let mut types: Vec<&str> = crate::card::LinkType::BUILT_IN.to_vec();
+    types.extend(archive.doc().link_types.iter().map(|t| t.name.as_str()));
+    write!(
+        text,
+        "# Links to other items go under links:, each with a type ({}), the item's id\n\
+         # and an optional note.\n",
+        types.join(", ")
+    )
+    .unwrap();
+    if !card.kind.is_card_only() {
+        text.push_str(
+            "# snapshots: return-only snapshots its working copy only at checkout and return.\n",
+        );
+    }
     text.push_str(&serde_saphyr::to_string(&fields).expect("card fields always serialize"));
     Ok(text)
 }
 
 /// Applies the owner's edited `text` to the filed `card` in `collection`, checking it first:
-/// a title, real dates, tags that apply there, and no sensitivity below `floor`. Fields the
+/// a title, real dates, tags that apply there, no sensitivity below `floor`, links to items
+/// in the archive of types it knows, a location or URL where the kind needs one, and
+/// snapshots only for items that are checked out. Fields the
 /// owner changed are no longer a model's.
 ///
 /// # Errors
@@ -1304,15 +1386,19 @@ pub fn apply_card(
     floor: Sensitivity,
     text: &str,
 ) -> Result<EditedCard, ActionError> {
-    let fields: CardFields = match serde_saphyr::from_str(text) {
-        Ok(fields) => fields,
-        Err(e) => {
-            return Ok(EditedCard::Problems(vec![format!(
-                "the YAML isn't valid: {e}"
-            )]));
-        }
-    };
-    apply_card_fields(archive, card, collection, floor, fields)
+    match card_fields_from_text(text) {
+        Ok(fields) => apply_card_fields(archive, card, collection, floor, fields),
+        Err(problem) => Ok(EditedCard::Problems(vec![problem])),
+    }
+}
+
+/// The fields in `text`, a card's fields as [`card_text`] writes them, edited.
+///
+/// # Errors
+///
+/// The problem, in words, when it isn't YAML of the card's fields.
+pub fn card_fields_from_text(text: &str) -> Result<CardFields, String> {
+    serde_saphyr::from_str(text).map_err(|e| format!("the YAML isn't valid: {e}"))
 }
 
 /// Applies the owner's edited `fields` to the filed card `card`, in the collection at
@@ -1330,18 +1416,19 @@ pub fn apply_card_fields(
 ) -> Result<EditedCard, ActionError> {
     let collections = archive.collections()?;
     let vocabulary = applicable_tags(archive, &collections, collection);
-    let checked = match check_fields(fields, &vocabulary, floor) {
-        Ok(checked) if !checked.new_tags.is_empty() => {
-            let names: Vec<&str> = checked.new_tags.iter().map(|t| t.0.as_str()).collect();
-            return Ok(EditedCard::Problems(vec![format!(
-                "{} {} a tag in {collection}; add it to the collection's tags first",
-                names.join(", "),
-                if names.len() == 1 { "isn't" } else { "aren't" }
-            )]));
-        }
-        Ok(checked) => checked,
-        Err(problems) => return Ok(EditedCard::Problems(problems)),
-    };
+    let (checked, owner) =
+        match check_all_fields(archive, card, collection, fields, &vocabulary, floor) {
+            Ok((checked, _)) if !checked.new_tags.is_empty() => {
+                let names: Vec<&str> = checked.new_tags.iter().map(|t| t.0.as_str()).collect();
+                return Ok(EditedCard::Problems(vec![format!(
+                    "{} {} a tag in {collection}; add it to the collection's tags first",
+                    names.join(", "),
+                    if names.len() == 1 { "isn't" } else { "aren't" }
+                )]));
+            }
+            Ok(checked) => checked,
+            Err(problems) => return Ok(EditedCard::Problems(problems)),
+        };
     let changed: Vec<&'static str> = [
         ("title", checked.title != card.title),
         ("summary", checked.summary != card.summary),
@@ -1351,10 +1438,12 @@ pub fn apply_card_fields(
     ]
     .into_iter()
     .filter_map(|(field, differs)| differs.then_some(field))
+    .chain(owner.changed_from(card))
     .collect();
     if changed.is_empty() {
         return Ok(EditedCard::Unchanged);
     }
+    owner.apply_to(card);
     card.title = checked.title;
     card.summary = checked.summary;
     card.tags = checked.tags;
