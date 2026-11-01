@@ -3911,6 +3911,42 @@ fn discover_graph_lists_the_strongest_connections() {
     assert!(items.contains("1 link (derived-from)"), "{items}");
 }
 
+#[test]
+fn a_returned_working_copy_is_kept_or_put_in_the_trash() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    let item = "Projects/Hardware/parts-list.csv";
+    let desk = sandbox.path("desk");
+    let check_out = || {
+        let out = sandbox.json(&root, &["checkout", item, "--to", desk.to_str().unwrap()]);
+        PathBuf::from(out["working"].as_str().unwrap())
+    };
+
+    // checkout.after_return asks by default; with --yes nobody is asked, so it's kept.
+    let working = check_out();
+    let kept = sandbox.json(&root, &["return", item, "--yes"]);
+    assert_eq!(kept["working_copy"], "kept", "{kept}");
+    assert!(working.exists());
+    std::fs::remove_file(&working).unwrap();
+
+    let working = check_out();
+    std::fs::write(&working, "changed,on,the,desk\n").unwrap();
+    let trashed = sandbox.json(&root, &["return", item, "--yes", "--working-copy", "trash"]);
+    assert_eq!(trashed["working_copy"], "trashed", "{trashed}");
+    assert!(!working.exists());
+    let name = working.file_name().unwrap();
+    assert!(
+        sandbox.path("Trash").join(name).is_file(),
+        "in the Trash, not deleted"
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.join(item)).unwrap(),
+        "changed,on,the,desk\n",
+        "the archive has the changes"
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn edit_body_adds_notes_keeps_carrels_sections_and_undo_reverses_it() {

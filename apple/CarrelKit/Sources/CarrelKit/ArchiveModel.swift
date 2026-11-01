@@ -404,6 +404,12 @@ public final class ArchiveModel {
         return returned
     }
 
+    /// Puts the returned working copy at `path` in the system Trash, where it can be
+    /// recovered, once the owner has said to (`Returned.workingCopy` is `.ask`).
+    public func trashWorkingCopy(_ path: String) async throws {
+        try await call { try $0.trashWorkingCopy(path: path) }
+    }
+
     /// Cancels the checkout of `id`; the working copy's changes aren't brought back.
     public func cancelCheckout(_ id: String) async throws {
         _ = try await call { try $0.cancelCheckout(item: id) }

@@ -446,14 +446,7 @@ fn draw_confirm(frame: &mut Frame, confirm: &Confirm, theme: Theme, area: Rect) 
             " undo   ",
         ),
         Confirm::UndoLibrarian(count) => super::librarian::confirm_text(*count),
-        Confirm::Agent(change) => {
-            let (question, about) = super::agent::confirm_text(change);
-            let yes = match change {
-                super::agent::AgentChange::Install(_) => " install   ",
-                super::agent::AgentChange::Uninstall => " uninstall   ",
-            };
-            (" Agent ", question, about, yes)
-        }
+        Confirm::Agent(change) => super::agent::confirm_popup(change),
         Confirm::Download { name, about } => download_confirm(name, about),
         Confirm::ModelChange { change, about } => model_change_confirm(change, about),
         Confirm::Learn { about, fact } => (
@@ -485,6 +478,7 @@ fn draw_confirm(frame: &mut Frame, confirm: &Confirm, theme: Theme, area: Rect) 
             changes.trim_end().to_owned(),
             " return it   ",
         ),
+        Confirm::TrashWorkingCopy(working) => super::active::trash_working_copy_confirm(working),
         Confirm::CancelCheckout { title, .. } => (
             " Cancel checkout ",
             format!("Cancel the checkout of “{title}”?"),

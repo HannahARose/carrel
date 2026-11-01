@@ -207,6 +207,17 @@ impl App {
     }
 }
 
+/// The confirmation of `change`: its title, question, detail and yes key.
+#[must_use]
+pub fn confirm_popup(change: &AgentChange) -> (&'static str, String, String, &'static str) {
+    let (question, about) = confirm_text(change);
+    let yes = match change {
+        AgentChange::Install(_) => " install   ",
+        AgentChange::Uninstall => " uninstall   ",
+    };
+    (" Agent ", question, about, yes)
+}
+
 /// What a confirmation of `change` asks and says.
 pub fn confirm_text(change: &AgentChange) -> (String, String) {
     match change {

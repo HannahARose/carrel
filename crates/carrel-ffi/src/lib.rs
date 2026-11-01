@@ -72,6 +72,7 @@ pub mod review;
 pub mod search;
 pub mod settings;
 pub mod usage_report;
+pub mod working_copy;
 
 uniffi::setup_scaffolding!();
 

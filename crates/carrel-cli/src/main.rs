@@ -263,6 +263,10 @@ enum Command {
         /// returned version is snapshotted. Otherwise they're kept unless you say so.
         #[arg(long, conflicts_with = "discard")]
         trim_snapshots: bool,
+        /// What to do with the working copy once it's returned, instead of what
+        /// `checkout.after_return` says: put it in the system Trash, or keep it.
+        #[arg(long, value_enum, value_name = "WHAT", conflicts_with = "discard")]
+        working_copy: Option<checkout::WorkingCopy>,
     },
     /// Desk items: files and folders being worked on where they are, tracked without being
     /// archived.
@@ -1141,13 +1145,14 @@ fn main() -> ExitCode {
             yes,
             discard,
             trim_snapshots,
+            working_copy,
         } => checkout::return_item(
             cli.archive.as_deref(),
             &item,
             from.as_deref(),
-            yes,
-            discard,
+            (yes, discard),
             trim_snapshots,
+            working_copy,
         ),
         Command::Collection { action } => collection_command(cli.archive.as_deref(), action),
         Command::Backup { action } => backup_command(cli.archive.as_deref(), action),

@@ -46,6 +46,7 @@ The command line and the interactive mode run on macOS, Linux and Windows. The M
 | Check out an item | `checkout` | ✓ `o` in Browse | ✓ (#235) |
 | Return or cancel a checkout | `return` | ✓ Active | ✓ (#235) |
 | Return a working copy that moved, and trim its session snapshots | `return --from`, `--trim-snapshots` | ✓ `m`, and `t` when asked, in Active | ✓ Return From…, and the return sheet's snapshots toggle |
+| The working copy after a return: Trash, keep or ask (`checkout.after_return`) | `return --working-copy trash\|keep` | ✓ asked once it's back, when the setting says to ask | ✓ asked once it's back, when the setting says to ask |
 | List checkouts | `checkouts` | ✓ Active | ✓ (#235) |
 | Desk items: add, remove, archive | `desk` | ✓ Active | ✓ Active: Take Off Desk… keeps or deletes the card, or archives |
 | Desk items: a title and summary for the card | `desk add --title --summary` | ✓ asked when adding | ✓ asked when adding |

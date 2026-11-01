@@ -5,6 +5,7 @@
 
 use std::collections::BTreeSet;
 
+use carrel_core::after_return::AfterReturn;
 use carrel_core::card::Id;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -273,3 +274,113 @@ impl App {
 
 /// The marks on pending entries: the item and the entry's number.
 pub type Marks = BTreeSet<(Id, usize)>;
+
+impl App {
+    /// Notes the working copy of the checkout `returning` returns, when `checkout.after_return`
+    /// says to ask about it once it's back.
+    pub(super) fn note_returning(&mut self, returning: &Returning) {
+        if AfterReturn::of(self.archive.settings()) != AfterReturn::Ask {
+            return;
+        }
+        self.returning_working_copy = returning.from.clone().or_else(|| {
+            self.active
+                .iter()
+                .find(|a| a.id == returning.id)
+                .map(|a| a.working.clone())
+        });
+    }
+
+    /// After background work: when it was a return that `checkout.after_return` asks about,
+    /// and it `succeeded`, asks whether to put the working copy in the Trash.
+    pub(super) fn ask_about_working_copy(&mut self, succeeded: bool) {
+        if let Some(working) = self.returning_working_copy.take()
+            && succeeded
+            && working.exists()
+        {
+            self.confirm = Some(Confirm::TrashWorkingCopy(working));
+        }
+    }
+}
+
+/// The confirmation for putting a returned working copy in the Trash: its title, question,
+/// detail and yes key.
+#[must_use]
+pub fn trash_working_copy_confirm(
+    working: &std::path::Path,
+) -> (&'static str, String, String, &'static str) {
+    (
+        " Returned ",
+        "Put the working copy in the Trash?".into(),
+        format!(
+            "{} is returned, so the archive has its changes. It can be recovered from the Trash. checkout.after_return can do this, or keep it, without asking.",
+            working.display()
+        ),
+        " trash it   ",
+    )
+}
+
+/// The work for putting a returned working copy in the Trash, for the archive at `root`.
+pub(super) fn trash_working_copy_work(
+    root: std::path::PathBuf,
+    working: std::path::PathBuf,
+) -> (String, super::Work) {
+    (
+        "Putting the working copy in the Trash…".into(),
+        Box::new(move || {
+            carrel_core::after_return::trash_working_copy(&root, &working)
+                .map_err(|e| crate::Failure::new(e.to_string()))?;
+            Ok(crate::Report::new(
+                format!("Put {} in the Trash.\n", working.display()),
+                serde_json::json!({ "working_copy": "trashed", "path": working }),
+            ))
+        }),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use ratatui::crossterm::event::KeyCode;
+
+    use super::super::app::{Confirm, Effect, Tab};
+    use super::super::tests::{active_sample, choose_parts_list, key};
+    use super::Returning;
+
+    #[test]
+    fn a_returned_working_copy_is_asked_about_once_it_is_back() {
+        let (_dir, mut app) = active_sample();
+        app.tab = Tab::Active;
+        let item = choose_parts_list(&mut app);
+        app.confirm = Some(Confirm::Return {
+            id: item.id,
+            title: item.title.clone(),
+            changes: String::new(),
+            from: None,
+            snapshots: false,
+        });
+        assert_eq!(
+            app.key(key(KeyCode::Char('y'))),
+            Some(Effect::Return(Returning {
+                id: item.id,
+                from: None,
+                trim: false,
+            }))
+        );
+
+        // checkout.after_return asks by default: once it's back, the working copy is asked about.
+        app.ask_about_working_copy(true);
+        assert_eq!(
+            app.confirm,
+            Some(Confirm::TrashWorkingCopy(item.working.clone()))
+        );
+        assert_eq!(
+            app.key(key(KeyCode::Char('y'))),
+            Some(Effect::TrashWorkingCopy(item.working.clone()))
+        );
+
+        // A return that failed asks nothing.
+        app.returning_working_copy = Some(item.working);
+        app.ask_about_working_copy(false);
+        assert_eq!(app.confirm, None);
+        assert_eq!(app.returning_working_copy, None);
+    }
+}
