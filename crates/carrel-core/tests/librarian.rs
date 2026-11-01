@@ -931,3 +931,109 @@ fn the_journal_escapes_titles_and_shortens_a_long_question_in_its_heading() {
         "brackets and bars can't break the link: {text}"
     );
 }
+
+/// An answer cut off with the whole room is asked for once more, briefly: the items first and
+/// a few sentences, without passages or suggestions. Cut off even then, the question ends as
+/// out of room with the items it came across, rather than failing (#401).
+#[test]
+fn an_answer_cut_off_with_the_whole_room_is_asked_for_briefly() {
+    use carrel_core::librarian::prompts;
+    use carrel_core::providers::ProviderError;
+    let cut = || {
+        Err(ProviderError::Failed(
+            "m's answer was cut off at 2400 tokens before the JSON ended".into(),
+        ))
+    };
+    let (_dir, archive, _) = sample();
+    let (registry, asked) = scripted(vec![
+        tool("search", "lamp"),
+        cut(),
+        cut(),
+        Ok(json!({"action": "answer", "input": "", "items": [PARTS], "answer": "The parts list."})),
+    ]);
+    let librarian = Librarian::new(&archive, &registry, the_model(), &providers).unwrap();
+    let mut conversation = Conversation::default();
+    let answer = librarian
+        .ask(&mut conversation, "What's the lamp made of?")
+        .unwrap();
+    assert_eq!(answer.text, "The parts list.");
+    assert_eq!(answer.stopped, None);
+    assert_eq!(answer.items.len(), 1);
+    let asked = asked.lock().unwrap();
+    let room: Vec<_> = asked.iter().map(|r| r.max_tokens).collect();
+    assert_eq!(room, [Some(900), Some(900), Some(2_400), Some(2_400)]);
+    assert_eq!(asked[1].prompt, asked[2].prompt);
+    assert_eq!(
+        asked[3].prompt,
+        format!("{}{}", asked[2].prompt, prompts::CUT_OFF)
+    );
+    let brief = asked[3].schema.as_ref().unwrap();
+    assert_eq!(
+        brief["required"],
+        json!(["action", "input", "items", "answer"])
+    );
+    assert!(brief["properties"].get("passages").is_none());
+
+    // Cut off when briefly asked too: what it came across is kept.
+    let (registry, asked) = scripted(vec![tool("search", "lamp"), cut(), cut(), cut()]);
+    let librarian = Librarian::new(&archive, &registry, the_model(), &providers).unwrap();
+    let mut conversation = Conversation::default();
+    let answer = librarian
+        .ask(&mut conversation, "What's the lamp made of?")
+        .unwrap();
+    assert_eq!(answer.stopped, Some(Stopped::Tokens));
+    assert!(
+        answer.items.iter().any(|i| i.card == PARTS_CARD),
+        "{answer:?}"
+    );
+    assert_eq!(asked.lock().unwrap().len(), 4);
+
+    // A failure that isn't a cut-off still fails the question, to ask again.
+    let (registry, _) = scripted(vec![
+        Err(ProviderError::Failed("m stopped".into())),
+        Err(ProviderError::Failed("m stopped".into())),
+    ]);
+    let librarian = Librarian::new(&archive, &registry, the_model(), &providers).unwrap();
+    assert!(
+        librarian
+            .ask(&mut Conversation::default(), "Lamp?")
+            .is_err()
+    );
+}
+
+/// The answer's items come before its text, and its lists are capped, so a model that goes on
+/// too long names what it found first and can't list until it runs out of room (#401).
+#[test]
+fn the_answer_form_lists_the_items_first_and_caps_its_lists() {
+    use carrel_core::librarian::prompts;
+    let schema = prompts::schema(true);
+    let order: Vec<&str> = schema["properties"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(
+        order,
+        [
+            "action",
+            "input",
+            "items",
+            "answer",
+            "passages",
+            "suggestions"
+        ]
+    );
+    assert_eq!(schema["required"], json!(order));
+    for (list, most) in [
+        ("items", prompts::MAX_ITEMS),
+        ("passages", prompts::MAX_PASSAGES),
+        ("suggestions", prompts::MAX_SUGGESTIONS),
+    ] {
+        assert_eq!(
+            schema["properties"][list]["maxItems"],
+            json!(most),
+            "{list}"
+        );
+    }
+}

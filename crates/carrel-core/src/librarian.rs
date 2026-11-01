@@ -398,9 +398,9 @@ impl<'a> Librarian<'a> {
     /// Asks the model for one step, with what's been done fitted to its context.
     ///
     /// A final answer gets more room than a step naming a tool. When the model runs out of
-    /// room anyway, as when its JSON is cut off, the step is asked again once with room for
-    /// a whole answer; when its context overflows, it's asked again once with what's been
-    /// done shortened further.
+    /// room anyway, as when its JSON is cut off, the step is asked again with room for a whole
+    /// answer, then briefly ([`Self::ask_again_after_failing`]); when its context overflows,
+    /// it's asked again once with what's been done shortened further.
     fn ask_model(
         &self,
         asking: &Asking<'_>,
@@ -450,12 +450,17 @@ impl<'a> Librarian<'a> {
             }),
         };
         let completion = match self.complete(&request) {
-            Err(LibrarianError::Model(ProviderError::Failed(_)))
-                if request.max_tokens < Some(answer_room) =>
-            {
+            Err(LibrarianError::Model(ProviderError::Failed(why))) => {
                 work.tokens += needed;
-                request.max_tokens = Some(answer_room);
-                self.complete(&request)?
+                let again = Again {
+                    answer_room,
+                    must_answer,
+                    needed,
+                };
+                match self.ask_again_after_failing(&mut request, &again, why, &mut work.tokens)? {
+                    Some(completion) => completion,
+                    None => return Ok(Asked::OutOfTokens),
+                }
             }
             Err(LibrarianError::Model(ProviderError::Unsupported(_))) => {
                 work.tokens += needed;
@@ -476,6 +481,42 @@ impl<'a> Librarian<'a> {
                 .json
                 .and_then(|j| serde_json::from_value::<Reply>(j).ok()),
         ))
+    }
+
+    /// Asks again for a step whose reply failed, with `why`, adding the tokens each failed
+    /// try took to `tokens`. A reply that had less than the whole room gets it. One that's cut
+    /// off with the whole room is asked for once more, briefly ([`prompts::CUT_OFF`]): the
+    /// items and a few sentences, without passages or suggestions. Cut off even then, it's
+    /// `None`, and the question ends as out of room, keeping what was found (#401).
+    fn ask_again_after_failing(
+        &self,
+        request: &mut CompletionRequest,
+        again: &Again,
+        mut why: String,
+        tokens: &mut u64,
+    ) -> Result<Option<crate::providers::Completion>, LibrarianError> {
+        if request.max_tokens < Some(again.answer_room) {
+            request.max_tokens = Some(again.answer_room);
+            match self.complete(request) {
+                Err(LibrarianError::Model(ProviderError::Failed(failed))) if cut_off(&failed) => {
+                    *tokens += again.needed;
+                    why = failed;
+                }
+                other => return other.map(Some),
+            }
+        }
+        if !cut_off(&why) {
+            return Err(LibrarianError::Model(ProviderError::Failed(why)));
+        }
+        request.schema = Some(prompts::brief_schema(again.must_answer));
+        request.prompt.push_str(prompts::CUT_OFF);
+        match self.complete(request) {
+            Err(LibrarianError::Model(ProviderError::Failed(failed))) if cut_off(&failed) => {
+                *tokens += again.needed;
+                Ok(None)
+            }
+            other => other.map(Some),
+        }
     }
 
     /// The model's context, in tokens, as its offer says.
@@ -593,6 +634,16 @@ enum Asked {
     Replied(Option<Reply>),
 }
 
+/// How a step that failed is asked for again.
+struct Again {
+    /// Room for a whole answer, in tokens.
+    answer_room: u32,
+    /// Whether the step must answer.
+    must_answer: bool,
+    /// The tokens the step's prompt takes.
+    needed: u64,
+}
+
 /// What each step's prompt is made from, besides what's been done.
 struct Asking<'s> {
     system: &'s str,
@@ -672,6 +723,12 @@ impl Work {
 fn call_key(tool: &str, input: &str) -> String {
     let words: Vec<String> = input.split_whitespace().map(str::to_lowercase).collect();
     format!("{tool} {}", words.join(" "))
+}
+
+/// Whether a model's failure says its reply was cut off before it ended, as the llama.cpp and
+/// MLX providers say when it runs out of room.
+fn cut_off(why: &str) -> bool {
+    why.contains("was cut off")
 }
 
 /// `done` shortened to take at most `room` tokens, so the prompt fits the model's context
