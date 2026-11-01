@@ -1,13 +1,20 @@
-//! Restructure proposals (`docs/design/restructure.md`): a reviewable list of changes to one
-//! section of the archive, approved all, in part or not at all, and applied as one change in
-//! history that undo reverses as a unit.
+//! Restructure proposals (`docs/design/restructure.md`), and the groundwork they build on.
+//! Nothing in the groundwork moves a file.
 //!
-//! This module holds what every kind of proposal shares:
+//! - [`grouping::group_section`]: a section's items clustered by their card embeddings and the
+//!   tag and link graph ([`crate::graph`]), into candidate groups with literary warrant, each
+//!   with its cohesion and how invasive placing it would be.
+//! - [`findability::compare`]: whether a proposed tree is easier to navigate than the current
+//!   one, by having a text model find held-out cards by walking each tree from their summaries
+//!   alone.
+//! - [`Invasiveness`]: the design's ranking of changes, from rewriting to moving top-level
+//!   collections.
+//!
+//! What every kind of proposal shares:
 //!
 //! - the file format, [`Proposal`] and [`ProposedChange`], kept one file per proposal in
 //!   `_System/queue/proposals/` (FORMAT.md §7.9) through the same [`Queue`] the review queue
 //!   uses ([`ProposalQueue`]);
-//! - how invasive a change is ([`Invasiveness`]);
 //! - partial approval, which drops the changes that depend on rejected ones ([`select`]);
 //! - applying the approved changes as one `restructure` change in history ([`approve`]), and
 //!   rejecting a proposal ([`reject`]).
@@ -17,6 +24,8 @@
 //! items, creating, renaming, merging and splitting collections) and an arm in
 //! `apply_edit` for each, and reuse the rest.
 
+pub mod findability;
+pub mod grouping;
 pub mod tags;
 
 use std::collections::BTreeSet;
@@ -66,33 +75,56 @@ impl ProposalKind {
     }
 }
 
-/// How much a change disturbs what the owner knows, least first
-/// (`docs/design/restructure.md`, "How invasive a change is").
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+/// How much a change disturbs what the owner knows of the archive, from least to most
+/// (`docs/design/restructure.md`, "How invasive a change is"). The order is the ranking:
+/// a later kind is more invasive.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Invasiveness {
     /// Rewriting design documents and tags: nothing moves.
     Rewriting,
-    /// Grouping a collection's items into subcollections inside it.
+    /// Grouping a collection's items into new subcollections inside it: every item stays
+    /// under the same collection.
     Subdividing,
-    /// Renaming a collection.
+    /// Renaming a collection: everything stays together, under a new name.
     Renaming,
-    /// Moving items between branches, or merging or splitting collections across them.
-    MovingBetweenBranches,
-    /// Moving or merging top-level collections.
-    MovingTopLevel,
+    /// Moving items between branches, and merging or splitting collections across them.
+    BetweenBranches,
+    /// Moving or merging top-level collections: the archive's main shape changes.
+    TopLevel,
 }
 
 impl Invasiveness {
-    /// How the level is described to people.
+    /// Every kind, least invasive first.
+    pub const ALL: [Self; 5] = [
+        Self::Rewriting,
+        Self::Subdividing,
+        Self::Renaming,
+        Self::BetweenBranches,
+        Self::TopLevel,
+    ];
+
+    /// Its rank in the design's list, from 1 (rewriting) to 5 (moving top-level collections).
+    #[must_use]
+    pub fn rank(self) -> u8 {
+        match self {
+            Self::Rewriting => 1,
+            Self::Subdividing => 2,
+            Self::Renaming => 3,
+            Self::BetweenBranches => 4,
+            Self::TopLevel => 5,
+        }
+    }
+
+    /// The kind in words, for a change list.
     #[must_use]
     pub fn describe(self) -> &'static str {
         match self {
-            Self::Rewriting => "rewriting only: nothing moves",
-            Self::Subdividing => "subdividing: every item stays under its collection",
-            Self::Renaming => "renaming collections: everything stays together",
-            Self::MovingBetweenBranches => "moving items between branches",
-            Self::MovingTopLevel => "moving top-level collections",
+            Self::Rewriting => "rewriting design documents and tags",
+            Self::Subdividing => "subdividing a collection",
+            Self::Renaming => "renaming a collection",
+            Self::BetweenBranches => "moving items between branches",
+            Self::TopLevel => "moving or merging top-level collections",
         }
     }
 }
@@ -669,4 +701,20 @@ fn body(proposal: &Proposal, selection: &Selection, outcomes: &[Outcome]) -> Str
         let _ = writeln!(text, "Dropped {id}, since it needs {missing}.");
     }
     text
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn kinds_are_ranked_as_the_design_lists_them() {
+        let ranks: Vec<u8> = Invasiveness::ALL.iter().map(|k| k.rank()).collect();
+        assert_eq!(ranks, [1, 2, 3, 4, 5]);
+        assert!(Invasiveness::Subdividing < Invasiveness::BetweenBranches);
+        assert_eq!(
+            serde_json::to_value(Invasiveness::BetweenBranches).unwrap(),
+            "between-branches"
+        );
+    }
 }

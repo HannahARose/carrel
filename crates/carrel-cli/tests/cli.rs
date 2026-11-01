@@ -3831,3 +3831,22 @@ fn questions_come_up_on_status_in_show_on_a_wander_and_from_the_librarian() {
     }
     assert!(steps > 1, "{walk}");
 }
+
+#[test]
+fn discover_graph_lists_the_strongest_connections() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    let graph = sandbox.json(&root, &["discover", "graph"]);
+    let first = &graph["connections"][0];
+    assert_eq!(
+        (&first["a"], &first["b"]),
+        (&"Projects".into(), &"Reading".into())
+    );
+    assert_eq!(first["links"], 1);
+    assert_eq!(graph["items"][0]["links"][0], "derived-from");
+    let text = sandbox.ok(&root, &["discover", "graph"]);
+    assert!(text.contains("Projects ↔ Reading"), "{text}");
+    let items = sandbox.ok(&root, &["discover", "graph", "--items", "-n", "1"]);
+    assert!(items.contains("oscillator-sim (Projects)"), "{items}");
+    assert!(items.contains("1 link (derived-from)"), "{items}");
+}

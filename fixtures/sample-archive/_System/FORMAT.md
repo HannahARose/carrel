@@ -738,7 +738,7 @@ A restructure proposal (`proposals/<id>.json`) is a reviewable list of changes t
 | --- | --- |
 | `kind` | `tags` (tags only, no files moved) or `section` (a section's items, collections, design documents and tags) |
 | `section` | The collection it covers, or empty for the whole archive |
-| `invasiveness` | The most invasive of its changes, least first: `rewriting` (design documents and tags), `subdividing`, `renaming`, `moving-between-branches`, `moving-top-level` |
+| `invasiveness` | The most invasive of its changes, least first: `rewriting` (design documents and tags), `subdividing`, `renaming`, `between-branches`, `top-level` |
 | `rationale` | Why the proposal as a whole is worth making |
 | `changes` | The changes in the order they'd apply. Each has a number (`id`) unique in the proposal, a `change`, a `reason`, its `invasiveness`, the `items` it changes, the items it concerns but leaves alone (`held`, each with `why`), the design `documents` it rewrites, and optionally the changes it `depends_on` |
 | `change` | What it does, by `kind`: `merge-tags` (`from`, `into`), `split-tag` (`tag`, and `into`: each new `tag` with its `description` and `items`) or `retire-tag` (`tag`). Later versions add kinds for moving items and collections |

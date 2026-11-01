@@ -37,7 +37,7 @@ use jiff::civil::Date;
 use serde::{Deserialize, Serialize};
 
 use crate::archive::{Archive, ArchiveError};
-use crate::card::{Card, Checksum, Id, Kind, Sensitivity};
+use crate::card::{Card, Checksum, Id, Kind, PlacementConfidence, Sensitivity};
 use crate::card_file::CardFile;
 
 /// Which of an item's dates a view goes by.
@@ -123,6 +123,8 @@ pub struct Entry {
     pub sessions: Vec<(Date, usize)>,
     /// The checksum its cached text is kept under, for an item that isn't restricted.
     pub text: Option<Checksum>,
+    /// How sure filing was of its place, when it wasn't (`docs/design/signals.md`).
+    pub placement: Option<PlacementConfidence>,
 }
 
 impl Entry {
@@ -150,6 +152,8 @@ pub struct CollectionEntry {
     pub path: String,
     /// Its title.
     pub title: String,
+    /// What it holds, as its design document's `description` says.
+    pub description: Option<String>,
 }
 
 /// Every item and collection in an archive, read once, for the views to compute from.
@@ -220,6 +224,7 @@ fn entry(card: &Card, card_path: &str, history: &[String]) -> Entry {
         text: (card.sensitivity != Sensitivity::Restricted)
             .then(|| crate::search::texts::fingerprint(card).cloned())
             .flatten(),
+        placement: card.placement.as_ref().map(|p| p.confidence),
     }
 }
 
@@ -253,6 +258,7 @@ impl Catalog {
             .into_iter()
             .map(|c| CollectionEntry {
                 title: c.doc.title.clone(),
+                description: c.doc.description.clone(),
                 path: c.path,
             })
             .collect();
@@ -381,6 +387,7 @@ pub(crate) mod tests {
             worked: Vec::new(),
             sessions: Vec::new(),
             text: None,
+            placement: None,
         }
     }
 
@@ -388,6 +395,7 @@ pub(crate) mod tests {
         CollectionEntry {
             path: path.to_owned(),
             title: path.rsplit('/').next().unwrap_or(path).to_owned(),
+            description: None,
         }
     }
 
