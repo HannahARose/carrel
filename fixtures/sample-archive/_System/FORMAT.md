@@ -653,6 +653,7 @@ The writer records what it applied as one `inbox` change (§8.2), and removes th
 | `problems` | What validation or the owner needs to settle, as `{"stage", "message"}` objects |
 | `attempts` | Every provider call made for the entry: `stage`, `provider`, `offer`, `result` (`ok`, `unsupported`, `unavailable`, `declined` (a model's safety refusal) or `failed`) and an optional `message` |
 | `sensitivity_reasons` | Why `card.sensitivity` is `sensitive` or `restricted`, in words that never quote what was found; absent otherwise |
+| `owner_fields` | Optional. The card fields the owner set by editing or correcting the entry (`title`, `summary`, `tags`, `dates`, `sensitivity`), which drafting the entry again keeps |
 | `desk_card` | Optional. For a desk item being archived (§9.4), its desk card's absolute path: the filed card keeps that card's `id` and body |
 | `url` | For `kind: url`, the web address the card's `url` gets when it's filed |
 | `note` | Optional. The owner's note from adding it (the intake entry's `note`), which the filed card keeps at the start of its body |

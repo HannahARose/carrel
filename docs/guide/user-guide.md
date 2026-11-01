@@ -173,6 +173,9 @@ Review is where proposals become filed items. In the interactive mode (`2`), eac
 | Change the card first | `e` | `carrel review edit ID` |
 | File it in Holding | `h` | `carrel review hold ID` |
 | Leave the file where it is | `x` | `carrel review reject ID` |
+| Draft it again with the models here now | `d` | `carrel review redraft ID`, or `--all-failed` |
+
+A proposal drafted while no text model could be reached, or whose models all failed, is marked **draft again?**: once a model is there, `d` (Draft Again in the Mac app) drafts its card, collection and sensitivity again. It stays the same proposal, and whatever you edited, corrected or chose is kept. Without a model, it says which one to download.
 
 Mark several with `Space` to decide them together, or approve every high-confidence, non-sensitive proposal with `A`. Each batch you approve is one change in history, with one backup snapshot.
 
@@ -198,7 +201,7 @@ Editing opens the card's fields in your editor. When you save, Carrel checks the
 
 ## Questions and the glossary
 
-Questions are where you teach Carrel what it can't know. When several items share something it doesn't know, such as a project's code name in their file names, it asks one question instead of guessing on each. Questions wait on the Questions screen (`4`), in `carrel questions`, or on the Mac app's Questions screen, the most worth answering first: those whose answer would place or improve the most items Carrel is least sure of. Each shows the items it's about, and likely answers to pick by number, beside your own answer, Skip and Dismiss.
+Questions are where you teach Carrel what it can't know. When several items share something it doesn't know, such as a project's code name in their file names, it asks one question instead of guessing on each. Questions wait on the Questions screen (`4`), in `carrel questions`, or on the Mac app's Questions screen, the most worth answering first: those whose answer would place or improve the most items Carrel is least sure of. Each shows the items it's about, with where each one is and, in the Mac app and in terminals that draw images, a preview of it (a restricted item's only when you ask for it, in the Mac app), and likely answers to pick by number, beside your own answer, Skip and Dismiss.
 
 - **A term** ("What is “scope-ds”?"): answer in a sentence. Carrel saves it to `_System/glossary.md`, which every model reads from then on, and puts the waiting items back at the front of the queue, so the worker drafts them again with what you said.
 - **A collection or a group** ("These 12 items about “Daves Chicken”: Finances, or a new Finances/Daves Chicken collection?"): pick or choose a collection, and the waiting items go there. Picking a new collection creates it; typing one that doesn't exist needs `--create` on the command line.

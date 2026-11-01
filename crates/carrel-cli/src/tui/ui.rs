@@ -288,6 +288,7 @@ const HELP_ROWS: &[(&str, &str)] = &[
         "z",
         "unpack a zip when it's approved, or keep it compressed (Review)",
     ),
+    ("d", "draft again with the models here now (Review)"),
     (
         "Space  A",
         "mark several; approve all high-confidence (Review)",
@@ -593,6 +594,9 @@ fn draw_review(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
                     .unwrap_or_default(),
             );
         }
+        if carrel_core::ingest::redraft::wants_redraft(entry) {
+            flags.push("draft again?".into());
+        }
         if entry.duplicate_of.is_some() {
             flags.push("duplicate".into());
         } else if !entry.likely_duplicates.is_empty() {
@@ -788,21 +792,16 @@ fn draw_questions(frame: &mut Frame, app: &App, theme: Theme, area: Rect) {
         &mut state,
     );
     let question = &app.asked[app.asked_chosen];
+    let key = app.question_preview_key();
+    let detail_area = draw_preview(frame, app, theme, detail_area, key.as_deref());
     let mut lines = vec![
         Line::from(question.question.clone()).style(Style::new().add_modifier(Modifier::BOLD)),
         Line::from(""),
     ];
-    let waiting = app.waiting_titles(question);
-    if !waiting.is_empty() {
-        lines.push(Line::from("Waiting on the answer:"));
-        lines.extend(waiting.into_iter().map(|t| Line::from(format!("  {t}"))));
-    }
-    if !question.about.is_empty() {
-        lines.push(Line::from(format!(
-            "About {} filed item{}",
-            question.about.len(),
-            if question.about.len() == 1 { "" } else { "s" }
-        )));
+    let about = super::question_preview::subject_lines(&app.question_subjects);
+    if !about.is_empty() {
+        lines.extend(about);
+        lines.push(Line::from(""));
     }
     if !question.suggestions.is_empty() {
         lines.push(Line::from(""));

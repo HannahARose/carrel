@@ -86,7 +86,7 @@ private struct FolderPreview: View {
 }
 
 /// Quick Look's preview of a file, which loads it in the background.
-private struct QuickLookPreview: NSViewRepresentable {
+struct QuickLookPreview: NSViewRepresentable {
     let url: URL
 
     func makeNSView(context: Context) -> QLPreviewView {

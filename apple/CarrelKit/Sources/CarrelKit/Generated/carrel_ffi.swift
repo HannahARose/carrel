@@ -1762,6 +1762,16 @@ public protocol ArchiveHandleProtocol: AnyObject, Sendable {
     func previews() throws  -> [ItemPreview]
     
     /**
+     * What the question `id` is about: the filed items it names, then the waiting proposals
+     * its answer settles.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the question isn't found or a queue can't be read.
+     */
+    func questionSubjects(id: String) throws  -> [QuestionSubject]
+    
+    /**
      * Adds a routing rule filing future items named for `subject` into the collection at
      * `collection`, once the owner agreed after answering a sender's question. Returns the
      * commit.
@@ -1861,6 +1871,31 @@ public protocol ArchiveHandleProtocol: AnyObject, Sendable {
      * [`CarrelError::Failed`] if the archive can't be read or the store written.
      */
     func keepQuickLookDrawings(store: String) throws  -> [String]
+    
+    /**
+     * The identifiers of the waiting proposals drafted here whose card or collection
+     * couldn't be settled, which Draft Again All drafts again.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the queue can't be read.
+     */
+    func failedDrafts() throws  -> [String]
+    
+    /**
+     * Drafts the waiting proposals `ids` again with the device's models, and `model` when
+     * the app gives one, keeping each one's identifier and what the owner set. `memory_gb`
+     * is this device's memory, to say which model to download when there's none.
+     * `progress` hears how many are done. It takes as long as the models do, so call it off
+     * the main thread.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] when there's no text model, saying what to download, or when
+     * none could be drafted again, saying why; [`CarrelError::Failed`] if the queue can't be
+     * read.
+     */
+    func redraftProposals(ids: [String], model: ModelProvider?, memoryGb: UInt64?, progress: ProgressListener?) throws  -> RedraftOutcome
     
     /**
      * Records the reminders `keys` as shown on this device, so they aren't shown again.
@@ -4161,6 +4196,24 @@ open func previews()throws  -> [ItemPreview]  {
 }
     
     /**
+     * What the question `id` is about: the filed items it names, then the waiting proposals
+     * its answer settles.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the question isn't found or a queue can't be read.
+     */
+open func questionSubjects(id: String)throws  -> [QuestionSubject]  {
+    return try  FfiConverterSequenceTypeQuestionSubject.lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_question_subjects(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(id),uniffiCallStatus
+    )
+})
+}
+    
+    /**
      * Adds a routing rule filing future items named for `subject` into the collection at
      * `collection`, once the owner agreed after answering a sender's question. Returns the
      * commit.
@@ -4330,6 +4383,49 @@ open func keepQuickLookDrawings(store: String)throws  -> [String]  {
     uniffi_carrel_ffi_fn_method_archivehandle_keep_quick_look_drawings(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(store),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * The identifiers of the waiting proposals drafted here whose card or collection
+     * couldn't be settled, which Draft Again All drafts again.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Failed`] if the queue can't be read.
+     */
+open func failedDrafts()throws  -> [String]  {
+    return try  FfiConverterSequenceString.lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_failed_drafts(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Drafts the waiting proposals `ids` again with the device's models, and `model` when
+     * the app gives one, keeping each one's identifier and what the owner set. `memory_gb`
+     * is this device's memory, to say which model to download when there's none.
+     * `progress` hears how many are done. It takes as long as the models do, so call it off
+     * the main thread.
+     *
+     * # Errors
+     *
+     * [`CarrelError::Invalid`] when there's no text model, saying what to download, or when
+     * none could be drafted again, saying why; [`CarrelError::Failed`] if the queue can't be
+     * read.
+     */
+open func redraftProposals(ids: [String], model: ModelProvider?, memoryGb: UInt64?, progress: ProgressListener?)throws  -> RedraftOutcome  {
+    return try  FfiConverterTypeRedraftOutcome_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
+        uniffiCallStatus in
+    uniffi_carrel_ffi_fn_method_archivehandle_redraft_proposals(
+            self.uniffiCloneHandle(),
+        FfiConverterSequenceString.lower(ids),
+        FfiConverterOptionTypeModelProvider.lower(model),
+        FfiConverterOptionUInt64.lower(memoryGb),
+        FfiConverterOptionTypeProgressListener.lower(progress),uniffiCallStatus
     )
 })
 }
@@ -14916,6 +15012,11 @@ public struct Proposal: Equatable, Hashable {
      * Whether "approve all with high confidence" approves it.
      */
     public var high: Bool
+    /**
+     * Whether its card or collection couldn't be settled, as when no text model could be
+     * reached, so Draft Again is offered first.
+     */
+    public var draftAgain: Bool
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -14970,7 +15071,11 @@ public struct Proposal: Equatable, Hashable {
          */compressed: CompressedChoice?, 
         /**
          * Whether "approve all with high confidence" approves it.
-         */high: Bool) {
+         */high: Bool, 
+        /**
+         * Whether its card or collection couldn't be settled, as when no text model could be
+         * reached, so Draft Again is offered first.
+         */draftAgain: Bool) {
         self.id = id
         self.shortId = shortId
         self.batch = batch
@@ -14988,6 +15093,7 @@ public struct Proposal: Equatable, Hashable {
         self.duplicates = duplicates
         self.compressed = compressed
         self.high = high
+        self.draftAgain = draftAgain
     }
 
     
@@ -15022,7 +15128,8 @@ public struct FfiConverterTypeProposal: FfiConverterRustBuffer {
                 sensitivityReasons: FfiConverterSequenceString.read(from: &buf), 
                 duplicates: FfiConverterSequenceTypeDuplicate.read(from: &buf), 
                 compressed: FfiConverterOptionTypeCompressedChoice.read(from: &buf), 
-                high: FfiConverterBool.read(from: &buf)
+                high: FfiConverterBool.read(from: &buf), 
+                draftAgain: FfiConverterBool.read(from: &buf)
         )
     }
 
@@ -15044,6 +15151,7 @@ public struct FfiConverterTypeProposal: FfiConverterRustBuffer {
         FfiConverterSequenceTypeDuplicate.write(value.duplicates, into: &buf)
         FfiConverterOptionTypeCompressedChoice.write(value.compressed, into: &buf)
         FfiConverterBool.write(value.high, into: &buf)
+        FfiConverterBool.write(value.draftAgain, into: &buf)
     }
 }
 
@@ -15518,6 +15626,135 @@ public func FfiConverterTypeQuestion_lift(_ buf: RustBuffer) throws -> Question 
 #endif
 public func FfiConverterTypeQuestion_lower(_ value: Question) -> RustBuffer {
     return FfiConverterTypeQuestion.lower(value)
+}
+
+
+/**
+ * One thing a question is about.
+ */
+public struct QuestionSubject: Equatable, Hashable {
+    /**
+     * The filed item's identifier, or the waiting proposal's.
+     */
+    public var id: String
+    /**
+     * Whether it's a waiting proposal rather than a filed item.
+     */
+    public var proposal: Bool
+    /**
+     * Its title.
+     */
+    public var title: String
+    /**
+     * Its summary, when it has one.
+     */
+    public var summary: String?
+    /**
+     * For a filed item, its card's path relative to the archive root.
+     */
+    public var card: String?
+    /**
+     * Its file, folder or bundle, as an absolute path, when it's on this device.
+     */
+    public var file: String?
+    /**
+     * Its kind.
+     */
+    public var kind: ItemKind
+    /**
+     * Whether it's restricted, so its preview waits until it's asked for.
+     */
+    public var restricted: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The filed item's identifier, or the waiting proposal's.
+         */id: String, 
+        /**
+         * Whether it's a waiting proposal rather than a filed item.
+         */proposal: Bool, 
+        /**
+         * Its title.
+         */title: String, 
+        /**
+         * Its summary, when it has one.
+         */summary: String?, 
+        /**
+         * For a filed item, its card's path relative to the archive root.
+         */card: String?, 
+        /**
+         * Its file, folder or bundle, as an absolute path, when it's on this device.
+         */file: String?, 
+        /**
+         * Its kind.
+         */kind: ItemKind, 
+        /**
+         * Whether it's restricted, so its preview waits until it's asked for.
+         */restricted: Bool) {
+        self.id = id
+        self.proposal = proposal
+        self.title = title
+        self.summary = summary
+        self.card = card
+        self.file = file
+        self.kind = kind
+        self.restricted = restricted
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension QuestionSubject: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeQuestionSubject: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> QuestionSubject {
+        return
+            try QuestionSubject(
+                id: FfiConverterString.read(from: &buf), 
+                proposal: FfiConverterBool.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                summary: FfiConverterOptionString.read(from: &buf), 
+                card: FfiConverterOptionString.read(from: &buf), 
+                file: FfiConverterOptionString.read(from: &buf), 
+                kind: FfiConverterTypeItemKind.read(from: &buf), 
+                restricted: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: QuestionSubject, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterBool.write(value.proposal, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterOptionString.write(value.summary, into: &buf)
+        FfiConverterOptionString.write(value.card, into: &buf)
+        FfiConverterOptionString.write(value.file, into: &buf)
+        FfiConverterTypeItemKind.write(value.kind, into: &buf)
+        FfiConverterBool.write(value.restricted, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeQuestionSubject_lift(_ buf: RustBuffer) throws -> QuestionSubject {
+    return try FfiConverterTypeQuestionSubject.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeQuestionSubject_lower(_ value: QuestionSubject) -> RustBuffer {
+    return FfiConverterTypeQuestionSubject.lower(value)
 }
 
 
@@ -16183,6 +16420,144 @@ public func FfiConverterTypeRecentEntry_lift(_ buf: RustBuffer) throws -> Recent
 #endif
 public func FfiConverterTypeRecentEntry_lower(_ value: RecentEntry) -> RustBuffer {
     return FfiConverterTypeRecentEntry.lower(value)
+}
+
+
+/**
+ * What drafting proposals again did.
+ */
+public struct RedraftOutcome: Equatable, Hashable {
+    /**
+     * The proposals drafted again.
+     */
+    public var redrafted: [RedraftedProposal]
+    /**
+     * Those that weren't, each with why.
+     */
+    public var failures: [String]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The proposals drafted again.
+         */redrafted: [RedraftedProposal], 
+        /**
+         * Those that weren't, each with why.
+         */failures: [String]) {
+        self.redrafted = redrafted
+        self.failures = failures
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension RedraftOutcome: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRedraftOutcome: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RedraftOutcome {
+        return
+            try RedraftOutcome(
+                redrafted: FfiConverterSequenceTypeRedraftedProposal.read(from: &buf), 
+                failures: FfiConverterSequenceString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: RedraftOutcome, into buf: inout [UInt8]) {
+        FfiConverterSequenceTypeRedraftedProposal.write(value.redrafted, into: &buf)
+        FfiConverterSequenceString.write(value.failures, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRedraftOutcome_lift(_ buf: RustBuffer) throws -> RedraftOutcome {
+    return try FfiConverterTypeRedraftOutcome.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRedraftOutcome_lower(_ value: RedraftOutcome) -> RustBuffer {
+    return FfiConverterTypeRedraftOutcome.lower(value)
+}
+
+
+/**
+ * A proposal drafted again.
+ */
+public struct RedraftedProposal: Equatable, Hashable {
+    /**
+     * The proposal, as saved.
+     */
+    public var proposal: Proposal
+    /**
+     * What the owner had set, which was kept, such as `title` or `collection`.
+     */
+    public var kept: [String]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The proposal, as saved.
+         */proposal: Proposal, 
+        /**
+         * What the owner had set, which was kept, such as `title` or `collection`.
+         */kept: [String]) {
+        self.proposal = proposal
+        self.kept = kept
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension RedraftedProposal: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRedraftedProposal: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RedraftedProposal {
+        return
+            try RedraftedProposal(
+                proposal: FfiConverterTypeProposal.read(from: &buf), 
+                kept: FfiConverterSequenceString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: RedraftedProposal, into buf: inout [UInt8]) {
+        FfiConverterTypeProposal.write(value.proposal, into: &buf)
+        FfiConverterSequenceString.write(value.kept, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRedraftedProposal_lift(_ buf: RustBuffer) throws -> RedraftedProposal {
+    return try FfiConverterTypeRedraftedProposal.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRedraftedProposal_lower(_ value: RedraftedProposal) -> RustBuffer {
+    return FfiConverterTypeRedraftedProposal.lower(value)
 }
 
 
@@ -24004,6 +24379,31 @@ fileprivate struct FfiConverterSequenceTypeQuestion: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeQuestionSubject: FfiConverterRustBuffer {
+    typealias SwiftType = [QuestionSubject]
+
+    public static func write(_ value: [QuestionSubject], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeQuestionSubject.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [QuestionSubject] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [QuestionSubject]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeQuestionSubject.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeQuestionSuggestion: FfiConverterRustBuffer {
     typealias SwiftType = [QuestionSuggestion]
 
@@ -24146,6 +24546,31 @@ fileprivate struct FfiConverterSequenceTypeRecentEntry: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeRecentEntry.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeRedraftedProposal: FfiConverterRustBuffer {
+    typealias SwiftType = [RedraftedProposal]
+
+    public static func write(_ value: [RedraftedProposal], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeRedraftedProposal.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [RedraftedProposal] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [RedraftedProposal]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeRedraftedProposal.read(from: &buf))
         }
         return seq
     }
@@ -24953,6 +25378,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_carrel_ffi_checksum_method_archivehandle_previews() != 57952) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_question_subjects() != 52774) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_add_question_rule() != 28398) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -24978,6 +25406,12 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_keep_quick_look_drawings() != 23381) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_failed_drafts() != 63838) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_redraft_proposals() != 44640) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_mark_reminders_shown() != 62460) {

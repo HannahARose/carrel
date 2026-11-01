@@ -101,8 +101,10 @@ struct QuestionInspector: View {
     @Bindable var questions: QuestionsModel
     /// Every collection, when the question offers no choices of its own.
     let collections: [String]
-    /// The title of the filed item with an identifier.
-    let title: (String) -> String?
+    /// Browse's previews, to show what the question is about.
+    var previews: PreviewStore? = nil
+    /// The filed item with an identifier.
+    let item: (String) -> ItemSummary?
 
     var body: some View {
         Form {
@@ -120,6 +122,8 @@ struct QuestionInspector: View {
                 }
                 .textSelection(.enabled)
             }
+            QuestionSubjectsSection(
+                question: question, questions: questions, previews: previews, item: item)
             Section("Answer") {
                 QuestionAnswerer(
                     question: question, collections: collections, answer: answer
@@ -138,18 +142,6 @@ struct QuestionInspector: View {
                     }
                     .keyboardShortcut(.defaultAction)
                     .disabled(questions.answer(for: question.id).isEmpty)
-                }
-            }
-            if !question.about.isEmpty {
-                Section("About") {
-                    ForEach(question.about, id: \.self) { Text(title($0) ?? $0) }
-                }
-            }
-            if !question.proposals.isEmpty {
-                Section("Holds Up") {
-                    ForEach(Array(questions.affected(by: question).enumerated()), id: \.offset) {
-                        Text($0.element)
-                    }
                 }
             }
         }

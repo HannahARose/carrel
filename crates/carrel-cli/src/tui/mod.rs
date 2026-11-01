@@ -17,6 +17,7 @@ mod librarian;
 mod model_changes;
 mod option_lines;
 mod preview;
+mod question_preview;
 mod reminders;
 mod review;
 mod review_crawler;
@@ -541,6 +542,7 @@ fn background(app: &mut App, effect: Effect) -> Option<Done> {
             }),
         ),
         Effect::Keep { id, kept, target } => keep(root, id, kept, target),
+        Effect::Redraft(chosen) => review::redraft_work(root, &chosen),
         effect @ (Effect::Checkout { .. }
         | Effect::DeskAdd(_)
         | Effect::DeskRemove { .. }

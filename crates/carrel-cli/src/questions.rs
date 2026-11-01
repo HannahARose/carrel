@@ -11,6 +11,7 @@ use carrel_core::actions;
 use carrel_core::archive::Archive;
 use carrel_core::questions::answer::{self as core_answer, SenderAnswer, Target};
 use carrel_core::questions::rank::Weighed;
+use carrel_core::questions::subjects::{QuestionSubject, subjects};
 use carrel_core::questions::{QuestionEntry, QuestionKind, QuestionQueue, Suggestion};
 use carrel_core::review::short_id;
 use serde_json::{Value, json};
@@ -55,8 +56,47 @@ pub(crate) fn suggestion_line(n: usize, suggestion: &Suggestion) -> String {
     line
 }
 
-/// A question as the list shows it: its words, what an answer settles, and the suggestions.
-fn describe(text: &mut String, weighed: &Weighed) {
+/// The most items a question lists under it; the rest are counted.
+const SUBJECTS_SHOWN: usize = 5;
+
+/// What `question` is about, as the list and JSON show it: each item's title and where its
+/// file is, so it can be opened (#446).
+fn subjects_of(archive: &Archive, question: &QuestionEntry) -> Vec<QuestionSubject> {
+    subjects(archive, question).unwrap_or_default()
+}
+
+/// The lines naming what a question is about.
+fn write_subjects(text: &mut String, found: &[QuestionSubject]) {
+    for subject in found.iter().take(SUBJECTS_SHOWN) {
+        let place = subject.path.as_deref().map_or_else(
+            || "no file on this device".to_owned(),
+            |p| p.display().to_string(),
+        );
+        let restricted = if subject.restricted {
+            ", restricted"
+        } else {
+            ""
+        };
+        writeln!(
+            text,
+            "          about {}: {place}{restricted}",
+            subject.title
+        )
+        .unwrap();
+    }
+    if found.len() > SUBJECTS_SHOWN {
+        writeln!(
+            text,
+            "          and {} more",
+            items(found.len() - SUBJECTS_SHOWN)
+        )
+        .unwrap();
+    }
+}
+
+/// A question as the list shows it: its words, what an answer settles, what it's about, and
+/// the suggestions.
+fn describe(text: &mut String, archive: &Archive, weighed: &Weighed) {
     let question = &weighed.question;
     writeln!(text, "{}  {}", short_id(question.id), question.question).unwrap();
     let mut about = format!(
@@ -74,14 +114,28 @@ fn describe(text: &mut String, weighed: &Weighed) {
         .unwrap();
     }
     writeln!(text, "{about}").unwrap();
+    write_subjects(text, &subjects_of(archive, question));
     for (i, suggestion) in question.suggestions.iter().enumerate() {
         writeln!(text, "          {}", suggestion_line(i + 1, suggestion)).unwrap();
     }
 }
 
-/// A question, weighed, as JSON.
-fn weighed_json(weighed: &Weighed) -> Value {
+/// A question, weighed, as JSON, with what it's about.
+fn weighed_json(archive: &Archive, weighed: &Weighed) -> Value {
     let mut value = serde_json::to_value(&weighed.question).unwrap_or(Value::Null);
+    value["subjects"] = subjects_of(archive, &weighed.question)
+        .iter()
+        .map(|s| {
+            json!({
+                "id": s.id,
+                "proposal": s.proposal,
+                "title": s.title,
+                "card": s.card,
+                "path": s.path,
+                "restricted": s.restricted,
+            })
+        })
+        .collect();
     value["settles"] = json!(weighed.settles);
     value["value"] = json!(weighed.value);
     value
@@ -102,14 +156,14 @@ pub fn list(archive: Option<&Path>, all: bool) -> Result<Report, Failure> {
         text.push_str("No questions\n");
     }
     for weighed in &ranked.open {
-        describe(&mut text, weighed);
+        describe(&mut text, &archive, weighed);
     }
     if !ranked.resting.is_empty() {
         if all {
             let days = archive.settings().questions.skip_days;
             writeln!(text, "\nResting after a skip:").unwrap();
             for weighed in &ranked.resting {
-                describe(&mut text, weighed);
+                describe(&mut text, &archive, weighed);
                 if let Some(until) = weighed.question.rests_until(days) {
                     writeln!(text, "          back on {}", until.strftime("%Y-%m-%d")).unwrap();
                 }
@@ -149,8 +203,8 @@ pub fn list(archive: Option<&Path>, all: bool) -> Result<Report, Failure> {
     Ok(Report::new(
         text,
         json!({
-            "questions": ranked.open.iter().map(weighed_json).collect::<Vec<_>>(),
-            "resting": ranked.resting.iter().map(weighed_json).collect::<Vec<_>>(),
+            "questions": ranked.open.iter().map(|w| weighed_json(&archive, w)).collect::<Vec<_>>(),
+            "resting": ranked.resting.iter().map(|w| weighed_json(&archive, w)).collect::<Vec<_>>(),
             "dropped": ranked.answered.iter().map(|(q, why)| json!({"id": q.id, "question": q.question, "why": why})).collect::<Vec<_>>(),
             "merged": ranked.merged.iter().map(|(k, f)| json!({"into": k.id, "merged": f.iter().map(|q| q.id).collect::<Vec<_>>()})).collect::<Vec<_>>(),
         }),

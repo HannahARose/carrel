@@ -4126,6 +4126,86 @@ echo "snapshots: return-only" >> "$1"
     );
 }
 
+/// A proposal drafted with no text model offers `carrel review redraft`, which fails clearly,
+/// with what to download, until a model is there (#445).
+#[test]
+fn review_redraft_needs_a_model_and_says_which() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    let empty = sandbox.path("no-providers");
+    std::fs::create_dir_all(&empty).unwrap();
+    let file = sandbox.path("lamp-notes.txt");
+    std::fs::write(&file, "Notes on the desk lamp's diffuser.").unwrap();
+    let ingested = run_with_providers(
+        &sandbox,
+        &root,
+        &empty,
+        &["ingest", "--wait", file.to_str().unwrap(), "--json"],
+    );
+    let id = json_of(&ingested)["proposals"][0]["id"]
+        .as_str()
+        .expect("a proposal")
+        .to_owned();
+    let short = &id[id.len() - 8..];
+
+    let list = sandbox.ok(&root, &["review"]);
+    assert!(list.contains("draft again?"), "{list}");
+    let shown = sandbox.ok(&root, &["review", "show", short]);
+    assert!(
+        shown.contains(&format!("`carrel review redraft {short}`")),
+        "{shown}"
+    );
+
+    let failed = run_with_providers(&sandbox, &root, &empty, &["review", "redraft", short]);
+    assert_eq!(failed.status.code(), Some(1));
+    let why = String::from_utf8_lossy(&failed.stderr);
+    assert!(
+        why.contains("no text model on this device; write the card by hand"),
+        "{why}"
+    );
+    assert!(why.contains("Drafting cards needs a text model"), "{why}");
+    let all = run_with_providers(
+        &sandbox,
+        &root,
+        &empty,
+        &["review", "redraft", "--all-failed"],
+    );
+    assert_eq!(
+        all.status.code(),
+        Some(1),
+        "the same problem for --all-failed"
+    );
+
+    let unchanged = sandbox.json(&root, &["review", "show", short]);
+    assert_eq!(unchanged["id"], id.as_str());
+    assert_eq!(unchanged["state"], "needs-owner");
+}
+
+/// `carrel questions` names where each question's item is, so it can be opened (#446).
+#[test]
+fn questions_name_the_path_of_what_they_ask_about() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    sandbox.ok(&root, &["status"]);
+    let listed = sandbox.json(&root, &["questions"]);
+    let question = listed["questions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|q| q["question"] == "What was this project for?")
+        .expect("the question about the notes")
+        .clone();
+    let subject = &question["subjects"][0];
+    assert_eq!(subject["card"], ASKED_ABOUT);
+    assert_eq!(subject["restricted"], false);
+    let path = subject["path"].as_str().unwrap();
+    assert!(path.ends_with("Projects/Hardware/notes"), "{path}");
+    let text = sandbox.ok(&root, &["questions"]);
+    assert!(text.contains(&format!(": {path}")), "{text}");
+}
+
 #[test]
 fn ingest_url_files_a_web_address_with_its_note_and_goes_to_the_inbox_while_another_writes() {
     let sandbox = Sandbox::new();

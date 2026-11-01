@@ -18,6 +18,7 @@ pub mod about;
 pub mod answer;
 pub mod moments;
 pub mod rank;
+pub mod subjects;
 pub mod suggest;
 
 use serde::{Deserialize, Serialize};

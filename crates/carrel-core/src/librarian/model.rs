@@ -66,6 +66,25 @@ pub struct NoModel {
 
 impl fmt::Display for NoModel {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.write_for(f, "The librarian")
+    }
+}
+
+impl NoModel {
+    /// What's missing, in words, for `who`, such as "Drafting cards", which needs a text
+    /// model: [`NoModel`]'s words with `who` in place of the librarian.
+    #[must_use]
+    pub fn explain_for(&self, who: &str) -> String {
+        struct For<'a>(&'a NoModel, &'a str);
+        impl fmt::Display for For<'_> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                self.0.write_for(f, self.1)
+            }
+        }
+        For(self, who).to_string()
+    }
+
+    fn write_for(&self, f: &mut fmt::Formatter<'_>, who: &str) -> fmt::Result {
         match (&self.gone, &self.instead) {
             (Some(gone), Some(instead)) => {
                 let names: Vec<&str> = self.available.iter().map(|m| m.label.as_str()).collect();
@@ -87,7 +106,7 @@ impl fmt::Display for NoModel {
                 let names: Vec<&str> = self.downloaded.iter().map(|m| m.name).collect();
                 write!(
                     f,
-                    "The librarian needs a text model, and none runs here: {} {} downloaded, \
+                    "{who} needs a text model, and none runs here: {} {} downloaded, \
                      but no provider that runs {} was found. Put carrel-provider-llama (or \
                      carrel-provider-mlx) beside carrel, or in a folder on PATH such as \
                      ~/.local/bin.",
@@ -96,16 +115,11 @@ impl fmt::Display for NoModel {
                     if names.len() == 1 { "it" } else { "them" },
                 )
             }
-            (None, _) => write!(
-                f,
-                "The librarian needs a text model, and this device has none."
-            )
-            .and_then(|()| self.write_download(f)),
+            (None, _) => write!(f, "{who} needs a text model, and this device has none.")
+                .and_then(|()| self.write_download(f)),
         }
     }
-}
 
-impl NoModel {
     /// Says which model to download, or that none in the catalog fits.
     fn write_download(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let memory = self

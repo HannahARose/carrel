@@ -33,6 +33,7 @@ mod picker;
 mod progress;
 mod providers;
 mod questions;
+mod redraft;
 mod related;
 mod reminders;
 mod restructure;
@@ -919,6 +920,16 @@ enum ReviewAction {
         #[arg(required = true)]
         ids: Vec<String>,
     },
+    /// Draft proposals again with the models here now, as when no text model could be reached.
+    /// Each keeps its identifier and what you edited, corrected or chose.
+    Redraft {
+        /// The proposals' identifiers, or their starts or ends.
+        #[arg(required_unless_present = "all_failed", conflicts_with = "all_failed")]
+        ids: Vec<String>,
+        /// Draft again every waiting proposal whose card or collection couldn't be settled.
+        #[arg(long)]
+        all_failed: bool,
+    },
 }
 
 /// `carrel questions` and its subcommands.
@@ -1011,6 +1022,7 @@ fn review_command(
         ReviewAction::List { all } => review::list(archive, all),
         ReviewAction::Show { id } => review::show(archive, &id),
         ReviewAction::Reject { ids } => review::reject(archive, &ids),
+        ReviewAction::Redraft { ids, all_failed } => redraft::command(archive, &ids, all_failed),
         ReviewAction::Approve {
             ids,
             all_high,

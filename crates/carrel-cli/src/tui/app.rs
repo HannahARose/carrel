@@ -293,6 +293,8 @@ pub enum Effect {
     },
     /// Reject these proposals.
     Reject(Vec<Id>),
+    /// Draft these proposals again with the models here now.
+    Redraft(Vec<Id>),
     /// Expand these compressed files when they're approved, or keep them compressed.
     Compressed {
         /// The proposals.
@@ -520,6 +522,8 @@ pub struct App {
     pub resting: usize,
     /// The chosen question.
     pub asked_chosen: usize,
+    /// What the chosen question is about.
+    pub question_subjects: Vec<carrel_core::questions::subjects::QuestionSubject>,
     /// The collections, for Browse.
     pub collections: Vec<Collection>,
     /// Browse's chosen collection.
@@ -674,6 +678,7 @@ impl App {
             asked_settles: Vec::new(),
             resting: 0,
             asked_chosen: 0,
+            question_subjects: Vec::new(),
             collections: Vec::new(),
             browse_collection: 0,
             browse_items: Vec::new(),
@@ -820,7 +825,15 @@ impl App {
             return keys;
         }
         // The decisions need the room; the screen keys are in ? help.
-        let mut keys = vec![
+        let mut keys = Vec::new();
+        if self
+            .queue
+            .get(self.chosen)
+            .is_some_and(carrel_core::ingest::redraft::wants_redraft)
+        {
+            keys.push(("d", "draft again"));
+        }
+        keys.extend([
             ("a", "approve"),
             ("h", "hold"),
             ("m", "move"),
@@ -831,7 +844,7 @@ impl App {
             ("A", "all high"),
             ("?", "help"),
             ("q", "quit"),
-        ];
+        ]);
         if let Some(plan) = self
             .queue
             .get(self.chosen)
@@ -951,6 +964,7 @@ impl App {
             self.active_move(delta);
         } else if self.tab == Tab::Questions {
             self.asked_chosen = step(self.asked_chosen, delta, self.asked.len());
+            self.question_shown();
         } else if self.tab == Tab::Browse {
             self.browse_move(delta);
         } else if self.tab == Tab::Ingest {
@@ -1145,6 +1159,7 @@ impl App {
     pub(super) fn screen_shown(&mut self) {
         match self.tab {
             Tab::Browse => self.previews.want(&self.archive, &self.item),
+            Tab::Questions => self.question_shown(),
             Tab::Discover => {
                 if self.stacks.view == super::discover::View::Wander {
                     self.previews.want(&self.archive, &self.stacks.item);

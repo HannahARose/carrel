@@ -51,13 +51,13 @@ pub trait ModelProvider: Send + Sync {
 }
 
 /// A [`ModelProvider`] as the core's [`Provider`]: one text model, called `app/model`.
-struct FromSwift {
+pub(crate) struct FromSwift {
     model: Arc<dyn ModelProvider>,
     offers: Vec<Offer>,
 }
 
 impl FromSwift {
-    fn new(model: Arc<dyn ModelProvider>) -> Self {
+    pub(crate) fn new(model: Arc<dyn ModelProvider>) -> Self {
         Self {
             model,
             offers: vec![Offer {

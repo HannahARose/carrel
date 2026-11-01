@@ -52,10 +52,10 @@ struct ReviewView: View {
         }
     }
 
-    /// The single letters the list answers to: approve, hold, move, reject, expand or keep
-    /// compressed, a duplicate filed as a version or beside the original, and the crawler's
-    /// findings instead.
-    static let keys = CharacterSet(charactersIn: "ahmrzvbf")
+    /// The single letters the list answers to: approve, hold, move, reject, draft again,
+    /// expand or keep compressed, a duplicate filed as a version or beside the original, and
+    /// the crawler's findings instead.
+    static let keys = CharacterSet(charactersIn: "ahmrdzvbf")
 }
 
 extension ReviewModel {
@@ -86,6 +86,7 @@ extension ReviewModel {
         case "h": Task { await hold(ids) }
         case "m": moving = ids
         case "r": Task { await reject(ids) }
+        case "d": Task { await redraft(ids) }
         case "z":
             guard selected.first?.compressed != nil else { return false }
             Task { await toggleCompressed(ids) }
@@ -127,6 +128,7 @@ extension Proposal {
     var flags: [String] {
         var flags = [confidence.name]
         if state == .needsOwner { flags.append("needs you") }
+        if draftAgain { flags.append("draft again?") }
         if [.sensitive, .restricted].contains(fields.sensitivity) {
             flags.append(fields.sensitivity.name)
         }
@@ -158,6 +160,8 @@ struct ReviewActions: View {
         Button("Move To…") { review.moving = ids }
             .disabled(ids.isEmpty)
         Button("Reject") { Task { await review.reject(ids) } }
+            .disabled(ids.isEmpty)
+        Button("Draft Again") { Task { await review.redraft(ids) } }
             .disabled(ids.isEmpty)
     }
 }
