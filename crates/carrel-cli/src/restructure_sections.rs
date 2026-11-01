@@ -178,6 +178,9 @@ pub fn approve(
         if let Some(why) = &outcome.not_applied {
             writeln!(text, "Change {} wasn't made: {why}.", outcome.change).unwrap();
         }
+        for warning in &outcome.warnings {
+            writeln!(text, "warning: change {}: {warning}", outcome.change).unwrap();
+        }
     }
     match (&approved.snapshot, &note) {
         (Some(snapshot), _) => writeln!(text, "Snapshot {snapshot} taken first.").unwrap(),
