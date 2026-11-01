@@ -1,6 +1,6 @@
 # Design: reminders (v0.6)
 
-Status: proposed 2026-11-01, waiting for the owner's decisions below. Issue #352.
+Status: accepted 2026-11-01, with the five recommendations below. Issue #352.
 
 ## What this adds
 
@@ -31,7 +31,7 @@ Where a reminder was last shown is kept per device, in the configuration folder 
 4. `menu-bar` hiding the agent's menu bar icon.
 5. `carrel agent`'s notifications on Linux and Windows.
 
-## Decisions
+## Decisions (accepted 2026-11-01)
 
 1. **Recommended: the four reminders do what's described above:** `idle` after each recorded session with a pending entry, `weekly` once a week when something waits, `due-date` the day before, on the day and daily while overdue, and `menu-bar` showing the agent's menu bar list. The alternative is fewer kinds, such as `due-date` alone, and dropping the others from FORMAT.md.
 2. **Recommended: notifications come only from the agents** (the Mac's login item, and `carrel agent` elsewhere), and every interface lists the reminders due in Status. Commands never interrupt with a notification. The alternative is the command line printing reminders after every command, which is noisy in scripts.
