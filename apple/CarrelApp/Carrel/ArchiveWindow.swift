@@ -136,6 +136,7 @@ struct ArchiveSidebar: View {
                     .help(node.collection.description ?? node.collection.path)
                     .contextMenu {
                         CollectionFlagButtons(model: model, collection: node.collection)
+                        AskAboutCollectionButton(model: model, collection: node.collection)
                     }
                     .tag(Screen.collection(node.collection.path))
                 }

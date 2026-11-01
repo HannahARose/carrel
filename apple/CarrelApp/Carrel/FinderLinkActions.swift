@@ -1,7 +1,7 @@
 // What a link from the Finder extension asks the window to start (docs/design/macos-integration.md,
 // "Finder"): an action that needs a decision opens the app's own sheet for it rather than deciding
 // in Finder. Check Out… asks where to and when it's due, Return… shows the return's preview,
-// Cancel Checkout… asks first, and Ask About This opens the librarian with the item.
+// Cancel Checkout… asks first, and Ask About This opens the librarian about the item.
 
 import CarrelKit
 import Foundation

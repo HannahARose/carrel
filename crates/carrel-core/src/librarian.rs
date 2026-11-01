@@ -15,9 +15,13 @@
 //! default each is left for the owner to confirm; with `librarian.changes` on, it makes those
 //! it's sure of itself, each an undoable history change marked as its own.
 //!
+//! A question may say what the owner is looking at ([`About`]): an item, a collection, a
+//! search or a Discover view, loaded up front so "this" and "here" mean it.
+//!
 //! Conversations are kept in memory ([`Conversation`]), and written down only when the owner
 //! saves one to the Journal ([`journal`]).
 
+pub mod about;
 pub mod changes;
 pub mod journal;
 pub mod model;
@@ -33,6 +37,7 @@ use crate::card::{Id, Sensitivity};
 use crate::providers::device::AvailableModel;
 use crate::providers::{Capability, CompletionRequest, ProviderError, Registry, estimate_tokens};
 
+pub use about::About;
 use changes::{Rights, Suggested, Suggestion};
 use tools::{Ran, Shelf};
 
@@ -114,6 +119,8 @@ pub enum Stopped {
 pub struct Answer {
     /// The question.
     pub question: String,
+    /// What the owner was looking at when they asked, in words, if the question said.
+    pub about: Option<String>,
     /// The answer, then anything it suggests looking at.
     pub text: String,
     /// The items it's about.
@@ -292,12 +299,58 @@ impl<'a> Librarian<'a> {
         conversation: &'c mut Conversation,
         question: &str,
     ) -> Result<&'c Answer, LibrarianError> {
+        self.ask_about(conversation, question, None)
+    }
+
+    /// Answers `question` about what the owner is looking at, `about`, adding the answer to
+    /// `conversation`. What it is is loaded up front (its card and its collection's design
+    /// document, the collection's, or what the search finds), and the prompt says the owner
+    /// is looking at it, so "this" and "here" mean it. Without it, as [`Self::ask`].
+    ///
+    /// # Errors
+    ///
+    /// [`LibrarianError`] if the archive can't be read or the model fails.
+    pub fn ask_about<'c>(
+        &self,
+        conversation: &'c mut Conversation,
+        question: &str,
+        about: Option<&About>,
+    ) -> Result<&'c Answer, LibrarianError> {
+        self.ask_about_with_note(conversation, question, about, None)
+    }
+
+    /// As [`Self::ask_about`], with the owner's short `note` on what they're looking at, such
+    /// as a flag's ("wrong title"), told to the model with it.
+    ///
+    /// # Errors
+    ///
+    /// [`LibrarianError`] if the archive can't be read or the model fails.
+    pub fn ask_about_with_note<'c>(
+        &self,
+        conversation: &'c mut Conversation,
+        question: &str,
+        about: Option<&About>,
+        note: Option<&str>,
+    ) -> Result<&'c Answer, LibrarianError> {
         let stacks = Shelf {
             archive: self.archive,
             items: self.archive.items()?,
             providers: self.providers,
         };
-        let setting = self.setting(&stacks)?;
+        let mut setting = self.setting(&stacks)?;
+        let mut work = Work::default();
+        if let Some(about) = about {
+            let loaded = about.load(&stacks, question);
+            for (tool, input, ran) in loaded.calls {
+                work.preload(tool, &input, ran);
+            }
+            setting.about = Some(loaded.described);
+            setting.loaded = loaded.text;
+            setting.note = note
+                .map(str::trim)
+                .filter(|n| !n.is_empty())
+                .map(str::to_owned);
+        }
         let earlier: Vec<(String, String)> = conversation
             .answers
             .iter()
@@ -306,9 +359,9 @@ impl<'a> Librarian<'a> {
             .rev()
             .map(|a| (a.question.clone(), a.text.clone()))
             .collect();
-        let mut work = Work::default();
         let reply = self.steps(&stacks, &setting, &earlier, question, &mut work)?;
-        let answer = self.finish(&stacks, question, reply, work);
+        let mut answer = self.finish(&stacks, question, reply, work);
+        answer.about = setting.about;
         conversation.answers.push(answer);
         Ok(&conversation.answers[conversation.answers.len() - 1])
     }
@@ -330,6 +383,7 @@ impl<'a> Librarian<'a> {
                     (c.path.clone(), purpose)
                 })
                 .collect(),
+            ..prompts::Setting::default()
         })
     }
 
@@ -568,6 +622,7 @@ impl<'a> Librarian<'a> {
     ) -> Answer {
         let mut answer = Answer {
             question: question.trim().to_owned(),
+            about: None,
             text: String::new(),
             items: Vec::new(),
             passages: Vec::new(),
@@ -683,6 +738,20 @@ impl Work {
             input.trim()
         ));
         true
+    }
+
+    /// Keeps what `tool` gave for `input` before the model started, as what the owner is
+    /// looking at: a later call for it is answered from here, its items count as come
+    /// across, and passages from its text can be quoted. It isn't a step.
+    fn preload(&mut self, tool: &str, input: &str, ran: Ran) {
+        self.results
+            .insert(call_key(tool, input), ran.text.trim_end().to_owned());
+        for link in ran.found {
+            if !self.seen.iter().any(|s| s.id == link.id) {
+                self.seen.push(link);
+            }
+        }
+        self.read.extend(ran.read);
     }
 
     fn record(&mut self, tool: &str, input: &str, ran: Ran) {

@@ -240,7 +240,7 @@ public final class AgentRequestHandler {
         let memory = memoryGB
         let answer = try await Task.detached {
             try handle.askLibrarian(
-                conversation: LibrarianConversation(), question: question, model: model,
+                conversation: LibrarianConversation(), question: question, about: nil, model: model,
                 memoryGb: memory, progress: nil)
         }.value
         let items = answer.items.map {

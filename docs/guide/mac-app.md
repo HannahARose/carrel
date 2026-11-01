@@ -182,7 +182,8 @@ The **Librarian** panel answers questions about your archive in your own words, 
 
 - **Ask:** type a question and press Return (or ⌘Return). While it works, the panel shows its steps ("Step 2 of up to 8 · searched…"). Each question can build on the ones before.
 - **Each answer** lists the **Items** it's about, the **Passages** it read, quoted from the items, and its **Suggestions**. Choose an item or a passage's title to show the item in Browse; hover over an item for its card's path. Under the answer is the model that gave it and how many steps it took, and hovering there lists each step.
-- **Ask About This** (⇧⌘L, in the View menu, an item's context menu, and on a wander step) opens the panel with a question about the chosen item, for you to finish and ask.
+- **About what's in view:** while the panel is open, a chip above the question field says what your questions are about ("About: Receipts 2023"): the chosen item, else the collection or Discover page shown. It follows what you choose, so "is this in the right place?" means the item in front of you; the librarian has its card and its collection's design document from the start. **✕** on the chip asks about the whole archive, until you choose something else.
+- **Ask About This** (⇧⌘L, in the View menu, the context menu of an item or a collection, a collection's inspector, and on a wander step) opens the panel about it.
 - **Save to Journal** in the panel's toolbar writes the conversation to this month's Journal, as one change in History; the panel says where. **New Conversation** starts again. A conversation you don't save is gone when you start a new one or close the window, and nothing about it is written into the archive.
 - **Which model:** the line under the question field names the model that answers, and whether the librarian only suggests changes or may make them. Choose a model in **Settings → Models → Librarian**.
 

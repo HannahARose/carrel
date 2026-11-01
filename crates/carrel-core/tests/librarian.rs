@@ -890,6 +890,7 @@ fn the_journal_escapes_titles_and_shortens_a_long_question_in_its_heading() {
     let conversation = Conversation {
         answers: vec![Answer {
             question: question.into(),
+            about: None,
             text: "Only one.".into(),
             items: vec![ItemLink {
                 id: Id::new_v7(),

@@ -1097,9 +1097,7 @@ impl App {
             }
             KeyCode::Char('i') => return self.start_ingest(),
             KeyCode::Char(c) if Tab::ALL.iter().any(|t| t.key() == c) => {
-                if let Some(tab) = Tab::ALL.iter().find(|t| t.key() == c) {
-                    self.tab = *tab;
-                }
+                self.switch_tab_carrying_view(c);
             }
             KeyCode::Tab | KeyCode::Right => {
                 self.tab = Tab::ALL[(self.tab.index() + 1) % Tab::ALL.len()];

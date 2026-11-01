@@ -1686,14 +1686,15 @@ public protocol ArchiveHandleProtocol: AnyObject, Sendable {
      * `memory_gb` is this device's memory, which the strongest model has to fit in.
      * `progress` is told as each step starts: the step, of the most it may take, and what
      * the last one did. With `librarian.changes` on, the librarian makes the changes it's
-     * sure of, as this device's owner; the rest are left in the answer to confirm.
+     * sure of, as this device's owner; the rest are left in the answer to confirm. `about`
+     * is what the owner is looking at, loaded up front so "this" means it.
      *
      * # Errors
      *
-     * [`CarrelError::Invalid`] if there's no model, or [`CarrelError::Failed`] if the
-     * archive can't be read or the model fails.
+     * [`CarrelError::Invalid`] if there's no model or `about` names no item, or
+     * [`CarrelError::Failed`] if the archive can't be read or the model fails.
      */
-    func askLibrarian(conversation: LibrarianConversation, question: String, model: ModelProvider?, memoryGb: UInt64?, progress: ProgressListener?) throws  -> LibrarianAnswer
+    func askLibrarian(conversation: LibrarianConversation, question: String, about: LibrarianAbout?, model: ModelProvider?, memoryGb: UInt64?, progress: ProgressListener?) throws  -> LibrarianAnswer
     
     /**
      * The changes the librarian made on its own at or after `since` (seconds since the Unix
@@ -4154,20 +4155,22 @@ open func workerStatus() -> WorkerStatus?  {
      * `memory_gb` is this device's memory, which the strongest model has to fit in.
      * `progress` is told as each step starts: the step, of the most it may take, and what
      * the last one did. With `librarian.changes` on, the librarian makes the changes it's
-     * sure of, as this device's owner; the rest are left in the answer to confirm.
+     * sure of, as this device's owner; the rest are left in the answer to confirm. `about`
+     * is what the owner is looking at, loaded up front so "this" means it.
      *
      * # Errors
      *
-     * [`CarrelError::Invalid`] if there's no model, or [`CarrelError::Failed`] if the
-     * archive can't be read or the model fails.
+     * [`CarrelError::Invalid`] if there's no model or `about` names no item, or
+     * [`CarrelError::Failed`] if the archive can't be read or the model fails.
      */
-open func askLibrarian(conversation: LibrarianConversation, question: String, model: ModelProvider?, memoryGb: UInt64?, progress: ProgressListener?)throws  -> LibrarianAnswer  {
+open func askLibrarian(conversation: LibrarianConversation, question: String, about: LibrarianAbout?, model: ModelProvider?, memoryGb: UInt64?, progress: ProgressListener?)throws  -> LibrarianAnswer  {
     return try  FfiConverterTypeLibrarianAnswer_lift(try rustCallWithError(FfiConverterTypeCarrelError_lift) {
         uniffiCallStatus in
     uniffi_carrel_ffi_fn_method_archivehandle_ask_librarian(
             self.uniffiCloneHandle(),
         FfiConverterTypeLibrarianConversation_lower(conversation),
         FfiConverterString.lower(question),
+        FfiConverterOptionTypeLibrarianAbout.lower(about),
         FfiConverterOptionTypeModelProvider.lower(model),
         FfiConverterOptionUInt64.lower(memoryGb),
         FfiConverterOptionTypeProgressListener.lower(progress),uniffiCallStatus
@@ -13824,6 +13827,10 @@ public struct LibrarianAnswer: Equatable, Hashable {
      */
     public var question: String
     /**
+     * What the owner was looking at when they asked, in words, if the question said.
+     */
+    public var about: String?
+    /**
      * The answer, then anything it suggests looking at.
      */
     public var text: String
@@ -13869,6 +13876,9 @@ public struct LibrarianAnswer: Equatable, Hashable {
          * The question.
          */question: String, 
         /**
+         * What the owner was looking at when they asked, in words, if the question said.
+         */about: String?, 
+        /**
          * The answer, then anything it suggests looking at.
          */text: String, 
         /**
@@ -13898,6 +13908,7 @@ public struct LibrarianAnswer: Equatable, Hashable {
          * item in a conversation.
          */asks: Question?) {
         self.question = question
+        self.about = about
         self.text = text
         self.items = items
         self.passages = passages
@@ -13926,6 +13937,7 @@ public struct FfiConverterTypeLibrarianAnswer: FfiConverterRustBuffer {
         return
             try LibrarianAnswer(
                 question: FfiConverterString.read(from: &buf), 
+                about: FfiConverterOptionString.read(from: &buf), 
                 text: FfiConverterString.read(from: &buf), 
                 items: FfiConverterSequenceTypeLibrarianItem.read(from: &buf), 
                 passages: FfiConverterSequenceTypeLibrarianPassage.read(from: &buf), 
@@ -13940,6 +13952,7 @@ public struct FfiConverterTypeLibrarianAnswer: FfiConverterRustBuffer {
 
     public static func write(_ value: LibrarianAnswer, into buf: inout [UInt8]) {
         FfiConverterString.write(value.question, into: &buf)
+        FfiConverterOptionString.write(value.about, into: &buf)
         FfiConverterString.write(value.text, into: &buf)
         FfiConverterSequenceTypeLibrarianItem.write(value.items, into: &buf)
         FfiConverterSequenceTypeLibrarianPassage.write(value.passages, into: &buf)
@@ -22146,6 +22159,126 @@ public func FfiConverterTypeItemKind_lower(_ value: ItemKind) -> RustBuffer {
 
 
 /**
+ * What the owner is looking at as they ask, so "this" and "here" mean it
+ * ([`core::About`]).
+ */
+
+public enum LibrarianAbout: Equatable, Hashable {
+    
+    /**
+     * An item.
+     */
+    case item(
+        /**
+         * Its identifier, or its card's path.
+         */id: String
+    )
+    /**
+     * A collection.
+     */
+    case collection(
+        /**
+         * Its path.
+         */path: String
+    )
+    /**
+     * What a search found.
+     */
+    case search(
+        /**
+         * Its words and filters.
+         */query: String
+    )
+    /**
+     * A Discover view.
+     */
+    case discover(
+        /**
+         * Its name, such as "on this day".
+         */view: String
+    )
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension LibrarianAbout: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeLibrarianAbout: FfiConverterRustBuffer {
+    typealias SwiftType = LibrarianAbout
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> LibrarianAbout {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .item(id: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 2: return .collection(path: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 3: return .search(query: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 4: return .discover(view: try FfiConverterString.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: LibrarianAbout, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .item(id):
+            writeInt(&buf, Int32(1))
+            FfiConverterString.write(id, into: &buf)
+            
+        
+        case let .collection(path):
+            writeInt(&buf, Int32(2))
+            FfiConverterString.write(path, into: &buf)
+            
+        
+        case let .search(query):
+            writeInt(&buf, Int32(3))
+            FfiConverterString.write(query, into: &buf)
+            
+        
+        case let .discover(view):
+            writeInt(&buf, Int32(4))
+            FfiConverterString.write(view, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLibrarianAbout_lift(_ buf: RustBuffer) throws -> LibrarianAbout {
+    return try FfiConverterTypeLibrarianAbout.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLibrarianAbout_lower(_ value: LibrarianAbout) -> RustBuffer {
+    return FfiConverterTypeLibrarianAbout.lower(value)
+}
+
+
+
+/**
  * A model's file format.
  */
 
@@ -23902,6 +24035,30 @@ fileprivate struct FfiConverterOptionTypeItemKind: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeItemKind.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeLibrarianAbout: FfiConverterRustBuffer {
+    typealias SwiftType = LibrarianAbout?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeLibrarianAbout.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeLibrarianAbout.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -26258,7 +26415,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_carrel_ffi_checksum_method_archivehandle_worker_status() != 53926) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_carrel_ffi_checksum_method_archivehandle_ask_librarian() != 58024) {
+    if (uniffi_carrel_ffi_checksum_method_archivehandle_ask_librarian() != 61083) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_carrel_ffi_checksum_method_archivehandle_librarian_changes() != 3059) {

@@ -64,7 +64,7 @@ The core computes each view as plain data, and each interface draws it in its ow
 
 | | Command line | Interactive mode | Mac app |
 | --- | --- | --- | --- |
-| The librarian | `carrel ask "…"` for one answer; `carrel ask` alone for a conversation; `--save` to the Journal; `--json` | A Librarian screen: the conversation on the left, the item it's discussing on the right | A Librarian panel beside the window, and "Ask about this" on any item |
+| The librarian | `carrel ask "…"` for one answer; `carrel ask` alone for a conversation; `--about ITEM\|COLLECTION`; `--save` to the Journal; `--json` | A Librarian screen: the conversation on the left, the item it's discussing on the right; `L` brings what's in view, shown and removed with `x` | A Librarian panel beside the window, with an "About:" chip following the selection, and "Ask about this" on any item or collection |
 | With no model to run on | Why, then `carrel models download NAME` for the model that suits this device's memory (it asks first), or `carrel settings set librarian.model default` when the setting names a model that's gone | Why, and the download confirmation Settings uses, for the model that suits this device | Why, with Download… (its size, confirmed first) or Use, for the model the librarian would answer with |
 | Questions | `carrel questions`, with the new kinds and suggested answers | Questions, and a question beside an item in Browse | Questions, and a question in the inspector |
 | On this day, timeline | `carrel discover today`, `carrel discover timeline` | A Discover screen | A Discover sidebar section |

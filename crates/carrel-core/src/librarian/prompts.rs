@@ -173,6 +173,12 @@ pub struct Setting {
     pub items: usize,
     /// Its collections, by path, with what each is for.
     pub collections: Vec<(String, String)>,
+    /// What the owner is looking at as they ask, in words, if the question says.
+    pub about: Option<String>,
+    /// What's loaded about it up front: its card, its collection, or what a search found.
+    pub loaded: String,
+    /// The owner's short note on it, such as a flag's.
+    pub note: Option<String>,
 }
 
 /// How many collections the prompt lists.
@@ -206,6 +212,19 @@ pub fn step(
             setting.collections.len() - COLLECTIONS_LISTED
         )
         .unwrap();
+    }
+    if let Some(about) = &setting.about {
+        writeln!(
+            text,
+            "\nThe owner is looking at {about} as they ask, so \"this\" and \"here\" mean it."
+        )
+        .unwrap();
+        if let Some(note) = &setting.note {
+            writeln!(text, "The owner's note on it: “{note}”.").unwrap();
+        }
+        if !setting.loaded.is_empty() {
+            writeln!(text, "Already loaded for you:\n{}", setting.loaded).unwrap();
+        }
     }
     if !earlier.is_empty() {
         text.push_str("\nThe conversation so far:\n");
