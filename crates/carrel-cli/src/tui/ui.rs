@@ -320,8 +320,9 @@ fn draw_help(frame: &mut Frame, theme: Theme, area: Rect) {
         ),
         (
             "Enter",
-            "change a setting; rebuild the search index or switch its model (Settings)",
+            "change a setting; rebuild the search index or switch its model; install the agent (Settings)",
         ),
+        ("x", "uninstall the background agent, on its row (Settings)"),
         ("Ctrl-O", "open another archive, or create one"),
         ("Ctrl-R", "read everything again"),
         ("?", "this help"),

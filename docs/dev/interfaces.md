@@ -22,7 +22,7 @@ The command line and the interactive mode run on macOS, Linux and Windows. The M
 | Questions: ranked, with suggested answers, skip | `questions`, `questions skip` | ✓ Questions (`1`–`9`, `s`) | ranked; suggestions and skip #291 |
 | Questions about an item, a group, a sender | `questions answer`, `questions about` | ✓ Questions | groups ✓; items and senders #291 |
 | Browse collections and items | `show`, `status` | ✓ Browse | ✓ Browse |
-| Previews of items | the item's path in `show` | #258 | ✓ inspector and grid (#256) |
+| Previews of items | the item's path in `show` | ✓ Browse, in terminals that draw images (#258) | ✓ inspector and grid (#256) |
 | An item's history and related items | `show` | ✓ | ✓ |
 | Search, with filters and reasons | `search` | ✓ `/` | ✓ ⌘F (#236) |
 | Discovery: on this day, timeline | `discover today`, `discover timeline` | #290 | #291 |
@@ -45,7 +45,7 @@ The command line and the interactive mode run on macOS, Linux and Windows. The M
 | Settings, this device's and the archive's | `settings` | ✓ Settings | ✓ Settings → General (#267) |
 | Models: list, download, remove | `models` | ✓ Settings | ✓ Settings → Models (#267) |
 | Providers in use, and file types not read | `providers`, `formats` | ✓ Settings | ✓ Settings → Providers (#267) |
-| Background work: sessions as they happen, the queue, the index, scheduled snapshots | `agent`, `agent install` (#269) | #279 | ✓ agent (#237) |
+| Background work: sessions as they happen, the queue, the index, scheduled snapshots | `agent`, `agent install` (#269) | ✓ Settings (#279) | ✓ agent (#237) |
 | What's checked out, at a glance | `checkouts` | ✓ Active | ✓ menu bar (#237) |
 
 ## Allowed deviations

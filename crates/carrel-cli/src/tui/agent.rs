@@ -356,6 +356,6 @@ mod tests {
         let Err(Failure(e)) = app.service.change(&AgentChange::Uninstall) else {
             panic!("a test app has nowhere to install");
         };
-        assert!(!e.is_empty());
+        assert_ne!(e, "");
     }
 }

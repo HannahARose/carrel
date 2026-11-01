@@ -77,8 +77,7 @@ fn parts(bytes: &[u8]) -> Option<Parts> {
                 });
             }
             b"PLTE" => {
-                found.as_mut()?.palette =
-                    body.chunks_exact(3).map(|c| [c[0], c[1], c[2]]).collect();
+                found.as_mut()?.palette = body.as_chunks::<3>().0.to_vec();
             }
             b"tRNS" => found.as_mut()?.transparency = body.to_vec(),
             b"IDAT" => found.as_mut()?.data.extend_from_slice(body),
@@ -160,7 +159,7 @@ fn unfilter(
             0 => 0,
             1 => a,
             2 => b,
-            3 => u8::try_from((u16::from(a) + u16::from(b)) / 2).unwrap_or(0),
+            3 => u8::try_from(u16::midpoint(u16::from(a), u16::from(b))).unwrap_or(0),
             4 => paeth(a, b, c),
             _ => return None,
         });
@@ -205,18 +204,18 @@ fn sample(parts: &Parts, row: &[u8], index: usize) -> u8 {
     }
 }
 
-fn pixel(parts: &Parts, row: &[u8], x: usize, channels: usize) -> [u8; 4] {
-    let s = |c: usize| sample(parts, row, x * channels + c);
+fn pixel(parts: &Parts, row: &[u8], at: usize, channels: usize) -> [u8; 4] {
+    let s = |c: usize| sample(parts, row, at * channels + c);
     match parts.colour {
         0 => [s(0), s(0), s(0), 255],
         2 => [s(0), s(1), s(2), 255],
         3 => {
             let index = usize::from(s(0));
-            let [r, g, b] = parts.palette.get(index).copied().unwrap_or_default();
+            let [red, green, blue] = parts.palette.get(index).copied().unwrap_or_default();
             [
-                r,
-                g,
-                b,
+                red,
+                green,
+                blue,
                 parts.transparency.get(index).copied().unwrap_or(255),
             ]
         }
@@ -281,9 +280,9 @@ impl Pixels {
         header.extend_from_slice(&self.height.to_be_bytes());
         header.extend_from_slice(&[8, 6, 0, 0, 0]);
         let mut png = SIGNATURE.to_vec();
-        chunk(&mut png, b"IHDR", &header);
-        chunk(&mut png, b"IDAT", &data);
-        chunk(&mut png, b"IEND", &[]);
+        chunk(&mut png, *b"IHDR", &header);
+        chunk(&mut png, *b"IDAT", &data);
+        chunk(&mut png, *b"IEND", &[]);
         png
     }
 }
@@ -303,9 +302,9 @@ fn span(i: usize, from: usize, to: usize) -> (usize, usize) {
     (start, end)
 }
 
-fn chunk(png: &mut Vec<u8>, kind: &[u8; 4], body: &[u8]) {
+fn chunk(png: &mut Vec<u8>, kind: [u8; 4], body: &[u8]) {
     png.extend_from_slice(&u32::try_from(body.len()).unwrap_or(0).to_be_bytes());
-    png.extend_from_slice(kind);
+    png.extend_from_slice(&kind);
     png.extend_from_slice(body);
     png.extend_from_slice(&crc(kind.iter().chain(body)).to_be_bytes());
 }
@@ -361,11 +360,11 @@ mod tests {
         deflated.write_all(&rows).unwrap();
         rows = deflated.finish().unwrap();
         let mut png = SIGNATURE.to_vec();
-        chunk(&mut png, b"IHDR", &[0, 0, 0, 2, 0, 0, 0, 2, 1, 3, 0, 0, 0]);
-        chunk(&mut png, b"PLTE", &[10, 20, 30, 200, 210, 220]);
-        chunk(&mut png, b"tRNS", &[0]);
-        chunk(&mut png, b"IDAT", &rows);
-        chunk(&mut png, b"IEND", &[]);
+        chunk(&mut png, *b"IHDR", &[0, 0, 0, 2, 0, 0, 0, 2, 1, 3, 0, 0, 0]);
+        chunk(&mut png, *b"PLTE", &[10, 20, 30, 200, 210, 220]);
+        chunk(&mut png, *b"tRNS", &[0]);
+        chunk(&mut png, *b"IDAT", &rows);
+        chunk(&mut png, *b"IEND", &[]);
         let pixels = decode(&png).unwrap();
         // Row two adds row one's byte: 0b1100_0000 + 0b1000_0000 wraps to 0b0100_0000.
         assert_eq!(

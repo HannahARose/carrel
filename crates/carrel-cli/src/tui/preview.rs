@@ -2,7 +2,7 @@
 //! `docs/design/mac-app.md`, "Previews").
 //!
 //! At start-up the terminal is recognised from its environment: the Kitty graphics protocol
-//! (Kitty, WezTerm, Ghostty), iTerm2's inline images, or Sixel (foot, mlterm, Konsole, Windows
+//! (Kitty, `WezTerm`, Ghostty), iTerm2's inline images, or Sixel (foot, mlterm, Konsole, Windows
 //! Terminal, contour). Anywhere else, or inside tmux or screen, which don't pass images on,
 //! nothing changes. The `previews` preference turns them off, or names a protocol for a
 //! terminal that isn't recognised.
@@ -33,9 +33,9 @@ const MOST_BYTES: u64 = 8 * 1024 * 1024;
 /// How a terminal draws images.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Protocol {
-    /// The Kitty graphics protocol: Kitty, WezTerm and Ghostty.
+    /// The Kitty graphics protocol: Kitty, `WezTerm` and Ghostty.
     Kitty,
-    /// iTerm2's inline images, which WezTerm also reads.
+    /// iTerm2's inline images, which `WezTerm` also reads.
     Iterm2,
     /// Sixel: foot, mlterm, Konsole, Windows Terminal and others.
     Sixel,
@@ -334,7 +334,9 @@ pub fn sixel(pixels: &png::Pixels) -> String {
     let level = |v: u8| usize::from(v) * 5 / 255 + usize::from(v % 51 > 25);
     let colours: Vec<Option<usize>> = pixels
         .rgba
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .map(|p| {
             (p[3] >= 128)
                 .then(|| level(p[0]).min(5) * 36 + level(p[1]).min(5) * 6 + level(p[2]).min(5))
@@ -640,8 +642,8 @@ mod tests {
         browse_to(&mut app, "Projects/Hardware/parts-list.csv.md");
         let screen = super::super::tests::screen(&app, 140, 30);
         assert!(screen.contains("Preview"), "{screen}");
-        let room = app.previews.room.get().expect("room for the picture");
-        assert!(room.width > 20 && room.height > 10, "{room:?}");
+        let space = app.previews.room.get().expect("room for the picture");
+        assert!(space.width > 20 && space.height > 10, "{space:?}");
         let Some(Ready::Picture(shown)) = app.previews.shown(app.item.card.as_deref()) else {
             panic!("no picture");
         };
