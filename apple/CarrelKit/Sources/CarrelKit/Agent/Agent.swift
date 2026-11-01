@@ -52,17 +52,21 @@ public final class Agent {
     private let watching: Bool
     private let now: @Sendable () -> Date
     private var sleeper: Task<Void, Never>?
+    private let quickLook: QuickLookDrawingsKeeper?
 
     /// An agent opening archives with `options` (the device's own when `nil`), keeping when
     /// it last backed each up in `state`. It watches files only when `watching` says so; tests
-    /// tell it what changed instead.
+    /// tell it what changed instead. It keeps Carrel's drawings for Quick Look in
+    /// `quickLook`, when given one.
     public init(
         options: OpenOptions? = nil, state: UserDefaults = .standard, watching: Bool = true,
+        quickLook: QuickLookStore? = nil,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.options = options
         self.state = state
         self.watching = watching
+        self.quickLook = quickLook.map(QuickLookDrawingsKeeper.init)
         self.now = now
     }
 
@@ -72,6 +76,7 @@ public final class Agent {
     /// can't be opened, or that another agent has claimed, is shown with what's wrong.
     public func follow(_ roots: [URL]) async {
         let roots = roots.map { URL(filePath: Self.realPath($0.path(percentEncoded: false))) }
+        let dropped = followed.keys.contains { !roots.contains($0) }
         for root in followed.keys where !roots.contains(root) {
             drop(root)
         }
@@ -104,6 +109,7 @@ public final class Agent {
         }
         for root in opened { await refresh(root) }
         if !opened.isEmpty { nudge() }
+        keepForQuickLook(changed: !opened.isEmpty || dropped)
     }
 
     /// Reads what every archive followed shows again.
@@ -111,6 +117,7 @@ public final class Agent {
         for archive in archives where followed[archive.root] != nil {
             await refresh(archive.root)
         }
+        keepForQuickLook(changed: false)
     }
 
     private func open(_ root: URL) async throws {
@@ -182,7 +189,22 @@ public final class Agent {
         if followed[root]?.plan.noticed(paths, at: now()) == true {
             Task { await refresh(root) }
         }
+        if paths.contains(where: QuickLookStore.isDrawn) { keepForQuickLook(changed: true) }
         nudge()
+    }
+
+    // MARK: - Quick Look
+
+    /// Keeps Carrel's drawings for Quick Look current: at once when something `changed`.
+    private func keepForQuickLook(changed: Bool) {
+        let roots = archives.map(\.root).filter { followed[$0] != nil }
+        quickLook?.keep(
+            roots.compactMap { followed[$0]?.handle }, roots: roots, at: now(), changed: changed)
+    }
+
+    /// Waits until the drawings kept for Quick Look are current.
+    public func quickLookKept() async {
+        await quickLook?.settled()
     }
 
     private func watch(_ root: URL) {

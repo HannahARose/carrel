@@ -11,6 +11,8 @@
 		CA0000000000000000000302 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = CA0000000000000000000203 /* AppIcon.icon */; };
 		CA0000000000000000000303 /* CarrelKit in Frameworks */ = {isa = PBXBuildFile; productRef = CA0000000000000000000602 /* CarrelKit */; };
 		CA0000000000000000000304 /* Carrel Agent.app in Embed Login Item */ = {isa = PBXBuildFile; fileRef = CA0000000000000000000204 /* Carrel Agent.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		CA0000000000000000004107 /* CarrelKit in Frameworks */ = {isa = PBXBuildFile; productRef = CA0000000000000000004108 /* CarrelKit */; };
+		CA0000000000000000004109 /* CarrelQuickLook.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = CA0000000000000000004102 /* CarrelQuickLook.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -28,6 +30,13 @@
 			remoteGlobalIDString = CA0000000000000000000103;
 			remoteInfo = "Carrel Agent";
 		};
+		CA0000000000000000004111 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = CA0000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = CA0000000000000000004101;
+			remoteInfo = CarrelQuickLook;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -42,6 +51,17 @@
 			name = "Embed Login Item";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		CA0000000000000000004110 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				CA0000000000000000004109 /* CarrelQuickLook.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
@@ -50,6 +70,9 @@
 		CA0000000000000000000202 /* CarrelTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CarrelTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		CA0000000000000000000204 /* Carrel Agent.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Carrel Agent.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		CA0000000000000000000205 /* Carrel-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "Carrel-Info.plist"; sourceTree = "<group>"; };
+		CA0000000000000000004102 /* CarrelQuickLook.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = CarrelQuickLook.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		CA0000000000000000004116 /* CarrelQuickLook-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "CarrelQuickLook-Info.plist"; sourceTree = "<group>"; };
+		CA0000000000000000004117 /* CarrelQuickLook.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CarrelQuickLook.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -66,6 +89,11 @@
 		CA0000000000000000000013 /* CarrelAgent */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = CarrelAgent;
+			sourceTree = "<group>";
+		};
+		CA0000000000000000004103 /* CarrelQuickLook */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = CarrelQuickLook;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -94,6 +122,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		CA0000000000000000004105 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				CA0000000000000000004107 /* CarrelKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -104,6 +140,9 @@
 				CA0000000000000000000205 /* Carrel-Info.plist */,
 				CA0000000000000000000011 /* Carrel */,
 				CA0000000000000000000013 /* CarrelAgent */,
+				CA0000000000000000004116 /* CarrelQuickLook-Info.plist */,
+				CA0000000000000000004117 /* CarrelQuickLook.entitlements */,
+				CA0000000000000000004103 /* CarrelQuickLook */,
 				CA0000000000000000000012 /* CarrelTests */,
 				CA0000000000000000000003 /* Products */,
 			);
@@ -115,6 +154,7 @@
 				CA0000000000000000000201 /* Carrel.app */,
 				CA0000000000000000000202 /* CarrelTests.xctest */,
 				CA0000000000000000000204 /* Carrel Agent.app */,
+				CA0000000000000000004102 /* CarrelQuickLook.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -130,11 +170,13 @@
 				CA0000000000000000000402 /* Frameworks */,
 				CA0000000000000000000403 /* Resources */,
 				CA0000000000000000000404 /* Embed Login Item */,
+				CA0000000000000000004110 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 				CA0000000000000000000802 /* PBXTargetDependency */,
+				CA0000000000000000004112 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				CA0000000000000000000011 /* Carrel */,
@@ -191,6 +233,29 @@
 			productReference = CA0000000000000000000204 /* Carrel Agent.app */;
 			productType = "com.apple.product-type.application";
 		};
+		CA0000000000000000004101 /* CarrelQuickLook */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CA0000000000000000004113 /* Build configuration list for PBXNativeTarget "CarrelQuickLook" */;
+			buildPhases = (
+				CA0000000000000000004104 /* Sources */,
+				CA0000000000000000004105 /* Frameworks */,
+				CA0000000000000000004106 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				CA0000000000000000004103 /* CarrelQuickLook */,
+			);
+			name = CarrelQuickLook;
+			packageProductDependencies = (
+				CA0000000000000000004108 /* CarrelKit */,
+			);
+			productName = CarrelQuickLook;
+			productReference = CA0000000000000000004102 /* CarrelQuickLook.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -209,6 +274,9 @@
 						TestTargetID = CA0000000000000000000101;
 					};
 					CA0000000000000000000103 = {
+						CreatedOnToolsVersion = 27.1;
+					};
+					CA0000000000000000004101 = {
 						CreatedOnToolsVersion = 27.1;
 					};
 				};
@@ -233,6 +301,7 @@
 				CA0000000000000000000101 /* Carrel */,
 				CA0000000000000000000102 /* CarrelTests */,
 				CA0000000000000000000103 /* Carrel Agent */,
+				CA0000000000000000004101 /* CarrelQuickLook */,
 			);
 		};
 /* End PBXProject section */
@@ -254,6 +323,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		CA0000000000000000000423 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CA0000000000000000004106 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -284,6 +360,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		CA0000000000000000004104 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -296,6 +379,11 @@
 			isa = PBXTargetDependency;
 			target = CA0000000000000000000103 /* Carrel Agent */;
 			targetProxy = CA0000000000000000000702 /* PBXContainerItemProxy */;
+		};
+		CA0000000000000000004112 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = CA0000000000000000004101 /* CarrelQuickLook */;
+			targetProxy = CA0000000000000000004111 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -469,6 +557,50 @@
 			};
 			name = Release;
 		};
+		CA0000000000000000004114 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = CarrelQuickLook.entitlements;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "CarrelQuickLook-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "Carrel Quick Look";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = io.github.hannaharose.Carrel.QuickLook;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+			};
+			name = Debug;
+		};
+		CA0000000000000000004115 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = CarrelQuickLook.entitlements;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "CarrelQuickLook-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "Carrel Quick Look";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = io.github.hannaharose.Carrel.QuickLook;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -508,6 +640,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		CA0000000000000000004113 /* Build configuration list for PBXNativeTarget "CarrelQuickLook" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CA0000000000000000004114 /* Debug */,
+				CA0000000000000000004115 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
@@ -523,6 +664,10 @@
 			productName = CarrelKit;
 		};
 		CA0000000000000000000602 /* CarrelKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = CarrelKit;
+		};
+		CA0000000000000000004108 /* CarrelKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = CarrelKit;
 		};

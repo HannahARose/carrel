@@ -25,6 +25,7 @@
 //! | [`agent`] | The Mac app's agent: its claim on an archive, work sessions and scheduled snapshots |
 //! | [`librarian`] | The librarian: a conversation, saving it to the Journal, and its own changes |
 //! | [`discover`] | Discovery: on this day, wander, the timeline, the archive map, activity, resurfacing |
+//! | [`quick_look`] | Quick Look: cards laid out for the preview extension, and the drawings the agent keeps for it |
 //! | [`creating`] | Creating an archive with a chosen embedding model |
 //!
 //! [`TextModel`] and [`ModelProvider`](correct::ModelProvider) are implemented in Swift and called from Rust, as is
@@ -66,6 +67,7 @@ pub mod model_formats;
 pub mod models;
 pub mod previews;
 pub mod questions;
+pub mod quick_look;
 pub mod records;
 pub mod restructure;
 pub mod review;
