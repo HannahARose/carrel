@@ -880,3 +880,54 @@ fn tool_results_are_trimmed_to_fit_the_models_context() {
         "shortened further"
     );
 }
+
+#[test]
+fn the_journal_escapes_titles_and_shortens_a_long_question_in_its_heading() {
+    use carrel_core::card::Sensitivity;
+    use carrel_core::librarian::{Answer, ItemLink};
+    let question = "Which of the draft notes about the coupled oscillators mention the locking condition, and when?";
+    let conversation = Conversation {
+        answers: vec![Answer {
+            question: question.into(),
+            text: "Only one.".into(),
+            items: vec![ItemLink {
+                id: Id::new_v7(),
+                title: "[draft] notes | v2".into(),
+                card: "Reading/Draft notes.md".into(),
+                collection: "Reading".into(),
+                sensitivity: Sensitivity::Personal,
+            }],
+            passages: Vec::new(),
+            suggestions: Vec::new(),
+            steps: Vec::new(),
+            model: "scripted/m".into(),
+            tokens: 0,
+            stopped: None,
+        }],
+    };
+    let at: jiff::Zoned = "2026-10-31T09:30:00-07:00[America/Los_Angeles]"
+        .parse()
+        .unwrap();
+    let text = journal::markdown(&conversation, "Journal/2026", &at);
+    let heading = text.lines().next().unwrap();
+    assert!(
+        heading.starts_with("### 2026-10-31 09:30 · Which of the draft notes"),
+        "{heading}"
+    );
+    assert!(
+        heading.ends_with('…'),
+        "a long question is cut short: {heading}"
+    );
+    assert_eq!(
+        heading.chars().count(),
+        "### 2026-10-31 09:30 · ".chars().count() + 81
+    );
+    assert!(
+        text.contains(&format!("**You asked:** {question}")),
+        "in full below"
+    );
+    assert!(
+        text.contains("- [\\[draft\\] notes \\| v2](../../Reading/Draft%20notes.md)"),
+        "brackets and bars can't break the link: {text}"
+    );
+}
