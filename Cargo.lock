@@ -442,7 +442,7 @@ dependencies = [
 name = "carrel-cli"
 version = "0.5.1"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "carrel-core",
  "clap",
  "jiff",
