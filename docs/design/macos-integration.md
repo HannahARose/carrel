@@ -1,6 +1,6 @@
 # Design: macOS system integration (v0.8)
 
-Status: proposed 2026-11-01, for the owner's review. Issue #35.
+Status: accepted 2026-11-01, with the five recommendations below. Issue #35.
 
 ## What this adds
 
@@ -128,7 +128,7 @@ The Linux and Windows file managers' context menus (Nautilus scripts, Explorer's
 6. App Intents and entities.
 7. The user guide, then the gate checklist.
 
-## Decisions (recommended)
+## Decisions (accepted 2026-11-01)
 
 1. **Extensions never write the archive. They ask the agent over XPC, and read a state file it keeps.** Recommended: the extensions must be sandboxed and the app and agent aren't. It also keeps one writer, with every change going through the core and into History.
 2. **Finder Sync for badges and the archive's actions, plus a Quick Action for adding from anywhere.** Recommended: Finder Sync only sees folders it watches, and File Provider would change how the archive folder lives on disk, at the cost of its plain-folder and Obsidian compatibility.
