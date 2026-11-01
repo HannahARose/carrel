@@ -13,6 +13,7 @@
 //! scripted one. Nothing here moves a file: the trees are plain data.
 
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -229,16 +230,16 @@ fn prompt(summary: &str, here: &str, children: &[(&str, &TreeCollection)]) -> St
     if here.is_empty() {
         text.push_str("You're at the top of the archive. Its collections:\n");
     } else {
-        text.push_str(&format!("You're in {here}. The collections inside it:\n"));
+        writeln!(text, "You're in {here}. The collections inside it:").unwrap();
     }
     for (name, collection) in children {
         match &collection.description {
-            Some(d) if !d.trim().is_empty() => text.push_str(&format!("- {name}: {d}\n")),
-            _ => text.push_str(&format!("- {name}\n")),
+            Some(d) if !d.trim().is_empty() => writeln!(text, "- {name}: {d}").unwrap(),
+            _ => writeln!(text, "- {name}").unwrap(),
         }
     }
     if !here.is_empty() {
-        text.push_str(&format!("- {HERE}: it belongs in {here} itself\n"));
+        writeln!(text, "- {HERE}: it belongs in {here} itself").unwrap();
     }
     text
 }
@@ -280,7 +281,7 @@ pub fn walk_tree(
             max_tokens: Some(ANSWER_TOKENS),
         };
         let (completion, _, _) = registry.complete(&request)?;
-        model = completion.model.clone();
+        model.clone_from(&completion.model);
         let choice = choice_of(completion.json.as_ref(), &completion.text);
         if choice.eq_ignore_ascii_case(HERE) && !here.is_empty() {
             break;

@@ -282,14 +282,14 @@ fn uneven_detail(graph: &Graph, warrant: usize) -> Vec<Signal> {
         let coarsest = details
             .iter()
             .max_by(|a, b| a.per_collection().total_cmp(&b.per_collection()));
-        if let (Some(finer), Some(coarser)) = (finest, coarsest) {
-            if coarser.per_collection() >= DETAIL_RATIO * finer.per_collection() {
-                found.push(Signal::UnevenDetail {
-                    parent: parent.to_owned(),
-                    finer: finer.clone(),
-                    coarser: coarser.clone(),
-                });
-            }
+        if let (Some(finer), Some(coarser)) = (finest, coarsest)
+            && coarser.per_collection() >= DETAIL_RATIO * finer.per_collection()
+        {
+            found.push(Signal::UnevenDetail {
+                parent: parent.to_owned(),
+                finer: finer.clone(),
+                coarser: coarser.clone(),
+            });
         }
     }
     found

@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 
 use super::Invasiveness;
 use crate::card::Id;
-use crate::graph::{Graph, is_within};
+use crate::graph::{Graph, ItemNode, is_within};
 use crate::index::Index;
 
 /// The collection items go to when nowhere fits.
@@ -201,7 +201,10 @@ fn average_linkage(
             let better = match best {
                 None => true,
                 // Ties go to the chain's previous group, so the chain always ends.
-                Some((b, bs)) => s > bs || (s == bs && Some(d) == previous && Some(b) != previous),
+                Some((b, bs)) => {
+                    s > bs
+                        || (s.total_cmp(&bs).is_eq() && Some(d) == previous && Some(b) != previous)
+                }
             };
             if better {
                 best = Some((d, s));
@@ -279,16 +282,72 @@ fn placement(collections: &[&str]) -> (String, Invasiveness) {
     }
 }
 
+/// The candidate group of `members` (their places in `similarity`), which are `items`, or none
+/// if they're exactly a collection's items already. `per_collection` counts each collection's
+/// items.
+#[allow(clippy::cast_precision_loss)] // item counts
+fn candidate(
+    members: &[usize],
+    items: &[&ItemNode],
+    similarity: &Similarity,
+    per_collection: &HashMap<&str, usize>,
+) -> Option<CandidateGroup> {
+    let mut sources: BTreeMap<&str, usize> = BTreeMap::new();
+    for item in items {
+        *sources.entry(item.collection.as_str()).or_default() += 1;
+    }
+    if let [(only, count)] = sources.iter().collect::<Vec<_>>()[..]
+        && per_collection.get(only) == Some(count)
+    {
+        return None;
+    }
+    let pairs = members.len() * (members.len() - 1) / 2;
+    let total: f64 = members
+        .iter()
+        .enumerate()
+        .flat_map(|(a, &x)| members[a + 1..].iter().map(move |&y| (x, y)))
+        .map(|(x, y)| similarity.between(x, y))
+        .sum();
+    let mut tag_counts: BTreeMap<&str, usize> = BTreeMap::new();
+    for item in items {
+        for tag in &item.tags {
+            *tag_counts.entry(tag.as_str()).or_default() += 1;
+        }
+    }
+    let mut tags: Vec<(&str, usize)> = tag_counts
+        .into_iter()
+        .filter(|(_, n)| n * 2 >= members.len())
+        .collect();
+    tags.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
+    let collections: Vec<&str> = sources.keys().copied().collect();
+    let (home, invasiveness) = placement(&collections);
+    let mut sources: Vec<GroupSource> = sources
+        .into_iter()
+        .map(|(collection, items)| GroupSource {
+            collection: collection.to_owned(),
+            items,
+        })
+        .collect();
+    sources.sort_by(|a, b| b.items.cmp(&a.items).then(a.collection.cmp(&b.collection)));
+    Some(CandidateGroup {
+        members: items.iter().map(|i| i.id).collect(),
+        cohesion: total / pairs as f64,
+        tags: tags.into_iter().map(|(t, _)| t.to_owned()).collect(),
+        sources,
+        home,
+        invasiveness,
+    })
+}
+
 /// The candidate groups among the graph's items in `section` (a collection's path, or empty
 /// for the whole archive), from their card `vectors` (missing ones are grouped by the graph
 /// alone) and the graph's edges. Checked-out items are left out. A group that is exactly a
 /// collection's items already is no change, so isn't a candidate.
 #[must_use]
-#[allow(clippy::cast_precision_loss)] // item counts
-pub fn group_section(
+pub fn group_section<S: std::hash::BuildHasher>(
     graph: &Graph,
     section: &str,
-    vectors: &HashMap<Id, Vec<f32>>,
+    vectors: &HashMap<Id, Vec<f32>, S>,
     options: &GroupingOptions,
 ) -> Grouping {
     let in_section: Vec<usize> = (0..graph.items.len())
@@ -334,53 +393,8 @@ pub fn group_section(
         .into_iter()
         .filter(|members| members.len() >= options.warrant.max(2))
         .filter_map(|members| {
-            let items: Vec<&crate::graph::ItemNode> =
-                members.iter().map(|&k| &graph.items[chosen[k]]).collect();
-            let mut sources: BTreeMap<&str, usize> = BTreeMap::new();
-            for item in &items {
-                *sources.entry(item.collection.as_str()).or_default() += 1;
-            }
-            if let [(only, count)] = sources.iter().collect::<Vec<_>>()[..] {
-                if per_collection.get(only) == Some(count) {
-                    return None;
-                }
-            }
-            let pairs = members.len() * (members.len() - 1) / 2;
-            let total: f64 = members
-                .iter()
-                .enumerate()
-                .flat_map(|(a, &x)| members[a + 1..].iter().map(move |&y| (x, y)))
-                .map(|(x, y)| similarity.between(x, y))
-                .sum();
-            let mut tag_counts: BTreeMap<&str, usize> = BTreeMap::new();
-            for item in &items {
-                for tag in &item.tags {
-                    *tag_counts.entry(tag.as_str()).or_default() += 1;
-                }
-            }
-            let mut tags: Vec<(&str, usize)> = tag_counts
-                .into_iter()
-                .filter(|(_, n)| n * 2 >= members.len())
-                .collect();
-            tags.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
-            let collections: Vec<&str> = sources.keys().copied().collect();
-            let (home, invasiveness) = placement(&collections);
-            let mut sources: Vec<GroupSource> = sources
-                .into_iter()
-                .map(|(collection, items)| GroupSource {
-                    collection: collection.to_owned(),
-                    items,
-                })
-                .collect();
-            sources.sort_by(|a, b| b.items.cmp(&a.items).then(a.collection.cmp(&b.collection)));
-            Some(CandidateGroup {
-                members: items.iter().map(|i| i.id).collect(),
-                cohesion: total / pairs as f64,
-                tags: tags.into_iter().map(|(t, _)| t.to_owned()).collect(),
-                sources,
-                home,
-                invasiveness,
-            })
+            let items: Vec<&ItemNode> = members.iter().map(|&k| &graph.items[chosen[k]]).collect();
+            candidate(&members, &items, &similarity, &per_collection)
         })
         .collect();
     groups.sort_by(|a, b| {
@@ -425,7 +439,7 @@ mod tests {
         let mut vectors = HashMap::new();
         for n in 1..=12_u128 {
             entries.push(entry(n, &format!("r{n:02}"), "Reading"));
-            vectors.insert(id(n), vector(if n <= 6 { 0 } else { 1 }, n));
+            vectors.insert(id(n), vector(usize::from(n > 6), n));
         }
         for n in 20..25_u128 {
             let place = if n < 23 { "Projects" } else { "Holding" };
@@ -470,10 +484,9 @@ mod tests {
             warrant: 7,
             ..GroupingOptions::default()
         };
-        assert!(
-            group_section(&graph, "Reading", &vectors, &options)
-                .groups
-                .is_empty()
+        assert_eq!(
+            group_section(&graph, "Reading", &vectors, &options).groups,
+            []
         );
     }
 

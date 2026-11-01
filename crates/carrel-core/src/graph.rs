@@ -153,6 +153,9 @@ fn shared_weight(n: usize) -> f64 {
     1.0 / (1.0 + n as f64).log2()
 }
 
+/// A connection being gathered, with how many pairs share each tag.
+type Gathered<'a> = (Connection, BTreeMap<&'a str, usize>);
+
 /// The edges being gathered, by their pair of items.
 #[derive(Default)]
 struct Gathering {
@@ -302,8 +305,7 @@ impl Graph {
     #[must_use]
     pub fn connections(&self) -> Vec<Connection> {
         let positions = self.positions();
-        let mut found: BTreeMap<(&str, &str), (Connection, BTreeMap<&str, usize>)> =
-            BTreeMap::new();
+        let mut found: BTreeMap<(&str, &str), Gathered> = BTreeMap::new();
         for edge in &self.edges {
             let (Some(&x), Some(&y)) = (positions.get(&edge.a), positions.get(&edge.b)) else {
                 continue;
@@ -468,6 +470,6 @@ mod tests {
                 .any(|e| (e.a == sim.id || e.b == sim.id) && !e.links.is_empty()),
             "the simulation's derived-from link is an edge"
         );
-        assert!(!graph.connections().is_empty());
+        assert_ne!(graph.connections(), []);
     }
 }
