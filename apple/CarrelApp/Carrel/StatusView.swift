@@ -33,7 +33,7 @@ struct StatusView: View {
                     LabeledContent(
                         "Being changed by",
                         value:
-                            "\(writer.purpose), \(writer.thisDevice ? "on this Mac" : "on \(writer.device)")"
+                            "\(writer.purpose), \(writer.thisDevice ? "on \(thisDevice)" : "on \(writer.device)")"
                             + (writer.expired ? " (stopped)" : ""))
                 }
             }

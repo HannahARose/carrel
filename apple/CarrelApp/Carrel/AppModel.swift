@@ -2,6 +2,7 @@
 // Settings), and opening and creating archives.
 
 import CarrelKit
+import Foundation
 import Observation
 
 #if os(macOS)
@@ -117,7 +118,7 @@ final class AppModel {
 
     /// The screen the window for the archive at `root` was asked to show, once.
     func takePendingScreen(for root: URL) -> Screen? {
-        guard let pending = pendingScreen, pending.archive == root.standardizedFileURL
+        guard let pending = pendingScreen, Self.isSameFolder(pending.archive, root)
         else { return nil }
         pendingScreen = nil
         return pending.screen
@@ -125,10 +126,18 @@ final class AppModel {
 
     /// The item a link asked the window for the archive at `root` to choose, once.
     func takePendingLink(for root: URL) -> AgentLink? {
-        guard let link = pendingLink, link.archive.standardizedFileURL == root.standardizedFileURL
-        else { return nil }
+        guard let link = pendingLink, Self.isSameFolder(link.archive, root) else { return nil }
         pendingLink = nil
         return link
+    }
+
+    /// Whether `a` and `b` are the same folder, whether or not either ends in a slash.
+    static func isSameFolder(_ a: URL, _ b: URL) -> Bool {
+        func path(_ url: URL) -> String {
+            let path = url.standardizedFileURL.path(percentEncoded: false)
+            return path.count > 1 && path.hasSuffix("/") ? String(path.dropLast()) : path
+        }
+        return path(a) == path(b)
     }
 
     #if os(macOS)

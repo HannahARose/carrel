@@ -70,7 +70,7 @@ private struct SearchHitRow: View {
                 Spacer()
                 if hit.found == .collection {
                     Button("Show", action: showCollection)
-                        .buttonStyle(.link)
+                        .linkButtonStyle()
                 }
             }
             if let place {

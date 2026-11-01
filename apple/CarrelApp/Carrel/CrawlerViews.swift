@@ -50,7 +50,7 @@ struct CrawlerFindingsView: View {
                 ContentUnavailableView(
                     "Nothing From the Crawler", systemImage: "binoculars",
                     description: Text(
-                        "The crawler has found nothing to review. It rechecks where items are filed when this Mac is idle."
+                        "The crawler has found nothing to review. It rechecks where items are filed when \(thisDevice) is idle."
                     ))
             }
         }
@@ -75,7 +75,7 @@ struct CrawlerFindingInspector: View {
                         .font(.caption).foregroundStyle(.secondary)
                     Text(finding.title).font(.title3.bold())
                     Button("Show in Browse") { window.open(item: finding.item) }
-                        .buttonStyle(.link)
+                        .linkButtonStyle()
                 }
                 .textSelection(.enabled)
             }
@@ -140,7 +140,7 @@ struct StatusCrawlerSection: View {
                             window.screen = .review
                             crawler.isShown = true
                         }
-                        .buttonStyle(.link)
+                        .linkButtonStyle()
                     }
                     ForEach(crawler.changes.prefix(5), id: \.id) { change in
                         LabeledContent(change.summary, value: change.when)

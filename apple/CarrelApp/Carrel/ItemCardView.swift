@@ -80,7 +80,7 @@ struct ItemCardView<Actions: View, Below: View>: View {
                 ItemRelatedSection(archive: archive, item: item.id, open: open)
             }
             Section {
-                Button("Show in Finder", systemImage: "folder") {
+                Button("Show in \(fileBrowser)", systemImage: "folder") {
                     let path = item.item ?? item.card
                     revealInFiles([root.appending(path: path)])
                 }

@@ -16,7 +16,7 @@ struct StatusGapsSection: View {
     var body: some View {
         Section {
             if gaps.isEmpty {
-                Text("Carrel has done all it was asked on this Mac so far.")
+                Text("Carrel has done all it was asked on \(thisDevice) so far.")
                     .foregroundStyle(.secondary)
             }
             ForEach(gaps, id: \.number) { gap in
@@ -39,7 +39,7 @@ struct StatusGapsSection: View {
                 Button("Report a Missing Feature…") {
                     window.missingFeature = MissingFeatureModel(item: nil)
                 }
-                .buttonStyle(.link)
+                .linkButtonStyle()
             }
         } footer: {
             Text(
@@ -198,7 +198,7 @@ struct MissingFeatureSheet: View {
             .font(.headline)
             Text(
                 model.item == nil
-                    ? "Say what Carrel should be able to do. It’s kept on this Mac as a gap, "
+                    ? "Say what Carrel should be able to do. It’s kept on \(thisDevice) as a gap, "
                         + "to report to development from Status."
                     : "Say what Carrel should be able to do with it. Its type is kept with your "
                         + "words, never its name, as a gap to report from Status."

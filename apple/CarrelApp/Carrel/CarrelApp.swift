@@ -13,7 +13,7 @@ import AppKit
 @main
 enum CarrelMain {
     /// Whether this process hosts the unit tests, which XCTest says in the environment.
-    static let isHostingTests = ProcessInfo.processInfo.environment.keys.contains {
+    nonisolated static let isHostingTests = ProcessInfo.processInfo.environment.keys.contains {
         $0 == "XCTestConfigurationFilePath" || $0 == "XCTestBundlePath"
     }
 
@@ -31,7 +31,7 @@ enum CarrelMain {
 extension UserDefaults {
     /// The app's defaults: its own domain, or while it hosts the tests a suite of their own,
     /// emptied at each run, so tests never read or write a developer's settings or recents.
-    static let app: UserDefaults = {
+    nonisolated(unsafe) static let app: UserDefaults = {
         guard CarrelMain.isHostingTests else { return .standard }
         let suite = "io.github.hannaharose.Carrel.test-host"
         UserDefaults.standard.removePersistentDomain(forName: suite)

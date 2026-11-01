@@ -209,7 +209,7 @@ private struct ConnectionList: View {
         Button(item.title + (item.sensitivity == .restricted ? " 🔒" : "")) {
             window.open(item: item.id)
         }
-        .buttonStyle(.link)
+        .linkButtonStyle()
         .lineLimit(1)
         .help("\(item.card): show it in Browse")
     }

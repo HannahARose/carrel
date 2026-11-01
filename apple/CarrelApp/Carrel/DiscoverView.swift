@@ -330,10 +330,10 @@ private struct ArchiveMapPage: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Button("Archive") { inside = nil }.buttonStyle(.link).disabled(inside == nil)
+                Button("Archive") { inside = nil }.linkButtonStyle().disabled(inside == nil)
                 ForEach(breadcrumbs, id: \.path) { region in
                     Image(systemName: "chevron.right").foregroundStyle(.tertiary)
-                    Button(region.title) { inside = region.path }.buttonStyle(.link)
+                    Button(region.title) { inside = region.path }.linkButtonStyle()
                 }
                 Spacer()
                 if let map = discover.map {

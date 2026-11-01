@@ -11,9 +11,9 @@ import SwiftUI
 /// The archives this device knows, and the one that's open.
 @Observable
 final class MobileLibrary {
-    static let bookmarksKey = "archiveBookmarks"
+    nonisolated static let bookmarksKey = "archiveBookmarks"
     /// The archive that's open, which background work and the next launch use.
-    static let openKey = "openArchive"
+    nonisolated static let openKey = "openArchive"
 
     let app: AppModel
     private let defaults: UserDefaults
@@ -36,13 +36,28 @@ final class MobileLibrary {
     /// Opens the archive this device had open last, if it's still there.
     func reopen() {
         guard open == nil, let path = defaults.string(forKey: Self.openKey) else { return }
-        let url = URL(filePath: path, directoryHint: .isDirectory)
+        let url = Self.current(URL(filePath: path, directoryHint: .isDirectory))
+        guard FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) else {
+            return
+        }
         _ = access(url)
         if let root = try? app.resolve(url) { show(root) }
     }
 
+    /// `url` moved to where the app's container is now, if it was in the container's
+    /// Documents folder: the container's path changes when the app is updated or reinstalled.
+    nonisolated static func current(_ url: URL) -> URL {
+        let path = url.path(percentEncoded: false)
+        guard let range = path.range(of: "/Documents/"),
+            path.contains("/Containers/Data/Application/")
+        else { return url }
+        return URL.documentsDirectory.appending(
+            path: String(path[range.upperBound...]), directoryHint: .isDirectory)
+    }
+
     /// Opens the archive containing `url`, chosen in the document picker or from recents.
     func open(_ url: URL) {
+        let url = Self.current(url)
         _ = access(url)
         do {
             let root = try app.resolve(url)
@@ -140,6 +155,15 @@ struct MobileRoot: View {
         .task {
             let library = MobileLibrary(app: app)
             self.library = library
+            #if DEBUG
+            // `-link carrel://open?…` at launch opens the link as a tap on one would, for
+            // checking screens in the Simulator without the system's confirmation.
+            if let link = UserDefaults.standard.string(forKey: "link"), let url = URL(string: link)
+            {
+                app.open(link: url) { library.open($0) }
+                return
+            }
+            #endif
             library.reopen()
         }
         .onOpenURL { url in

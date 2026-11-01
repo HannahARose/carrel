@@ -122,7 +122,7 @@ private struct QueuedActions: View {
             .disabled(first)
         Divider()
         Button("Remove from Queue", role: .destructive) { Task { await intake.remove(entry) } }
-        Button("Show in Finder") {
+        Button("Show in \(fileBrowser)") {
             revealInFiles([URL(filePath: entry.path)])
         }
     }

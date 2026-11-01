@@ -167,7 +167,7 @@ private struct ChangeRow: View {
                 }
             }
         }
-        .toggleStyle(.checkbox)
+        .checkboxToggleStyle()
     }
 }
 

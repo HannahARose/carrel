@@ -90,7 +90,7 @@ private struct SubjectRow: View {
             Label {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(subject.title + (subject.proposal ? " (waiting)" : ""))
-                    Text(subject.file ?? "Not on this Mac")
+                    Text(subject.file ?? "Not on \(thisDevice)")
                         .font(.caption).foregroundStyle(.secondary)
                         .lineLimit(1).truncationMode(.middle)
                 }

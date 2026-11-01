@@ -115,7 +115,7 @@ nonisolated enum BackgroundWork {
     /// app's container.
     private static func lastArchive() -> ArchiveHandle? {
         guard let path = UserDefaults.app.string(forKey: MobileLibrary.openKey) else { return nil }
-        let url = URL(filePath: path, directoryHint: .isDirectory)
+        let url = MobileLibrary.current(URL(filePath: path, directoryHint: .isDirectory))
         MobileLibrary.access(url, defaults: .app)
         return try? ArchiveHandle.open(url)
     }

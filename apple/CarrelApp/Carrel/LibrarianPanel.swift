@@ -256,7 +256,7 @@ private struct AnswerView: View {
                             Label(item.title, systemImage: "doc.text")
                                 .lineLimit(1)
                         }
-                        .buttonStyle(.link)
+                        .linkButtonStyle()
                         .help(item.card)
                     }
                 } header: {
@@ -269,7 +269,7 @@ private struct AnswerView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("“\(passage.text)”").italic().textSelection(.enabled)
                             Button(passage.item.title) { window.open(item: passage.item.id) }
-                                .buttonStyle(.link).font(.caption)
+                                .linkButtonStyle().font(.caption)
                         }
                         .padding(.leading, 8)
                         .overlay(alignment: .leading) {

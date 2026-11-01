@@ -88,7 +88,7 @@ final class BackupsModel {
         }
         if !state.setUpHere, let description = state.description {
             return
-                "This archive backs up to “\(description)”, but this Mac isn’t connected to it yet. Set up backups and choose its folder to connect."
+                "This archive backs up to “\(description)”, but \(thisDevice) isn’t connected to it yet. Set up backups and choose its folder to connect."
         }
         if !state.setUpHere {
             return
@@ -193,7 +193,7 @@ final class BackupsModel {
             : "Connected to the backup repository “\(setUp.description)”."
         text +=
             setUp.keptInKeychain
-            ? " Kopia keeps the password in this Mac’s keychain."
+            ? " Kopia keeps the password in \(thisDevice)’s keychain."
             : " The password is kept only while Carrel is open."
         if setUp.sameDisk {
             text +=

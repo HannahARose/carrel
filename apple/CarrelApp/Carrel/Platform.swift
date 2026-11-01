@@ -195,3 +195,34 @@ struct OpenSettingsButton: View {
         #endif
     }
 }
+
+extension View {
+    /// A button that looks like a link: the Mac's link style, and a plain borderless button on
+    /// iPad and iPhone, which have none.
+    func linkButtonStyle() -> some View {
+        #if os(macOS)
+        buttonStyle(.link)
+        #else
+        buttonStyle(.borderless)
+        #endif
+    }
+}
+
+extension View {
+    /// Toggles as checkboxes on the Mac, and as switches on iPad and iPhone, which have none.
+    func checkboxToggleStyle() -> some View {
+        #if os(macOS)
+        toggleStyle(.checkbox)
+        #else
+        toggleStyle(.switch)
+        #endif
+    }
+}
+
+/// This device, as the screens name it: "this Mac", "this iPad" or "this iPhone".
+var thisDevice: String {
+    isMac ? "this Mac" : PowerPolicy.isPhone ? "this iPhone" : "this iPad"
+}
+
+/// The app that shows files where they are: Finder on the Mac, Files on iPad and iPhone.
+let fileBrowser = isMac ? "Finder" : "Files"

@@ -116,7 +116,7 @@ struct ActiveActions: View {
                     .help("Return it from where its working copy has moved to")
                 Button("Cancel Checkout…", role: .destructive) { model.askToCancel() }
             }
-            Button("Show in Finder") { openWorkingCopy(item, of: model) }
+            Button("Show in \(fileBrowser)") { openWorkingCopy(item, of: model) }
             if model.canDecide {
                 Divider()
                 Button(model.selectedEntries.isEmpty ? "Approve All Entries" : "Approve") {

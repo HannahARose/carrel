@@ -49,7 +49,7 @@ private struct ActiveMenu: View {
         Button("Cancel Checkout…") { active?.askToCancel() }
             .keyboardShortcut(.delete, modifiers: [.command, .option])
             .disabled(!(active?.canReturn ?? false))
-        Button("Show Working Copy in Finder") {
+        Button("Show Working Copy in \(fileBrowser)") {
             if let active, let item { openWorkingCopy(item, of: active) }
         }
         .keyboardShortcut("o", modifiers: [.command, .option])

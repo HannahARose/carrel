@@ -38,7 +38,8 @@ struct ModelsTab: View {
         ) { _ in
             Button("Delete", role: .destructive) { Task { await model?.removeConfirmed() } }
         } message: { entry in
-            Text("It’s deleted from this Mac’s models folder; you can download it again later.")
+            Text(
+                "It’s deleted from \(thisDevice)’s models folder; you can download it again later.")
         }
     }
 
