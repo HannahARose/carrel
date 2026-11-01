@@ -1,0 +1,1523 @@
+{
+  "date": "2026-11-01",
+  "carrel": "0.5.1",
+  "os": "macos",
+  "arch": "aarch64",
+  "models": [
+    {
+      "provider": "apple",
+      "offer": "afm",
+      "label": "apple/Apple Foundation Model",
+      "version": "0.5.1",
+      "value": {
+        "items": 81,
+        "questions": 0,
+        "answerable": 0,
+        "set_aside": 0,
+        "routing_before": 0.7901234567901234,
+        "routing_after": 0.7901234567901234,
+        "correlation": null,
+        "top_k": []
+      },
+      "questions": [],
+      "proposals": [
+        {
+          "item": "2025 bank statement March.txt",
+          "id": "01a19606-fc26-772c-bfed-ddd11c6e5987",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "IMG_1502.jpg",
+          "id": "01a19606-fc26-772c-bfed-ddd233704a19",
+          "destination": "Recipes",
+          "confidence": "medium"
+        },
+        {
+          "item": "IMG_1876.jpg",
+          "id": "01a19606-fc26-772c-bfed-ddd3ab21b68b",
+          "destination": "Travel",
+          "confidence": "medium"
+        },
+        {
+          "item": "IMG_2041.jpg",
+          "id": "01a19606-fc26-772c-bfed-ddd4ee52b580",
+          "destination": "Receipts",
+          "confidence": "medium"
+        },
+        {
+          "item": "IMG_3310.jpg",
+          "id": "01a19606-fc26-772c-bfed-ddd54770292e",
+          "destination": "Projects",
+          "confidence": "low"
+        },
+        {
+          "item": "IMG_4127.jpg",
+          "id": "01a19606-fc26-772c-bfed-ddd637465382",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "Screenshot 2025-08-28 at 09.14.03.png",
+          "id": "01a19606-fc26-772c-bfed-ddd78ae46179",
+          "destination": "Home",
+          "confidence": "medium"
+        },
+        {
+          "item": "Screenshot 2025-10-03 at 08.41.55.png",
+          "id": "01a19606-fc26-772c-bfed-ddd81411e392",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "amplifier build log.txt",
+          "id": "01a19606-fc26-772c-bfed-ddd94c0a00d8",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "birthday card from sister.txt",
+          "id": "01a19606-fc26-772c-bfed-dddac9a9da56",
+          "destination": "Letters",
+          "confidence": "medium"
+        },
+        {
+          "item": "blood test results.txt",
+          "id": "01a19606-fc26-772c-bfed-dddb99e209b9",
+          "destination": "Health",
+          "confidence": "medium"
+        },
+        {
+          "item": "boiler repair note.txt",
+          "id": "01a19606-fc26-772c-bfed-dddca03a9918",
+          "destination": "Home",
+          "confidence": "medium"
+        },
+        {
+          "item": "budget app notes.md",
+          "id": "01a19606-fc26-772c-bfed-dddd59325b1f",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "building notice water off.txt",
+          "id": "01a19606-fc26-772c-bfed-ddde2d617a04",
+          "destination": "Home",
+          "confidence": "medium"
+        },
+        {
+          "item": "car insurance renewal.txt",
+          "id": "01a19606-fc26-772c-bfed-dddf9e31e4c4",
+          "destination": "Insurance",
+          "confidence": "medium"
+        },
+        {
+          "item": "card replacement letter.txt",
+          "id": "01a19606-fc26-772c-bfed-dde0bee60d51",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "cell biology review.txt",
+          "id": "01a19606-fc26-772c-bfed-dde143ffdfa4",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "claim physio costs.md",
+          "id": "01a19606-fc26-772c-bfed-dde211af116f",
+          "destination": "Health",
+          "confidence": "medium"
+        },
+        {
+          "item": "coffee machine descaling.txt",
+          "id": "01a19606-fc26-772c-bfed-dde3b4ddc1ef",
+          "destination": "Manuals",
+          "confidence": "medium"
+        },
+        {
+          "item": "conference registration.txt",
+          "id": "01a19606-fc27-7625-8b68-022070d0e5f7",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "cv alex morgan.md",
+          "id": "01a19606-fc27-7625-8b68-0221c45604b0",
+          "destination": "Work",
+          "confidence": "low"
+        },
+        {
+          "item": "darwin origin chapter 4 notes.md",
+          "id": "01a19606-fc27-7625-8b68-02226fb9bc46",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "dataset description.md",
+          "id": "01a19606-fc27-7625-8b68-02239b6f4f4f",
+          "destination": "Research",
+          "confidence": "medium"
+        },
+        {
+          "item": "dishwasher manual.txt",
+          "id": "01a19606-fc27-7625-8b68-0224a5dc56ca",
+          "destination": "Manuals",
+          "confidence": "medium"
+        },
+        {
+          "item": "draft paper phase response.md",
+          "id": "01a19606-fc27-7625-8b68-0225c82e206a",
+          "destination": "Research",
+          "confidence": "medium"
+        },
+        {
+          "item": "drill safety and warranty.txt",
+          "id": "01a19606-fc27-7625-8b68-022629d851cb",
+          "destination": "Manuals",
+          "confidence": "medium"
+        },
+        {
+          "item": "electricity bill september.txt",
+          "id": "01a19606-fc27-7625-8b68-0227618a44c9",
+          "destination": "Home",
+          "confidence": "medium"
+        },
+        {
+          "item": "email from sam about visit.txt",
+          "id": "01a19606-fc27-7625-8b68-0228006e9ec1",
+          "destination": "Travel",
+          "confidence": "low"
+        },
+        {
+          "item": "employment contract lumen.md",
+          "id": "01a19606-fc27-7625-8b68-02295a40fb58",
+          "destination": "Work",
+          "confidence": "medium"
+        },
+        {
+          "item": "essay on attention.md",
+          "id": "01a19606-fc27-7625-8b68-022a8b1f9ef7",
+          "destination": "Projects",
+          "confidence": "low"
+        },
+        {
+          "item": "export.png",
+          "id": "01a19606-fc27-7625-8b68-022b581aef86",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "flight booking lisbon.txt",
+          "id": "01a19606-fc27-7625-8b68-022c877edf75",
+          "destination": "Travel",
+          "confidence": "medium"
+        },
+        {
+          "item": "fund report q2.txt",
+          "id": "01a19606-fc27-7625-8b68-022dc5f858b7",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "home contents policy.txt",
+          "id": "01a19606-fc27-7625-8b68-022e694bcc00",
+          "destination": "Insurance",
+          "confidence": "medium"
+        },
+        {
+          "item": "home office expenses.md",
+          "id": "01a19606-fc27-7625-8b68-022ff512de10",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "hotel booking porto.txt",
+          "id": "01a19606-fc27-7625-8b68-02301269dcbd",
+          "destination": "Travel",
+          "confidence": "medium"
+        },
+        {
+          "item": "internet contract.txt",
+          "id": "01a19606-fc27-7625-8b68-0231c9b1fa2a",
+          "destination": "Work",
+          "confidence": "medium"
+        },
+        {
+          "item": "invoice monitor arm.md",
+          "id": "01a19606-fc27-7625-8b68-02325b60a857",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "itinerary portugal.md",
+          "id": "01a19606-fc27-7625-8b68-023359df323d",
+          "destination": "Travel",
+          "confidence": "medium"
+        },
+        {
+          "item": "kettle manual.zip",
+          "id": "01a19606-fc27-7625-8b68-0234dd9d6134",
+          "destination": "Manuals",
+          "confidence": "medium"
+        },
+        {
+          "item": "lab notebook oscillators week 12.md",
+          "id": "01a19606-fc27-7625-8b68-0235ffd07080",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "label printer driver.zip",
+          "id": "01a19606-fc27-7625-8b68-02364d57a6a2",
+          "destination": "Projects",
+          "confidence": "low"
+        },
+        {
+          "item": "lamp dimmer firmware.zip",
+          "id": "01a19606-fc27-7625-8b68-0237b965f7cb",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "lemon drizzle cake.txt",
+          "id": "01a19606-fc27-7625-8b68-0238ab7ebc0b",
+          "destination": "Recipes",
+          "confidence": "medium"
+        },
+        {
+          "item": "lentil dal.md",
+          "id": "01a19606-fc27-7625-8b68-0239b3622e4c",
+          "destination": "Recipes",
+          "confidence": "medium"
+        },
+        {
+          "item": "letter from grandma.txt",
+          "id": "01a19606-fc27-7625-8b68-023a6de26935",
+          "destination": "Letters",
+          "confidence": "medium"
+        },
+        {
+          "item": "letter from tax office.txt",
+          "id": "01a19606-fc27-7625-8b68-023b3fdad9bb",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "message to landlord.txt",
+          "id": "01a19606-fc27-7625-8b68-023c07a23927",
+          "destination": "Home",
+          "confidence": "medium"
+        },
+        {
+          "item": "misc notes.txt",
+          "id": "01a19606-fc27-7625-8b68-023dc5b743f3",
+          "destination": "Projects",
+          "confidence": "low"
+        },
+        {
+          "item": "old us tax form.txt",
+          "id": "01a19606-fc27-7625-8b68-023ee2def062",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "order confirmation laptop.txt",
+          "id": "01a19606-fc27-7625-8b68-023ff650d35d",
+          "destination": "Receipts",
+          "confidence": "medium"
+        },
+        {
+          "item": "paper kuramoto synchronization.txt",
+          "id": "01a19606-fc27-7625-8b68-0240ea13c730",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "part_v3_final.stl",
+          "id": "01a19606-fc27-7625-8b68-0241a3fae03c",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "payslip october.txt",
+          "id": "01a19606-fc27-7625-8b68-0242282b0835",
+          "destination": "Work",
+          "confidence": "medium"
+        },
+        {
+          "item": "pension annual statement.txt",
+          "id": "01a19606-fc27-7625-8b68-024351aeb38d",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "performance review 2025.md",
+          "id": "01a19606-fc27-7625-8b68-02446478edfb",
+          "destination": "Work",
+          "confidence": "medium"
+        },
+        {
+          "item": "phone repair receipt.txt",
+          "id": "01a19606-fc27-7625-8b68-0245c14cc6c5",
+          "destination": "Receipts",
+          "confidence": "medium"
+        },
+        {
+          "item": "physio appointment.txt",
+          "id": "01a19606-fc27-7625-8b68-02467c3dd63c",
+          "destination": "Health",
+          "confidence": "medium"
+        },
+        {
+          "item": "plant monitor readme.md",
+          "id": "01a19606-fc27-7625-8b68-0247131e81ae",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "prescription amoxicillin.txt",
+          "id": "01a19606-fc27-7625-8b68-0248c3d2f97b",
+          "destination": "Health",
+          "confidence": "medium"
+        },
+        {
+          "item": "print_0412.stl",
+          "id": "01a19606-fc27-7625-8b68-024921a202b4",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "receipt and manual blender.txt",
+          "id": "01a19606-fc27-7625-8b68-024a8eb7fee2",
+          "destination": "Manuals",
+          "confidence": "medium"
+        },
+        {
+          "item": "receipt desk chair.txt",
+          "id": "01a19606-fc27-7625-8b68-024b71e160f6",
+          "destination": "Receipts",
+          "confidence": "medium"
+        },
+        {
+          "item": "referral letter for physio.txt",
+          "id": "01a19606-fc27-7625-8b68-024c30014059",
+          "destination": "Health",
+          "confidence": "medium"
+        },
+        {
+          "item": "rfc 9110 http semantics notes.md",
+          "id": "01a19606-fc27-7625-8b68-024dd1b68b6c",
+          "destination": "Reading",
+          "confidence": "medium"
+        },
+        {
+          "item": "ring_v2.stl",
+          "id": "01a19606-fc27-7625-8b68-024e8ba5387a",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "router quick start.md",
+          "id": "01a19606-fc27-7625-8b68-024f56125b62",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "scan0007.png",
+          "id": "01a19606-fc27-7625-8b68-02508a58ef6b",
+          "destination": "Letters",
+          "confidence": "medium"
+        },
+        {
+          "item": "scan_0007.stl",
+          "id": "01a19606-fc27-7625-8b68-0251be1c4426",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "short story draft.md",
+          "id": "01a19606-fc27-7625-8b68-0252b19affb8",
+          "destination": "Projects",
+          "confidence": "low"
+        },
+        {
+          "item": "sourdough loaf.md",
+          "id": "01a19606-fc27-7625-8b68-0253610422e9",
+          "destination": "Recipes",
+          "confidence": "medium"
+        },
+        {
+          "item": "talk slides outline.md",
+          "id": "01a19606-fc27-7625-8b68-0254d27f5680",
+          "destination": "Research",
+          "confidence": "medium"
+        },
+        {
+          "item": "tax return summary 2024.md",
+          "id": "01a19606-fc27-7625-8b68-02556d8401c8",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "team meeting notes.md",
+          "id": "01a19606-fc27-7625-8b68-025668e02f53",
+          "destination": "Work",
+          "confidence": "low"
+        },
+        {
+          "item": "tenancy agreement.md",
+          "id": "01a19606-fc27-7625-8b68-02572f8164e3",
+          "destination": "Home",
+          "confidence": "medium"
+        },
+        {
+          "item": "train tickets porto.txt",
+          "id": "01a19606-fc27-7625-8b68-0258c4659653",
+          "destination": "Travel",
+          "confidence": "medium"
+        },
+        {
+          "item": "travel insurance certificate.txt",
+          "id": "01a19606-fc27-7625-8b68-025949b6138d",
+          "destination": "Insurance",
+          "confidence": "medium"
+        },
+        {
+          "item": "travel insurance claim lost bag.md",
+          "id": "01a19606-fc27-7625-8b68-025a68495d43",
+          "destination": "Insurance",
+          "confidence": "medium"
+        },
+        {
+          "item": "untitled scan text.txt",
+          "id": "01a19606-fc27-7625-8b68-025b077ce9f5",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "vaccination record.md",
+          "id": "01a19606-fc27-7625-8b68-025c67b55590",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "wifi and alarm codes.txt",
+          "id": "01a19606-fc27-7625-8b68-025dd1a75ebe",
+          "destination": "Home",
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "provider": "llama",
+      "offer": "granite-4.2-3b",
+      "label": "llama/granite-4.2-3b.gguf",
+      "version": "0.5.1",
+      "value": {
+        "items": 81,
+        "questions": 0,
+        "answerable": 0,
+        "set_aside": 0,
+        "routing_before": 0.7160493827160493,
+        "routing_after": 0.7160493827160493,
+        "correlation": null,
+        "top_k": []
+      },
+      "questions": [],
+      "proposals": [
+        {
+          "item": "2025 bank statement March.txt",
+          "id": "01a19618-1617-73b1-be44-7bb6b05374cf",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "IMG_1502.jpg",
+          "id": "01a19618-1617-73b1-be44-7bb77efed804",
+          "destination": "Recipes",
+          "confidence": "medium"
+        },
+        {
+          "item": "IMG_1876.jpg",
+          "id": "01a19618-1617-73b1-be44-7bb81a00ef5d",
+          "destination": "Travel",
+          "confidence": "low"
+        },
+        {
+          "item": "IMG_2041.jpg",
+          "id": "01a19618-1617-73b1-be44-7bb93ad89293",
+          "destination": "Receipts",
+          "confidence": "medium"
+        },
+        {
+          "item": "IMG_3310.jpg",
+          "id": "01a19618-1617-73b1-be44-7bba7043d735",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "IMG_4127.jpg",
+          "id": "01a19618-1617-73b1-be44-7bbbb7cfe6eb",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "Screenshot 2025-08-28 at 09.14.03.png",
+          "id": "01a19618-1617-73b1-be44-7bbcd1b8728a",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "Screenshot 2025-10-03 at 08.41.55.png",
+          "id": "01a19618-1617-73b1-be44-7bbdd79f4283",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "amplifier build log.txt",
+          "id": "01a19618-1617-73b1-be44-7bbe423ba432",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "birthday card from sister.txt",
+          "id": "01a19618-1617-73b1-be44-7bbf34e674ba",
+          "destination": "Letters",
+          "confidence": "medium"
+        },
+        {
+          "item": "blood test results.txt",
+          "id": "01a19618-1617-73b1-be44-7bc06941be44",
+          "destination": "Health",
+          "confidence": "medium"
+        },
+        {
+          "item": "boiler repair note.txt",
+          "id": "01a19618-1617-73b1-be44-7bc1e7803e11",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "budget app notes.md",
+          "id": "01a19618-1617-73b1-be44-7bc2899f5b3b",
+          "destination": "Finances",
+          "confidence": "low"
+        },
+        {
+          "item": "building notice water off.txt",
+          "id": "01a19618-1617-73b1-be44-7bc3bcf80d9b",
+          "destination": "Home",
+          "confidence": "medium"
+        },
+        {
+          "item": "car insurance renewal.txt",
+          "id": "01a19618-1617-73b1-be44-7bc4301904f8",
+          "destination": "Insurance",
+          "confidence": "medium"
+        },
+        {
+          "item": "card replacement letter.txt",
+          "id": "01a19618-1617-73b1-be44-7bc59971e930",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "cell biology review.txt",
+          "id": "01a19618-1617-73b1-be44-7bc68ffd0db5",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "claim physio costs.md",
+          "id": "01a19618-1617-73b1-be44-7bc7f875b94d",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "coffee machine descaling.txt",
+          "id": "01a19618-1617-73b1-be44-7bc827bd7b4a",
+          "destination": "Manuals",
+          "confidence": "low"
+        },
+        {
+          "item": "conference registration.txt",
+          "id": "01a19618-1617-73b1-be44-7bc9c052d57f",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "cv alex morgan.md",
+          "id": "01a19618-1617-73b1-be44-7bca511db16d",
+          "destination": "Work",
+          "confidence": "medium"
+        },
+        {
+          "item": "darwin origin chapter 4 notes.md",
+          "id": "01a19618-1617-73b1-be44-7bcb97993f80",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "dataset description.md",
+          "id": "01a19618-1617-73b1-be44-7bcc2e7c2964",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "dishwasher manual.txt",
+          "id": "01a19618-1617-73b1-be44-7bcd292fe8f8",
+          "destination": "Manuals",
+          "confidence": "medium"
+        },
+        {
+          "item": "draft paper phase response.md",
+          "id": "01a19618-1617-73b1-be44-7bce0127f3f3",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "drill safety and warranty.txt",
+          "id": "01a19618-1617-73b1-be44-7bcf0f44da9e",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "electricity bill september.txt",
+          "id": "01a19618-1617-73b1-be44-7bd09ee9e0d1",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "email from sam about visit.txt",
+          "id": "01a19618-1617-73b1-be44-7bd1611b122d",
+          "destination": "Letters",
+          "confidence": "medium"
+        },
+        {
+          "item": "employment contract lumen.md",
+          "id": "01a19618-1617-73b1-be44-7bd2121dd766",
+          "destination": "Work",
+          "confidence": "medium"
+        },
+        {
+          "item": "essay on attention.md",
+          "id": "01a19618-1617-73b1-be44-7bd376798c4d",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "export.png",
+          "id": "01a19618-1617-73b1-be44-7bd43dba753a",
+          "destination": "Projects",
+          "confidence": "low"
+        },
+        {
+          "item": "flight booking lisbon.txt",
+          "id": "01a19618-1617-73b1-be44-7bd5cb5b06a4",
+          "destination": "Travel",
+          "confidence": "medium"
+        },
+        {
+          "item": "fund report q2.txt",
+          "id": "01a19618-1617-73b1-be44-7bd6d125f114",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "home contents policy.txt",
+          "id": "01a19618-1617-73b1-be44-7bd719df659b",
+          "destination": "Insurance",
+          "confidence": "medium"
+        },
+        {
+          "item": "home office expenses.md",
+          "id": "01a19618-1617-73b1-be44-7bd8f1e0d9d9",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "hotel booking porto.txt",
+          "id": "01a19618-1617-73b1-be44-7bd95dec18c9",
+          "destination": "Travel",
+          "confidence": "medium"
+        },
+        {
+          "item": "internet contract.txt",
+          "id": "01a19618-1617-73b1-be44-7bda85bf6b02",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "invoice monitor arm.md",
+          "id": "01a19618-1617-73b1-be44-7bdb8da10422",
+          "destination": "Receipts",
+          "confidence": "medium"
+        },
+        {
+          "item": "itinerary portugal.md",
+          "id": "01a19618-1617-73b1-be44-7bdc0dacdf8e",
+          "destination": "Travel",
+          "confidence": "medium"
+        },
+        {
+          "item": "kettle manual.zip",
+          "id": "01a19618-1618-76ee-aa4d-abf816cec199",
+          "destination": "Manuals",
+          "confidence": "medium"
+        },
+        {
+          "item": "lab notebook oscillators week 12.md",
+          "id": "01a19618-1618-76ee-aa4d-abf9e86133cb",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "label printer driver.zip",
+          "id": "01a19618-1618-76ee-aa4d-abfa52b21dd0",
+          "destination": "Manuals",
+          "confidence": "low"
+        },
+        {
+          "item": "lamp dimmer firmware.zip",
+          "id": "01a19618-1618-76ee-aa4d-abfb76cfe8ff",
+          "destination": "Projects",
+          "confidence": "low"
+        },
+        {
+          "item": "lemon drizzle cake.txt",
+          "id": "01a19618-1618-76ee-aa4d-abfc02feaf9b",
+          "destination": "Recipes",
+          "confidence": "medium"
+        },
+        {
+          "item": "lentil dal.md",
+          "id": "01a19618-1618-76ee-aa4d-abfde286a9c8",
+          "destination": "Recipes",
+          "confidence": "medium"
+        },
+        {
+          "item": "letter from grandma.txt",
+          "id": "01a19618-1618-76ee-aa4d-abfeaef9e556",
+          "destination": "Letters",
+          "confidence": "medium"
+        },
+        {
+          "item": "letter from tax office.txt",
+          "id": "01a19618-1618-76ee-aa4d-abff0bcae272",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "message to landlord.txt",
+          "id": "01a19618-1618-76ee-aa4d-ac005ec0b1bf",
+          "destination": "Home",
+          "confidence": "medium"
+        },
+        {
+          "item": "misc notes.txt",
+          "id": "01a19618-1618-76ee-aa4d-ac012b587558",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "old us tax form.txt",
+          "id": "01a19618-1618-76ee-aa4d-ac023647ca2d",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "order confirmation laptop.txt",
+          "id": "01a19618-1618-76ee-aa4d-ac0346452b2d",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "paper kuramoto synchronization.txt",
+          "id": "01a19618-1618-76ee-aa4d-ac042d88418d",
+          "destination": "Reading",
+          "confidence": "medium"
+        },
+        {
+          "item": "part_v3_final.stl",
+          "id": "01a19618-1618-76ee-aa4d-ac058aa5d7af",
+          "destination": "Projects",
+          "confidence": "low"
+        },
+        {
+          "item": "payslip october.txt",
+          "id": "01a19618-1618-76ee-aa4d-ac066199d8c3",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "pension annual statement.txt",
+          "id": "01a19618-1618-76ee-aa4d-ac07ce6428a6",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "performance review 2025.md",
+          "id": "01a19618-1618-76ee-aa4d-ac08c92b798c",
+          "destination": "Work",
+          "confidence": "medium"
+        },
+        {
+          "item": "phone repair receipt.txt",
+          "id": "01a19618-1618-76ee-aa4d-ac094943e5c7",
+          "destination": "Receipts",
+          "confidence": "medium"
+        },
+        {
+          "item": "physio appointment.txt",
+          "id": "01a19618-1618-76ee-aa4d-ac0a5b902e14",
+          "destination": "Health",
+          "confidence": "low"
+        },
+        {
+          "item": "plant monitor readme.md",
+          "id": "01a19618-1618-76ee-aa4d-ac0b16e617e5",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "prescription amoxicillin.txt",
+          "id": "01a19618-1618-76ee-aa4d-ac0c20b084c4",
+          "destination": "Health",
+          "confidence": "medium"
+        },
+        {
+          "item": "print_0412.stl",
+          "id": "01a19618-1618-76ee-aa4d-ac0d51938bc0",
+          "destination": "Projects",
+          "confidence": "low"
+        },
+        {
+          "item": "receipt and manual blender.txt",
+          "id": "01a19618-1618-76ee-aa4d-ac0eadda61bd",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "receipt desk chair.txt",
+          "id": "01a19618-1618-76ee-aa4d-ac0fff053f25",
+          "destination": "Receipts",
+          "confidence": "medium"
+        },
+        {
+          "item": "referral letter for physio.txt",
+          "id": "01a19618-1618-76ee-aa4d-ac106117dabb",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "rfc 9110 http semantics notes.md",
+          "id": "01a19618-1618-76ee-aa4d-ac1119fa4577",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "ring_v2.stl",
+          "id": "01a19618-1618-76ee-aa4d-ac127f30ce5e",
+          "destination": "Projects",
+          "confidence": "low"
+        },
+        {
+          "item": "router quick start.md",
+          "id": "01a19618-1618-76ee-aa4d-ac13abfba737",
+          "destination": "Manuals",
+          "confidence": "medium"
+        },
+        {
+          "item": "scan0007.png",
+          "id": "01a19618-1618-76ee-aa4d-ac146c6c454f",
+          "destination": "Letters",
+          "confidence": "medium"
+        },
+        {
+          "item": "scan_0007.stl",
+          "id": "01a19618-1618-76ee-aa4d-ac15b5266500",
+          "destination": "Projects",
+          "confidence": "low"
+        },
+        {
+          "item": "short story draft.md",
+          "id": "01a19618-1618-76ee-aa4d-ac16c50950a9",
+          "destination": "Projects",
+          "confidence": "low"
+        },
+        {
+          "item": "sourdough loaf.md",
+          "id": "01a19618-1618-76ee-aa4d-ac17104cf6ad",
+          "destination": "Recipes",
+          "confidence": "medium"
+        },
+        {
+          "item": "talk slides outline.md",
+          "id": "01a19618-1618-76ee-aa4d-ac1883ed54e1",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "tax return summary 2024.md",
+          "id": "01a19618-1618-76ee-aa4d-ac1957c8d210",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "team meeting notes.md",
+          "id": "01a19618-1618-76ee-aa4d-ac1a361ceb57",
+          "destination": "Work",
+          "confidence": "low"
+        },
+        {
+          "item": "tenancy agreement.md",
+          "id": "01a19618-1618-76ee-aa4d-ac1bd39ad4c0",
+          "destination": "Home",
+          "confidence": "low"
+        },
+        {
+          "item": "train tickets porto.txt",
+          "id": "01a19618-1618-76ee-aa4d-ac1c03630e4e",
+          "destination": "Travel",
+          "confidence": "medium"
+        },
+        {
+          "item": "travel insurance certificate.txt",
+          "id": "01a19618-1618-76ee-aa4d-ac1d644c718a",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "travel insurance claim lost bag.md",
+          "id": "01a19618-1618-76ee-aa4d-ac1e688e424b",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "untitled scan text.txt",
+          "id": "01a19618-1618-76ee-aa4d-ac1fbef09e1e",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "vaccination record.md",
+          "id": "01a19618-1618-76ee-aa4d-ac20354e5ed6",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "wifi and alarm codes.txt",
+          "id": "01a19618-1618-76ee-aa4d-ac210c0d74e1",
+          "destination": "Holding",
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "provider": "llama",
+      "offer": "qwen3.5-4b",
+      "label": "llama/qwen3.5-4b.gguf",
+      "version": "0.5.1",
+      "value": {
+        "items": 81,
+        "questions": 0,
+        "answerable": 0,
+        "set_aside": 0,
+        "routing_before": 0.8827160493827161,
+        "routing_after": 0.8827160493827161,
+        "correlation": null,
+        "top_k": []
+      },
+      "questions": [],
+      "proposals": [
+        {
+          "item": "2025 bank statement March.txt",
+          "id": "01a1962c-7a7f-77f6-9f66-dee5242df8f7",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "IMG_1502.jpg",
+          "id": "01a1962c-7a7f-77f6-9f66-dee6b7551e55",
+          "destination": "Recipes",
+          "confidence": "medium"
+        },
+        {
+          "item": "IMG_1876.jpg",
+          "id": "01a1962c-7a7f-77f6-9f66-dee737e9cab9",
+          "destination": "Travel",
+          "confidence": "medium"
+        },
+        {
+          "item": "IMG_2041.jpg",
+          "id": "01a1962c-7a7f-77f6-9f66-dee8838c2ab1",
+          "destination": "Receipts",
+          "confidence": "medium"
+        },
+        {
+          "item": "IMG_3310.jpg",
+          "id": "01a1962c-7a7f-77f6-9f66-dee94181bbc0",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "IMG_4127.jpg",
+          "id": "01a1962c-7a7f-77f6-9f66-deea8bea89f3",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "Screenshot 2025-08-28 at 09.14.03.png",
+          "id": "01a1962c-7a7f-77f6-9f66-deeb348ce8a8",
+          "destination": "Home",
+          "confidence": "medium"
+        },
+        {
+          "item": "Screenshot 2025-10-03 at 08.41.55.png",
+          "id": "01a1962c-7a7f-77f6-9f66-deec9b14617b",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "amplifier build log.txt",
+          "id": "01a1962c-7a7f-77f6-9f66-deedaf776fde",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "birthday card from sister.txt",
+          "id": "01a1962c-7a7f-77f6-9f66-deee48a2fc6d",
+          "destination": "Letters",
+          "confidence": "medium"
+        },
+        {
+          "item": "blood test results.txt",
+          "id": "01a1962c-7a7f-77f6-9f66-deefb19fbe4c",
+          "destination": "Health",
+          "confidence": "medium"
+        },
+        {
+          "item": "boiler repair note.txt",
+          "id": "01a1962c-7a7f-77f6-9f66-def0e50bd66d",
+          "destination": "Home",
+          "confidence": "medium"
+        },
+        {
+          "item": "budget app notes.md",
+          "id": "01a1962c-7a7f-77f6-9f66-def103d08f9e",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "building notice water off.txt",
+          "id": "01a1962c-7a7f-77f6-9f66-def264b99480",
+          "destination": "Home",
+          "confidence": "medium"
+        },
+        {
+          "item": "car insurance renewal.txt",
+          "id": "01a1962c-7a7f-77f6-9f66-def3bb0dcd4c",
+          "destination": "Insurance",
+          "confidence": "medium"
+        },
+        {
+          "item": "card replacement letter.txt",
+          "id": "01a1962c-7a7f-77f6-9f66-def431fbbb26",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "cell biology review.txt",
+          "id": "01a1962c-7a7f-77f6-9f66-def5a05399e8",
+          "destination": "Reading",
+          "confidence": "medium"
+        },
+        {
+          "item": "claim physio costs.md",
+          "id": "01a1962c-7a7f-77f6-9f66-def6c9c6810b",
+          "destination": "Insurance",
+          "confidence": "medium"
+        },
+        {
+          "item": "coffee machine descaling.txt",
+          "id": "01a1962c-7a7f-77f6-9f66-def7030565c4",
+          "destination": "Manuals",
+          "confidence": "medium"
+        },
+        {
+          "item": "conference registration.txt",
+          "id": "01a1962c-7a7f-77f6-9f66-def81d9be424",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "cv alex morgan.md",
+          "id": "01a1962c-7a7f-77f6-9f66-def9daa728cc",
+          "destination": "Work",
+          "confidence": "medium"
+        },
+        {
+          "item": "darwin origin chapter 4 notes.md",
+          "id": "01a1962c-7a7f-77f6-9f66-defab76c87bf",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "dataset description.md",
+          "id": "01a1962c-7a7f-77f6-9f66-defb55f425b9",
+          "destination": "Research",
+          "confidence": "medium"
+        },
+        {
+          "item": "dishwasher manual.txt",
+          "id": "01a1962c-7a7f-77f6-9f66-defc3b9165fb",
+          "destination": "Manuals",
+          "confidence": "medium"
+        },
+        {
+          "item": "draft paper phase response.md",
+          "id": "01a1962c-7a7f-77f6-9f66-defd8840aacb",
+          "destination": "Research",
+          "confidence": "medium"
+        },
+        {
+          "item": "drill safety and warranty.txt",
+          "id": "01a1962c-7a7f-77f6-9f66-defeaba0659c",
+          "destination": "Manuals",
+          "confidence": "medium"
+        },
+        {
+          "item": "electricity bill september.txt",
+          "id": "01a1962c-7a7f-77f6-9f66-deffe92e143f",
+          "destination": "Home",
+          "confidence": "medium"
+        },
+        {
+          "item": "email from sam about visit.txt",
+          "id": "01a1962c-7a7f-77f6-9f66-df0037db7674",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "employment contract lumen.md",
+          "id": "01a1962c-7a7f-77f6-9f66-df01c829ef69",
+          "destination": "Work",
+          "confidence": "medium"
+        },
+        {
+          "item": "essay on attention.md",
+          "id": "01a1962c-7a7f-77f6-9f66-df025cfecfe6",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "export.png",
+          "id": "01a1962c-7a7f-77f6-9f66-df0380178ada",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "flight booking lisbon.txt",
+          "id": "01a1962c-7a7f-77f6-9f66-df040d4fa295",
+          "destination": "Travel",
+          "confidence": "medium"
+        },
+        {
+          "item": "fund report q2.txt",
+          "id": "01a1962c-7a7f-77f6-9f66-df056bfdebec",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "home contents policy.txt",
+          "id": "01a1962c-7a7f-77f6-9f66-df060255f354",
+          "destination": "Insurance",
+          "confidence": "medium"
+        },
+        {
+          "item": "home office expenses.md",
+          "id": "01a1962c-7a7f-77f6-9f66-df074527239d",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "hotel booking porto.txt",
+          "id": "01a1962c-7a7f-77f6-9f66-df0872894801",
+          "destination": "Travel",
+          "confidence": "medium"
+        },
+        {
+          "item": "internet contract.txt",
+          "id": "01a1962c-7a7f-77f6-9f66-df09ff5f493f",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "invoice monitor arm.md",
+          "id": "01a1962c-7a7f-77f6-9f66-df0a1a2d750a",
+          "destination": "Receipts",
+          "confidence": "medium"
+        },
+        {
+          "item": "itinerary portugal.md",
+          "id": "01a1962c-7a7f-77f6-9f66-df0b2806c5d0",
+          "destination": "Travel",
+          "confidence": "medium"
+        },
+        {
+          "item": "kettle manual.zip",
+          "id": "01a1962c-7a80-746e-bde1-c0e006e5885d",
+          "destination": "Manuals",
+          "confidence": "medium"
+        },
+        {
+          "item": "lab notebook oscillators week 12.md",
+          "id": "01a1962c-7a80-746e-bde1-c0e19d16cea1",
+          "destination": "Research",
+          "confidence": "medium"
+        },
+        {
+          "item": "label printer driver.zip",
+          "id": "01a1962c-7a80-746e-bde1-c0e2f5569295",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "lamp dimmer firmware.zip",
+          "id": "01a1962c-7a80-746e-bde1-c0e32e7cc658",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "lemon drizzle cake.txt",
+          "id": "01a1962c-7a80-746e-bde1-c0e44029d67d",
+          "destination": "Recipes",
+          "confidence": "medium"
+        },
+        {
+          "item": "lentil dal.md",
+          "id": "01a1962c-7a80-746e-bde1-c0e5bb12b0be",
+          "destination": "Recipes",
+          "confidence": "medium"
+        },
+        {
+          "item": "letter from grandma.txt",
+          "id": "01a1962c-7a80-746e-bde1-c0e68777e9c9",
+          "destination": "Letters",
+          "confidence": "medium"
+        },
+        {
+          "item": "letter from tax office.txt",
+          "id": "01a1962c-7a80-746e-bde1-c0e765a7648b",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "message to landlord.txt",
+          "id": "01a1962c-7a80-746e-bde1-c0e807facb1b",
+          "destination": "Home",
+          "confidence": "medium"
+        },
+        {
+          "item": "misc notes.txt",
+          "id": "01a1962c-7a80-746e-bde1-c0e90dd5fa76",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "old us tax form.txt",
+          "id": "01a1962c-7a80-746e-bde1-c0ea6c8ad11e",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "order confirmation laptop.txt",
+          "id": "01a1962c-7a80-746e-bde1-c0eb561715cb",
+          "destination": "Receipts",
+          "confidence": "medium"
+        },
+        {
+          "item": "paper kuramoto synchronization.txt",
+          "id": "01a1962c-7a80-746e-bde1-c0ec5c76595c",
+          "destination": "Reading",
+          "confidence": "medium"
+        },
+        {
+          "item": "part_v3_final.stl",
+          "id": "01a1962c-7a80-746e-bde1-c0ed8f28e8e2",
+          "destination": "Projects",
+          "confidence": "low"
+        },
+        {
+          "item": "payslip october.txt",
+          "id": "01a1962c-7a80-746e-bde1-c0eea75670b7",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "pension annual statement.txt",
+          "id": "01a1962c-7a80-746e-bde1-c0eff31060fa",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "performance review 2025.md",
+          "id": "01a1962c-7a80-746e-bde1-c0f048b3e42f",
+          "destination": "Work",
+          "confidence": "medium"
+        },
+        {
+          "item": "phone repair receipt.txt",
+          "id": "01a1962c-7a80-746e-bde1-c0f199ea8065",
+          "destination": "Receipts",
+          "confidence": "medium"
+        },
+        {
+          "item": "physio appointment.txt",
+          "id": "01a1962c-7a80-746e-bde1-c0f2bda43a29",
+          "destination": "Health",
+          "confidence": "medium"
+        },
+        {
+          "item": "plant monitor readme.md",
+          "id": "01a1962c-7a80-746e-bde1-c0f3de69386e",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "prescription amoxicillin.txt",
+          "id": "01a1962c-7a80-746e-bde1-c0f49f6b327b",
+          "destination": "Health",
+          "confidence": "medium"
+        },
+        {
+          "item": "print_0412.stl",
+          "id": "01a1962c-7a80-746e-bde1-c0f582dc425b",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "receipt and manual blender.txt",
+          "id": "01a1962c-7a80-746e-bde1-c0f60a7cbdec",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "receipt desk chair.txt",
+          "id": "01a1962c-7a80-746e-bde1-c0f76d6e7373",
+          "destination": "Receipts",
+          "confidence": "medium"
+        },
+        {
+          "item": "referral letter for physio.txt",
+          "id": "01a1962c-7a80-746e-bde1-c0f8e102d6bb",
+          "destination": "Health",
+          "confidence": "medium"
+        },
+        {
+          "item": "rfc 9110 http semantics notes.md",
+          "id": "01a1962c-7a80-746e-bde1-c0f90f57ace8",
+          "destination": "Reading",
+          "confidence": "medium"
+        },
+        {
+          "item": "ring_v2.stl",
+          "id": "01a1962c-7a80-746e-bde1-c0fadef7a2cb",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "router quick start.md",
+          "id": "01a1962c-7a80-746e-bde1-c0fbfe3ecea9",
+          "destination": "Manuals",
+          "confidence": "medium"
+        },
+        {
+          "item": "scan0007.png",
+          "id": "01a1962c-7a80-746e-bde1-c0fc75a7514b",
+          "destination": "Letters",
+          "confidence": "medium"
+        },
+        {
+          "item": "scan_0007.stl",
+          "id": "01a1962c-7a80-746e-bde1-c0fdb888c563",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "short story draft.md",
+          "id": "01a1962c-7a80-746e-bde1-c0fe68f8b6ab",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "sourdough loaf.md",
+          "id": "01a1962c-7a80-746e-bde1-c0ffbcfd2d07",
+          "destination": "Recipes",
+          "confidence": "medium"
+        },
+        {
+          "item": "talk slides outline.md",
+          "id": "01a1962c-7a80-746e-bde1-c1007dbcd08a",
+          "destination": "Research",
+          "confidence": "medium"
+        },
+        {
+          "item": "tax return summary 2024.md",
+          "id": "01a1962c-7a80-746e-bde1-c101b70c6e3c",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "team meeting notes.md",
+          "id": "01a1962c-7a80-746e-bde1-c1024202f01c",
+          "destination": "Work",
+          "confidence": "medium"
+        },
+        {
+          "item": "tenancy agreement.md",
+          "id": "01a1962c-7a80-746e-bde1-c103f567cdcc",
+          "destination": "Home",
+          "confidence": "medium"
+        },
+        {
+          "item": "train tickets porto.txt",
+          "id": "01a1962c-7a80-746e-bde1-c104b2b8f71e",
+          "destination": "Travel",
+          "confidence": "medium"
+        },
+        {
+          "item": "travel insurance certificate.txt",
+          "id": "01a1962c-7a80-746e-bde1-c10516ba84aa",
+          "destination": "Insurance",
+          "confidence": "medium"
+        },
+        {
+          "item": "travel insurance claim lost bag.md",
+          "id": "01a1962c-7a80-746e-bde1-c106a020fdd4",
+          "destination": "Insurance",
+          "confidence": "medium"
+        },
+        {
+          "item": "untitled scan text.txt",
+          "id": "01a1962c-7a80-746e-bde1-c107d3e8f863",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "vaccination record.md",
+          "id": "01a1962c-7a80-746e-bde1-c108ceba200f",
+          "destination": "Health",
+          "confidence": "medium"
+        },
+        {
+          "item": "wifi and alarm codes.txt",
+          "id": "01a1962c-7a80-746e-bde1-c109aa59549f",
+          "destination": "Home",
+          "confidence": "medium"
+        }
+      ]
+    }
+  ]
+}
