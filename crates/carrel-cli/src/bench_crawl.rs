@@ -239,8 +239,9 @@ fn unusable(seconds: f64, error: String) -> Judged {
     }
 }
 
-/// The judgments saved by an earlier run, skipping a line cut short when it was stopped.
-fn load_saved(path: &Path) -> BTreeMap<String, Judged> {
+/// The judgments saved by an earlier run, skipping a line cut short when it was stopped. The
+/// restructure benchmark reads them too, as each model's crawler verdicts.
+pub(crate) fn load_saved(path: &Path) -> BTreeMap<String, Judged> {
     let Ok(text) = std::fs::read_to_string(path) else {
         return BTreeMap::new();
     };

@@ -54,8 +54,9 @@ fn item(collection: &'static str, name: &str, tags: &'static [&'static str], v: 
     }
 }
 
-/// Reading holds six bird notes (one a sealed bundle) and six star notes (one checked out);
-/// Notes holds two garden notes that belong with Projects's four.
+/// Reading holds six bird notes (one a sealed bundle) and six star notes (one checked out),
+/// more than the test archive's crowded collection holds ([`setup_with`]); Notes holds two
+/// garden notes that belong with Projects's four.
 fn items() -> Vec<Item> {
     let mut items = Vec::new();
     for n in 1..=6 {
@@ -201,6 +202,15 @@ fn setup_with(items: &[Item], collections: &[(&str, &str)]) -> Setup {
         std::fs::write(folder.join(card), card_text(item, id, &links)).unwrap();
         vectors.insert(id, item.vector.to_vec());
     }
+    // A collection of more than ten items is crowded here, so Reading's twelve are worth
+    // subdividing.
+    let settings = root.join("_System/settings.json");
+    let mut json: Value = std::fs::read_to_string(&settings)
+        .ok()
+        .and_then(|text| serde_json::from_str(&text).ok())
+        .unwrap_or_else(|| json!({}));
+    json["signals"] = json!({"crowded_items": 10});
+    std::fs::write(&settings, serde_json::to_string_pretty(&json).unwrap()).unwrap();
     let archive = Archive::open(&root).unwrap();
     carrel_core::listing::refresh(&archive).unwrap();
     let holder = Holder {

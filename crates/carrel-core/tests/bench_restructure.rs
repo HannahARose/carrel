@@ -7,8 +7,10 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
 use carrel_core::bench::Answers;
-use carrel_core::bench::crawl::{Muddle, build};
-use carrel_core::bench::restructure::{after, at_eagerness, moves, score, shape};
+use carrel_core::bench::crawl::{Judged, Misplaced, Muddle, build};
+use carrel_core::bench::restructure::{
+    after, at_eagerness, moves, score, shape, use_crawler_verdicts,
+};
 use carrel_core::card::{Extra, Id};
 use carrel_core::restructure::eagerness::{Eagerness, Source};
 use carrel_core::restructure::section::{
@@ -374,13 +376,70 @@ fn embedding_like_vectors(
         .collect()
 }
 
+/// What a crawler like the benchmark's recommended one concludes on the muddled archive, by
+/// file name: most misplaced items flagged and sent where they belong, with its usual mistakes.
+/// The missing collection's items are flagged but sent to Projects, there being nowhere better,
+/// and one of them passes; a dumped manual and a scattered paper are sent to the wrong place;
+/// and a few well-placed items are flagged and sent where they don't belong.
+fn crawler_like(answers: &Answers, muddle: &Muddle) -> BTreeMap<String, Judged> {
+    let judged = |fits: bool, better: Option<&str>| Judged {
+        fits: Some(fits),
+        better: better.map(str::to_owned),
+        confidence: 0.9,
+        reason: String::new(),
+        seconds: 1.0,
+        error: None,
+    };
+    let false_alarms = [
+        ("payslip october.txt", "Finances"),
+        ("LIGO open data tutorial.md", "Projects"),
+        ("Larkspur Road deposit return.txt", "Receipts"),
+        ("conference registration.txt", "Projects"),
+    ];
+    muddle
+        .places(answers)
+        .into_iter()
+        .map(|(file, (_, misplaced))| {
+            let intended = answers.items[&file].destinations[0].as_str();
+            let gave = match (misplaced, file.as_str()) {
+                (Some(Misplaced::Missing), "IMG_1502.jpg") => judged(true, None),
+                (Some(Misplaced::Missing), _) => judged(false, Some("Projects")),
+                (_, "drill safety and warranty.txt") => judged(false, Some("Receipts")),
+                (_, "paper kuramoto synchronization.txt") => judged(false, Some("Research")),
+                (Some(_), _) => judged(false, Some(intended)),
+                (None, _) => match false_alarms.iter().find(|(f, _)| *f == file) {
+                    Some((_, to)) => judged(false, Some(to)),
+                    None => judged(true, None),
+                },
+            };
+            (file, gave)
+        })
+        .collect()
+}
+
+/// The muddled archive's items moved by `proposal`'s changes, each change's sorted.
+fn moved_together(proposal: &Proposal) -> Vec<(String, Vec<Id>)> {
+    proposal
+        .changes
+        .iter()
+        .filter_map(|c| match &c.change {
+            Edit::MoveItems { to } => {
+                let mut ids: Vec<Id> = c.items.iter().map(|t| t.id).collect();
+                ids.sort();
+                Some((to.clone(), ids))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
 #[test]
-fn numbers_alone_at_eager_bring_back_the_missing_collection_from_embedding_like_vectors() {
+fn the_crawlers_verdicts_bring_back_the_missing_and_emptied_collections() {
     let dir = tempfile::tempdir().unwrap();
     let answers = Answers::load(&bench().join("answers.yaml")).unwrap();
     let muddle = Muddle::load(&bench().join("muddle.yaml")).unwrap();
     let (archive, files) = muddled(dir.path());
-    let archive = at_eagerness(&archive, Eagerness::Eager).unwrap();
+    let places = muddle.places(&answers);
     let collections: Vec<String> = archive
         .collections()
         .unwrap()
@@ -389,20 +448,6 @@ fn numbers_alone_at_eager_bring_back_the_missing_collection_from_embedding_like_
         .chain(["Recipes".to_owned()])
         .collect();
     let vectors = embedding_like_vectors(&files, &answers, &collections);
-    let proposal = propose_section(
-        &archive,
-        "",
-        &vectors,
-        None,
-        &SectionOptions::for_archive(&archive),
-    )
-    .unwrap();
-    let scored = score(&proposal, &files, &muddle.places(&answers), &answers, 0.0);
-    assert!(scored.recovered, "{scored:?}");
-    assert_eq!(scored.broken, 0, "{scored:?}");
-
-    // The missing collection's items, waiting in Home, move together into a new collection
-    // of their own, and so do the items dumped there from Manuals.
     let intended = |collection: &str| -> Vec<Id> {
         files
             .iter()
@@ -412,36 +457,144 @@ fn numbers_alone_at_eager_bring_back_the_missing_collection_from_embedding_like_
             .map(|(id, _)| *id)
             .collect()
     };
-    let moved: Vec<Vec<Id>> = proposal
-        .changes
-        .iter()
-        .filter(|c| matches!(c.change, Edit::MoveItems { .. }))
-        .map(|c| {
-            let mut ids: Vec<Id> = c.items.iter().map(|t| t.id).collect();
-            ids.sort();
-            ids
-        })
-        .collect();
-    assert!(moved.contains(&intended("Recipes")), "{moved:?}");
-    assert!(moved.contains(&intended("Manuals")), "{moved:?}");
-    // The Allotment series is alike, but already in Home with items like it: splitting it off
-    // brings nothing closer together.
-    let allotment: Vec<Id> = files
-        .iter()
-        .filter(|(_, f)| f.starts_with("Allotment"))
-        .map(|(id, _)| *id)
-        .collect();
+    let propose = |level| {
+        let archive = at_eagerness(&archive, level).unwrap();
+        propose_section(
+            &archive,
+            "",
+            &vectors,
+            None,
+            &SectionOptions::for_archive(&archive),
+        )
+        .unwrap()
+    };
+
+    // The numbers alone can't tell the missing Recipes, waiting in Home, from a part of Home,
+    // so they leave both alone, and break nothing.
+    let alone = propose(Eagerness::Eager);
+    let scored = score(&alone, &files, &places, &answers, 0.0);
+    assert_eq!(scored.broken, 0, "{scored:?}");
     assert!(
-        moved
+        moved_together(&alone)
             .iter()
-            .all(|m| !allotment.iter().all(|a| m.contains(a))),
-        "{moved:?}"
+            .all(|(_, ids)| *ids != intended("Recipes")),
+        "{:?}",
+        scored.changed
     );
-    assert!(
-        scored.held_back.iter().all(|h| !h.contains("116 items")),
-        "the archive isn't one group: {:?}",
-        scored.held_back
-    );
+
+    let crawled = crawler_like(&answers, &muddle);
+    use_crawler_verdicts(&archive, &files, &places, Some(("crawler", &crawled))).unwrap();
+    for level in [Eagerness::Balanced, Eagerness::Eager] {
+        let proposal = propose(level);
+        let scored = score(&proposal, &files, &places, &answers, 0.0);
+        assert!(scored.recovered, "{level:?}: {scored:?}");
+        assert_eq!(scored.broken, 0, "{level:?}: {scored:?}");
+        let moved = moved_together(&proposal);
+        // The crawler said most of Recipes doesn't fit Home but had nowhere better for it, so
+        // it becomes a collection of its own inside Home.
+        assert!(
+            moved
+                .iter()
+                .any(|(to, ids)| to.starts_with("Home/") && *ids == intended("Recipes")),
+            "{level:?}: {:?}",
+            scored.changed
+        );
+        // The manuals go back to the emptied Manuals: those the crawler sends there, and the
+        // one it sent to Receipts, which the numbers say is like them and nothing in Home.
+        assert!(
+            moved
+                .iter()
+                .any(|(to, ids)| to == "Manuals" && *ids == intended("Manuals")),
+            "{level:?}: {:?}",
+            scored.changed
+        );
+        // Items scattered on their own go back, but its false alarms stay, being more like
+        // the items where they are.
+        for file in ["receipt desk chair.txt", "letter from grandma.txt"] {
+            let item = files.iter().find(|(_, f)| *f == file).unwrap().0;
+            assert!(
+                moved.iter().any(|(_, ids)| ids.contains(item)),
+                "{level:?}: {file}: {:?}",
+                scored.changed
+            );
+        }
+        assert!(scored.fixed >= 10, "{level:?}: {scored:?}");
+    }
+    // Without them again, it's the numbers' proposal again.
+    use_crawler_verdicts(&archive, &files, &places, None).unwrap();
+    assert_eq!(propose(Eagerness::Eager).changes, alone.changes);
+}
+
+/// Card vectors made from the words of the text each card's embedding is made from
+/// (`index::chunk::card_text`), its collection included, with a direction they all share:
+/// cruder than an embedding model's, but with the same failings that grouping on real ones
+/// showed on the muddled archive. Items in one collection look alike for being there, and
+/// items about one subject in other words don't look alike at all.
+#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+fn word_vectors(archive: &carrel_core::archive::Archive) -> HashMap<Id, Vec<f32>> {
+    const DIMENSIONS: usize = 1024;
+    let mut vectors = HashMap::new();
+    for item in archive.items().unwrap() {
+        let text = std::fs::read_to_string(archive.root().join(&item.card)).unwrap();
+        let card = carrel_core::card_file::CardFile::parse(&text).unwrap();
+        let collection = item.card.rsplit_once('/').map_or("", |(c, _)| c);
+        let embedded = carrel_core::index::chunk::card_text(card.card(), collection);
+        let mut v = vec![0.0_f32; DIMENSIONS + 1];
+        for word in embedded
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|w| w.len() > 2)
+        {
+            // Words alike at the start count as one, as a crude stem.
+            let stem: String = word.to_lowercase().chars().take(6).collect();
+            let hash = stem.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
+                (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
+            });
+            v[(hash % DIMENSIONS as u64) as usize] += 1.0;
+        }
+        let length = v.iter().map(|x| x * x).sum::<f32>().sqrt().max(1e-6);
+        for x in &mut v {
+            *x /= length;
+        }
+        v[DIMENSIONS] = 0.9;
+        vectors.insert(item.id, v);
+    }
+    vectors
+}
+
+#[test]
+fn on_vectors_that_cant_see_the_shape_numbers_alone_break_nothing_and_the_crawler_helps() {
+    let dir = tempfile::tempdir().unwrap();
+    let answers = Answers::load(&bench().join("answers.yaml")).unwrap();
+    let muddle = Muddle::load(&bench().join("muddle.yaml")).unwrap();
+    let (archive, files) = muddled(dir.path());
+    let places = muddle.places(&answers);
+    let vectors = word_vectors(&archive);
+    let propose = |level| {
+        let archive = at_eagerness(&archive, level).unwrap();
+        let proposal = propose_section(
+            &archive,
+            "",
+            &vectors,
+            None,
+            &SectionOptions::for_archive(&archive),
+        )
+        .unwrap();
+        score(&proposal, &files, &places, &answers, 0.0)
+    };
+    for level in Eagerness::ALL {
+        let scored = propose(level);
+        assert_eq!(scored.broken, 0, "{level:?}: {scored:?}");
+        assert!(scored.after.f1 >= scored.before.f1, "{level:?}: {scored:?}");
+    }
+    let crawled = crawler_like(&answers, &muddle);
+    use_crawler_verdicts(&archive, &files, &places, Some(("crawler", &crawled))).unwrap();
+    for level in Eagerness::ALL {
+        let scored = propose(level);
+        assert_eq!(scored.broken, 0, "{level:?}: {scored:?}");
+        assert!(scored.recovered, "{level:?}: {scored:?}");
+    }
+    let balanced = propose(Eagerness::Balanced);
+    assert!(balanced.fixed >= 5, "{balanced:?}");
 }
 
 /// A text model that names no groups and gets lost in every tree, so no shape is easier to
