@@ -74,7 +74,9 @@ pub fn restructure_bench(args: &BenchArgs, json: bool) -> Result<Report, Failure
     std::fs::create_dir_all(&runs).map_err(|e| Failure::io(&runs, &e))?;
 
     let mut rows = Vec::new();
-    let wordings: Vec<Option<Model>> = std::iter::once(None).chain(models.into_iter().map(Some)).collect();
+    let wordings: Vec<Option<Model>> = std::iter::once(None)
+        .chain(models.into_iter().map(Some))
+        .collect();
     for model in wordings {
         let saved_path = runs.join(match &model {
             Some(m) => format!("{}--{}.json", file_safe(&m.provider), file_safe(&m.offer)),
@@ -180,8 +182,14 @@ fn vectors(
     let existing = Index::open(archive, &model).map_err(|e| crate::index::failure(e, &model))?;
     let mut index = existing.unwrap_or_else(|| Index::new(archive, &model));
     crate::index::catch_up(archive, registry, &mut index, json)?;
-    notes.push(format!("Items were grouped by their cards' {model} vectors and the tag and link graph."));
-    Ok(card_vectors(&index, &Graph::build(&Catalog::read(archive)?), ""))
+    notes.push(format!(
+        "Items were grouped by their cards' {model} vectors and the tag and link graph."
+    ));
+    Ok(card_vectors(
+        &index,
+        &Graph::build(&Catalog::read(archive)?),
+        "",
+    ))
 }
 
 /// The scores saved by an earlier run for one model, by eagerness.
@@ -280,7 +288,11 @@ fn report_markdown(rows: &[Row], notes: &[String]) -> String {
             writeln!(text, "- {per:.1} weighted moves for each item it fixes").unwrap();
         }
         if let Some((tried, now, after)) = s.findability {
-            writeln!(text, "- Findability: {now} of {tried} found now, {after} after").unwrap();
+            writeln!(
+                text,
+                "- Findability: {now} of {tried} found now, {after} after"
+            )
+            .unwrap();
         }
         if let Some(why) = &s.untested {
             writeln!(text, "- Untested: {why}").unwrap();

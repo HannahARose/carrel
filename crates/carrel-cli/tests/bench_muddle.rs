@@ -148,20 +148,30 @@ fn bench_restructure_scores_a_proposal_at_each_eagerness_and_reuses_them() {
     assert!(text.contains("| numbers alone | settled |"), "{text}");
     assert!(text.contains("echo-embed vectors"), "{text}");
     let report = std::fs::read_to_string(out.join("restructure/report.md")).unwrap();
-    assert!(report.contains("# Restructure benchmark report"), "{report}");
+    assert!(
+        report.contains("# Restructure benchmark report"),
+        "{report}"
+    );
     let results: Value = serde_json::from_str(
         &std::fs::read_to_string(out.join("restructure/results.json")).unwrap(),
     )
     .unwrap();
     let proposals = results["proposals"].as_array().unwrap();
-    assert_eq!(proposals.len(), 6, "numbers alone and echo, at three eagernesses each");
+    assert_eq!(
+        proposals.len(),
+        6,
+        "numbers alone and echo, at three eagernesses each"
+    );
     assert_eq!(proposals[0]["score"]["misplaced"], 18);
     assert_eq!(proposals[0]["label"], "numbers alone");
     for numbers in &proposals[..3] {
         let score = &numbers["score"];
         assert!(
             score["changes"] == 0
-                || score["untested"].as_str().unwrap().contains("no text model"),
+                || score["untested"]
+                    .as_str()
+                    .unwrap()
+                    .contains("no text model"),
             "{score}"
         );
     }

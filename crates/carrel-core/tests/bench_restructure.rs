@@ -184,7 +184,7 @@ fn a_proposal_that_puts_the_muddle_right_recovers_the_shape_and_counts_its_moves
     // under a name of the model's own; the dumped manuals are left.
     let mut proposal = Proposal::new(ProposalKind::Section, "");
     let mut n = 0;
-    for (file, _) in &muddle.scattered {
+    for file in muddle.scattered.keys() {
         n += 1;
         let to = answers.items[file].destinations[0].clone();
         proposal.changes.push(change(
