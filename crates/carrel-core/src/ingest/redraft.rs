@@ -257,7 +257,9 @@ fn merge(
     attempts.append(&mut new.attempts);
     new.attempts = attempts;
     for (key, value) in &old.extra {
-        new.extra.entry(key.clone()).or_insert_with(|| value.clone());
+        new.extra
+            .entry(key.clone())
+            .or_insert_with(|| value.clone());
     }
     if let Some(card) = crate::desk::carried_card(&old.extra) {
         crate::desk::carry(&mut new, &card);
@@ -352,4 +354,3 @@ fn keep_card_fields(old: &ReviewEntry, new: &mut ReviewEntry, kept: &[&str]) {
         }
     }
 }
-

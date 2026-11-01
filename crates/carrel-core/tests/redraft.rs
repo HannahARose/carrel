@@ -239,7 +239,9 @@ fn drafting_again_keeps_the_id_batch_and_the_owners_fields() {
     assert_eq!(&saved, again);
     let (all, _) = ReviewQueue::of(&s.archive).list().unwrap();
     assert_eq!(
-        all.iter().filter(|e| e.source.path == again.source.path).count(),
+        all.iter()
+            .filter(|e| e.source.path == again.source.path)
+            .count(),
         1,
         "drafted again in place, not added"
     );

@@ -127,6 +127,9 @@ pub struct Proposal {
     pub compressed: Option<CompressedChoice>,
     /// Whether "approve all with high confidence" approves it.
     pub high: bool,
+    /// Whether its card or collection couldn't be settled, as when no text model could be
+    /// reached, so Draft Again is offered first.
+    pub draft_again: bool,
 }
 
 impl From<&ReviewEntry> for Proposal {
@@ -167,6 +170,7 @@ impl From<&ReviewEntry> for Proposal {
                 files: plan.files,
             }),
             high: actions::is_high(entry),
+            draft_again: carrel_core::ingest::redraft::wants_redraft(entry),
         }
     }
 }

@@ -4171,9 +4171,37 @@ fn review_redraft_needs_a_model_and_says_which() {
         &empty,
         &["review", "redraft", "--all-failed"],
     );
-    assert_eq!(all.status.code(), Some(1), "the same problem for --all-failed");
+    assert_eq!(
+        all.status.code(),
+        Some(1),
+        "the same problem for --all-failed"
+    );
 
     let unchanged = sandbox.json(&root, &["review", "show", short]);
     assert_eq!(unchanged["id"], id.as_str());
     assert_eq!(unchanged["state"], "needs-owner");
+}
+
+/// `carrel questions` names where each question's item is, so it can be opened (#446).
+#[test]
+fn questions_name_the_path_of_what_they_ask_about() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.sample();
+    sandbox.ok(sandbox.dir.path(), &["init", root.to_str().unwrap()]);
+    sandbox.ok(&root, &["status"]);
+    let listed = sandbox.json(&root, &["questions"]);
+    let question = listed["questions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|q| q["question"] == "What was this project for?")
+        .expect("the question about the notes")
+        .clone();
+    let subject = &question["subjects"][0];
+    assert_eq!(subject["card"], ASKED_ABOUT);
+    assert_eq!(subject["restricted"], false);
+    let path = subject["path"].as_str().unwrap();
+    assert!(path.ends_with("Projects/Hardware/notes"), "{path}");
+    let text = sandbox.ok(&root, &["questions"]);
+    assert!(text.contains(&format!(": {path}")), "{text}");
 }

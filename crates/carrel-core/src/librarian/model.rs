@@ -116,7 +116,7 @@ impl NoModel {
                 )
             }
             (None, _) => write!(f, "{who} needs a text model, and this device has none.")
-            .and_then(|()| self.write_download(f)),
+                .and_then(|()| self.write_download(f)),
         }
     }
 

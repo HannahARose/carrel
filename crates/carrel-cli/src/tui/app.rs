@@ -518,6 +518,8 @@ pub struct App {
     pub resting: usize,
     /// The chosen question.
     pub asked_chosen: usize,
+    /// What the chosen question is about.
+    pub question_subjects: Vec<carrel_core::questions::subjects::QuestionSubject>,
     /// The collections, for Browse.
     pub collections: Vec<Collection>,
     /// Browse's chosen collection.
@@ -672,6 +674,7 @@ impl App {
             asked_settles: Vec::new(),
             resting: 0,
             asked_chosen: 0,
+            question_subjects: Vec::new(),
             collections: Vec::new(),
             browse_collection: 0,
             browse_items: Vec::new(),
@@ -957,6 +960,7 @@ impl App {
             self.active_move(delta);
         } else if self.tab == Tab::Questions {
             self.asked_chosen = step(self.asked_chosen, delta, self.asked.len());
+            self.question_shown();
         } else if self.tab == Tab::Browse {
             self.browse_move(delta);
         } else if self.tab == Tab::Ingest {
@@ -1151,6 +1155,7 @@ impl App {
     pub(super) fn screen_shown(&mut self) {
         match self.tab {
             Tab::Browse => self.previews.want(&self.archive, &self.item),
+            Tab::Questions => self.question_shown(),
             Tab::Discover => {
                 if self.stacks.view == super::discover::View::Wander {
                     self.previews.want(&self.archive, &self.stacks.item);

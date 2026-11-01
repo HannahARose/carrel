@@ -143,23 +143,40 @@ impl Previews {
 
     /// Starts making the preview of the item `view` shows, unless it's the one already shown.
     pub fn want(&mut self, archive: &Archive, view: &ItemView) {
+        self.want_file(
+            archive,
+            view.card.as_deref(),
+            view.item.clone(),
+            view.restricted,
+        );
+    }
+
+    /// Starts making the preview of `item` (relative to the archive root, or an absolute path,
+    /// as for a proposal's file), shown for `shown_for` (a card's path, or another key the
+    /// screen draws it by), unless it's the one already shown. `None` for `shown_for` shows
+    /// nothing.
+    pub fn want_file(
+        &mut self,
+        archive: &Archive,
+        shown_for: Option<&str>,
+        item: Option<String>,
+        restricted: bool,
+    ) {
         let Some(protocol) = self.protocol else {
             return;
         };
-        let Some(card) = &view.card else {
+        let Some(card) = shown_for.map(str::to_owned) else {
             self.current = None;
             self.making = None;
             return;
         };
         // Made again when the card changes to restricted or back.
-        if self.current.as_ref().is_some_and(|(c, _)| c == card)
-            && self.restricted == view.restricted
-        {
+        if self.current.as_ref().is_some_and(|(c, _)| *c == card) && self.restricted == restricted {
             return;
         }
-        self.restricted = view.restricted;
+        self.restricted = restricted;
         self.current = Some((card.clone(), None));
-        let (Some(item), false) = (view.item.clone(), view.restricted) else {
+        let (Some(item), false) = (item, restricted) else {
             // A restricted item or a card on its own: nothing to make.
             self.current = Some((card.clone(), Some(Ready::Nothing)));
             self.making = None;

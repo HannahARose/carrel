@@ -157,20 +157,9 @@ impl App {
         self.asked = ranked.open.into_iter().map(|w| w.question).collect();
         self.resting = ranked.resting.len();
         self.asked_chosen = self.asked_chosen.min(self.asked.len().saturating_sub(1));
-    }
-
-    /// The titles of the proposals a question names, for showing beside it.
-    pub fn waiting_titles(&self, question: &QuestionEntry) -> Vec<String> {
-        question
-            .items
-            .iter()
-            .map(|id| {
-                self.queue.iter().find(|e| e.id == *id).map_or_else(
-                    || carrel_core::review::short_id(*id),
-                    |e| e.card.title.clone(),
-                )
-            })
-            .collect()
+        if self.tab == super::app::Tab::Questions {
+            self.question_shown();
+        }
     }
 
     /// Handles a key on the Questions screen: Enter answers in words (or picks a collection),
