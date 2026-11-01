@@ -16,6 +16,7 @@
 //! | [`frontmatter`] | Splitting any Markdown document into frontmatter and body | §2.2 |
 //! | [`sections`] | Managed sections, and comparing text while ignoring table padding | §5.3 |
 //! | [`listing`] | The generated listings: collections' contents and `ARCHIVE.md`'s collections | §6.2, §6.3 |
+//! | [`discover`] | Discovery: on this day, wander, the timeline, the map, activity and resurfacing | `docs/design/librarian.md` |
 //! | [`detect`] | Item kinds, sealing, and regenerable folders | §4, §7.5 |
 //! | [`compressed`] | Reading inside compressed files, and expanding them | §5.2, `docs/design/compressed.md` |
 //! | [`manifest`] | Checksums, folder manifests and their diffs | §2.6, §7.7 |
@@ -64,6 +65,7 @@ pub mod coordinator;
 pub mod correct;
 pub mod desk;
 pub mod detect;
+pub mod discover;
 pub mod documents;
 pub mod edit;
 pub mod entries;
