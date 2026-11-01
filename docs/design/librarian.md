@@ -1,6 +1,6 @@
 # Design: the librarian and discovery (v0.6)
 
-Status: proposed 2026-10-31. Issue #6, with #195 (better questions during ingest) and #48 (coverage and performance benchmarks).
+Status: accepted 2026-10-31, with the five recommendations below and the owner's amendment to decision 1 (the librarian may make undoable changes, as an option). Issue #6, with #195 (better questions during ingest) and #48 (coverage and performance benchmarks); built in #287, #288, #289, #290, #291, #292, #293, #48 and #294.
 
 ## What this adds
 
@@ -23,7 +23,13 @@ The spec sets the shape. The librarian is "a chat panel that searches cards thro
   - `on_this_day` and `timeline` (the discovery data, below).
 
   The model picks a tool by answering in a fixed JSON form, the core runs it and hands back the result, and so on, up to a limit per answer. This works with every text provider Carrel has, since all of them can answer to a schema, and it needs no tool-calling support from the model.
-- **It never changes anything itself.** When it suggests a change, such as "this receipt looks misfiled" or "these five items could be a collection", the suggestion becomes a proposal or a correction you confirm, through the paths that already exist: review, `docs/design/corrections.md`, and restructuring once v0.7 adds it. It can't move, rename, delete or send anything.
+- **By default it changes nothing itself.** When it suggests a change, such as "this receipt looks misfiled" or "these five items could be a collection", the suggestion becomes a proposal or a correction you confirm, through the paths that already exist: review, `docs/design/corrections.md`, and restructuring once v0.7 adds it.
+- **Optionally, it may make changes that can be undone.** A setting, off unless you turn it on (`librarian.changes`), lets it make the changes it's sure of without asking first:
+  - refiling an item, correcting a card's fields, renaming an item, and creating a collection;
+  - each one is an ordinary change in history, marked as the librarian's, that undo reverses;
+  - it never touches fields you dictated, never acts on restricted items, and only acts above a confidence threshold you can set.
+  - Even with the setting on, it never deletes anything, never edits a file's contents, never sends anything off the device, and never changes settings or rules.
+  - Everything it did is listed on Status and in History ("the librarian's changes this week"), where you can undo any one or all of them together.
 - **Curious, not just obedient.** Its instructions ask it to notice and offer: a related item you didn't ask about, a collection you haven't opened in a year, a gap ("you have the 2023 and 2025 statements but not 2024"). It answers first and suggests after, never instead.
 - **Restricted items stay restricted.** It finds them by their card, as search does, and never reads or quotes their text. Sensitive items are read like any other, since everything stays on your device.
 - **The strongest local model on the device:** the largest open model installed that fits in memory (on a 32 GB Mac, a 9B or a 20–30B model), else Apple's model, else Gemma or Qwen at 4B. You can choose one in Settings. A small model keeps its answers short and leans on search; a large one reads and connects more. Each answer says which model gave it.
@@ -73,7 +79,7 @@ The core computes each view as plain data, and each interface draws it in its ow
 ## Building it
 
 1. The question queue's new kinds, ranking, suggested answers and skipping in the core, with `carrel questions` and the interactive mode updated (#195's ideas).
-2. The librarian's loop and toolset in the core, with `carrel ask`.
+2. The librarian's loop and toolset in the core, with `carrel ask`, and the optional undoable changes (`librarian.changes`) with their record on Status and in History.
 3. The discovery data in the core, with `carrel discover`.
 4. The interactive mode's Librarian and Discover screens.
 5. The Mac app's Librarian panel, "Ask about this", and Discover.
@@ -82,9 +88,9 @@ The core computes each view as plain data, and each interface draws it in its ow
 8. Coverage and performance benchmarks (#48).
 9. The user guide, then the gate checklist.
 
-## Decisions
+## Decisions (accepted 2026-10-31)
 
-1. **The librarian is a conversation run by the core over a fixed, read-only set of tools, chosen by the model in a JSON form, and it never changes anything itself:** what it suggests becomes a proposal or correction you confirm. Recommended: it works with every model Carrel has, it can't do harm, and changes keep going through the paths that are already checked and undoable. The alternative, letting it make changes it's sure of, saves a click and loses that guarantee.
+1. **The librarian is a conversation run by the core over a fixed set of tools, chosen by the model in a JSON form. By default it changes nothing itself:** what it suggests becomes a proposal or correction you confirm. **As an option, off unless turned on, it may make the changes it's sure of directly** (refiling, correcting fields, renaming, creating collections), each one undoable and marked as the librarian's, and never deletions, file edits, settings or anything leaving the device. Accepted with the owner's amendment to allow undoable changes as an option. It works with every model Carrel has, and every change, asked for or not, goes through the same checked, undoable paths.
 2. **It runs on the strongest local model the device has, chosen automatically and changeable in Settings, with each answer saying which model gave it.** Recommended: the spec asks for the strongest model, and naming it makes the quality of an answer understandable. The benchmark sets the defaults per memory size.
 3. **Questions get one queue with new kinds (about an item, a group, a sender or project), ranked by what an answer would settle, with suggested answers, cheap skipping, and learning only on your yes. They're asked at natural moments: review, browsing, the librarian, and wander sessions, plus a few a day on Status.** Recommended: it's what #195 and your idea in #6 ask for, and it keeps questions from becoming nagging.
 4. **Conversations are kept only when you save them, to the Journal as Markdown.** Recommended: nothing you say to the librarian is written down unless you choose, and what you keep is readable without Carrel. The alternative is keeping every conversation, which helps the librarian remember but writes more of your words into the archive.
