@@ -1,0 +1,3116 @@
+{
+  "date": "2026-11-01",
+  "carrel": "0.5.1",
+  "os": "macos",
+  "arch": "aarch64",
+  "models": [
+    {
+      "provider": "apple",
+      "offer": "afm",
+      "label": "apple/Apple Foundation Model",
+      "version": "0.5.1",
+      "value": {
+        "items": 116,
+        "questions": 14,
+        "answerable": 14,
+        "set_aside": 0,
+        "routing_before": 0.728448275862069,
+        "routing_after": 0.7672413793103449,
+        "correlation": 0.5761803513739959,
+        "top_k": [
+          {
+            "k": 1,
+            "ranked": 0.7456896551724138,
+            "best": 0.7456896551724138
+          },
+          {
+            "k": 2,
+            "ranked": 0.7456896551724138,
+            "best": 0.7543103448275862
+          },
+          {
+            "k": 3,
+            "ranked": 0.7543103448275862,
+            "best": 0.7629310344827587
+          },
+          {
+            "k": 4,
+            "ranked": 0.7629310344827587,
+            "best": 0.7672413793103449
+          },
+          {
+            "k": 5,
+            "ranked": 0.7629310344827587,
+            "best": 0.7672413793103449
+          },
+          {
+            "k": 6,
+            "ranked": 0.7629310344827587,
+            "best": 0.7672413793103449
+          },
+          {
+            "k": 7,
+            "ranked": 0.7629310344827587,
+            "best": 0.7672413793103449
+          },
+          {
+            "k": 8,
+            "ranked": 0.7672413793103449,
+            "best": 0.7672413793103449
+          },
+          {
+            "k": 9,
+            "ranked": 0.7672413793103449,
+            "best": 0.7672413793103449
+          },
+          {
+            "k": 10,
+            "ranked": 0.7672413793103449,
+            "best": 0.7672413793103449
+          },
+          {
+            "k": 11,
+            "ranked": 0.7672413793103449,
+            "best": 0.7672413793103449
+          },
+          {
+            "k": 12,
+            "ranked": 0.7672413793103449,
+            "best": 0.7672413793103449
+          },
+          {
+            "k": 13,
+            "ranked": 0.7672413793103449,
+            "best": 0.7672413793103449
+          },
+          {
+            "k": 14,
+            "ranked": 0.7672413793103449,
+            "best": 0.7672413793103449
+          }
+        ]
+      },
+      "questions": [
+        {
+          "id": "01a1973e-e5f7-71bd-ad28-bf2c75dd0e3c",
+          "kind": "group",
+          "subject": "Allotment",
+          "question": "These 4 items about “Allotment”: Projects, Home, or a new Projects/Allotment collection?",
+          "rank": 1,
+          "ranked_value": 3.2,
+          "items": 4,
+          "answer": {
+            "kind": "collection",
+            "collection": "Home"
+          },
+          "moved": {
+            "Allotment committee newsletter.txt": "Home",
+            "Allotment planting plan.md": "Home",
+            "Allotment seed order.txt": "Home"
+          },
+          "gain": 2.0
+        },
+        {
+          "id": "01a1973e-e5f7-71bd-ad28-bf281dbc609f",
+          "kind": "term",
+          "subject": "ORCA",
+          "question": "What is “ORCA”?",
+          "rank": 2,
+          "ranked_value": 3.0,
+          "items": 3,
+          "answer": {
+            "kind": "fact",
+            "term": "ORCA",
+            "fact": "items named for it belong in Work (Employment: contracts, pay, reviews, meetings and applications)",
+            "collection": "Work"
+          },
+          "moved": {
+            "ORCA sensor budget.txt": "Projects"
+          },
+          "gain": 0.0
+        },
+        {
+          "id": "01a1973e-e5f7-71bd-ad28-bf2d3439c505",
+          "kind": "group",
+          "subject": "Calder Building Society",
+          "question": "These 4 items about “Calder Building Society”: Finances, or a new Finances/Calder Building Society collection?",
+          "rank": 3,
+          "ranked_value": 2.8000000000000003,
+          "items": 4,
+          "answer": {
+            "kind": "collection",
+            "collection": "Finances"
+          },
+          "moved": {
+            "Calder Building Society rate change.txt": "Finances"
+          },
+          "gain": 1.0
+        },
+        {
+          "id": "01a1973e-e5f7-71bd-ad28-bf2e74e7a9d8",
+          "kind": "group",
+          "subject": "Larkspur Road",
+          "question": "These 3 items about “Larkspur Road”: Home, or a new Home/Larkspur Road collection?",
+          "rank": 4,
+          "ranked_value": 2.6,
+          "items": 3,
+          "answer": {
+            "kind": "collection",
+            "collection": "Home"
+          },
+          "moved": {
+            "Larkspur Road deposit return.txt": "Home",
+            "Larkspur Road keys handover.txt": "Home"
+          },
+          "gain": 1.0
+        },
+        {
+          "id": "01a1973e-e5f7-71bd-ad28-bf2389c68d46",
+          "kind": "term",
+          "subject": "CNC",
+          "question": "What is “CNC”?",
+          "rank": 5,
+          "ranked_value": 2.0,
+          "items": 2,
+          "answer": {
+            "kind": "fact",
+            "term": "CNC",
+            "fact": "items named for it belong in Projects (Things I make outside work: code, electronics, 3D prints and writing)",
+            "collection": "Projects"
+          },
+          "moved": {},
+          "gain": 0.0
+        },
+        {
+          "id": "01a1973e-e5f7-71bd-ad28-bf2f3ad035f2",
+          "kind": "group",
+          "subject": "Mariner Travel",
+          "question": "These 3 items about “Mariner Travel”: Travel, or a new Travel/Mariner Travel collection?",
+          "rank": 6,
+          "ranked_value": 1.7999999999999998,
+          "items": 3,
+          "answer": {
+            "kind": "collection",
+            "collection": "Travel"
+          },
+          "moved": {},
+          "gain": 0.0
+        },
+        {
+          "id": "01a1973e-e5f7-71bd-ad28-bf22086366a1",
+          "kind": "term",
+          "subject": "BrewLog",
+          "question": "What is “BrewLog”?",
+          "rank": 7,
+          "ranked_value": 1.6,
+          "items": 2,
+          "answer": {
+            "kind": "fact",
+            "term": "BrewLog",
+            "fact": "items named for it belong in Projects (Things I make outside work: code, electronics, 3D prints and writing)",
+            "collection": "Projects"
+          },
+          "moved": {},
+          "gain": 0.0
+        },
+        {
+          "id": "01a1973e-e5f7-71bd-ad28-bf257d793b92",
+          "kind": "term",
+          "subject": "EHIC",
+          "question": "What is “EHIC”?",
+          "rank": 8,
+          "ranked_value": 1.6,
+          "items": 2,
+          "answer": {
+            "kind": "fact",
+            "term": "EHIC",
+            "fact": "items named for it belong in Health (Medical records, prescriptions, test results and appointments)",
+            "collection": "Health"
+          },
+          "moved": {
+            "EHIC application confirmation.txt": "Health"
+          },
+          "gain": 0.5
+        },
+        {
+          "id": "01a1973e-e5f7-71bd-ad28-bf2787b4d835",
+          "kind": "term",
+          "subject": "LIGO",
+          "question": "What is “LIGO”?",
+          "rank": 9,
+          "ranked_value": 1.6,
+          "items": 2,
+          "answer": {
+            "kind": "fact",
+            "term": "LIGO",
+            "fact": "items named for it belong in Reading (Papers, articles and books by others, kept for reference)",
+            "collection": "Reading"
+          },
+          "moved": {},
+          "gain": 0.0
+        },
+        {
+          "id": "01a1973e-e5f7-71bd-ad28-bf29e50226a3",
+          "kind": "term",
+          "subject": "OSM",
+          "question": "What is “OSM”?",
+          "rank": 10,
+          "ranked_value": 1.6,
+          "items": 2,
+          "answer": {
+            "kind": "fact",
+            "term": "OSM",
+            "fact": "items named for it belong in Projects (Things I make outside work: code, electronics, 3D prints and writing)",
+            "collection": "Projects"
+          },
+          "moved": {},
+          "gain": 0.0
+        },
+        {
+          "id": "01a1973e-e5f7-71bd-ad28-bf2a8948a2cc",
+          "kind": "term",
+          "subject": "PhD",
+          "question": "What is “PhD”?",
+          "rank": 11,
+          "ranked_value": 1.6,
+          "items": 2,
+          "answer": {
+            "kind": "fact",
+            "term": "PhD",
+            "fact": "items named for it belong in Research (My own research: lab notes, drafts, data and talks)",
+            "collection": "Research"
+          },
+          "moved": {
+            "PhD funding letter.txt": "Work"
+          },
+          "gain": 0.0
+        },
+        {
+          "id": "01a1973e-e5f7-71bd-ad28-bf2b9668bacb",
+          "kind": "term",
+          "subject": "QPCR",
+          "question": "What is “QPCR”?",
+          "rank": 12,
+          "ranked_value": 1.6,
+          "items": 2,
+          "answer": {
+            "kind": "fact",
+            "term": "QPCR",
+            "fact": "items named for it belong in Research (My own research: lab notes, drafts, data and talks)",
+            "collection": "Research"
+          },
+          "moved": {
+            "QPCR plate layout.txt": "Holding"
+          },
+          "gain": 0.0
+        },
+        {
+          "id": "01a1973e-e5f7-71bd-ad28-bf2488488b78",
+          "kind": "term",
+          "subject": "DnD",
+          "question": "What is “DnD”?",
+          "rank": 13,
+          "ranked_value": 1.2,
+          "items": 2,
+          "answer": {
+            "kind": "fact",
+            "term": "DnD",
+            "fact": "items named for it belong in Projects (Things I make outside work: code, electronics, 3D prints and writing)",
+            "collection": "Projects"
+          },
+          "moved": {},
+          "gain": 0.0
+        },
+        {
+          "id": "01a1973e-e5f7-71bd-ad28-bf2643b1967b",
+          "kind": "term",
+          "subject": "ISA",
+          "question": "What is “ISA”?",
+          "rank": 14,
+          "ranked_value": 1.2,
+          "items": 2,
+          "answer": {
+            "kind": "fact",
+            "term": "ISA",
+            "fact": "items named for it belong in Finances (Bank accounts, tax, pensions and investments)",
+            "collection": "Finances"
+          },
+          "moved": {},
+          "gain": 0.0
+        }
+      ],
+      "proposals": [
+        {
+          "item": "2025 bank statement March.txt",
+          "id": "01a1973e-e5f5-70f0-82ee-e5335952eb21",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "Allotment committee newsletter.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-6629814f0922",
+          "destination": "Projects",
+          "confidence": "low"
+        },
+        {
+          "item": "Allotment planting plan.md",
+          "id": "01a1973e-e5f6-75e1-9ffa-662a657a0d82",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "Allotment plot licence.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-662bac67d974",
+          "destination": "Home",
+          "confidence": "medium"
+        },
+        {
+          "item": "Allotment seed order.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-662c72e3f897",
+          "destination": "Projects",
+          "confidence": "low"
+        },
+        {
+          "item": "BrewLog firmware changelog.md",
+          "id": "01a1973e-e5f6-75e1-9ffa-662d833e576b",
+          "destination": "Projects",
+          "confidence": "low"
+        },
+        {
+          "item": "BrewLog sensor wiring.md",
+          "id": "01a1973e-e5f6-75e1-9ffa-662ec60aae25",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "CNC spindle setup.md",
+          "id": "01a1973e-e5f6-75e1-9ffa-662f1782f175",
+          "destination": "Projects",
+          "confidence": "low"
+        },
+        {
+          "item": "CNC toolpath settings.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-6630fe85ed9f",
+          "destination": "Projects",
+          "confidence": "low"
+        },
+        {
+          "item": "Calder Building Society branch closure.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-663171a45559",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "Calder Building Society rate change.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-66322cd7a573",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "Calder Building Society savings statement.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-663384e211db",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "Calder Building Society travel money card.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-663481c131a0",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "DnD campaign notes.md",
+          "id": "01a1973e-e5f6-75e1-9ffa-66356a91a088",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "DnD session recap.md",
+          "id": "01a1973e-e5f6-75e1-9ffa-663694830907",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "EHIC application confirmation.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-663719953e1c",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "EHIC renewal reminder.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-6638c4b54702",
+          "destination": "Insurance",
+          "confidence": "medium"
+        },
+        {
+          "item": "IMG_1502.jpg",
+          "id": "01a1973e-e5f6-75e1-9ffa-66399bc5b81b",
+          "destination": "Recipes",
+          "confidence": "medium"
+        },
+        {
+          "item": "IMG_1876.jpg",
+          "id": "01a1973e-e5f6-75e1-9ffa-663a4e383fe1",
+          "destination": "Travel",
+          "confidence": "medium"
+        },
+        {
+          "item": "IMG_2041.jpg",
+          "id": "01a1973e-e5f6-75e1-9ffa-663be5620f2f",
+          "destination": "Receipts",
+          "confidence": "medium"
+        },
+        {
+          "item": "IMG_3310.jpg",
+          "id": "01a1973e-e5f6-75e1-9ffa-663cffd4cafa",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "IMG_4127.jpg",
+          "id": "01a1973e-e5f6-75e1-9ffa-663dce967e10",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "ISA interest summary.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-663e0e446a04",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "ISA transfer form.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-663fb112ae08",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "LIGO detector primer.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-66406ed5d359",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "LIGO open data tutorial.md",
+          "id": "01a1973e-e5f6-75e1-9ffa-66417f57723b",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "Larkspur Road deposit return.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-66424f1ebb03",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "Larkspur Road inventory.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-66434356b111",
+          "destination": "Home",
+          "confidence": "medium"
+        },
+        {
+          "item": "Larkspur Road keys handover.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-66443a3a83e5",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "Mariner Travel booking Bergen.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-6645fc7faaa6",
+          "destination": "Travel",
+          "confidence": "medium"
+        },
+        {
+          "item": "Mariner Travel cancellation terms.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-6646ad6989a3",
+          "destination": "Travel",
+          "confidence": "medium"
+        },
+        {
+          "item": "Mariner Travel invoice.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-664724800054",
+          "destination": "Travel",
+          "confidence": "medium"
+        },
+        {
+          "item": "ORCA kickoff minutes.md",
+          "id": "01a1973e-e5f6-75e1-9ffa-6648c05b9665",
+          "destination": "Work",
+          "confidence": "low"
+        },
+        {
+          "item": "ORCA sensor budget.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-6649608f6eeb",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "ORCA site visit report.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-664a48251611",
+          "destination": "Projects",
+          "confidence": "low"
+        },
+        {
+          "item": "OSM footpath edits.md",
+          "id": "01a1973e-e5f6-75e1-9ffa-664b52012fe1",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "OSM import script notes.md",
+          "id": "01a1973e-e5f6-75e1-9ffa-664cda091270",
+          "destination": "Projects",
+          "confidence": "low"
+        },
+        {
+          "item": "PhD funding letter.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-664d5ae1131b",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "PhD thesis outline.md",
+          "id": "01a1973e-e5f6-75e1-9ffa-664e0b74f8b1",
+          "destination": "Research",
+          "confidence": "medium"
+        },
+        {
+          "item": "QPCR melt curve check.md",
+          "id": "01a1973e-e5f6-75e1-9ffa-664f84a614c7",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "QPCR plate layout.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-6650517a70cc",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "Screenshot 2025-08-28 at 09.14.03.png",
+          "id": "01a1973e-e5f6-75e1-9ffa-6651907766c8",
+          "destination": "Home",
+          "confidence": "medium"
+        },
+        {
+          "item": "Screenshot 2025-10-03 at 08.41.55.png",
+          "id": "01a1973e-e5f6-75e1-9ffa-665281fff2cf",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "amplifier build log.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-6653ac2b10b1",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "birthday card from sister.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-6654b2b54832",
+          "destination": "Letters",
+          "confidence": "medium"
+        },
+        {
+          "item": "blood test results.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-6655917a7dca",
+          "destination": "Health",
+          "confidence": "medium"
+        },
+        {
+          "item": "boiler repair note.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-6656b58f97ac",
+          "destination": "Home",
+          "confidence": "medium"
+        },
+        {
+          "item": "budget app notes.md",
+          "id": "01a1973e-e5f6-75e1-9ffa-66579ca749e0",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "building notice water off.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-66588e6b48fe",
+          "destination": "Home",
+          "confidence": "medium"
+        },
+        {
+          "item": "car insurance renewal.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-6659bba9fc73",
+          "destination": "Insurance",
+          "confidence": "medium"
+        },
+        {
+          "item": "card replacement letter.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-665ac000471c",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "cell biology review.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-665bce62476c",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "claim physio costs.md",
+          "id": "01a1973e-e5f6-75e1-9ffa-665c29af7e8a",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "coffee machine descaling.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-665db3d69bb0",
+          "destination": "Manuals",
+          "confidence": "medium"
+        },
+        {
+          "item": "conference registration.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-665e3d8c8365",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "cv alex morgan.md",
+          "id": "01a1973e-e5f6-75e1-9ffa-665fe1f1a5b5",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "darwin origin chapter 4 notes.md",
+          "id": "01a1973e-e5f6-75e1-9ffa-66609e4ccfe6",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "dataset description.md",
+          "id": "01a1973e-e5f6-75e1-9ffa-66614f526c31",
+          "destination": "Research",
+          "confidence": "medium"
+        },
+        {
+          "item": "dishwasher manual.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-666293de3e48",
+          "destination": "Manuals",
+          "confidence": "medium"
+        },
+        {
+          "item": "draft paper phase response.md",
+          "id": "01a1973e-e5f6-75e1-9ffa-66630cf823ee",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "drill safety and warranty.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-666429404ad8",
+          "destination": "Manuals",
+          "confidence": "medium"
+        },
+        {
+          "item": "electricity bill september.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-6665f5f9a19e",
+          "destination": "Home",
+          "confidence": "medium"
+        },
+        {
+          "item": "email from sam about visit.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-6666fec2d58f",
+          "destination": "Travel",
+          "confidence": "medium"
+        },
+        {
+          "item": "employment contract lumen.md",
+          "id": "01a1973e-e5f6-75e1-9ffa-666790d0af11",
+          "destination": "Work",
+          "confidence": "medium"
+        },
+        {
+          "item": "essay on attention.md",
+          "id": "01a1973e-e5f6-75e1-9ffa-6668a36ee23a",
+          "destination": "Reading",
+          "confidence": "medium"
+        },
+        {
+          "item": "export.png",
+          "id": "01a1973e-e5f6-75e1-9ffa-6669274322a4",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "flight booking lisbon.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-666abfd341a4",
+          "destination": "Travel",
+          "confidence": "medium"
+        },
+        {
+          "item": "fund report q2.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-666b24366efc",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "home contents policy.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-666c571a8161",
+          "destination": "Insurance",
+          "confidence": "medium"
+        },
+        {
+          "item": "home office expenses.md",
+          "id": "01a1973e-e5f6-75e1-9ffa-666d9a75a3cc",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "hotel booking porto.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-666e4c2cf73f",
+          "destination": "Travel",
+          "confidence": "medium"
+        },
+        {
+          "item": "internet contract.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-666fc5983fc1",
+          "destination": "Work",
+          "confidence": "medium"
+        },
+        {
+          "item": "invoice monitor arm.md",
+          "id": "01a1973e-e5f6-75e1-9ffa-6670e0143a48",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "itinerary portugal.md",
+          "id": "01a1973e-e5f6-75e1-9ffa-6671c1ed20e7",
+          "destination": "Travel",
+          "confidence": "medium"
+        },
+        {
+          "item": "kettle manual.zip",
+          "id": "01a1973e-e5f6-75e1-9ffa-66726d8b176a",
+          "destination": "Manuals",
+          "confidence": "medium"
+        },
+        {
+          "item": "lab notebook oscillators week 12.md",
+          "id": "01a1973e-e5f6-75e1-9ffa-6673345d21aa",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "label printer driver.zip",
+          "id": "01a1973e-e5f6-75e1-9ffa-6674808d57ca",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "lamp dimmer firmware.zip",
+          "id": "01a1973e-e5f6-75e1-9ffa-6675df35774a",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "lemon drizzle cake.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-66761dfcc35b",
+          "destination": "Recipes",
+          "confidence": "medium"
+        },
+        {
+          "item": "lentil dal.md",
+          "id": "01a1973e-e5f6-75e1-9ffa-6677e9c6f186",
+          "destination": "Recipes",
+          "confidence": "medium"
+        },
+        {
+          "item": "letter from grandma.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-6678305ecafb",
+          "destination": "Letters",
+          "confidence": "medium"
+        },
+        {
+          "item": "letter from tax office.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-6679c69154ab",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "message to landlord.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-667a8da111ef",
+          "destination": "Home",
+          "confidence": "medium"
+        },
+        {
+          "item": "misc notes.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-667b7441d0d2",
+          "destination": "Projects",
+          "confidence": "low"
+        },
+        {
+          "item": "old us tax form.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-667ce78cd766",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "order confirmation laptop.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-667ddaa28468",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "paper kuramoto synchronization.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-667e3e61c7bf",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "part_v3_final.stl",
+          "id": "01a1973e-e5f6-75e1-9ffa-667f2451482f",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "payslip october.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-6680b41d3755",
+          "destination": "Work",
+          "confidence": "medium"
+        },
+        {
+          "item": "pension annual statement.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-6681c0e4d8f3",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "performance review 2025.md",
+          "id": "01a1973e-e5f6-75e1-9ffa-66823dabf158",
+          "destination": "Work",
+          "confidence": "medium"
+        },
+        {
+          "item": "phone repair receipt.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-668325d594a0",
+          "destination": "Receipts",
+          "confidence": "medium"
+        },
+        {
+          "item": "physio appointment.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-6684c9dee90e",
+          "destination": "Health",
+          "confidence": "medium"
+        },
+        {
+          "item": "plant monitor readme.md",
+          "id": "01a1973e-e5f6-75e1-9ffa-6685aca7a3bb",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "prescription amoxicillin.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-6686b238d50a",
+          "destination": "Health",
+          "confidence": "medium"
+        },
+        {
+          "item": "print_0412.stl",
+          "id": "01a1973e-e5f6-75e1-9ffa-66875d736b1d",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "receipt and manual blender.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-668801ca2cd8",
+          "destination": "Manuals",
+          "confidence": "medium"
+        },
+        {
+          "item": "receipt desk chair.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-668957e40c8c",
+          "destination": "Receipts",
+          "confidence": "medium"
+        },
+        {
+          "item": "referral letter for physio.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-668a4222b2c4",
+          "destination": "Health",
+          "confidence": "medium"
+        },
+        {
+          "item": "rfc 9110 http semantics notes.md",
+          "id": "01a1973e-e5f6-75e1-9ffa-668ba6378efe",
+          "destination": "Reading",
+          "confidence": "medium"
+        },
+        {
+          "item": "ring_v2.stl",
+          "id": "01a1973e-e5f6-75e1-9ffa-668c2a104949",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "router quick start.md",
+          "id": "01a1973e-e5f6-75e1-9ffa-668d083062d7",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "scan0007.png",
+          "id": "01a1973e-e5f6-75e1-9ffa-668ee77b7201",
+          "destination": "Letters",
+          "confidence": "medium"
+        },
+        {
+          "item": "scan_0007.stl",
+          "id": "01a1973e-e5f6-75e1-9ffa-668fdb82aa5e",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "short story draft.md",
+          "id": "01a1973e-e5f6-75e1-9ffa-66903e12eeeb",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "sourdough loaf.md",
+          "id": "01a1973e-e5f6-75e1-9ffa-66917c9c21a4",
+          "destination": "Recipes",
+          "confidence": "medium"
+        },
+        {
+          "item": "talk slides outline.md",
+          "id": "01a1973e-e5f6-75e1-9ffa-66929042ed74",
+          "destination": "Research",
+          "confidence": "medium"
+        },
+        {
+          "item": "tax return summary 2024.md",
+          "id": "01a1973e-e5f6-75e1-9ffa-6693b3bd4c0b",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "team meeting notes.md",
+          "id": "01a1973e-e5f6-75e1-9ffa-66948e448c98",
+          "destination": "Work",
+          "confidence": "medium"
+        },
+        {
+          "item": "tenancy agreement.md",
+          "id": "01a1973e-e5f6-75e1-9ffa-6695b42fcf85",
+          "destination": "Home",
+          "confidence": "medium"
+        },
+        {
+          "item": "train tickets porto.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-669639a94c34",
+          "destination": "Travel",
+          "confidence": "medium"
+        },
+        {
+          "item": "travel insurance certificate.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-6697c86341ea",
+          "destination": "Insurance",
+          "confidence": "medium"
+        },
+        {
+          "item": "travel insurance claim lost bag.md",
+          "id": "01a1973e-e5f6-75e1-9ffa-669845a30bd8",
+          "destination": "Insurance",
+          "confidence": "medium"
+        },
+        {
+          "item": "untitled scan text.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-669955dee006",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "vaccination record.md",
+          "id": "01a1973e-e5f6-75e1-9ffa-669af2bd77e7",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "wifi and alarm codes.txt",
+          "id": "01a1973e-e5f6-75e1-9ffa-669b76e5cd57",
+          "destination": "Home",
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "provider": "llama",
+      "offer": "granite-4.2-3b",
+      "label": "llama/granite-4.2-3b.gguf",
+      "version": "0.5.1",
+      "value": {
+        "items": 116,
+        "questions": 14,
+        "answerable": 14,
+        "set_aside": 0,
+        "routing_before": 0.6206896551724138,
+        "routing_after": 0.6810344827586207,
+        "correlation": 0.8743243243243243,
+        "top_k": [
+          {
+            "k": 1,
+            "ranked": 0.6422413793103449,
+            "best": 0.6422413793103449
+          },
+          {
+            "k": 2,
+            "ranked": 0.6594827586206896,
+            "best": 0.6594827586206896
+          },
+          {
+            "k": 3,
+            "ranked": 0.6681034482758621,
+            "best": 0.6724137931034483
+          },
+          {
+            "k": 4,
+            "ranked": 0.6810344827586207,
+            "best": 0.6810344827586207
+          },
+          {
+            "k": 5,
+            "ranked": 0.6810344827586207,
+            "best": 0.6896551724137931
+          },
+          {
+            "k": 6,
+            "ranked": 0.6810344827586207,
+            "best": 0.6896551724137931
+          },
+          {
+            "k": 7,
+            "ranked": 0.6810344827586207,
+            "best": 0.6896551724137931
+          },
+          {
+            "k": 8,
+            "ranked": 0.6896551724137931,
+            "best": 0.6896551724137931
+          },
+          {
+            "k": 9,
+            "ranked": 0.6896551724137931,
+            "best": 0.6896551724137931
+          },
+          {
+            "k": 10,
+            "ranked": 0.6896551724137931,
+            "best": 0.6896551724137931
+          },
+          {
+            "k": 11,
+            "ranked": 0.6896551724137931,
+            "best": 0.6896551724137931
+          },
+          {
+            "k": 12,
+            "ranked": 0.6896551724137931,
+            "best": 0.6896551724137931
+          },
+          {
+            "k": 13,
+            "ranked": 0.6896551724137931,
+            "best": 0.6896551724137931
+          },
+          {
+            "k": 14,
+            "ranked": 0.6810344827586207,
+            "best": 0.6810344827586207
+          }
+        ]
+      },
+      "questions": [
+        {
+          "id": "01a1975a-3429-73cc-aac0-6fc5988b93aa",
+          "kind": "group",
+          "subject": "Allotment",
+          "question": "These 4 items about “Allotment”: a new Allotment collection?",
+          "rank": 1,
+          "ranked_value": 4.0,
+          "items": 4,
+          "answer": {
+            "kind": "collection",
+            "collection": "Home"
+          },
+          "moved": {
+            "Allotment committee newsletter.txt": "Home",
+            "Allotment planting plan.md": "Home",
+            "Allotment plot licence.txt": "Home",
+            "Allotment seed order.txt": "Home"
+          },
+          "gain": 2.5
+        },
+        {
+          "id": "01a1975a-3429-73cc-aac0-6fc665d93a5f",
+          "kind": "group",
+          "subject": "Calder Building Society",
+          "question": "These 4 items about “Calder Building Society”: Finances, or a new Finances/Calder Building Society collection?",
+          "rank": 2,
+          "ranked_value": 3.6,
+          "items": 4,
+          "answer": {
+            "kind": "collection",
+            "collection": "Finances"
+          },
+          "moved": {
+            "Calder Building Society branch closure.txt": "Finances",
+            "Calder Building Society rate change.txt": "Finances",
+            "Calder Building Society travel money card.txt": "Finances"
+          },
+          "gain": 2.0
+        },
+        {
+          "id": "01a1975a-3429-73cc-aac0-6fc18ec7f37f",
+          "kind": "term",
+          "subject": "ORCA",
+          "question": "What is “ORCA”?",
+          "rank": 3,
+          "ranked_value": 3.0,
+          "items": 3,
+          "answer": {
+            "kind": "fact",
+            "term": "ORCA",
+            "fact": "items named for it belong in Work (Employment: contracts, pay, reviews, meetings and applications)",
+            "collection": "Work"
+          },
+          "moved": {
+            "ORCA sensor budget.txt": "Work"
+          },
+          "gain": 1.0
+        },
+        {
+          "id": "01a1975a-3429-73cc-aac0-6fc7f55bcdca",
+          "kind": "group",
+          "subject": "Larkspur Road",
+          "question": "These 3 items about “Larkspur Road”: a new Larkspur Road collection?",
+          "rank": 4,
+          "ranked_value": 3.0,
+          "items": 3,
+          "answer": {
+            "kind": "collection",
+            "collection": "Home"
+          },
+          "moved": {
+            "Larkspur Road deposit return.txt": "Home",
+            "Larkspur Road inventory.txt": "Home",
+            "Larkspur Road keys handover.txt": "Home"
+          },
+          "gain": 1.5
+        },
+        {
+          "id": "01a1975a-3429-73cc-aac0-6fc8367150a6",
+          "kind": "group",
+          "subject": "Mariner Travel",
+          "question": "These 3 items about “Mariner Travel”: Travel, or a new Travel/Mariner Travel collection?",
+          "rank": 5,
+          "ranked_value": 2.2,
+          "items": 3,
+          "answer": {
+            "kind": "collection",
+            "collection": "Travel"
+          },
+          "moved": {},
+          "gain": 0.0
+        },
+        {
+          "id": "01a1975a-3429-73cc-aac0-6fbb96bf3eec",
+          "kind": "term",
+          "subject": "BrewLog",
+          "question": "What is “BrewLog”?",
+          "rank": 6,
+          "ranked_value": 2.0,
+          "items": 2,
+          "answer": {
+            "kind": "fact",
+            "term": "BrewLog",
+            "fact": "items named for it belong in Projects (Things I make outside work: code, electronics, 3D prints and writing)",
+            "collection": "Projects"
+          },
+          "moved": {},
+          "gain": 0.0
+        },
+        {
+          "id": "01a1975a-3429-73cc-aac0-6fbcafe03046",
+          "kind": "term",
+          "subject": "CNC",
+          "question": "What is “CNC”?",
+          "rank": 7,
+          "ranked_value": 2.0,
+          "items": 2,
+          "answer": {
+            "kind": "fact",
+            "term": "CNC",
+            "fact": "items named for it belong in Projects (Things I make outside work: code, electronics, 3D prints and writing)",
+            "collection": "Projects"
+          },
+          "moved": {},
+          "gain": 0.0
+        },
+        {
+          "id": "01a1975a-3429-73cc-aac0-6fbdf862b911",
+          "kind": "term",
+          "subject": "DnD",
+          "question": "What is “DnD”?",
+          "rank": 8,
+          "ranked_value": 2.0,
+          "items": 2,
+          "answer": {
+            "kind": "fact",
+            "term": "DnD",
+            "fact": "items named for it belong in Projects (Things I make outside work: code, electronics, 3D prints and writing)",
+            "collection": "Projects"
+          },
+          "moved": {
+            "DnD session recap.md": "Projects"
+          },
+          "gain": 1.0
+        },
+        {
+          "id": "01a1975a-3429-73cc-aac0-6fbeef3a36f6",
+          "kind": "term",
+          "subject": "EHIC",
+          "question": "What is “EHIC”?",
+          "rank": 9,
+          "ranked_value": 2.0,
+          "items": 2,
+          "answer": {
+            "kind": "fact",
+            "term": "EHIC",
+            "fact": "items named for it belong in Health (Medical records, prescriptions, test results and appointments)",
+            "collection": "Health"
+          },
+          "moved": {},
+          "gain": 0.0
+        },
+        {
+          "id": "01a1975a-3429-73cc-aac0-6fc027826071",
+          "kind": "term",
+          "subject": "LIGO",
+          "question": "What is “LIGO”?",
+          "rank": 10,
+          "ranked_value": 2.0,
+          "items": 2,
+          "answer": {
+            "kind": "fact",
+            "term": "LIGO",
+            "fact": "items named for it belong in Reading (Papers, articles and books by others, kept for reference)",
+            "collection": "Reading"
+          },
+          "moved": {
+            "LIGO open data tutorial.md": "Holding"
+          },
+          "gain": 0.0
+        },
+        {
+          "id": "01a1975a-3429-73cc-aac0-6fc23738fa62",
+          "kind": "term",
+          "subject": "OSM",
+          "question": "What is “OSM”?",
+          "rank": 11,
+          "ranked_value": 2.0,
+          "items": 2,
+          "answer": {
+            "kind": "fact",
+            "term": "OSM",
+            "fact": "items named for it belong in Projects (Things I make outside work: code, electronics, 3D prints and writing)",
+            "collection": "Projects"
+          },
+          "moved": {},
+          "gain": 0.0
+        },
+        {
+          "id": "01a1975a-3429-73cc-aac0-6fc3b36b94f9",
+          "kind": "term",
+          "subject": "PhD",
+          "question": "What is “PhD”?",
+          "rank": 12,
+          "ranked_value": 2.0,
+          "items": 2,
+          "answer": {
+            "kind": "fact",
+            "term": "PhD",
+            "fact": "items named for it belong in Research (My own research: lab notes, drafts, data and talks)",
+            "collection": "Research"
+          },
+          "moved": {},
+          "gain": 0.0
+        },
+        {
+          "id": "01a1975a-3429-73cc-aac0-6fc4105bc310",
+          "kind": "term",
+          "subject": "QPCR",
+          "question": "What is “QPCR”?",
+          "rank": 13,
+          "ranked_value": 2.0,
+          "items": 2,
+          "answer": {
+            "kind": "fact",
+            "term": "QPCR",
+            "fact": "items named for it belong in Research (My own research: lab notes, drafts, data and talks)",
+            "collection": "Research"
+          },
+          "moved": {},
+          "gain": 0.0
+        },
+        {
+          "id": "01a1975a-3429-73cc-aac0-6fbfe3f9614a",
+          "kind": "term",
+          "subject": "ISA",
+          "question": "What is “ISA”?",
+          "rank": 14,
+          "ranked_value": 1.6,
+          "items": 2,
+          "answer": {
+            "kind": "fact",
+            "term": "ISA",
+            "fact": "items named for it belong in Finances (Bank accounts, tax, pensions and investments)",
+            "collection": "Finances"
+          },
+          "moved": {
+            "ISA interest summary.txt": "Holding"
+          },
+          "gain": -1.0
+        }
+      ],
+      "proposals": [
+        {
+          "item": "2025 bank statement March.txt",
+          "id": "01a1975a-3428-774c-8645-5125652f0ef4",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "Allotment committee newsletter.txt",
+          "id": "01a1975a-3428-774c-8645-5126347cf419",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "Allotment planting plan.md",
+          "id": "01a1975a-3428-774c-8645-512722f6af59",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "Allotment plot licence.txt",
+          "id": "01a1975a-3428-774c-8645-51282176170c",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "Allotment seed order.txt",
+          "id": "01a1975a-3428-774c-8645-51293066d042",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "BrewLog firmware changelog.md",
+          "id": "01a1975a-3428-774c-8645-512a7afe0d7a",
+          "destination": "Projects",
+          "confidence": "low"
+        },
+        {
+          "item": "BrewLog sensor wiring.md",
+          "id": "01a1975a-3428-774c-8645-512bb93d5d02",
+          "destination": "Projects",
+          "confidence": "low"
+        },
+        {
+          "item": "CNC spindle setup.md",
+          "id": "01a1975a-3428-774c-8645-512c8a42b205",
+          "destination": "Projects",
+          "confidence": "low"
+        },
+        {
+          "item": "CNC toolpath settings.txt",
+          "id": "01a1975a-3428-774c-8645-512d8c6e4375",
+          "destination": "Projects",
+          "confidence": "low"
+        },
+        {
+          "item": "Calder Building Society branch closure.txt",
+          "id": "01a1975a-3428-774c-8645-512e308ca8dc",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "Calder Building Society rate change.txt",
+          "id": "01a1975a-3428-774c-8645-512f1a2d492a",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "Calder Building Society savings statement.txt",
+          "id": "01a1975a-3428-774c-8645-5130861568be",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "Calder Building Society travel money card.txt",
+          "id": "01a1975a-3428-774c-8645-51312b08a75e",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "DnD campaign notes.md",
+          "id": "01a1975a-3428-774c-8645-51329727154e",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "DnD session recap.md",
+          "id": "01a1975a-3428-774c-8645-5133a9d74406",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "EHIC application confirmation.txt",
+          "id": "01a1975a-3428-774c-8645-5134749bdfb6",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "EHIC renewal reminder.txt",
+          "id": "01a1975a-3428-774c-8645-5135759f8487",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "IMG_1502.jpg",
+          "id": "01a1975a-3428-774c-8645-5136ea556a43",
+          "destination": "Recipes",
+          "confidence": "medium"
+        },
+        {
+          "item": "IMG_1876.jpg",
+          "id": "01a1975a-3428-774c-8645-5137462be847",
+          "destination": "Travel",
+          "confidence": "low"
+        },
+        {
+          "item": "IMG_2041.jpg",
+          "id": "01a1975a-3428-774c-8645-51384c4c9501",
+          "destination": "Receipts",
+          "confidence": "medium"
+        },
+        {
+          "item": "IMG_3310.jpg",
+          "id": "01a1975a-3428-774c-8645-5139e590997f",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "IMG_4127.jpg",
+          "id": "01a1975a-3428-774c-8645-513ab6c73057",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "ISA interest summary.txt",
+          "id": "01a1975a-3428-774c-8645-513baaec7004",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "ISA transfer form.txt",
+          "id": "01a1975a-3428-774c-8645-513c57f2ab7f",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "LIGO detector primer.txt",
+          "id": "01a1975a-3428-774c-8645-513d947bd21e",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "LIGO open data tutorial.md",
+          "id": "01a1975a-3428-774c-8645-513ec8e34e9e",
+          "destination": "Projects",
+          "confidence": "low"
+        },
+        {
+          "item": "Larkspur Road deposit return.txt",
+          "id": "01a1975a-3428-774c-8645-513f14b55292",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "Larkspur Road inventory.txt",
+          "id": "01a1975a-3428-774c-8645-5140cac61f79",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "Larkspur Road keys handover.txt",
+          "id": "01a1975a-3428-774c-8645-5141361f6ade",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "Mariner Travel booking Bergen.txt",
+          "id": "01a1975a-3428-774c-8645-51420c6ab89d",
+          "destination": "Travel",
+          "confidence": "medium"
+        },
+        {
+          "item": "Mariner Travel cancellation terms.txt",
+          "id": "01a1975a-3428-774c-8645-5143538eeef7",
+          "destination": "Travel",
+          "confidence": "medium"
+        },
+        {
+          "item": "Mariner Travel invoice.txt",
+          "id": "01a1975a-3428-774c-8645-5144a7df352c",
+          "destination": "Travel",
+          "confidence": "low"
+        },
+        {
+          "item": "ORCA kickoff minutes.md",
+          "id": "01a1975a-3428-774c-8645-5145b4d7d60a",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "ORCA sensor budget.txt",
+          "id": "01a1975a-3428-774c-8645-5146f0a22106",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "ORCA site visit report.txt",
+          "id": "01a1975a-3428-774c-8645-5147a41b75a4",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "OSM footpath edits.md",
+          "id": "01a1975a-3428-774c-8645-5148e440f24d",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "OSM import script notes.md",
+          "id": "01a1975a-3428-774c-8645-5149a8d89050",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "PhD funding letter.txt",
+          "id": "01a1975a-3428-774c-8645-514a813ab5dc",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "PhD thesis outline.md",
+          "id": "01a1975a-3428-774c-8645-514b02b621c6",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "QPCR melt curve check.md",
+          "id": "01a1975a-3428-774c-8645-514cf94aa37a",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "QPCR plate layout.txt",
+          "id": "01a1975a-3428-774c-8645-514d4938dbd3",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "Screenshot 2025-08-28 at 09.14.03.png",
+          "id": "01a1975a-3428-774c-8645-514ee06df7d4",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "Screenshot 2025-10-03 at 08.41.55.png",
+          "id": "01a1975a-3428-774c-8645-514f3abfd210",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "amplifier build log.txt",
+          "id": "01a1975a-3428-774c-8645-5150ff6c764a",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "birthday card from sister.txt",
+          "id": "01a1975a-3428-774c-8645-51519ed821f8",
+          "destination": "Letters",
+          "confidence": "medium"
+        },
+        {
+          "item": "blood test results.txt",
+          "id": "01a1975a-3428-774c-8645-515205bde6cb",
+          "destination": "Health",
+          "confidence": "medium"
+        },
+        {
+          "item": "boiler repair note.txt",
+          "id": "01a1975a-3428-774c-8645-51536ba04468",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "budget app notes.md",
+          "id": "01a1975a-3428-774c-8645-5154ab9a8e81",
+          "destination": "Finances",
+          "confidence": "low"
+        },
+        {
+          "item": "building notice water off.txt",
+          "id": "01a1975a-3428-774c-8645-5155c0c0adbc",
+          "destination": "Home",
+          "confidence": "medium"
+        },
+        {
+          "item": "car insurance renewal.txt",
+          "id": "01a1975a-3428-774c-8645-5156c29492c6",
+          "destination": "Insurance",
+          "confidence": "medium"
+        },
+        {
+          "item": "card replacement letter.txt",
+          "id": "01a1975a-3428-774c-8645-5157055338c4",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "cell biology review.txt",
+          "id": "01a1975a-3428-774c-8645-5158a3780603",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "claim physio costs.md",
+          "id": "01a1975a-3428-774c-8645-515918ad3e67",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "coffee machine descaling.txt",
+          "id": "01a1975a-3428-774c-8645-515a57a55a33",
+          "destination": "Manuals",
+          "confidence": "low"
+        },
+        {
+          "item": "conference registration.txt",
+          "id": "01a1975a-3428-774c-8645-515bdbab7d39",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "cv alex morgan.md",
+          "id": "01a1975a-3428-774c-8645-515c7c5f618d",
+          "destination": "Work",
+          "confidence": "medium"
+        },
+        {
+          "item": "darwin origin chapter 4 notes.md",
+          "id": "01a1975a-3428-774c-8645-515d3bea6225",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "dataset description.md",
+          "id": "01a1975a-3428-774c-8645-515ed2151d8e",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "dishwasher manual.txt",
+          "id": "01a1975a-3428-774c-8645-515f818c128a",
+          "destination": "Manuals",
+          "confidence": "medium"
+        },
+        {
+          "item": "draft paper phase response.md",
+          "id": "01a1975a-3428-774c-8645-5160101030b6",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "drill safety and warranty.txt",
+          "id": "01a1975a-3428-774c-8645-5161faecd6b7",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "electricity bill september.txt",
+          "id": "01a1975a-3428-774c-8645-516200bdc513",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "email from sam about visit.txt",
+          "id": "01a1975a-3428-774c-8645-5163f24cbaf9",
+          "destination": "Letters",
+          "confidence": "medium"
+        },
+        {
+          "item": "employment contract lumen.md",
+          "id": "01a1975a-3428-774c-8645-516428661f10",
+          "destination": "Work",
+          "confidence": "medium"
+        },
+        {
+          "item": "essay on attention.md",
+          "id": "01a1975a-3428-774c-8645-51656e84627d",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "export.png",
+          "id": "01a1975a-3428-774c-8645-516666ef869c",
+          "destination": "Projects",
+          "confidence": "low"
+        },
+        {
+          "item": "flight booking lisbon.txt",
+          "id": "01a1975a-3428-774c-8645-51678de3158d",
+          "destination": "Travel",
+          "confidence": "medium"
+        },
+        {
+          "item": "fund report q2.txt",
+          "id": "01a1975a-3428-774c-8645-516830f4ce1e",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "home contents policy.txt",
+          "id": "01a1975a-3428-774c-8645-5169a35ae8af",
+          "destination": "Insurance",
+          "confidence": "medium"
+        },
+        {
+          "item": "home office expenses.md",
+          "id": "01a1975a-3428-774c-8645-516aae74e8d8",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "hotel booking porto.txt",
+          "id": "01a1975a-3428-774c-8645-516bb3df489c",
+          "destination": "Travel",
+          "confidence": "medium"
+        },
+        {
+          "item": "internet contract.txt",
+          "id": "01a1975a-3428-774c-8645-516c6a9b5e2d",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "invoice monitor arm.md",
+          "id": "01a1975a-3428-774c-8645-516d53b45348",
+          "destination": "Receipts",
+          "confidence": "medium"
+        },
+        {
+          "item": "itinerary portugal.md",
+          "id": "01a1975a-3428-774c-8645-516e84d87443",
+          "destination": "Travel",
+          "confidence": "medium"
+        },
+        {
+          "item": "kettle manual.zip",
+          "id": "01a1975a-3428-774c-8645-516fe18a536d",
+          "destination": "Manuals",
+          "confidence": "medium"
+        },
+        {
+          "item": "lab notebook oscillators week 12.md",
+          "id": "01a1975a-3428-774c-8645-5170270c343e",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "label printer driver.zip",
+          "id": "01a1975a-3428-774c-8645-51710b3743f0",
+          "destination": "Manuals",
+          "confidence": "low"
+        },
+        {
+          "item": "lamp dimmer firmware.zip",
+          "id": "01a1975a-3428-774c-8645-5172dac9d4bf",
+          "destination": "Projects",
+          "confidence": "low"
+        },
+        {
+          "item": "lemon drizzle cake.txt",
+          "id": "01a1975a-3428-774c-8645-51738a518fb4",
+          "destination": "Recipes",
+          "confidence": "medium"
+        },
+        {
+          "item": "lentil dal.md",
+          "id": "01a1975a-3428-774c-8645-5174efecd315",
+          "destination": "Recipes",
+          "confidence": "medium"
+        },
+        {
+          "item": "letter from grandma.txt",
+          "id": "01a1975a-3428-774c-8645-5175078fb206",
+          "destination": "Letters",
+          "confidence": "medium"
+        },
+        {
+          "item": "letter from tax office.txt",
+          "id": "01a1975a-3428-774c-8645-5176aafe3a97",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "message to landlord.txt",
+          "id": "01a1975a-3428-774c-8645-51776c38b410",
+          "destination": "Home",
+          "confidence": "medium"
+        },
+        {
+          "item": "misc notes.txt",
+          "id": "01a1975a-3428-774c-8645-5178b7406242",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "old us tax form.txt",
+          "id": "01a1975a-3428-774c-8645-517957a24853",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "order confirmation laptop.txt",
+          "id": "01a1975a-3428-774c-8645-517a0015c098",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "paper kuramoto synchronization.txt",
+          "id": "01a1975a-3428-774c-8645-517b0b51294f",
+          "destination": "Reading",
+          "confidence": "medium"
+        },
+        {
+          "item": "part_v3_final.stl",
+          "id": "01a1975a-3428-774c-8645-517c565f302c",
+          "destination": "Projects",
+          "confidence": "low"
+        },
+        {
+          "item": "payslip october.txt",
+          "id": "01a1975a-3428-774c-8645-517dd23a6849",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "pension annual statement.txt",
+          "id": "01a1975a-3428-774c-8645-517e9d7d823c",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "performance review 2025.md",
+          "id": "01a1975a-3428-774c-8645-517f754350a6",
+          "destination": "Work",
+          "confidence": "medium"
+        },
+        {
+          "item": "phone repair receipt.txt",
+          "id": "01a1975a-3428-774c-8645-5180a19ed18a",
+          "destination": "Receipts",
+          "confidence": "medium"
+        },
+        {
+          "item": "physio appointment.txt",
+          "id": "01a1975a-3428-774c-8645-5181bf6e2f84",
+          "destination": "Health",
+          "confidence": "low"
+        },
+        {
+          "item": "plant monitor readme.md",
+          "id": "01a1975a-3428-774c-8645-518257ce1a73",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "prescription amoxicillin.txt",
+          "id": "01a1975a-3428-774c-8645-51835f8f95ea",
+          "destination": "Health",
+          "confidence": "medium"
+        },
+        {
+          "item": "print_0412.stl",
+          "id": "01a1975a-3428-774c-8645-5184cee8a67b",
+          "destination": "Projects",
+          "confidence": "low"
+        },
+        {
+          "item": "receipt and manual blender.txt",
+          "id": "01a1975a-3428-774c-8645-5185c46dd7de",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "receipt desk chair.txt",
+          "id": "01a1975a-3428-774c-8645-5186df97b6a8",
+          "destination": "Receipts",
+          "confidence": "medium"
+        },
+        {
+          "item": "referral letter for physio.txt",
+          "id": "01a1975a-3428-774c-8645-5187762e4c51",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "rfc 9110 http semantics notes.md",
+          "id": "01a1975a-3428-774c-8645-518881ab6dfc",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "ring_v2.stl",
+          "id": "01a1975a-3428-774c-8645-5189d5ac2f22",
+          "destination": "Projects",
+          "confidence": "low"
+        },
+        {
+          "item": "router quick start.md",
+          "id": "01a1975a-3428-774c-8645-518a57678622",
+          "destination": "Manuals",
+          "confidence": "medium"
+        },
+        {
+          "item": "scan0007.png",
+          "id": "01a1975a-3428-774c-8645-518b02f98eb1",
+          "destination": "Letters",
+          "confidence": "medium"
+        },
+        {
+          "item": "scan_0007.stl",
+          "id": "01a1975a-3428-774c-8645-518cb609fc63",
+          "destination": "Projects",
+          "confidence": "low"
+        },
+        {
+          "item": "short story draft.md",
+          "id": "01a1975a-3428-774c-8645-518dbc5bfdfa",
+          "destination": "Projects",
+          "confidence": "low"
+        },
+        {
+          "item": "sourdough loaf.md",
+          "id": "01a1975a-3428-774c-8645-518e01e3896b",
+          "destination": "Recipes",
+          "confidence": "medium"
+        },
+        {
+          "item": "talk slides outline.md",
+          "id": "01a1975a-3428-774c-8645-518f17378b47",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "tax return summary 2024.md",
+          "id": "01a1975a-3428-774c-8645-5190d2e73f1b",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "team meeting notes.md",
+          "id": "01a1975a-3428-774c-8645-519158a95676",
+          "destination": "Work",
+          "confidence": "low"
+        },
+        {
+          "item": "tenancy agreement.md",
+          "id": "01a1975a-3428-774c-8645-5192f66c8fd3",
+          "destination": "Home",
+          "confidence": "low"
+        },
+        {
+          "item": "train tickets porto.txt",
+          "id": "01a1975a-3428-774c-8645-5193ed49c03d",
+          "destination": "Travel",
+          "confidence": "medium"
+        },
+        {
+          "item": "travel insurance certificate.txt",
+          "id": "01a1975a-3428-774c-8645-5194c77f7cd8",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "travel insurance claim lost bag.md",
+          "id": "01a1975a-3428-774c-8645-5195c80ac54b",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "untitled scan text.txt",
+          "id": "01a1975a-3428-774c-8645-51966275494c",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "vaccination record.md",
+          "id": "01a1975a-3428-774c-8645-5197f3444479",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "wifi and alarm codes.txt",
+          "id": "01a1975a-3428-774c-8645-519845f42507",
+          "destination": "Holding",
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "provider": "llama",
+      "offer": "qwen3.5-4b",
+      "label": "llama/qwen3.5-4b.gguf",
+      "version": "0.5.1",
+      "value": {
+        "items": 116,
+        "questions": 14,
+        "answerable": 14,
+        "set_aside": 0,
+        "routing_before": 0.8189655172413793,
+        "routing_after": 0.8362068965517241,
+        "correlation": 0.4823093921466897,
+        "top_k": [
+          {
+            "k": 1,
+            "ranked": 0.8362068965517241,
+            "best": 0.8362068965517241
+          },
+          {
+            "k": 2,
+            "ranked": 0.8405172413793104,
+            "best": 0.8448275862068966
+          },
+          {
+            "k": 3,
+            "ranked": 0.8405172413793104,
+            "best": 0.8491379310344828
+          },
+          {
+            "k": 4,
+            "ranked": 0.8448275862068966,
+            "best": 0.853448275862069
+          },
+          {
+            "k": 5,
+            "ranked": 0.8448275862068966,
+            "best": 0.853448275862069
+          },
+          {
+            "k": 6,
+            "ranked": 0.8362068965517241,
+            "best": 0.853448275862069
+          },
+          {
+            "k": 7,
+            "ranked": 0.8362068965517241,
+            "best": 0.853448275862069
+          },
+          {
+            "k": 8,
+            "ranked": 0.8362068965517241,
+            "best": 0.853448275862069
+          },
+          {
+            "k": 9,
+            "ranked": 0.8448275862068966,
+            "best": 0.853448275862069
+          },
+          {
+            "k": 10,
+            "ranked": 0.8362068965517241,
+            "best": 0.853448275862069
+          },
+          {
+            "k": 11,
+            "ranked": 0.8362068965517241,
+            "best": 0.853448275862069
+          },
+          {
+            "k": 12,
+            "ranked": 0.8362068965517241,
+            "best": 0.853448275862069
+          },
+          {
+            "k": 13,
+            "ranked": 0.8362068965517241,
+            "best": 0.8448275862068966
+          },
+          {
+            "k": 14,
+            "ranked": 0.8362068965517241,
+            "best": 0.8362068965517241
+          }
+        ]
+      },
+      "questions": [
+        {
+          "id": "01a1977d-a72e-7577-8751-eb124ae0724d",
+          "kind": "group",
+          "subject": "Allotment",
+          "question": "These 4 items about “Allotment”: Receipts, or a new Receipts/Allotment collection?",
+          "rank": 1,
+          "ranked_value": 3.6,
+          "items": 4,
+          "answer": {
+            "kind": "collection",
+            "collection": "Home"
+          },
+          "moved": {
+            "Allotment committee newsletter.txt": "Home",
+            "Allotment planting plan.md": "Home",
+            "Allotment plot licence.txt": "Home",
+            "Allotment seed order.txt": "Home"
+          },
+          "gain": 2.0
+        },
+        {
+          "id": "01a1977d-a72e-7577-8751-eb13c0944f79",
+          "kind": "group",
+          "subject": "Calder Building Society",
+          "question": "These 4 items about “Calder Building Society”: Finances, or a new Finances/Calder Building Society collection?",
+          "rank": 2,
+          "ranked_value": 2.8,
+          "items": 4,
+          "answer": {
+            "kind": "collection",
+            "collection": "Finances"
+          },
+          "moved": {
+            "Calder Building Society travel money card.txt": "Finances"
+          },
+          "gain": 0.5
+        },
+        {
+          "id": "01a1977d-a72e-7577-8751-eb0e82af4eb1",
+          "kind": "term",
+          "subject": "ORCA",
+          "question": "What is “ORCA”?",
+          "rank": 3,
+          "ranked_value": 2.6,
+          "items": 3,
+          "answer": {
+            "kind": "fact",
+            "term": "ORCA",
+            "fact": "items named for it belong in Work (Employment: contracts, pay, reviews, meetings and applications)",
+            "collection": "Work"
+          },
+          "moved": {
+            "ORCA site visit report.txt": "Projects"
+          },
+          "gain": 0.0
+        },
+        {
+          "id": "01a1977d-a72e-7577-8751-eb156c59b6a2",
+          "kind": "group",
+          "subject": "Mariner Travel",
+          "question": "These 3 items about “Mariner Travel”: Travel, or a new Travel/Mariner Travel collection?",
+          "rank": 4,
+          "ranked_value": 2.2,
+          "items": 3,
+          "answer": {
+            "kind": "collection",
+            "collection": "Travel"
+          },
+          "moved": {
+            "Mariner Travel invoice.txt": "Travel"
+          },
+          "gain": 0.5
+        },
+        {
+          "id": "01a1977d-a72e-7577-8751-eb14feeb34c9",
+          "kind": "group",
+          "subject": "Larkspur Road",
+          "question": "These 3 items about “Larkspur Road”: Home, or a new Home/Larkspur Road collection?",
+          "rank": 5,
+          "ranked_value": 1.7999999999999998,
+          "items": 3,
+          "answer": {
+            "kind": "collection",
+            "collection": "Home"
+          },
+          "moved": {},
+          "gain": 0.0
+        },
+        {
+          "id": "01a1977d-a72e-7577-8751-eb09708a99b7",
+          "kind": "term",
+          "subject": "CNC",
+          "question": "What is “CNC”?",
+          "rank": 6,
+          "ranked_value": 1.6,
+          "items": 2,
+          "answer": {
+            "kind": "fact",
+            "term": "CNC",
+            "fact": "items named for it belong in Projects (Things I make outside work: code, electronics, 3D prints and writing)",
+            "collection": "Projects"
+          },
+          "moved": {
+            "CNC toolpath settings.txt": "Holding"
+          },
+          "gain": -1.0
+        },
+        {
+          "id": "01a1977d-a72e-7577-8751-eb0bb8a5b89f",
+          "kind": "term",
+          "subject": "EHIC",
+          "question": "What is “EHIC”?",
+          "rank": 7,
+          "ranked_value": 1.6,
+          "items": 2,
+          "answer": {
+            "kind": "fact",
+            "term": "EHIC",
+            "fact": "items named for it belong in Health (Medical records, prescriptions, test results and appointments)",
+            "collection": "Health"
+          },
+          "moved": {},
+          "gain": 0.0
+        },
+        {
+          "id": "01a1977d-a72e-7577-8751-eb0db487de4c",
+          "kind": "term",
+          "subject": "LIGO",
+          "question": "What is “LIGO”?",
+          "rank": 8,
+          "ranked_value": 1.6,
+          "items": 2,
+          "answer": {
+            "kind": "fact",
+            "term": "LIGO",
+            "fact": "items named for it belong in Reading (Papers, articles and books by others, kept for reference)",
+            "collection": "Reading"
+          },
+          "moved": {
+            "LIGO open data tutorial.md": "Holding"
+          },
+          "gain": 0.0
+        },
+        {
+          "id": "01a1977d-a72e-7577-8751-eb0f59989f5e",
+          "kind": "term",
+          "subject": "OSM",
+          "question": "What is “OSM”?",
+          "rank": 9,
+          "ranked_value": 1.6,
+          "items": 2,
+          "answer": {
+            "kind": "fact",
+            "term": "OSM",
+            "fact": "items named for it belong in Projects (Things I make outside work: code, electronics, 3D prints and writing)",
+            "collection": "Projects"
+          },
+          "moved": {
+            "OSM footpath edits.md": "Projects"
+          },
+          "gain": 1.0
+        },
+        {
+          "id": "01a1977d-a72e-7577-8751-eb103867c8f6",
+          "kind": "term",
+          "subject": "PhD",
+          "question": "What is “PhD”?",
+          "rank": 10,
+          "ranked_value": 1.6,
+          "items": 2,
+          "answer": {
+            "kind": "fact",
+            "term": "PhD",
+            "fact": "items named for it belong in Research (My own research: lab notes, drafts, data and talks)",
+            "collection": "Research"
+          },
+          "moved": {
+            "PhD thesis outline.md": "Holding"
+          },
+          "gain": -1.0
+        },
+        {
+          "id": "01a1977d-a72e-7577-8751-eb081983f3f4",
+          "kind": "term",
+          "subject": "BrewLog",
+          "question": "What is “BrewLog”?",
+          "rank": 11,
+          "ranked_value": 1.2,
+          "items": 2,
+          "answer": {
+            "kind": "fact",
+            "term": "BrewLog",
+            "fact": "items named for it belong in Projects (Things I make outside work: code, electronics, 3D prints and writing)",
+            "collection": "Projects"
+          },
+          "moved": {},
+          "gain": 0.0
+        },
+        {
+          "id": "01a1977d-a72e-7577-8751-eb0a6891df32",
+          "kind": "term",
+          "subject": "DnD",
+          "question": "What is “DnD”?",
+          "rank": 12,
+          "ranked_value": 1.2,
+          "items": 2,
+          "answer": {
+            "kind": "fact",
+            "term": "DnD",
+            "fact": "items named for it belong in Projects (Things I make outside work: code, electronics, 3D prints and writing)",
+            "collection": "Projects"
+          },
+          "moved": {},
+          "gain": 0.0
+        },
+        {
+          "id": "01a1977d-a72e-7577-8751-eb0c48a32dfa",
+          "kind": "term",
+          "subject": "ISA",
+          "question": "What is “ISA”?",
+          "rank": 13,
+          "ranked_value": 1.2,
+          "items": 2,
+          "answer": {
+            "kind": "fact",
+            "term": "ISA",
+            "fact": "items named for it belong in Finances (Bank accounts, tax, pensions and investments)",
+            "collection": "Finances"
+          },
+          "moved": {},
+          "gain": 0.0
+        },
+        {
+          "id": "01a1977d-a72e-7577-8751-eb11186b404c",
+          "kind": "term",
+          "subject": "QPCR",
+          "question": "What is “QPCR”?",
+          "rank": 14,
+          "ranked_value": 1.2,
+          "items": 2,
+          "answer": {
+            "kind": "fact",
+            "term": "QPCR",
+            "fact": "items named for it belong in Research (My own research: lab notes, drafts, data and talks)",
+            "collection": "Research"
+          },
+          "moved": {},
+          "gain": 0.0
+        }
+      ],
+      "proposals": [
+        {
+          "item": "2025 bank statement March.txt",
+          "id": "01a1977d-a72c-779f-a0fb-a1d0a345021e",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "Allotment committee newsletter.txt",
+          "id": "01a1977d-a72c-779f-a0fb-a1d1f39a941a",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "Allotment planting plan.md",
+          "id": "01a1977d-a72c-779f-a0fb-a1d2b808b146",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "Allotment plot licence.txt",
+          "id": "01a1977d-a72c-779f-a0fb-a1d313c4d2d6",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "Allotment seed order.txt",
+          "id": "01a1977d-a72c-779f-a0fb-a1d4fd9833c7",
+          "destination": "Receipts",
+          "confidence": "medium"
+        },
+        {
+          "item": "BrewLog firmware changelog.md",
+          "id": "01a1977d-a72c-779f-a0fb-a1d5d1155721",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "BrewLog sensor wiring.md",
+          "id": "01a1977d-a72c-779f-a0fb-a1d638301e42",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "CNC spindle setup.md",
+          "id": "01a1977d-a72c-779f-a0fb-a1d7833814ef",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "CNC toolpath settings.txt",
+          "id": "01a1977d-a72c-779f-a0fb-a1d893752352",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "Calder Building Society branch closure.txt",
+          "id": "01a1977d-a72c-779f-a0fb-a1d92b0652d1",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "Calder Building Society rate change.txt",
+          "id": "01a1977d-a72c-779f-a0fb-a1da5448fa94",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "Calder Building Society savings statement.txt",
+          "id": "01a1977d-a72c-779f-a0fb-a1dbe471c805",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "Calder Building Society travel money card.txt",
+          "id": "01a1977d-a72c-779f-a0fb-a1dc96fbb4d8",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "DnD campaign notes.md",
+          "id": "01a1977d-a72c-779f-a0fb-a1dd0e67b35f",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "DnD session recap.md",
+          "id": "01a1977d-a72c-779f-a0fb-a1de7134ffed",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "EHIC application confirmation.txt",
+          "id": "01a1977d-a72c-779f-a0fb-a1df2fd1c742",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "EHIC renewal reminder.txt",
+          "id": "01a1977d-a72c-779f-a0fb-a1e08a015fc3",
+          "destination": "Insurance",
+          "confidence": "medium"
+        },
+        {
+          "item": "IMG_1502.jpg",
+          "id": "01a1977d-a72c-779f-a0fb-a1e1dd902fd9",
+          "destination": "Recipes",
+          "confidence": "medium"
+        },
+        {
+          "item": "IMG_1876.jpg",
+          "id": "01a1977d-a72c-779f-a0fb-a1e2c9e769a7",
+          "destination": "Travel",
+          "confidence": "medium"
+        },
+        {
+          "item": "IMG_2041.jpg",
+          "id": "01a1977d-a72c-779f-a0fb-a1e3300f1e54",
+          "destination": "Receipts",
+          "confidence": "medium"
+        },
+        {
+          "item": "IMG_3310.jpg",
+          "id": "01a1977d-a72c-779f-a0fb-a1e455b1c25a",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "IMG_4127.jpg",
+          "id": "01a1977d-a72c-779f-a0fb-a1e5fd24ef62",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "ISA interest summary.txt",
+          "id": "01a1977d-a72c-779f-a0fb-a1e6dcbfe058",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "ISA transfer form.txt",
+          "id": "01a1977d-a72c-779f-a0fb-a1e74ecd1378",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "LIGO detector primer.txt",
+          "id": "01a1977d-a72c-779f-a0fb-a1e8c7340806",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "LIGO open data tutorial.md",
+          "id": "01a1977d-a72c-779f-a0fb-a1e92f92bb08",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "Larkspur Road deposit return.txt",
+          "id": "01a1977d-a72c-779f-a0fb-a1ea0d39e5d1",
+          "destination": "Home",
+          "confidence": "medium"
+        },
+        {
+          "item": "Larkspur Road inventory.txt",
+          "id": "01a1977d-a72c-779f-a0fb-a1eb5c6a11df",
+          "destination": "Home",
+          "confidence": "medium"
+        },
+        {
+          "item": "Larkspur Road keys handover.txt",
+          "id": "01a1977d-a72c-779f-a0fb-a1ec6c224d50",
+          "destination": "Home",
+          "confidence": "medium"
+        },
+        {
+          "item": "Mariner Travel booking Bergen.txt",
+          "id": "01a1977d-a72c-779f-a0fb-a1eda5b47fde",
+          "destination": "Travel",
+          "confidence": "medium"
+        },
+        {
+          "item": "Mariner Travel cancellation terms.txt",
+          "id": "01a1977d-a72c-779f-a0fb-a1eed1866515",
+          "destination": "Travel",
+          "confidence": "medium"
+        },
+        {
+          "item": "Mariner Travel invoice.txt",
+          "id": "01a1977d-a72c-779f-a0fb-a1ef4c2594b1",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "ORCA kickoff minutes.md",
+          "id": "01a1977d-a72c-779f-a0fb-a1f0a6863588",
+          "destination": "Work",
+          "confidence": "medium"
+        },
+        {
+          "item": "ORCA sensor budget.txt",
+          "id": "01a1977d-a72c-779f-a0fb-a1f1ac214688",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "ORCA site visit report.txt",
+          "id": "01a1977d-a72c-779f-a0fb-a1f2a93ded9d",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "OSM footpath edits.md",
+          "id": "01a1977d-a72c-779f-a0fb-a1f3e7fe02d9",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "OSM import script notes.md",
+          "id": "01a1977d-a72c-779f-a0fb-a1f4fcd4931d",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "PhD funding letter.txt",
+          "id": "01a1977d-a72c-779f-a0fb-a1f5f98d19ad",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "PhD thesis outline.md",
+          "id": "01a1977d-a72c-779f-a0fb-a1f6f985ac88",
+          "destination": "Research",
+          "confidence": "medium"
+        },
+        {
+          "item": "QPCR melt curve check.md",
+          "id": "01a1977d-a72c-779f-a0fb-a1f761e0ce47",
+          "destination": "Research",
+          "confidence": "medium"
+        },
+        {
+          "item": "QPCR plate layout.txt",
+          "id": "01a1977d-a72c-779f-a0fb-a1f86afc0bc1",
+          "destination": "Research",
+          "confidence": "medium"
+        },
+        {
+          "item": "Screenshot 2025-08-28 at 09.14.03.png",
+          "id": "01a1977d-a72c-779f-a0fb-a1f993359698",
+          "destination": "Home",
+          "confidence": "medium"
+        },
+        {
+          "item": "Screenshot 2025-10-03 at 08.41.55.png",
+          "id": "01a1977d-a72c-779f-a0fb-a1face40701d",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "amplifier build log.txt",
+          "id": "01a1977d-a72c-779f-a0fb-a1fba78e01ad",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "birthday card from sister.txt",
+          "id": "01a1977d-a72c-779f-a0fb-a1fce1993afd",
+          "destination": "Letters",
+          "confidence": "medium"
+        },
+        {
+          "item": "blood test results.txt",
+          "id": "01a1977d-a72c-779f-a0fb-a1fdb9e68a1b",
+          "destination": "Health",
+          "confidence": "medium"
+        },
+        {
+          "item": "boiler repair note.txt",
+          "id": "01a1977d-a72c-779f-a0fb-a1fefdec3466",
+          "destination": "Home",
+          "confidence": "medium"
+        },
+        {
+          "item": "budget app notes.md",
+          "id": "01a1977d-a72c-779f-a0fb-a1ff93e0ee2a",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "building notice water off.txt",
+          "id": "01a1977d-a72c-779f-a0fb-a200a307f325",
+          "destination": "Home",
+          "confidence": "medium"
+        },
+        {
+          "item": "car insurance renewal.txt",
+          "id": "01a1977d-a72c-779f-a0fb-a2018b910c66",
+          "destination": "Insurance",
+          "confidence": "medium"
+        },
+        {
+          "item": "card replacement letter.txt",
+          "id": "01a1977d-a72c-779f-a0fb-a2021e56af26",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "cell biology review.txt",
+          "id": "01a1977d-a72c-779f-a0fb-a2034cf0aeac",
+          "destination": "Reading",
+          "confidence": "medium"
+        },
+        {
+          "item": "claim physio costs.md",
+          "id": "01a1977d-a72c-779f-a0fb-a2044b975947",
+          "destination": "Insurance",
+          "confidence": "medium"
+        },
+        {
+          "item": "coffee machine descaling.txt",
+          "id": "01a1977d-a72c-779f-a0fb-a2053515df31",
+          "destination": "Manuals",
+          "confidence": "medium"
+        },
+        {
+          "item": "conference registration.txt",
+          "id": "01a1977d-a72c-779f-a0fb-a206b4d8c1c5",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "cv alex morgan.md",
+          "id": "01a1977d-a72c-779f-a0fb-a2074671d2c2",
+          "destination": "Work",
+          "confidence": "medium"
+        },
+        {
+          "item": "darwin origin chapter 4 notes.md",
+          "id": "01a1977d-a72c-779f-a0fb-a2088a38ef31",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "dataset description.md",
+          "id": "01a1977d-a72c-779f-a0fb-a2098a747d6f",
+          "destination": "Research",
+          "confidence": "medium"
+        },
+        {
+          "item": "dishwasher manual.txt",
+          "id": "01a1977d-a72c-779f-a0fb-a20ae8d12d8c",
+          "destination": "Manuals",
+          "confidence": "medium"
+        },
+        {
+          "item": "draft paper phase response.md",
+          "id": "01a1977d-a72c-779f-a0fb-a20bd0ab5e9a",
+          "destination": "Research",
+          "confidence": "medium"
+        },
+        {
+          "item": "drill safety and warranty.txt",
+          "id": "01a1977d-a72c-779f-a0fb-a20cb9de5541",
+          "destination": "Manuals",
+          "confidence": "medium"
+        },
+        {
+          "item": "electricity bill september.txt",
+          "id": "01a1977d-a72c-779f-a0fb-a20d34fbaa25",
+          "destination": "Home",
+          "confidence": "medium"
+        },
+        {
+          "item": "email from sam about visit.txt",
+          "id": "01a1977d-a72c-779f-a0fb-a20e43af50e3",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "employment contract lumen.md",
+          "id": "01a1977d-a72c-779f-a0fb-a20fe8e8372c",
+          "destination": "Work",
+          "confidence": "medium"
+        },
+        {
+          "item": "essay on attention.md",
+          "id": "01a1977d-a72c-779f-a0fb-a210c4f029e5",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "export.png",
+          "id": "01a1977d-a72c-779f-a0fb-a211fd2459d7",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "flight booking lisbon.txt",
+          "id": "01a1977d-a72c-779f-a0fb-a212e544898a",
+          "destination": "Travel",
+          "confidence": "medium"
+        },
+        {
+          "item": "fund report q2.txt",
+          "id": "01a1977d-a72c-779f-a0fb-a21324065c21",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "home contents policy.txt",
+          "id": "01a1977d-a72c-779f-a0fb-a214bb273bdc",
+          "destination": "Insurance",
+          "confidence": "medium"
+        },
+        {
+          "item": "home office expenses.md",
+          "id": "01a1977d-a72c-779f-a0fb-a2156d5d47e2",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "hotel booking porto.txt",
+          "id": "01a1977d-a72c-779f-a0fb-a21646388b83",
+          "destination": "Travel",
+          "confidence": "medium"
+        },
+        {
+          "item": "internet contract.txt",
+          "id": "01a1977d-a72c-779f-a0fb-a217b6a4ccf8",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "invoice monitor arm.md",
+          "id": "01a1977d-a72c-779f-a0fb-a218596458a3",
+          "destination": "Receipts",
+          "confidence": "medium"
+        },
+        {
+          "item": "itinerary portugal.md",
+          "id": "01a1977d-a72c-779f-a0fb-a2198f2e8c4f",
+          "destination": "Travel",
+          "confidence": "medium"
+        },
+        {
+          "item": "kettle manual.zip",
+          "id": "01a1977d-a72d-7553-8235-519850257b69",
+          "destination": "Manuals",
+          "confidence": "medium"
+        },
+        {
+          "item": "lab notebook oscillators week 12.md",
+          "id": "01a1977d-a72d-7553-8235-51998282745f",
+          "destination": "Research",
+          "confidence": "medium"
+        },
+        {
+          "item": "label printer driver.zip",
+          "id": "01a1977d-a72d-7553-8235-519a53192266",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "lamp dimmer firmware.zip",
+          "id": "01a1977d-a72d-7553-8235-519b8c72272c",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "lemon drizzle cake.txt",
+          "id": "01a1977d-a72d-7553-8235-519cdb5c251b",
+          "destination": "Recipes",
+          "confidence": "medium"
+        },
+        {
+          "item": "lentil dal.md",
+          "id": "01a1977d-a72d-7553-8235-519d29e485d5",
+          "destination": "Recipes",
+          "confidence": "medium"
+        },
+        {
+          "item": "letter from grandma.txt",
+          "id": "01a1977d-a72d-7553-8235-519e9b2f5aa8",
+          "destination": "Letters",
+          "confidence": "medium"
+        },
+        {
+          "item": "letter from tax office.txt",
+          "id": "01a1977d-a72d-7553-8235-519fd2be2369",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "message to landlord.txt",
+          "id": "01a1977d-a72d-7553-8235-51a0d9f2bacb",
+          "destination": "Home",
+          "confidence": "medium"
+        },
+        {
+          "item": "misc notes.txt",
+          "id": "01a1977d-a72d-7553-8235-51a15688d6ab",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "old us tax form.txt",
+          "id": "01a1977d-a72d-7553-8235-51a2a04fd8ef",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "order confirmation laptop.txt",
+          "id": "01a1977d-a72d-7553-8235-51a3d0dce211",
+          "destination": "Receipts",
+          "confidence": "medium"
+        },
+        {
+          "item": "paper kuramoto synchronization.txt",
+          "id": "01a1977d-a72d-7553-8235-51a484f73495",
+          "destination": "Reading",
+          "confidence": "medium"
+        },
+        {
+          "item": "part_v3_final.stl",
+          "id": "01a1977d-a72d-7553-8235-51a578b4ab8b",
+          "destination": "Projects",
+          "confidence": "low"
+        },
+        {
+          "item": "payslip october.txt",
+          "id": "01a1977d-a72d-7553-8235-51a675b3a2e2",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "pension annual statement.txt",
+          "id": "01a1977d-a72d-7553-8235-51a7b4391b48",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "performance review 2025.md",
+          "id": "01a1977d-a72d-7553-8235-51a82d26a10d",
+          "destination": "Work",
+          "confidence": "medium"
+        },
+        {
+          "item": "phone repair receipt.txt",
+          "id": "01a1977d-a72d-7553-8235-51a928c821c5",
+          "destination": "Receipts",
+          "confidence": "medium"
+        },
+        {
+          "item": "physio appointment.txt",
+          "id": "01a1977d-a72d-7553-8235-51aac8a81e66",
+          "destination": "Health",
+          "confidence": "medium"
+        },
+        {
+          "item": "plant monitor readme.md",
+          "id": "01a1977d-a72d-7553-8235-51ab716bf0d4",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "prescription amoxicillin.txt",
+          "id": "01a1977d-a72d-7553-8235-51ac1305abe6",
+          "destination": "Health",
+          "confidence": "medium"
+        },
+        {
+          "item": "print_0412.stl",
+          "id": "01a1977d-a72d-7553-8235-51ada8da7d7b",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "receipt and manual blender.txt",
+          "id": "01a1977d-a72d-7553-8235-51aecd765e64",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "receipt desk chair.txt",
+          "id": "01a1977d-a72d-7553-8235-51af9f893be0",
+          "destination": "Receipts",
+          "confidence": "medium"
+        },
+        {
+          "item": "referral letter for physio.txt",
+          "id": "01a1977d-a72d-7553-8235-51b0862b6a50",
+          "destination": "Health",
+          "confidence": "medium"
+        },
+        {
+          "item": "rfc 9110 http semantics notes.md",
+          "id": "01a1977d-a72e-7577-8751-eaf721d1667e",
+          "destination": "Reading",
+          "confidence": "medium"
+        },
+        {
+          "item": "ring_v2.stl",
+          "id": "01a1977d-a72e-7577-8751-eaf8bd5dfecf",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "router quick start.md",
+          "id": "01a1977d-a72e-7577-8751-eaf9491cf057",
+          "destination": "Manuals",
+          "confidence": "medium"
+        },
+        {
+          "item": "scan0007.png",
+          "id": "01a1977d-a72e-7577-8751-eafad5bf9fa5",
+          "destination": "Letters",
+          "confidence": "medium"
+        },
+        {
+          "item": "scan_0007.stl",
+          "id": "01a1977d-a72e-7577-8751-eafb48832cc0",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "short story draft.md",
+          "id": "01a1977d-a72e-7577-8751-eafc987ce388",
+          "destination": "Projects",
+          "confidence": "medium"
+        },
+        {
+          "item": "sourdough loaf.md",
+          "id": "01a1977d-a72e-7577-8751-eafd07696eab",
+          "destination": "Recipes",
+          "confidence": "medium"
+        },
+        {
+          "item": "talk slides outline.md",
+          "id": "01a1977d-a72e-7577-8751-eafe1fdd5cb8",
+          "destination": "Research",
+          "confidence": "medium"
+        },
+        {
+          "item": "tax return summary 2024.md",
+          "id": "01a1977d-a72e-7577-8751-eaffd02a6563",
+          "destination": "Finances",
+          "confidence": "medium"
+        },
+        {
+          "item": "team meeting notes.md",
+          "id": "01a1977d-a72e-7577-8751-eb008a492e23",
+          "destination": "Work",
+          "confidence": "medium"
+        },
+        {
+          "item": "tenancy agreement.md",
+          "id": "01a1977d-a72e-7577-8751-eb019452c3d0",
+          "destination": "Home",
+          "confidence": "medium"
+        },
+        {
+          "item": "train tickets porto.txt",
+          "id": "01a1977d-a72e-7577-8751-eb02325ac561",
+          "destination": "Travel",
+          "confidence": "medium"
+        },
+        {
+          "item": "travel insurance certificate.txt",
+          "id": "01a1977d-a72e-7577-8751-eb03dd7e4816",
+          "destination": "Insurance",
+          "confidence": "medium"
+        },
+        {
+          "item": "travel insurance claim lost bag.md",
+          "id": "01a1977d-a72e-7577-8751-eb049829cd87",
+          "destination": "Insurance",
+          "confidence": "medium"
+        },
+        {
+          "item": "untitled scan text.txt",
+          "id": "01a1977d-a72e-7577-8751-eb054e694e1a",
+          "destination": "Holding",
+          "confidence": "low"
+        },
+        {
+          "item": "vaccination record.md",
+          "id": "01a1977d-a72e-7577-8751-eb066f7c0739",
+          "destination": "Health",
+          "confidence": "medium"
+        },
+        {
+          "item": "wifi and alarm codes.txt",
+          "id": "01a1977d-a72e-7577-8751-eb0730d104e6",
+          "destination": "Home",
+          "confidence": "medium"
+        }
+      ]
+    }
+  ]
+}
