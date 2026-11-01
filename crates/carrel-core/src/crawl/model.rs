@@ -58,7 +58,11 @@ mod tests {
         for model in &mut catalog {
             model.crawler = false;
         }
-        assert_eq!(recommended(&available, None, &catalog), None, "none recommended");
+        assert_eq!(
+            recommended(&available, None, &catalog),
+            None,
+            "none recommended"
+        );
         for model in &mut catalog {
             model.crawler = model.name.starts_with("qwen3.5");
         }
