@@ -357,7 +357,7 @@ pub fn senders(
 ///
 /// # Errors
 ///
-/// [`ArchiveError`] if the collections or items can't be read.
+/// [`crate::archive::ArchiveError`] if the collections or items can't be read.
 pub fn senders_in(
     archive: &crate::archive::Archive,
     proposals: &[ReviewEntry],
