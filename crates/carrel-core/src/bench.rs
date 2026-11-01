@@ -7,8 +7,14 @@
 //!
 //! [`findability`] measures search on the same test set, with hand-written descriptions of each
 //! item in `descriptions.yaml`.
+//!
+//! [`librarian`] measures the librarian's answers to hand-written questions with known answers
+//! in `librarian.yaml`, and [`question_value`] measures which questions, once answered, improve
+//! routing most, and how well the question queue's ranking predicts it.
 
 pub mod findability;
+pub mod librarian;
+pub mod question_value;
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -376,6 +382,17 @@ pub fn percent(share: f64) -> String {
     format!("{:.0}%", share * 100.0)
 }
 
+/// How right filing an item with `answer` in `destination` is: 1 for an acceptable
+/// collection, ½ for Holding when the item is ambiguous, otherwise 0.
+#[must_use]
+pub fn routing_points(answer: &Answer, destination: Option<&str>) -> f64 {
+    match destination {
+        Some(d) if answer.destinations.iter().any(|a| a == d) => 1.0,
+        Some(HOLDING) if answer.ambiguous => 0.5,
+        _ => 0.0,
+    }
+}
+
 /// Scores `outcomes` against `answers`, given the run's total time. Items without an answer
 /// are left out.
 #[must_use]
@@ -386,11 +403,7 @@ pub fn score(answers: &Answers, outcomes: &[Outcome], seconds: f64) -> (Score, V
         let Some(answer) = answers.items.get(&outcome.item) else {
             continue;
         };
-        let routing = match outcome.destination.as_deref() {
-            Some(d) if answer.destinations.iter().any(|a| a == d) => 1.0,
-            Some(HOLDING) if answer.ambiguous => 0.5,
-            _ => 0.0,
-        };
+        let routing = routing_points(answer, outcome.destination.as_deref());
         let sensitivity = match outcome.sensitivity {
             None => Rating::Missing,
             Some(level) if level == answer.sensitivity => Rating::Exact,
